@@ -26,6 +26,7 @@ import java.time.LocalDateTime
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
+import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.TaskKind
 import app.omnitask.model.TaskQuery
@@ -386,7 +387,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setRecurrence(task: Task, rule: String?) = edit(task) { TaskLine.setRecurrence(it, rule) }
 
-    fun setReminder(task: Task, time: java.time.LocalTime?, on: app.omnitask.model.ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
+    fun setReminder(task: Task, time: java.time.LocalTime?, on: ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
 
     fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
 
@@ -661,7 +662,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val p = item.proposals[i]
                     runCatching {
                         repo.rewriteLine(p.task) { raw ->
-                            TaskLine.setReminder(TaskLine.setDate(raw, DateField.SCHEDULED, p.slot.day), p.slot.start, app.omnitask.model.ReminderOn.SCHEDULED)
+                            TaskLine.setReminder(TaskLine.setDate(raw, DateField.SCHEDULED, p.slot.day), p.slot.start, ReminderOn.SCHEDULED)
                         }
                         cal?.let { c ->
                             val start = p.slot.day.atTime(p.slot.start)
