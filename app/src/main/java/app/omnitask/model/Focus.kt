@@ -9,11 +9,13 @@ import java.time.temporal.TemporalAdjusters
  * Rule-based daily focus, no AI. Three sections that never compete with each other:
  * - must: due today or overdue (or scheduled today)
  * - waiting: someone is waiting (`#รอ` or `#รอ/name`), longest-waiting first
- * - future: important, no due date, nobody waiting — the work that never shouts; always gets a slot
+ * - future: work the owner picked as an investment (#อนาคต); it never shouts, so it always gets a slot
  */
 object Focus {
 
     const val WAITING_TAG = "รอ"
+    const val FUTURE_TAG = "อนาคต"
+    const val SOMEDAY_TAG = "สักวัน"
 
     data class Brief(
         val must: List<Task>,
@@ -28,7 +30,7 @@ object Focus {
         val id get() = "${kind.name}:${task.title}"
     }
 
-    enum class Kind { RAISE_PRIORITY, SOFT_DATE }
+    enum class Kind { RAISE_PRIORITY, SOFT_DATE, MARK_FUTURE }
 
     fun isWaiting(task: Task) = task.tags.any { it == WAITING_TAG || it.startsWith("$WAITING_TAG/") }
 
@@ -38,7 +40,30 @@ object Focus {
     /** Days since the task was created (➕); null when the line has no created date. */
     fun ageDays(task: Task, today: LocalDate): Long? = task.created?.let { ChronoUnit.DAYS.between(it, today) }
 
-    fun isFutureWork(task: Task) = task.isImportant && task.due == null && !isWaiting(task)
+    /** Picked by the owner as work for the future (#อนาคต), not guessed from priority. */
+    fun isFutureWork(task: Task) = task.tags.any { it == FUTURE_TAG || it.startsWith("$FUTURE_TAG/") } && !isSomeday(task)
+
+    /** Parked on purpose (#สักวัน): out of the daily lists, but the review brings it back now and then. */
+    fun isSomeday(task: Task) = task.tags.any { it == SOMEDAY_TAG || it.startsWith("$SOMEDAY_TAG/") }
+
+    /** How often a task without a deadline comes up for review, in days. */
+    fun reviewEvery(task: Task) = when {
+        isFutureWork(task) -> 14L
+        else -> 30L
+    }
+
+    /**
+     * Open tasks with no deadline whose review is due: they were made (or last reviewed) longer ago
+     * than [reviewEvery]. Oldest first, so the longest-ignored work gets looked at first.
+     */
+    fun toReview(tasks: List<Task>, today: LocalDate, reviewed: Map<String, LocalDate>): List<Task> =
+        tasks.filter { t -> t.isOpen && t.due == null && !isWaiting(t) && (t.scheduled == null || t.scheduled < today) }
+            .mapNotNull { t ->
+                val base = listOfNotNull(t.created, reviewed[t.title]).maxOrNull()
+                if (base == null || ChronoUnit.DAYS.between(base, today) >= reviewEvery(t)) t to (base ?: LocalDate.MIN) else null
+            }
+            .sortedBy { it.second }
+            .map { it.first }
 
     fun build(
         tasks: List<Task>,
@@ -54,7 +79,7 @@ object Focus {
             .sortedWith(compareBy<Task>({ it.due ?: it.scheduled }, { it.priority.ordinal }))
 
         val waiting = open
-            .filter { isWaiting(it) && it !in must }
+            .filter { isWaiting(it) && !isSomeday(it) && it !in must }
             .sortedWith(compareByDescending<Task> { ageDays(it, today) ?: 0 }.thenBy { it.priority.ordinal })
             .take(2)
 
@@ -97,6 +122,10 @@ object Focus {
             .forEach {
                 add(Suggestion(it, Kind.SOFT_DATE, "ค้างมา ${ageDays(it, today)} วัน นัดทำ (⏳) เสาร์นี้?"))
             }
+        // Important work with no deadline that nobody waits on is what "ลงทุนอนาคต" is for; offer it, never assume it.
+        open.filter { it.isImportant && it.due == null && !isWaiting(it) && !isFutureWork(it) && !isSomeday(it) && (ageDays(it, today) ?: 0) >= 14 }
+            .take(2)
+            .forEach { add(Suggestion(it, Kind.MARK_FUTURE, "สำคัญแต่ไม่มีเดดไลน์ ตั้งเป็นงานลงทุนอนาคตไหม?")) }
     }
 
     /** The coming Saturday (today if today is Saturday): the default soft date for neglected future work. */

@@ -1,6 +1,7 @@
 package app.omnitask.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +47,10 @@ private val LONG_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
 fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit, onAssistant: () -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    var reviewing by remember { mutableStateOf(false) }
+    if (picking) FuturePicker(state, vm) { picking = false }
+    if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
     val today = state.today
     val brief = state.brief
     val events = state.todayEvents
@@ -87,6 +96,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         }
 
         brief.warnings.forEach { w -> item { Notice(w) } }
+
+        item { ReviewPrompt(state) { reviewing = true } }
 
         item {
             Card {
@@ -140,6 +151,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             val age = Focus.ageDays(t, today)
                             Column(Modifier.padding(top = 8.dp).clickable { onOpen(t) }) {
                                 Text(t.title, color = C.text, fontSize = 13.5.sp, maxLines = 2)
+                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = 12.5.sp, maxLines = 2) }
                                 Text(
                                     (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { "รอ $it วัน" } ?: "รออยู่"),
                                     color = if ((age ?: 0) >= 7) C.red else C.muted, fontSize = 12.5.sp,
@@ -155,11 +167,12 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
                         }
                         if (brief.future.isEmpty()) {
-                            Text("ตั้ง ⏫ ให้งานสำคัญที่ไม่มีเดดไลน์", Modifier.padding(top = 8.dp), color = C.muted, fontSize = 12.5.sp)
+                            Text("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", Modifier.padding(top = 8.dp), color = C.muted, fontSize = 12.5.sp)
                         }
                         brief.future.forEach { t ->
                             Column(Modifier.padding(top = 8.dp)) {
                                 Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = 14.sp, maxLines = 2)
+                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = 12.5.sp, maxLines = 2) }
                                 Focus.ageDays(t, today)?.let { Text("ค้าง $it วัน", color = C.muted, fontSize = 12.5.sp) }
                                 Text(
                                     "ข้ามวันนี้",
@@ -169,6 +182,12 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                 )
                             }
                         }
+                        Text(
+                            "เลือกงาน",
+                            Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(12.dp))
+                                .clickable { picking = true }.padding(horizontal = 10.dp, vertical = 4.dp),
+                            color = C.accentText, fontSize = 12.5.sp,
+                        )
                     }
                 }
             }

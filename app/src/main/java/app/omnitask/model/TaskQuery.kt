@@ -48,7 +48,9 @@ data class TaskQuery(
             (tags.isEmpty() || t.tags.any { tag -> tags.any { tag == it || tag.startsWith("$it/") } }) &&
             (notes.isEmpty() || t.noteName in notes) &&
             (bucket == null || t.bucket(today) == bucket) &&
-            (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true))
+            (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true)) &&
+            // Parked work stays out of the way unless asked for by its tag.
+            (!Focus.isSomeday(t) || tags.any { it == Focus.SOMEDAY_TAG })
 
     fun run(tasks: List<Task>, today: LocalDate): List<TaskGroup> {
         val sorted = tasks.filter { matches(it, today) }.sortedWith(comparator())
@@ -97,6 +99,8 @@ data class TaskQuery(
             "วันนี้" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = DateBucket.TODAY) },
             "มีคนรอ" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.WAITING_TAG), notes = emptySet(), bucket = null) },
             "สำคัญ" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = setOf(Priority.HIGHEST, Priority.HIGH), tags = emptySet(), notes = emptySet(), bucket = null) },
+            "ลงทุนอนาคต" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.FUTURE_TAG), notes = emptySet(), bucket = null) },
+            "พักไว้" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.SOMEDAY_TAG), notes = emptySet(), bucket = null) },
         )
     }
 }

@@ -56,6 +56,22 @@ class VaultRepository(private val context: Context) {
         }
     }
 
+    /** Replaces the indented line under the task that starts with `prefix` (adds it if missing, removes it when `line` is null). */
+    fun setSubLine(task: Task, prefix: String, line: String?) = editLines(task) { lines, index ->
+        val indent = lines[index].takeWhile { it.isWhitespace() } + "    "
+        var i = index + 1
+        var found = -1
+        while (i < lines.size && lines[i].isNotBlank() && lines[i].first().isWhitespace() && !TaskLine.isTask(lines[i])) {
+            if (found < 0 && lines[i].trim().removePrefix("- ").trim().startsWith(prefix)) found = i
+            i++
+        }
+        when {
+            found >= 0 && line == null -> lines.removeAt(found)
+            found >= 0 -> lines[found] = "$indent- $line"
+            line != null -> lines.add(i, "$indent- $line")
+        }
+    }
+
     private fun editLines(task: Task, edit: (MutableList<String>, Int) -> Unit) {
         val uri = Uri.parse(task.fileUri)
         val text = readText(uri)

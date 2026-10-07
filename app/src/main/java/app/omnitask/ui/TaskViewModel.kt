@@ -23,6 +23,7 @@ import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.Status
+import app.omnitask.model.TaskKind
 import app.omnitask.model.TaskQuery
 import app.omnitask.notify.CalendarEvent
 import app.omnitask.model.Task
@@ -74,7 +75,11 @@ data class UiState(
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
     val chat: List<Chat> = emptyList(),
+    /** When each no-deadline task was last reviewed, by title. */
+    val reviewed: Map<String, LocalDate> = emptyMap(),
 ) {
+    val toReview get() = Focus.toReview(tasks, today, reviewed)
+
     val todayEvents get() = events.filter { it.begin.toLocalDate() <= today && it.end.toLocalDate() >= today && it.end > today.atStartOfDay() }
 
     /** The focus page reads every task in the vault, regardless of the list filters. */
@@ -124,6 +129,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 .map { it.substringAfter('|') }
                 .toSet(),
             dismissed = prefs.getStringSet(KEY_DISMISSED, emptySet()).orEmpty().toSet(),
+            reviewed = prefs.getStringSet(KEY_REVIEWED, emptySet()).orEmpty().mapNotNull { e ->
+                runCatching { e.substringBeforeLast('|') to LocalDate.parse(e.substringAfterLast('|')) }.getOrNull()
+            }.toMap(),
             notify = Scheduler.loadSettings(app),
         )
     )
@@ -316,6 +324,42 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun acceptSuggestion(s: Focus.Suggestion) = when (s.kind) {
         Focus.Kind.RAISE_PRIORITY -> setPriority(s.task, Priority.HIGH)
         Focus.Kind.SOFT_DATE -> setDate(s.task, DateField.SCHEDULED, Focus.softDate(LocalDate.now()))
+        Focus.Kind.MARK_FUTURE -> setKind(s.task, TaskKind.FUTURE)
+    }
+
+    /** Switches the task's kind: the old kind tag goes, the new one is added. `who` names the person waiting. */
+    fun setKind(task: Task, kind: TaskKind, who: String? = null) {
+        markReviewed(task)
+        edit(task) { raw ->
+            var line = TaskKind.kindTags(task).fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
+            kind.tag?.let { tag -> line = TaskLine.addTag(line, if (kind == TaskKind.WAITING && !who.isNullOrBlank()) "$tag/${who.trim()}" else tag) }
+            line
+        }
+    }
+
+    fun setFirstStep(task: Task, step: String?) =
+        sub(task) { repo.setSubLine(task, Task.FIRST_STEP, step?.trim()?.ifEmpty { null }?.let { "${Task.FIRST_STEP} $it" }) }
+
+    /** Restarts the review clock for a task without a deadline. */
+    fun markReviewed(task: Task) {
+        val next = _state.value.reviewed + (task.title to LocalDate.now())
+        // Old entries for tasks that no longer exist are dropped as the set is rewritten.
+        val live = _state.value.tasks.map { it.title }.toSet()
+        val kept = next.filterKeys { it in live || it == task.title }
+        prefs.edit().putStringSet(KEY_REVIEWED, kept.map { (k, v) -> "$k|$v" }.toSet()).apply()
+        _state.update { it.copy(reviewed = kept) }
+    }
+
+    enum class ReviewAction { THIS_WEEK, FUTURE, SOMEDAY, KEEP, DROP }
+
+    fun review(task: Task, action: ReviewAction) {
+        when (action) {
+            ReviewAction.THIS_WEEK -> { markReviewed(task); setDate(task, DateField.SCHEDULED, Focus.softDate(LocalDate.now())) }
+            ReviewAction.FUTURE -> setKind(task, TaskKind.FUTURE)
+            ReviewAction.SOMEDAY -> setKind(task, TaskKind.SOMEDAY)
+            ReviewAction.KEEP -> markReviewed(task)
+            ReviewAction.DROP -> { markReviewed(task); setStatus(task, Status.CANCELLED) }
+        }
     }
 
     /** Links a note on its own line under the task, the same way Obsidian writes `[[links]]`. */
@@ -471,5 +515,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_DISMISSED = "dismissedSuggestions"
         const val KEY_DECLINED = "declinedInsights"
         const val KEY_DONE_LOG = "doneLog"
+        const val KEY_REVIEWED = "reviewedTasks"
     }
 }

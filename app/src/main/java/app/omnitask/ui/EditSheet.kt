@@ -130,6 +130,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             }
         }
 
+        Label("ประเภทงาน")
+        KindField(task, state, vm)
+
         Label("โน้ตที่เกี่ยวข้อง")
         Column(Modifier.clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
             task.links.forEach { link ->

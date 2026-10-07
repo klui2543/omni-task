@@ -59,8 +59,17 @@ data class Task(
     val links: List<String>
         get() = (linkLines + LINK_INLINE.findAll(raw).map { it.groupValues[1].trim() }).distinct()
 
-    /** Notes the user wrote, without the image embeds and note links. */
-    val textNotes: List<String> get() = notes.filter { EMBED.find(it) == null && LINK_LINE.find(it) == null }
+    /** The smallest next action, kept on a line under the task: `- ก้าวแรก: เปิดไฟล์แล้วเขียน 3 บรรทัด`. */
+    val firstStep: String?
+        get() = notes.firstOrNull { it.startsWith(FIRST_STEP) }?.removePrefix(FIRST_STEP)?.trim()?.ifEmpty { null }
+
+    /** Notes the user wrote, without the image embeds, note links and first step. */
+    val textNotes: List<String>
+        get() = notes.filter { EMBED.find(it) == null && LINK_LINE.find(it) == null && !it.startsWith(FIRST_STEP) }
+
+    companion object {
+        const val FIRST_STEP = "ก้าวแรก:"
+    }
 
     /** When this task's reminder fires, or null when it has no time or no date to hang it on. */
     val reminderAt: LocalDateTime?
