@@ -40,7 +40,19 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.ImeAction
+import app.omnitask.data.TaskLine
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -254,6 +266,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
             onDismiss = { editingKey = null },
             onPriority = { vm.setPriority(task, it) },
             onDate = { field, value -> vm.setDate(task, field, value) },
+            knownTags = state.tags.filterNot { it.startsWith("remind-at-") },
+            onAddTag = { vm.addTag(task, it) },
+            onRemoveTag = { vm.removeTag(task, it) },
         )
     }
 }
@@ -609,9 +624,13 @@ private fun EditSheet(
     onDismiss: () -> Unit,
     onPriority: (Priority) -> Unit,
     onDate: (DateField, LocalDate?) -> Unit,
+    knownTags: List<String>,
+    onAddTag: (String) -> Unit,
+    onRemoveTag: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     var picking by remember { mutableStateOf<DateField?>(null) }
+    var addingTag by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.background) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
@@ -648,11 +667,54 @@ private fun EditSheet(
                 }
             }
 
+            SectionLabel("Tag")
+            val ownTags = task.tags.filterNot { it.startsWith("remind-at-") }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ownTags.forEach { tag ->
+                    InputChip(
+                        selected = false,
+                        onClick = { onRemoveTag(tag) },
+                        label = { Text("#$tag", style = MaterialTheme.typography.labelMedium) },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "ลบ #$tag", modifier = Modifier.size(14.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = InputChipDefaults.inputChipColors(
+                            containerColor = colors.background,
+                            labelColor = colors.primary,
+                            trailingIconColor = colors.outline,
+                        ),
+                        border = InputChipDefaults.inputChipBorder(enabled = true, selected = false, borderColor = colors.outlineVariant),
+                    )
+                }
+                AssistChip(
+                    onClick = { addingTag = true },
+                    label = { Text("เพิ่ม", style = MaterialTheme.typography.labelMedium) },
+                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = colors.background,
+                        labelColor = colors.onSurfaceVariant,
+                        leadingIconContentColor = colors.onSurfaceVariant,
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = colors.outlineVariant),
+                )
+            }
+
             SectionLabel("วันที่")
             DateRow("วันเริ่ม", task.start, { picking = DateField.START }) { onDate(DateField.START, null) }
             DateRow("วันนัดทำ", task.scheduled, { picking = DateField.SCHEDULED }) { onDate(DateField.SCHEDULED, null) }
             DateRow("วันครบกำหนด", task.due, { picking = DateField.DUE }) { onDate(DateField.DUE, null) }
         }
+    }
+
+    if (addingTag) {
+        AddTagDialog(
+            suggestions = knownTags.filterNot { it in task.tags },
+            onDismiss = { addingTag = false },
+            onAdd = {
+                onAddTag(it)
+                addingTag = false
+            },
+        )
     }
 
     picking?.let { field ->
@@ -679,6 +741,47 @@ private fun EditSheet(
             DatePicker(state = pickerState)
         }
     }
+}
+
+/** Type a new tag, or tap one already used in the vault; the list narrows as you type. */
+@Composable
+private fun AddTagDialog(suggestions: List<String>, onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    var text by remember { mutableStateOf("") }
+    val query = TaskLine.normalizeTag(text)
+    val matches = suggestions.filter { query.isEmpty() || it.contains(query, ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.background,
+        title = { Text("เพิ่ม Tag", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    prefix = { Text("#", color = colors.outline) },
+                    placeholder = { Text("เช่น รอ/พี่เอ", color = colors.outline) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (query.isNotEmpty()) onAdd(query) }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 240.dp)) {
+                    items(matches) { tag ->
+                        Text(
+                            "#$tag",
+                            Modifier.fillMaxWidth().clickable { onAdd(tag) }.padding(vertical = 10.dp, horizontal = 4.dp),
+                            color = colors.primary,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAdd(query) }, enabled = query.isNotEmpty()) { Text("เพิ่ม") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } },
+    )
 }
 
 @Composable

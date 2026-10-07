@@ -87,4 +87,27 @@ class TaskLineTest {
         assertEquals("  - [x] คู่มืออุปกรณ์? #Siriraj ➕ 2026-09-29 ✅ 2026-10-07", done)
         assertEquals(raw, TaskLine.setDone(done, false, d("2026-10-07")))
     }
+
+    @Test
+    fun addTagGoesAfterPlainTagsAndBeforeReminder() {
+        assertEquals(
+            "- [ ] งาน #Siriraj #รอ/พี่เอ ⏫ ➕ 2026-10-02",
+            TaskLine.addTag("- [ ] งาน #Siriraj ⏫ ➕ 2026-10-02", "#รอ/พี่เอ"),
+        )
+        assertEquals(
+            "- [ ] งาน #a #new #remind-at-due ⏰ 02:30 ⏫ 📅 2026-09-30",
+            TaskLine.addTag("- [ ] งาน #a #remind-at-due ⏰ 02:30 ⏫ 📅 2026-09-30", "new"),
+        )
+        assertEquals("- [ ] งาน #ร้าน-ยา 🔼 ➕ 2026-10-02", TaskLine.addTag("- [ ] งาน 🔼 ➕ 2026-10-02", "ร้าน ยา"))
+        assertEquals("- [ ] งาน #x", TaskLine.addTag("- [ ] งาน", "x"))
+    }
+
+    @Test
+    fun addTagSkipsDuplicatesAndRemoveTagKeepsTheRest() {
+        val raw = "- [ ] งาน #a #b ⏫ ➕ 2026-10-02"
+        assertEquals(raw, TaskLine.addTag(raw, "A"))
+        assertEquals("- [ ] งาน #b ⏫ ➕ 2026-10-02", TaskLine.removeTag(raw, "a"))
+        assertEquals("- [ ] งาน #a ⏫ ➕ 2026-10-02", TaskLine.removeTag(raw, "b"))
+        assertEquals(raw, TaskLine.removeTag(raw, "missing"))
+    }
 }

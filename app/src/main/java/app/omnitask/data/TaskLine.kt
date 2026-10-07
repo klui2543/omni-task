@@ -88,6 +88,33 @@ object TaskLine {
         priority.emoji?.let { insertByRank(cleared, it, PRIORITY_RANK) } ?: cleared
     }
 
+    /** Spaces become dashes and a leading # is dropped, so `ร้าน ยา` is written as `#ร้าน-ยา`. */
+    fun normalizeTag(input: String): String =
+        input.trim().removePrefix("#").trim().replace(Regex("""[\s#]+"""), "-")
+
+    /**
+     * Adds `#tag` among the line's tags, keeping TaskForge's order: plain tags, then any
+     * `#remind-at-… ⏰ HH:mm` pair, then priority and the rest.
+     */
+    fun addTag(raw: String, tag: String): String = editBody(raw) { body ->
+        val name = normalizeTag(tag)
+        if (name.isEmpty() || TAG.findAll(body).any { it.value.equals("#$name", ignoreCase = true) }) return@editBody body
+        val token = "#$name"
+        val tags = TAG.findAll(body).toList()
+        val reminder = tags.firstOrNull { it.value.startsWith("#remind-at-") }
+        val pos = reminder?.range?.first
+            ?: tags.lastOrNull()?.let { it.range.last + 1 }
+            ?: listOf(TIME, PRIORITY, RECURRENCE, ANY_DATE).mapNotNull { it.find(body)?.range?.first }.minOrNull()
+            ?: return@editBody if (body.isBlank()) token else "${body.trimEnd()} $token"
+        val before = body.substring(0, pos).trimEnd()
+        val after = body.substring(pos).trimStart()
+        listOf(before, token, after).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+
+    fun removeTag(raw: String, tag: String): String = editBody(raw) { body ->
+        TAG.findAll(body).firstOrNull { it.value == "#$tag" }?.let { remove(body, it.range) } ?: body
+    }
+
     fun setDone(raw: String, done: Boolean, today: LocalDate): String {
         val m = LINE.matchEntire(raw) ?: return raw
         val marked = m.groupValues[1] + (if (done) "x" else " ") + m.groupValues[3] + m.groupValues[4]

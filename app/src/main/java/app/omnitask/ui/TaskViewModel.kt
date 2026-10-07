@@ -118,6 +118,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
 
+    fun addTag(task: Task, tag: String) = edit(task) { TaskLine.addTag(it, tag) }
+
+    fun removeTag(task: Task, tag: String) = edit(task) { TaskLine.removeTag(it, tag) }
+
     /**
      * Dragging between quadrants changes importance only (priority ⏫ in, 🔼 out).
      * Urgency comes from the dates, so a move across the urgent / not-urgent line is refused.
