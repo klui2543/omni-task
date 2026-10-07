@@ -57,7 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.Projects
 import app.omnitask.model.Quadrant
+import app.omnitask.model.GroupBy
 import app.omnitask.model.Status
+import app.omnitask.model.TaskQuery
 import app.omnitask.model.Task
 import app.omnitask.model.label
 import app.omnitask.model.quadrant
@@ -73,32 +75,36 @@ private enum class Mode(val label: String) { KANBAN("Kanban"), MATRIX("Matrix"),
 @Composable
 fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var mode by rememberSaveable { mutableStateOf(Mode.KANBAN) }
+    var filtering by remember { mutableStateOf(false) }
+    val q = state.query
+    // Every view honours the same filters as the task list. Kanban shows all statuses as its columns,
+    // so the status filter only narrows the other views, and only when it differs from the default.
+    val pool = state.tasks.filter { q.copy(statuses = emptySet()).matches(it, state.today) }
+    val narrowed = if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
             Text("มุมมอง", Modifier.padding(start = 4.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineSmall, color = C.text)
             Segmented(Mode.entries.map { it to it.label }, mode, { mode = it }, Modifier.fillMaxWidth())
+            FilterBar(state, vm, onFilter = { filtering = true }, showSort = mode == Mode.KANBAN, modifier = Modifier.padding(top = 8.dp))
         }
         when (mode) {
-            Mode.KANBAN -> Kanban(state, vm, onOpen)
-            Mode.MATRIX -> Matrix(state, vm, onOpen)
-            Mode.GANTT -> Gantt(state, onOpen)
-            Mode.CALENDAR -> MonthCalendar(state, vm, onOpen)
+            Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
+            Mode.MATRIX -> Matrix(state, narrowed, vm, onOpen)
+            Mode.GANTT -> Gantt(state, narrowed, onOpen)
+            Mode.CALENDAR -> MonthCalendar(state, narrowed, vm, onOpen)
         }
     }
+    if (filtering) FilterSheet(state, vm) { filtering = false }
 }
 
 @Composable
-private fun Kanban(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+private fun Kanban(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val q = state.query
     val columns = listOf(Status.TODO to C.faint, Status.IN_PROGRESS to C.accent, Status.DONE to C.lime)
-    val ordered = q.copy(statuses = emptySet(), bucket = null).run(state.tasks, state.today).flatMap { it.tasks }.distinct()
+    val ordered = q.copy(statuses = emptySet(), groupBy = GroupBy.NONE).run(pool, state.today).flatMap { it.tasks }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Chip("เรียง: ${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}", false, { vm.setQuery(q.copy(ascending = !q.ascending)) })
-            if (q.activeFilters > 0 || q.text.isNotBlank()) Chip("ใช้ตัวกรองจากหน้างาน", true, { vm.pickSavedView(0) })
-        }
         LazyRow(
-            Modifier.fillMaxSize().padding(top = 8.dp),
+            Modifier.fillMaxSize().padding(top = 4.dp),
             contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = NavClearance),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -106,9 +112,14 @@ private fun Kanban(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 val cards = ordered.filter { t ->
                     t.status == status && (status != Status.DONE || t.done?.let { it > state.today.minusDays(7) } == true)
                 }
+                val (drop, hovering) = rememberTaskDrop { key ->
+                    state.tasks.firstOrNull { it.key == key }?.let { if (it.status != status) vm.setStatus(it, status) }
+                }
                 Column(
-                    Modifier.width(272.dp).fillMaxHeight().clip(RoundedCornerShape(18.dp)).background(C.sunken)
-                        .border(1.dp, C.divider, RoundedCornerShape(18.dp)),
+                    Modifier.width(272.dp).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                        .background(if (hovering.value) C.accentDeep else C.sunken)
+                        .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(18.dp))
+                        .then(drop),
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
@@ -131,7 +142,7 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
     val i = order.indexOf(t.status)
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, Color(0xFF2A2F3E), RoundedCornerShape(14.dp))
-            .clickable { onOpen(t) }.padding(12.dp),
+            .taskDragSource(t.key, t.priority.tint) { onOpen(t) }.padding(12.dp),
     ) {
         Row {
             Box(Modifier.width(3.dp).height(20.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
@@ -165,8 +176,8 @@ private fun MoveButton(label: String, onClick: () -> Unit) {
 
 /** 2×2 grid. Long-press a task and drag it up or down to change its importance. */
 @Composable
-private fun Matrix(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
-    val byQuadrant = state.tasks.filter { it.isOpen }.groupBy { it.quadrant(state.today, state.urgentRule) }
+private fun Matrix(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+    val byQuadrant = pool.filter { it.isOpen }.groupBy { it.quadrant(state.today, state.urgentRule) }
     Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, bottom = NavClearance - 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         listOf(Quadrant.DO to Quadrant.PLAN, Quadrant.QUICK to Quadrant.LATER).forEach { (a, b) ->
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -183,28 +194,13 @@ private fun Matrix(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpen: (Task) -> Unit, onDrop: (String) -> Unit, modifier: Modifier) {
-    var hovering by remember { mutableStateOf(false) }
-    val drop by rememberUpdatedState(onDrop)
-    val target = remember {
-        object : DragAndDropTarget {
-            override fun onEntered(event: DragAndDropEvent) { hovering = true }
-            override fun onExited(event: DragAndDropEvent) { hovering = false }
-            override fun onEnded(event: DragAndDropEvent) { hovering = false }
-            override fun onDrop(event: DragAndDropEvent): Boolean {
-                hovering = false
-                val key = event.toAndroidDragEvent().clipData?.getItemAt(0)?.text?.toString() ?: return false
-                drop(key)
-                return true
-            }
-        }
-    }
+    val (drop, hovering) = rememberTaskDrop(onDrop)
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(if (hovering) C.accentDeep else C.card)
-            .border(1.dp, if (hovering) q.accent else C.cardBorder, RoundedCornerShape(18.dp))
-            .dragAndDropTarget(shouldStartDragAndDrop = { it.mimeTypes().contains(ClipDescription.MIMETYPE_TEXT_PLAIN) }, target = target),
+        modifier.clip(RoundedCornerShape(18.dp)).background(if (hovering.value) C.accentDeep else C.card)
+            .border(1.dp, if (hovering.value) q.accent else C.cardBorder, RoundedCornerShape(18.dp))
+            .then(drop),
     ) {
         Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(q.accent))
@@ -213,16 +209,7 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
         }
         LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 10.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(tasks, key = { it.key }) { t ->
-                Column(
-                    Modifier.fillMaxWidth().dragAndDropSource(
-                        drawDragDecoration = { drawRoundRect(q.accent.copy(alpha = 0.4f), cornerRadius = CornerRadius(8.dp.toPx())) },
-                    ) {
-                        detectTapGestures(
-                            onTap = { onOpen(t) },
-                            onLongPress = { startTransfer(DragAndDropTransferData(ClipData.newPlainText("task", t.key))) },
-                        )
-                    },
-                ) {
+                Column(Modifier.fillMaxWidth().taskDragSource(t.key, q.accent) { onOpen(t) }) {
                     Text(t.title, color = C.text, fontSize = 13.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val d = t.due ?: t.scheduled
                     if (d != null) Text(if (d == today) "วันนี้" else d.format(SHORT_DATE), color = if (d < today) C.red else C.muted, fontSize = 12.sp)
@@ -234,12 +221,12 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
 
 /** Bars from start (or scheduled) to due across the coming weeks, grouped by project. */
 @Composable
-private fun Gantt(state: UiState, onOpen: (Task) -> Unit) {
+private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
     val first = state.today.minusDays(3)
     val days = 21
     val dayW = 30.dp
     val nameW = 128.dp
-    val rows = state.tasks.filter { t -> t.status != Status.CANCELLED && (t.due != null || t.scheduled != null || t.start != null) }
+    val rows = pool.filter { t -> t.status != Status.CANCELLED && (t.due != null || t.scheduled != null || t.start != null) }
         .filter { t -> t.isOpen || t.done?.let { it >= first } == true }
         .groupBy { Projects.projectOf(it) ?: "ไม่มีโปรเจกต์" }
         .toSortedMap(compareBy<String> { it == "ไม่มีโปรเจกต์" }.thenBy { it })
@@ -299,12 +286,12 @@ private fun Gantt(state: UiState, onOpen: (Task) -> Unit) {
 }
 
 @Composable
-private fun MonthCalendar(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var selected by rememberSaveable { mutableStateOf(state.today.toString()) }
     val sel = LocalDate.parse(selected)
     val month = YearMonth.from(state.today)
     val firstCell = month.atDay(1).let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
-    fun tasksOn(d: LocalDate) = state.tasks.filter { it.status != Status.CANCELLED && (it.due == d || it.scheduled == d) }
+    fun tasksOn(d: LocalDate) = pool.filter { it.status != Status.CANCELLED && (it.due == d || it.scheduled == d) }
     fun eventsOn(d: LocalDate) = state.events.filter { it.begin.toLocalDate() <= d && (it.end.toLocalDate() > d || it.begin.toLocalDate() == d) }
 
     LazyColumn(

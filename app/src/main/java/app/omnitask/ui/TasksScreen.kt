@@ -87,23 +87,10 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         },
                     )
                 }
-                Row(Modifier.padding(top = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TaskQuery.SAVED.forEachIndexed { i, (label, _) ->
-                        val on = state.savedView == i
-                        Text(
-                            label,
-                            Modifier.height(34.dp).clip(CircleShape).background(if (on) C.accent else C.card)
-                                .border(1.dp, if (on) C.accent else C.cardBorder, CircleShape)
-                                .clickable { vm.pickSavedView(i) }.padding(horizontal = 14.dp, vertical = 7.dp),
-                            color = if (on) C.onAccent else C.text2, fontSize = 13.sp,
-                        )
-                    }
-                }
-                Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ToolButton(if (q.activeFilters > 0) "กรอง ${q.activeFilters}" else "กรอง", q.activeFilters > 0, Ic.filter) { sheet = Sheet.FILTER }
-                    ToolButton("กลุ่ม: ${q.groupBy.label}", false) { sheet = Sheet.GROUP }
-                    ToolButton("เรียง: ${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}", false) { sheet = Sheet.SORT }
-                }
+                FilterBar(
+                    state, vm, onFilter = { sheet = Sheet.FILTER }, showSort = true,
+                    onGroup = { sheet = Sheet.GROUP }, onSort = { sheet = Sheet.SORT }, modifier = Modifier.padding(top = 12.dp),
+                )
             }
         }
 
@@ -138,6 +125,42 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     }
 }
 
+/** Quick views, then filter, group and sort buttons. Shared by the task list and every view. */
+@Composable
+fun FilterBar(
+    state: UiState,
+    vm: TaskViewModel,
+    onFilter: () -> Unit,
+    showSort: Boolean,
+    modifier: Modifier = Modifier,
+    onGroup: (() -> Unit)? = null,
+    onSort: (() -> Unit)? = null,
+) {
+    val q = state.query
+    Column(modifier) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TaskQuery.SAVED.forEachIndexed { i, (label, _) ->
+                val on = state.savedView == i
+                Text(
+                    label,
+                    Modifier.height(34.dp).clip(CircleShape).background(if (on) C.accent else C.card)
+                        .border(1.dp, if (on) C.accent else C.cardBorder, CircleShape)
+                        .clickable { vm.pickSavedView(i) }.padding(horizontal = 14.dp, vertical = 7.dp),
+                    color = if (on) C.onAccent else C.text2, fontSize = 13.sp,
+                )
+            }
+        }
+        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
+            ToolButton(if (active > 0) "กรอง $active" else "กรอง", active > 0, Ic.filter, onFilter)
+            if (onGroup != null) ToolButton("กลุ่ม: ${q.groupBy.label}", false, onClick = onGroup)
+            if (showSort) {
+                ToolButton("เรียง: ${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
+            }
+        }
+    }
+}
+
 @Composable
 private fun ToolButton(label: String, active: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
     Row(
@@ -164,7 +187,7 @@ fun SheetFrame(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
+fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     val q = state.query
     SheetFrame(onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
