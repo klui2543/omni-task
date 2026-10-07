@@ -1,8 +1,20 @@
 package app.omnitask.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -168,12 +180,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             FilterBar(state, vm::setFilters)
             val tasks = state.visible.sortedWith(TASK_ORDER)
-            if (tasks.isEmpty() && !state.loading) {
+            if (matrix) {
+                MatrixView(tasks, state, vm::toggleDone) { editingKey = it.key }
+            } else if (tasks.isEmpty() && !state.loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("ไม่มีงานตรงตัวกรอง", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else if (matrix) {
-                MatrixView(tasks, state, vm::toggleDone) { editingKey = it.key }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(tasks, key = { it.key }) { task ->
@@ -290,24 +302,145 @@ private fun TaskRow(task: Task, today: LocalDate, onToggle: () -> Unit, onOpen: 
     }
 }
 
-/** The four quadrants stacked top to bottom, so each keeps the full width of a phone screen. */
+private val Quadrant.accent
+    get() = when (this) {
+        Quadrant.DO -> Color(0xFFE5484D)
+        Quadrant.PLAN -> Color(0xFFF59E0B)
+        Quadrant.QUICK -> Color(0xFF3B82F6)
+        Quadrant.LATER -> Color(0xFF22A06B)
+    }
+
+private val Quadrant.numeral get() = listOf("I", "II", "III", "IV")[ordinal]
+
+/**
+ * A 2×2 grid in the style of TickTick: each quadrant is a tinted card with its own scrolling list.
+ * Tapping a quadrant's header opens it full screen; back returns to the grid.
+ */
 @Composable
 private fun MatrixView(tasks: List<Task>, state: UiState, onToggle: (Task) -> Unit, onOpen: (Task) -> Unit) {
     val byQuadrant = tasks.groupBy { it.quadrant(state.today, state.urgentRule) }
-    LazyColumn(Modifier.fillMaxSize()) {
-        Quadrant.entries.forEach { quadrant ->
-            val group = byQuadrant[quadrant].orEmpty()
-            item(key = quadrant.name) {
-                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        "${quadrant.label}  ·  ${group.size}",
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        fontWeight = FontWeight.SemiBold,
-                    )
+    var expanded by rememberSaveable { mutableStateOf<Quadrant?>(null) }
+    BackHandler(enabled = expanded != null) { expanded = null }
+
+    @Composable
+    fun Cell(quadrant: Quadrant, modifier: Modifier) = QuadrantCard(
+        quadrant = quadrant,
+        tasks = byQuadrant[quadrant].orEmpty(),
+        today = state.today,
+        expanded = expanded == quadrant,
+        onHeader = { expanded = if (expanded == quadrant) null else quadrant },
+        onToggle = onToggle,
+        onOpen = onOpen,
+        modifier = modifier,
+    )
+
+    Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val open = expanded
+        if (open != null) {
+            Cell(open, Modifier.fillMaxSize())
+        } else {
+            listOf(Quadrant.DO to Quadrant.PLAN, Quadrant.QUICK to Quadrant.LATER).forEach { (left, right) ->
+                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Cell(left, Modifier.weight(1f).fillMaxHeight())
+                    Cell(right, Modifier.weight(1f).fillMaxHeight())
                 }
             }
-            items(group, key = { it.key }) { task ->
-                TaskRow(task, state.today, onToggle = { onToggle(task) }, onOpen = { onOpen(task) })
+        }
+    }
+}
+
+@Composable
+private fun QuadrantCard(
+    quadrant: Quadrant,
+    tasks: List<Task>,
+    today: LocalDate,
+    expanded: Boolean,
+    onHeader: () -> Unit,
+    onToggle: (Task) -> Unit,
+    onOpen: (Task) -> Unit,
+    modifier: Modifier,
+) {
+    val accent = quadrant.accent
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = accent.copy(alpha = 0.08f).compositeOver(MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.25f)),
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onHeader).padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(quadrant.numeral, color = accent, fontWeight = FontWeight.Bold)
+                Text(
+                    quadrant.label,
+                    Modifier.weight(1f).padding(start = 6.dp),
+                    color = accent,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    tasks.size.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Icon(
+                    if (expanded) Icons.Default.Close else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = if (expanded) "ย่อ" else "ขยาย",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 2.dp).size(18.dp),
+                )
+            }
+            if (tasks.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("ไม่มีงาน", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
+                    items(tasks, key = { it.key }) { task ->
+                        if (expanded) {
+                            TaskRow(task, today, onToggle = { onToggle(task) }, onOpen = { onOpen(task) })
+                        } else {
+                            CompactTaskRow(task, today, accent, onToggle = { onToggle(task) }, onOpen = { onOpen(task) })
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTaskRow(task: Task, today: LocalDate, accent: Color, onToggle: () -> Unit, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 4.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+            Checkbox(
+                checked = !task.isOpen,
+                onCheckedChange = { onToggle() },
+                colors = CheckboxDefaults.colors(uncheckedColor = accent, checkedColor = accent),
+                modifier = Modifier.padding(4.dp).size(20.dp),
+            )
+        }
+        Column(Modifier.weight(1f).padding(start = 4.dp, top = 3.dp)) {
+            Text(
+                task.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (task.isOpen) null else TextDecoration.LineThrough,
+            )
+            (task.due ?: task.scheduled)?.let { date ->
+                val overdue = task.isOpen && date < today
+                Text(
+                    if (date == today) "วันนี้" else date.format(SHORT_DATE),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
