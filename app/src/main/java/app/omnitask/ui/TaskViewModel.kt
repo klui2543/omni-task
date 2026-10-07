@@ -181,7 +181,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             launch { runCatching { OmniWidgets.refresh(app) } }
             val events = withContext(Dispatchers.IO) {
                 runCatching {
-                    val now = CalendarReader.month(app, LocalDate.now())
+                    val today = LocalDate.now()
+                    // The month view plus the Gantt's three weeks, which can run into next month.
+                    val now = CalendarReader.month(app, today) + CalendarReader.events(app, today.minusDays(7).atStartOfDay(), today.plusDays(35).atStartOfDay())
                     val other = shownMonth?.takeIf { it.withDayOfMonth(1) != LocalDate.now().withDayOfMonth(1) }?.let { CalendarReader.month(app, it) }.orEmpty()
                     (now + other).distinctBy { it.id to it.begin }
                 }.getOrDefault(emptyList())

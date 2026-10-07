@@ -44,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.DragAndDropTransferData
@@ -226,6 +227,8 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
 }
 
 /** Bars from start (or scheduled) to due across the coming weeks, grouped by project. */
+private val HM = DateTimeFormatter.ofPattern("HH:mm")
+
 @Composable
 private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
     val first = state.today.minusDays(3)
@@ -239,7 +242,22 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
         .groupBy { Projects.projectOf(it) ?: noProject }
         .toSortedMap(compareBy<String> { it == noProject }.thenBy { it })
     val hScroll = rememberScrollState()
+    val context = LocalContext.current
+    var showEvents by rememberSaveable { mutableStateOf(true) }
+    val last = first.plusDays(days - 1L)
+    // Events overlapping the range, one row per title, so a recurring shift reads as a single row of bars.
+    fun lastDay(e: CalendarEvent) = maxOf(e.begin.toLocalDate(), e.end.minusNanos(1).toLocalDate())
+    val eventRows = if (!showEvents) emptyList() else state.events
+        .filter { it.begin.toLocalDate() <= last && lastDay(it) >= first }
+        .groupBy { it.title }
+        .toList()
+        .sortedBy { (_, list) -> list.minOf { it.begin } }
     Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, bottom = NavClearance - 10.dp)) {
+        if (state.calendarAccess == true) {
+            Row(Modifier.padding(bottom = 8.dp)) {
+                Chip(tr("นัดจาก Google Calendar", "Google Calendar events"), showEvents, { showEvents = !showEvents }, dot = C.teal)
+            }
+        }
         Card(Modifier.fillMaxSize()) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row {
@@ -254,6 +272,39 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                                     Modifier.size(22.dp).clip(CircleShape).background(if (d == state.today) C.accent else Color.Transparent).padding(top = 2.dp),
                                     color = if (d == state.today) C.onAccent else C.text2, fontSize = TS.micro,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (eventRows.isNotEmpty()) {
+                    Text("Google Calendar", Modifier.fillMaxWidth().background(C.sunken).padding(horizontal = 12.dp, vertical = 6.dp), color = C.teal, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                }
+                eventRows.forEach { (title, list) ->
+                    val next = list.firstOrNull { lastDay(it) >= state.today } ?: list.first()
+                    Row(
+                        Modifier.height(42.dp).clickable {
+                            val uri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, next.id)
+                            runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.width(nameW).padding(horizontal = 12.dp)) {
+                            Text(title, color = Color(0xFFCFF4F0), fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                if (next.allDay) tr("ทั้งวัน", "All day") else next.begin.format(HM) + tr(" ถึง ", " to ") + next.end.format(HM),
+                                color = C.tealText, fontSize = TS.micro, maxLines = 1,
+                            )
+                        }
+                        Box(Modifier.horizontalScroll(hScroll).width(dayW * days).fillMaxHeight()) {
+                            Box(Modifier.offset(x = dayW * (ChronoUnit.DAYS.between(first, state.today).toInt()) + dayW / 2).width(1.dp).fillMaxHeight().background(C.accent.copy(alpha = 0.5f)))
+                            list.forEach { e ->
+                                val from = ChronoUnit.DAYS.between(first, e.begin.toLocalDate()).coerceIn(0, days.toLong() - 1)
+                                val to = ChronoUnit.DAYS.between(first, lastDay(e)).coerceIn(0, days.toLong() - 1)
+                                Box(
+                                    Modifier.align(Alignment.CenterStart).offset(x = dayW * from.toInt() + 3.dp)
+                                        .width(dayW * (to - from + 1).toInt() - 6.dp).height(12.dp)
+                                        .clip(RoundedCornerShape(6.dp)).background(C.teal.copy(alpha = if (lastDay(e) < state.today) 0.4f else 0.85f)),
                                 )
                             }
                         }
@@ -287,7 +338,7 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                         }
                     }
                 }
-                if (rows.isEmpty()) Text(tr("ยังไม่มีงานที่มีวันที่", "No dated tasks yet"), Modifier.padding(16.dp), color = C.muted)
+                if (rows.isEmpty() && eventRows.isEmpty()) Text(tr("ยังไม่มีงานที่มีวันที่", "No dated tasks yet"), Modifier.padding(16.dp), color = C.muted)
             }
         }
     }
