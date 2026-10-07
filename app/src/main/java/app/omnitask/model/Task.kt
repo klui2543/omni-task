@@ -69,11 +69,11 @@ enum class UrgentRule(val label: String) {
     THIS_WEEK("ภายในสัปดาห์นี้"),
 }
 
-enum class Quadrant(val label: String) {
-    DO("ด่วน · สำคัญ"),
-    PLAN("ไม่ด่วน · สำคัญ"),
-    QUICK("ด่วน · ไม่สำคัญ"),
-    LATER("ไม่ด่วน · ไม่สำคัญ"),
+enum class Quadrant(val label: String, val urgent: Boolean, val important: Boolean) {
+    DO("ด่วน · สำคัญ", urgent = true, important = true),
+    PLAN("ไม่ด่วน · สำคัญ", urgent = false, important = true),
+    QUICK("ด่วน · ไม่สำคัญ", urgent = true, important = false),
+    LATER("ไม่ด่วน · ไม่สำคัญ", urgent = false, important = false),
 }
 
 fun Task.isUrgent(today: LocalDate, rule: UrgentRule): Boolean {

@@ -11,9 +11,11 @@ import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Priority
+import app.omnitask.model.Quadrant
 import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
+import app.omnitask.model.quadrant
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -115,6 +117,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setPriority(task: Task, priority: Priority) = edit(task) { TaskLine.setPriority(it, priority) }
 
     fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
+
+    /**
+     * Dragging between quadrants changes importance only (priority ⏫ in, 🔼 out).
+     * Urgency comes from the dates, so a move across the urgent / not-urgent line is refused.
+     */
+    fun moveToQuadrant(task: Task, to: Quadrant) {
+        val s = _state.value
+        val from = task.quadrant(s.today, s.urgentRule)
+        if (from == to) return
+        if (from.urgent != to.urgent) {
+            _state.update { it.copy(message = "ด่วน/ไม่ด่วนมาจากวันครบกำหนด ลากได้แค่ขึ้นลง (สำคัญ ↔ ไม่สำคัญ)") }
+            return
+        }
+        setPriority(task, if (to.important) Priority.HIGH else Priority.MEDIUM)
+    }
 
     private fun edit(task: Task, transform: (String) -> String) {
         viewModelScope.launch {

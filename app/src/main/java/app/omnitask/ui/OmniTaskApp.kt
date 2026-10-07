@@ -1,48 +1,53 @@
 package app.omnitask.ui
 
+import android.content.ClipData
+import android.content.ClipDescription
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.foundation.draganddrop.dragAndDropSource
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
@@ -60,16 +66,27 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragAndDropTransferData
+import androidx.compose.ui.draganddrop.mimeTypes
+import androidx.compose.ui.draganddrop.toAndroidDragEvent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +96,7 @@ import app.omnitask.data.TaskLine.DateField
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
+import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
@@ -113,6 +131,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    val colors = MaterialTheme.colorScheme
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -122,12 +141,27 @@ fun OmniTaskApp(vm: TaskViewModel) {
     }
 
     Scaffold(
+        containerColor = colors.background,
         topBar = {
             TopAppBar(
-                title = { Text(if (matrix) "Eisenhower" else "รายการงาน") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.background),
+                title = {
+                    Column {
+                        Text(if (matrix) "Eisenhower" else "งาน", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            state.today.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale("th"))),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
+                },
                 actions = {
-                    IconButton(onClick = vm::reload) { Icon(Icons.Default.Refresh, contentDescription = "โหลดใหม่") }
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = "เมนู") }
+                    IconButton(onClick = vm::reload) {
+                        Icon(Icons.Default.Refresh, contentDescription = "โหลดใหม่", tint = colors.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "เมนู", tint = colors.onSurfaceVariant)
+                    }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
                             text = { Text(if (state.filters.showDone) "ซ่อนงานที่เสร็จแล้ว" else "แสดงงานที่เสร็จแล้ว") },
@@ -136,17 +170,20 @@ fun OmniTaskApp(vm: TaskViewModel) {
                                 menuOpen = false
                             },
                         )
-                        HorizontalDivider()
+                        HorizontalDivider(color = colors.outlineVariant)
                         UrgentRule.entries.forEach { rule ->
                             DropdownMenuItem(
-                                text = { Text((if (rule == state.urgentRule) "● " else "○ ") + "ด่วน = " + rule.label) },
+                                text = { Text("ด่วน = " + rule.label) },
+                                trailingIcon = {
+                                    if (rule == state.urgentRule) Icon(Icons.Default.Check, contentDescription = null)
+                                },
                                 onClick = {
                                     vm.setUrgentRule(rule)
                                     menuOpen = false
                                 },
                             )
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(color = colors.outlineVariant)
                         DropdownMenuItem(
                             text = { Text("เปลี่ยนโฟลเดอร์ตู้โน้ต") },
                             onClick = {
@@ -159,37 +196,52 @@ fun OmniTaskApp(vm: TaskViewModel) {
             )
         },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = !matrix,
-                    onClick = { matrix = false },
-                    icon = { Icon(Icons.Default.Menu, contentDescription = null) },
-                    label = { Text("รายการ") },
-                )
-                NavigationBarItem(
-                    selected = matrix,
-                    onClick = { matrix = true },
-                    icon = { Icon(Icons.Default.Star, contentDescription = null) },
-                    label = { Text("Eisenhower") },
-                )
+            Column {
+                HorizontalDivider(color = colors.outlineVariant)
+                NavigationBar(containerColor = colors.background, tonalElevation = 0.dp) {
+                    val itemColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = colors.primary,
+                        selectedTextColor = colors.primary,
+                        indicatorColor = colors.primaryContainer,
+                        unselectedIconColor = colors.onSurfaceVariant,
+                        unselectedTextColor = colors.onSurfaceVariant,
+                    )
+                    NavigationBarItem(
+                        selected = !matrix,
+                        onClick = { matrix = false },
+                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
+                        label = { Text("รายการ") },
+                        colors = itemColors,
+                    )
+                    NavigationBarItem(
+                        selected = matrix,
+                        onClick = { matrix = true },
+                        icon = { Icon(Icons.Default.Star, contentDescription = null) },
+                        label = { Text("Eisenhower") },
+                        colors = itemColors,
+                    )
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             FilterBar(state, vm::setFilters)
+            if (state.loading) {
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary, trackColor = colors.outlineVariant)
+            }
             val tasks = state.visible.sortedWith(TASK_ORDER)
             if (matrix) {
-                MatrixView(tasks, state, vm::toggleDone) { editingKey = it.key }
+                MatrixView(tasks, state, vm::toggleDone, vm::moveToQuadrant) { editingKey = it.key }
             } else if (tasks.isEmpty() && !state.loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("ไม่มีงานตรงตัวกรอง", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("ไม่มีงานตรงตัวกรอง", color = colors.outline)
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
                     items(tasks, key = { it.key }) { task ->
                         TaskRow(task, state.today, onToggle = { vm.toggleDone(task) }, onOpen = { editingKey = task.key })
+                        HorizontalDivider(Modifier.padding(start = 52.dp), color = colors.outlineVariant)
                     }
                 }
             }
@@ -208,40 +260,58 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
 @Composable
 private fun Welcome(onPick: () -> Unit) {
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
-            Modifier.fillMaxSize().padding(24.dp),
+            Modifier.fillMaxSize().padding(32.dp),
             verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Omni Task", style = MaterialTheme.typography.headlineMedium)
+            Text("Omni Task", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "เลือกโฟลเดอร์ตู้โน้ต Obsidian บนเครื่องนี้ แอปจะอ่านและแก้ไฟล์งานในโฟลเดอร์นั้นโดยตรง",
-                Modifier.padding(vertical = 16.dp),
+                Modifier.padding(top = 8.dp, bottom = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onPick) { Text("เลือกโฟลเดอร์ตู้โน้ต") }
+            Button(onClick = onPick, shape = RoundedCornerShape(10.dp)) { Text("เลือกโฟลเดอร์ตู้โน้ต") }
         }
     }
 }
 
 @Composable
 private fun FilterBar(state: UiState, onChange: (Filters) -> Unit) {
+    val colors = MaterialTheme.colorScheme
     val filters = state.filters
     val scoped = state.scoped
     val tabs: List<DateBucket?> = listOf<DateBucket?>(null) + DateBucket.entries
-    ScrollableTabRow(selectedTabIndex = tabs.indexOf(filters.bucket), edgePadding = 8.dp) {
+    ScrollableTabRow(
+        selectedTabIndex = tabs.indexOf(filters.bucket),
+        edgePadding = 12.dp,
+        containerColor = colors.background,
+        contentColor = colors.primary,
+        divider = { HorizontalDivider(color = colors.outlineVariant) },
+    ) {
         tabs.forEach { bucket ->
             val count = if (bucket == null) scoped.size else scoped.count { it.bucket(state.today) == bucket }
+            val selected = filters.bucket == bucket
             Tab(
-                selected = filters.bucket == bucket,
+                selected = selected,
                 onClick = { onChange(filters.copy(bucket = bucket)) },
-                text = { Text("${bucket?.label ?: "ทั้งหมด"} $count", maxLines = 1) },
+                selectedContentColor = colors.primary,
+                unselectedContentColor = colors.onSurfaceVariant,
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(bucket?.label ?: "ทั้งหมด", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            " $count",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (bucket == DateBucket.OVERDUE && count > 0) colors.error else colors.outline,
+                        )
+                    }
+                },
             )
         }
     }
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         PickerChip("Tag", filters.tag?.let { "#$it" }, state.tags.map { it to "#$it" }) { onChange(filters.copy(tag = it)) }
@@ -251,12 +321,26 @@ private fun FilterBar(state: UiState, onChange: (Filters) -> Unit) {
 
 @Composable
 private fun PickerChip(label: String, selected: String?, options: List<Pair<String, String>>, onPick: (String?) -> Unit) {
+    val colors = MaterialTheme.colorScheme
     var open by remember { mutableStateOf(false) }
     Box {
         FilterChip(
             selected = selected != null,
             onClick = { open = true },
-            label = { Text(selected ?: "$label: ทั้งหมด", maxLines = 1) },
+            label = { Text(selected ?: "$label: ทั้งหมด", maxLines = 1, style = MaterialTheme.typography.labelMedium) },
+            shape = RoundedCornerShape(8.dp),
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = colors.background,
+                labelColor = colors.onSurfaceVariant,
+                selectedContainerColor = colors.primaryContainer,
+                selectedLabelColor = colors.onPrimaryContainer,
+            ),
+            border = FilterChipDefaults.filterChipBorder(
+                enabled = true,
+                selected = selected != null,
+                borderColor = colors.outlineVariant,
+                selectedBorderColor = Color.Transparent,
+            ),
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text("ทั้งหมด") }, onClick = { onPick(null); open = false })
@@ -267,57 +351,101 @@ private fun PickerChip(label: String, selected: String?, options: List<Pair<Stri
     }
 }
 
+/** A round check that takes the priority's colour, like the Obsidian Tasks plugins. */
 @Composable
-private fun TaskRow(task: Task, today: LocalDate, onToggle: () -> Unit, onOpen: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(end = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(checked = !task.isOpen, onCheckedChange = { onToggle() })
-        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-            Text(
-                (task.priority.emoji?.plus(" ") ?: "") + task.title,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                textDecoration = if (task.isOpen) null else TextDecoration.LineThrough,
+private fun TaskCheck(task: Task, onToggle: () -> Unit, size: Int = 20) {
+    val colors = MaterialTheme.colorScheme
+    val tint = task.priority.tint ?: colors.outline
+    Box(
+        Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .then(
+                if (task.isOpen) {
+                    Modifier
+                        .background(if (task.status == Status.IN_PROGRESS) tint.copy(alpha = 0.25f) else Color.Transparent)
+                        .border(1.5.dp, tint, CircleShape)
+                } else {
+                    Modifier.background(colors.outline)
+                },
             )
-            val overdue = task.isOpen && task.bucket(today) == DateBucket.OVERDUE
-            val meta = buildList {
-                task.due?.let { add("📅 " + it.format(SHORT_DATE)) }
-                task.scheduled?.let { add("⏳ " + it.format(SHORT_DATE)) }
-                task.start?.let { add("🛫 " + it.format(SHORT_DATE)) }
-                if (task.recurrence != null) add("🔁")
-                task.tags.filterNot { it.startsWith("remind-at-") }.forEach { add("#$it") }
-            }
-            if (meta.isNotEmpty()) {
-                Text(
-                    meta.joinToString("  "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!task.isOpen) {
+            Icon(Icons.Default.Check, contentDescription = "เสร็จแล้ว", tint = colors.background, modifier = Modifier.size((size - 6).dp))
         }
     }
 }
 
-private val Quadrant.accent
-    get() = when (this) {
-        Quadrant.DO -> Color(0xFFE5484D)
-        Quadrant.PLAN -> Color(0xFFF59E0B)
-        Quadrant.QUICK -> Color(0xFF3B82F6)
-        Quadrant.LATER -> Color(0xFF22A06B)
+
+@Composable
+private fun TaskMeta(task: Task, today: LocalDate, compact: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val overdueColor = colors.error
+    val muted = colors.onSurfaceVariant
+    val items = buildList<Pair<String, Color>> {
+        if (task.status == Status.IN_PROGRESS) add("กำลังทำ" to colors.primary)
+        task.due?.let { d ->
+            val text = if (d == today) "ครบวันนี้" else "ครบ " + d.format(SHORT_DATE)
+            add(text to if (task.isOpen && d < today) overdueColor else muted)
+        }
+        if (!compact || task.due == null) {
+            task.scheduled?.let { d ->
+                val text = if (d == today) "นัดวันนี้" else "นัด " + d.format(SHORT_DATE)
+                add(text to if (task.isOpen && task.due == null && d < today) overdueColor else muted)
+            }
+        }
+        if (!compact) task.start?.let { add("เริ่ม " + it.format(SHORT_DATE) to muted) }
+        if (task.recurrence != null) add("↻" to muted)
+        if (!compact) task.tags.filterNot { it.startsWith("remind-at-") }.forEach { add("#$it" to colors.primary.copy(alpha = 0.8f)) }
     }
+    if (items.isEmpty()) return
+    Row(
+        Modifier.padding(top = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items.forEach { (text, color) ->
+            Text(text, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun TaskRow(task: Task, today: LocalDate, onToggle: () -> Unit, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 18.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(Modifier.padding(top = 1.dp)) { TaskCheck(task, onToggle) }
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+            Text(
+                task.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                color = if (task.isOpen) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+                textDecoration = if (task.isOpen) null else TextDecoration.LineThrough,
+            )
+            TaskMeta(task, today, compact = false)
+        }
+    }
+}
 
 private val Quadrant.numeral get() = listOf("I", "II", "III", "IV")[ordinal]
 
 /**
- * A 2×2 grid in the style of TickTick: each quadrant is a tinted card with its own scrolling list.
- * Tapping a quadrant's header opens it full screen; back returns to the grid.
+ * A 2×2 grid in the style of TickTick: each quadrant is a card with its own scrolling list.
+ * Long-press a task and drag it up or down to change its importance; tap a header to open that quadrant full screen.
  */
 @Composable
-private fun MatrixView(tasks: List<Task>, state: UiState, onToggle: (Task) -> Unit, onOpen: (Task) -> Unit) {
+private fun MatrixView(
+    tasks: List<Task>,
+    state: UiState,
+    onToggle: (Task) -> Unit,
+    onMove: (Task, Quadrant) -> Unit,
+    onOpen: (Task) -> Unit,
+) {
     val byQuadrant = tasks.groupBy { it.quadrant(state.today, state.urgentRule) }
     var expanded by rememberSaveable { mutableStateOf<Quadrant?>(null) }
     BackHandler(enabled = expanded != null) { expanded = null }
@@ -331,16 +459,17 @@ private fun MatrixView(tasks: List<Task>, state: UiState, onToggle: (Task) -> Un
         onHeader = { expanded = if (expanded == quadrant) null else quadrant },
         onToggle = onToggle,
         onOpen = onOpen,
+        onDropKey = { key -> tasks.firstOrNull { it.key == key }?.let { onMove(it, quadrant) } },
         modifier = modifier,
     )
 
-    Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val open = expanded
         if (open != null) {
             Cell(open, Modifier.fillMaxSize())
         } else {
             listOf(Quadrant.DO to Quadrant.PLAN, Quadrant.QUICK to Quadrant.LATER).forEach { (left, right) ->
-                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Cell(left, Modifier.weight(1f).fillMaxHeight())
                     Cell(right, Modifier.weight(1f).fillMaxHeight())
                 }
@@ -349,6 +478,7 @@ private fun MatrixView(tasks: List<Task>, state: UiState, onToggle: (Task) -> Un
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun QuadrantCard(
     quadrant: Quadrant,
@@ -358,47 +488,71 @@ private fun QuadrantCard(
     onHeader: () -> Unit,
     onToggle: (Task) -> Unit,
     onOpen: (Task) -> Unit,
+    onDropKey: (String) -> Unit,
     modifier: Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
     val accent = quadrant.accent
+    var hovering by remember { mutableStateOf(false) }
+    val currentOnDrop by rememberUpdatedState(onDropKey)
+    val dropTarget = remember {
+        object : DragAndDropTarget {
+            override fun onEntered(event: DragAndDropEvent) { hovering = true }
+            override fun onExited(event: DragAndDropEvent) { hovering = false }
+            override fun onEnded(event: DragAndDropEvent) { hovering = false }
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                hovering = false
+                val key = event.toAndroidDragEvent().clipData?.getItemAt(0)?.text?.toString() ?: return false
+                currentOnDrop(key)
+                return true
+            }
+        }
+    }
+
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = accent.copy(alpha = 0.08f).compositeOver(MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.25f)),
+        modifier = modifier.dragAndDropTarget(
+            shouldStartDragAndDrop = { it.mimeTypes().contains(ClipDescription.MIMETYPE_TEXT_PLAIN) },
+            target = dropTarget,
+        ),
+        shape = RoundedCornerShape(14.dp),
+        color = if (hovering) accent.copy(alpha = 0.10f).compositeOver(colors.surfaceContainerLow) else colors.surfaceContainerLow,
+        border = BorderStroke(1.dp, if (hovering) accent.copy(alpha = 0.6f) else colors.outlineVariant),
     ) {
         Column {
             Row(
-                Modifier.fillMaxWidth().clickable(onClick = onHeader).padding(horizontal = 12.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().clickable(onClick = onHeader).padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(quadrant.numeral, color = accent, fontWeight = FontWeight.Bold)
+                Box(Modifier.size(8.dp).background(accent, CircleShape))
+                Text(
+                    quadrant.numeral,
+                    Modifier.padding(start = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.onSurface,
+                )
                 Text(
                     quadrant.label,
                     Modifier.weight(1f).padding(start = 6.dp),
-                    color = accent,
-                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    tasks.size.toString(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(tasks.size.toString(), style = MaterialTheme.typography.labelMedium, color = colors.outline)
                 Icon(
                     if (expanded) Icons.Default.Close else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = if (expanded) "ย่อ" else "ขยาย",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp).size(18.dp),
+                    tint = colors.outline,
+                    modifier = Modifier.padding(start = 2.dp).size(16.dp),
                 )
             }
+            HorizontalDivider(color = colors.outlineVariant)
             if (tasks.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("ไม่มีงาน", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("ไม่มีงาน", style = MaterialTheme.typography.labelMedium, color = colors.outline)
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
                     items(tasks, key = { it.key }) { task ->
                         if (expanded) {
                             TaskRow(task, today, onToggle = { onToggle(task) }, onOpen = { onOpen(task) })
@@ -412,36 +566,38 @@ private fun QuadrantCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CompactTaskRow(task: Task, today: LocalDate, accent: Color, onToggle: () -> Unit, onOpen: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 4.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+        Modifier
+            .fillMaxWidth()
+            .dragAndDropSource(
+                drawDragDecoration = {
+                    drawRoundRect(accent.copy(alpha = 0.35f), cornerRadius = CornerRadius(8.dp.toPx()))
+                },
+            ) {
+                detectTapGestures(
+                    onTap = { onOpen() },
+                    onLongPress = {
+                        startTransfer(DragAndDropTransferData(ClipData.newPlainText("task", task.key)))
+                    },
+                )
+            }
+            .padding(start = 10.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-            Checkbox(
-                checked = !task.isOpen,
-                onCheckedChange = { onToggle() },
-                colors = CheckboxDefaults.colors(uncheckedColor = accent, checkedColor = accent),
-                modifier = Modifier.padding(4.dp).size(20.dp),
-            )
-        }
-        Column(Modifier.weight(1f).padding(start = 4.dp, top = 3.dp)) {
+        Box(Modifier.padding(top = 1.dp)) { TaskCheck(task, onToggle, size = 16) }
+        Column(Modifier.weight(1f).padding(start = 8.dp)) {
             Text(
                 task.title,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                color = if (task.isOpen) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
                 textDecoration = if (task.isOpen) null else TextDecoration.LineThrough,
             )
-            (task.due ?: task.scheduled)?.let { date ->
-                val overdue = task.isOpen && date < today
-                Text(
-                    if (date == today) "วันนี้" else date.format(SHORT_DATE),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            TaskMeta(task, today, compact = true)
         }
     }
 }
@@ -454,29 +610,45 @@ private fun EditSheet(
     onPriority: (Priority) -> Unit,
     onDate: (DateField, LocalDate?) -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
     var picking by remember { mutableStateOf<DateField?>(null) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.background) {
+        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
             Text(task.title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                task.noteName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            task.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp)) }
+            Text(task.noteName, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            task.notes.forEach {
+                Text("• $it", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            }
 
-            Text("Priority", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.labelLarge)
+            SectionLabel("ความสำคัญ")
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Priority.entries.forEach { p ->
+                    val selected = task.priority == p
                     FilterChip(
-                        selected = task.priority == p,
+                        selected = selected,
                         onClick = { onPriority(p) },
-                        label = { Text((p.emoji?.plus(" ") ?: "") + p.label) },
+                        shape = RoundedCornerShape(8.dp),
+                        leadingIcon = {
+                            Box(Modifier.size(8.dp).background(p.tint ?: colors.outlineVariant, CircleShape))
+                        },
+                        label = { Text(p.label, style = MaterialTheme.typography.labelMedium) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = colors.background,
+                            selectedContainerColor = colors.primaryContainer,
+                            selectedLabelColor = colors.onPrimaryContainer,
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = selected,
+                            borderColor = colors.outlineVariant,
+                            selectedBorderColor = Color.Transparent,
+                        ),
                     )
                 }
             }
 
+            SectionLabel("วันที่")
             DateRow("วันเริ่ม", task.start, { picking = DateField.START }) { onDate(DateField.START, null) }
             DateRow("วันนัดทำ", task.scheduled, { picking = DateField.SCHEDULED }) { onDate(DateField.SCHEDULED, null) }
             DateRow("วันครบกำหนด", task.due, { picking = DateField.DUE }) { onDate(DateField.DUE, null) }
@@ -510,13 +682,28 @@ private fun EditSheet(
 }
 
 @Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        Modifier.padding(top = 20.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.outline,
+    )
+}
+
+@Composable
 private fun DateRow(label: String, value: LocalDate?, onPick: () -> Unit, onClear: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(112.dp))
-        TextButton(onClick = onPick) { Text(value?.format(SHORT_DATE.withLocale(Locale("th"))) ?: "ตั้งวันที่") }
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.width(112.dp), color = colors.onSurfaceVariant)
+        TextButton(onClick = onPick) {
+            Text(value?.format(SHORT_DATE) ?: "ตั้งวันที่", color = if (value == null) colors.outline else colors.onSurface)
+        }
         Spacer(Modifier.weight(1f))
         if (value != null) {
-            IconButton(onClick = onClear) { Icon(Icons.Default.Close, contentDescription = "ล้าง$label") }
+            IconButton(onClick = onClear) {
+                Icon(Icons.Default.Close, contentDescription = "ล้าง$label", tint = colors.outline, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }
