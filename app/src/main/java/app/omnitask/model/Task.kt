@@ -2,6 +2,8 @@ package app.omnitask.model
 
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 
 enum class Priority(val emoji: String?, val label: String) {
@@ -15,6 +17,9 @@ enum class Priority(val emoji: String?, val label: String) {
 
 enum class Status { TODO, IN_PROGRESS, DONE, CANCELLED }
 
+/** Which date a TaskForge reminder time hangs on: `⏰ HH:mm` → due, `🎯 HH:mm` → scheduled. */
+enum class ReminderOn { DUE, SCHEDULED }
+
 /** One checkbox line in a vault note. [raw] is the line exactly as it stands in the file. */
 data class Task(
     val raw: String,
@@ -27,6 +32,8 @@ data class Task(
     val due: LocalDate? = null,
     val done: LocalDate? = null,
     val recurrence: String? = null,
+    val reminderTime: LocalTime? = null,
+    val reminderOn: ReminderOn? = null,
     val tags: List<String> = emptyList(),
     val notes: List<String> = emptyList(),
     val filePath: String = "",
@@ -36,6 +43,17 @@ data class Task(
     val isOpen get() = status == Status.TODO || status == Status.IN_PROGRESS
     val noteName get() = filePath.substringAfterLast('/').removeSuffix(".md")
     val key get() = "$fileUri#$lineIndex"
+
+    /** When this task's reminder fires, or null when it has no time or no date to hang it on. */
+    val reminderAt: LocalDateTime?
+        get() {
+            val time = reminderTime ?: return null
+            val day = when (reminderOn) {
+                ReminderOn.SCHEDULED -> scheduled ?: due
+                else -> due ?: scheduled
+            } ?: return null
+            return day.atTime(time)
+        }
 }
 
 enum class DateBucket(val label: String) {

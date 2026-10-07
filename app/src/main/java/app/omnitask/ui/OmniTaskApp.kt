@@ -142,10 +142,16 @@ fun OmniTaskApp(vm: TaskViewModel) {
     }
 
     var screen by rememberSaveable { mutableStateOf(Screen.FOCUS) }
+    var notifyOpen by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val colors = MaterialTheme.colorScheme
+
+    if (notifyOpen) {
+        NotifySettingsScreen(state.notify, vm::setNotify, vm::refreshAlarms) { notifyOpen = false }
+        return
+    }
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -198,6 +204,13 @@ fun OmniTaskApp(vm: TaskViewModel) {
                             )
                         }
                         HorizontalDivider(color = colors.outlineVariant)
+                        DropdownMenuItem(
+                            text = { Text("การแจ้งเตือน") },
+                            onClick = {
+                                menuOpen = false
+                                notifyOpen = true
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text("เปลี่ยนโฟลเดอร์ตู้โน้ต") },
                             onClick = {

@@ -17,6 +17,8 @@ import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
 import app.omnitask.model.quadrant
+import app.omnitask.notify.NotifySettings
+import app.omnitask.notify.Scheduler
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +46,7 @@ data class UiState(
     val futureCount: Int = 1,
     val skippedToday: Set<String> = emptySet(),
     val dismissed: Set<String> = emptySet(),
+    val notify: NotifySettings = NotifySettings(),
 ) {
     /** The focus page reads every task in the vault, regardless of the list filters. */
     val brief get() = Focus.build(tasks, today, futureCount, skippedToday, dismissed)
@@ -79,6 +82,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 .map { it.substringAfter('|') }
                 .toSet(),
             dismissed = prefs.getStringSet(KEY_DISMISSED, emptySet()).orEmpty().toSet(),
+            notify = Scheduler.loadSettings(app),
         )
     )
     val state: StateFlow<UiState> = _state
@@ -106,7 +110,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { repo.loadTasks(vault) } }
+            val result = withContext(Dispatchers.IO) {
+                runCatching { repo.loadTasks(vault) }.onSuccess { tasks ->
+                    // Every load refreshes the reminders, so edits made anywhere reach the alarms.
+                    runCatching { Scheduler.reschedule(getApplication(), tasks) }
+                }
+            }
             _state.update {
                 it.copy(
                     loading = false,
@@ -130,6 +139,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setPriority(task: Task, priority: Priority) = edit(task) { TaskLine.setPriority(it, priority) }
 
     fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
+
+    fun setNotify(settings: NotifySettings) {
+        Scheduler.saveSettings(getApplication(), settings)
+        _state.update { it.copy(notify = settings) }
+        val tasks = _state.value.tasks
+        viewModelScope.launch(Dispatchers.IO) { runCatching { Scheduler.reschedule(getApplication(), tasks) } }
+    }
+
+    /** After a permission is granted (calendar, notifications) the plan can include more. */
+    fun refreshAlarms() {
+        val tasks = _state.value.tasks
+        viewModelScope.launch(Dispatchers.IO) { runCatching { Scheduler.reschedule(getApplication(), tasks) } }
+    }
 
     fun setFutureCount(count: Int) {
         prefs.edit().putInt(KEY_FUTURE_COUNT, count).apply()

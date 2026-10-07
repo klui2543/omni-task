@@ -1,9 +1,11 @@
 package app.omnitask.data
 
 import app.omnitask.model.Priority
+import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * Reads and edits one checkbox line in the Tasks-emoji format that TaskForge and Task Genius write:
@@ -29,7 +31,7 @@ object TaskLine {
     private val LINE = Regex("""^(\s*(?:[-*+]|\d+[.)])\s+\[)(.)(\]\s+)(.*)$""")
     private val PRIORITY = Regex("""(🔺|⏫|🔼|🔽|⏬)$VS""")
     private val RECURRENCE = Regex("""🔁$VS\s*([^➕🛫⏳📅✅❌🔺⏫🔼🔽⏬⏰🎯#]*)""")
-    private val TIME = Regex("""(?:⏰|🎯)$VS\s*\d{1,2}:\d{2}""")
+    private val TIME = Regex("""(⏰|🎯)$VS\s*(\d{1,2}):(\d{2})""")
     private val TAG = Regex("""(?<!\S)#[^\s#]+""")
     private val ANY_DATE = Regex("""(?:➕|🛫|⏳|📅|✅|❌)$VS\s*$DATE""")
 
@@ -57,6 +59,11 @@ object TaskLine {
             .replace(Regex("""\s+"""), " ")
             .trim()
 
+        val reminder = TIME.find(body)
+        val reminderTime = reminder?.let {
+            runCatching { LocalTime.of(it.groupValues[2].toInt(), it.groupValues[3].toInt()) }.getOrNull()
+        }
+
         return Task(
             raw = raw,
             title = title,
@@ -68,6 +75,8 @@ object TaskLine {
             due = date(DateField.DUE),
             done = date(DateField.DONE),
             recurrence = RECURRENCE.find(body)?.groupValues?.get(1)?.trim()?.ifEmpty { null },
+            reminderTime = reminderTime,
+            reminderOn = reminder?.let { if (it.groupValues[1] == "🎯") ReminderOn.SCHEDULED else ReminderOn.DUE },
             tags = TAG.findAll(body).map { it.value.removePrefix("#") }.toList(),
         )
     }
