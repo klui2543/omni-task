@@ -73,4 +73,16 @@ class QueryAndPlanTest {
         // 07:00 to 21:00 is 840 minutes; 08:00 to 13:00 is busy.
         assertEquals(540L, DayPlan.freeMinutes(events, today))
     }
+
+    @Test
+    fun multiLevelSortKeepsMissingValuesLast() {
+        val today = LocalDate.parse("2026-10-07")
+        val a = TaskLine.parse("- [ ] ก ⏫ 📅 2026-10-09")!!
+        val b = TaskLine.parse("- [ ] ข ⏫ 📅 2026-10-08")!!
+        val c = TaskLine.parse("- [ ] ค 🔼 📅 2026-10-07")!!
+        val d = TaskLine.parse("- [ ] ง ⏫")!!
+        val q = TaskQuery(groupBy = GroupBy.NONE, sortBy = SortBy.PRIORITY, thenBy = listOf(SortBy.DUE to false))
+        assertEquals(listOf(a, b, d, c), q.run(listOf(c, d, a, b), today).single().tasks)
+    }
 }
+

@@ -41,7 +41,7 @@ class TaskLineTest {
     fun parsesInProgressAndKeepsLinkInTitle() {
         assertEquals(Status.IN_PROGRESS, TaskLine.parse("- [/] Mock UX UI #peddose ⏫ ➕ 2026-10-02")!!.status)
         val t = TaskLine.parse("- [ ] จัดการ Note #Siriraj +[[29-09-2026]] 🔼 ➕ 2026-09-29")!!
-        assertEquals("จัดการ Note +[[29-09-2026]]", t.title)
+        assertEquals("จัดการ Note +29-09-2026", t.title)
         assertEquals(Priority.MEDIUM, t.priority)
     }
 

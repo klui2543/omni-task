@@ -156,7 +156,8 @@ fun FilterBar(
             ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter, onFilter)
             if (onGroup != null) ToolButton(tr("กลุ่ม: ", "Group: ") + q.groupBy.label, false, onClick = onGroup)
             if (showSort) {
-                ToolButton(tr("เรียง: ", "Sort: ") + "${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
+                val extra = if (q.sorts.size > 1) " +${q.sorts.size - 1}" else ""
+                ToolButton(tr("เรียง: ", "Sort: ") + "${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}$extra", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
             }
         }
     }
@@ -232,13 +233,44 @@ fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     }
 }
 
+/** Sort by several levels: the first decides, each next one breaks ties. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, onDismiss: () -> Unit) {
+fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, onDismiss: () -> Unit) {
+    val levels = q.sorts
+    fun set(list: List<Pair<SortBy, Boolean>>) {
+        if (list.isEmpty()) return
+        onChange(q.copy(sortBy = list.first().first, ascending = list.first().second, thenBy = list.drop(1)))
+    }
     SheetFrame(onDismiss) {
         Text(tr("เรียงลำดับ", "Sort"), style = MaterialTheme.typography.titleMedium)
-        Segmented(listOf(true to tr("↑ น้อยไปมาก", "↑ Ascending"), false to tr("↓ มากไปน้อย", "↓ Descending")), q.ascending, { onChange(q.copy(ascending = it)) }, Modifier.padding(top = 12.dp).fillMaxWidth())
-        SortBy.entries.forEach { s -> OptionRow(s.label, s == q.sortBy) { onChange(q.copy(sortBy = s)) } }
-        Text(tr("ลำดับรอง: ความสำคัญ แล้วตามด้วยชื่องาน", "Then by priority, then title"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+        levels.forEachIndexed { i, (by, asc) ->
+            Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken).padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (i == 0) tr("เรียงตาม", "Sort by") else tr("แล้วตามด้วย", "Then by"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
+                    Text(
+                        if (asc) tr("↑ น้อยไปมาก", "↑ Ascending") else tr("↓ มากไปน้อย", "↓ Descending"),
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable { set(levels.toMutableList().also { it[i] = by to !asc }) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = C.accentText, fontSize = TS.caption,
+                    )
+                    if (levels.size > 1) SquareButton(Ic.close, tr("เอาออก", "Remove"), { set(levels.filterIndexed { j, _ -> j != i }) })
+                }
+                FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // A field already used by another level is left out, so each level adds something.
+                    SortBy.entries.filter { it == by || levels.none { l -> l.first == it } }.forEach { f ->
+                        Chip(f.label, f == by, { set(levels.toMutableList().also { it[i] = f to asc }) })
+                    }
+                }
+            }
+        }
+        if (levels.size < 3) {
+            val next = SortBy.entries.firstOrNull { f -> levels.none { it.first == f } }
+            if (next != null) {
+                GhostButton(tr("+ เรียงต่อด้วย", "+ Then by"), { set(levels + (next to true)) }, Modifier.padding(top = 12.dp).fillMaxWidth())
+            }
+        }
+        Text(tr("ถ้ายังเท่ากัน เรียงตามความสำคัญ แล้วชื่องาน", "Ties fall back to priority, then title"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
     }
 }
 

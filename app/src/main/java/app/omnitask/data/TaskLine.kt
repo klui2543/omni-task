@@ -37,6 +37,8 @@ object TaskLine {
     private val TAG = Regex("""(?<!\S)#[^\s#]+""")
     private val ANY_DATE = Regex("""(?:➕|🛫|⏳|📅|✅|❌)$VS\s*$DATE""")
     private val ID = Regex("""🆔$VS\s*([A-Za-z0-9_-]+)""")
+    private val LINK_ALIAS = Regex("""(?<!!)\[\[([^\]|]+)\|([^\]]+)]]""")
+    private val LINK = Regex("""(?<!!)\[\[([^\]|]+)]]""")
     private val DEPENDS = Regex("""⛔$VS\s*([A-Za-z0-9_,-]+)""")
 
     private fun dateRegex(field: DateField) = Regex("""${field.emoji}$VS\s*($DATE)""")
@@ -60,6 +62,9 @@ object TaskLine {
             ?: Priority.NONE
         val title = listOf(ANY_DATE, RECURRENCE, PRIORITY, TIME, ID, DEPENDS, TAG)
             .fold(body) { acc, re -> acc.replace(re, " ") }
+            // Obsidian shows [[note|alias]] as "alias" and [[folder/note]] as "note"; so does the title.
+            .replace(LINK_ALIAS) { it.groupValues[2] }
+            .replace(LINK) { it.groupValues[1].substringAfterLast('/').substringBefore('#') }
             .replace(Regex("""\s+"""), " ")
             .trim()
 

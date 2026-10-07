@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,7 +62,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     val doneToday = state.tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
     val total = openToday + doneToday
     val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
-    val free = DayPlan.freeMinutes(events, today)
+    val sleep = DayPlan.sleepLeft(state.events, state.profile, java.time.LocalDateTime.now())
+    val free = DayPlan.freeMinutesLeft(events, java.time.LocalDateTime.now(), state.profile.wake, state.profile.sleep)
     val blocked = Projects.blocked(state.tasks)
 
     LazyColumn(
@@ -90,8 +92,26 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Row(Modifier.weight(1f).padding(start = 16.dp)) {
                         Stat("$overdue", tr("เลยกำหนด", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
                         Stat("${events.count { !it.allDay }}", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
-                        Stat(hours(free), tr("เวลาว่าง", "Free time"), C.lime, Modifier.weight(1f))
+                        if (sleep != null) {
+                            val color = when {
+                                sleep.minutes < 5 * 60 -> C.red
+                                sleep.minutes < 7 * 60 -> C.amber
+                                else -> C.lime
+                            }
+                            Stat(hm(sleep.minutes), tr("นอนได้อีก", "Sleep left"), color, Modifier.weight(1f))
+                        } else {
+                            Stat(hours(free), tr("ว่างเหลือ", "Free left"), C.lime, Modifier.weight(1f))
+                        }
                     }
+                }
+                sleep?.let { z ->
+                    val wake = z.wakeAt.format(HM)
+                    Text(
+                        z.because?.let { tr("ถ้านอนตอนนี้ ต้องตื่น $wake ก่อน ${it.title} 1 ชม.", "Sleep now and wake at $wake, an hour before ${it.title}") }
+                            ?: tr("ถ้านอนตอนนี้ ตื่น $wake ตามโปรไฟล์", "Sleep now and wake at $wake (profile)"),
+                        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).padding(top = 0.dp),
+                        color = C.muted, fontSize = TS.caption, maxLines = 2,
+                    )
                 }
             }
         }
@@ -162,11 +182,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     }
                 }
                 Card(Modifier.weight(1f).fillMaxHeight(), color = C.accentDeep, border = Color(0xFF2D2852)) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(tr("ลงทุนอนาคต", "Future"), Modifier.weight(1f), color = C.accentText, fontSize = TS.body)
-                            Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
-                        }
+                    Column(Modifier.fillMaxHeight().padding(14.dp)) {
+                        Text(tr("ลงทุนอนาคต", "Future"), color = C.accentText, fontSize = TS.body, maxLines = 1, softWrap = false)
                         if (brief.future.isEmpty()) {
                             Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
                         }
@@ -183,12 +200,18 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                 )
                             }
                         }
-                        Text(
-                            tr("เลือกงาน", "Pick tasks"),
-                            Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(12.dp))
-                                .clickable { picking = true }.padding(horizontal = 10.dp, vertical = 4.dp),
-                            color = C.accentText, fontSize = TS.caption,
-                        )
+                        Spacer(Modifier.weight(1f))
+                        // Pick sits with the per-day count, so the title above never has to wrap.
+                        Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                tr("เลือกงาน", "Pick"),
+                                Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(12.dp))
+                                    .clickable { picking = true }.padding(horizontal = 10.dp, vertical = 4.dp),
+                                color = C.accentText, fontSize = TS.caption, maxLines = 1,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
+                        }
                     }
                 }
             }
@@ -199,9 +222,13 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 @Composable
 private fun Stepper(value: Int, onStep: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("−", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(-1) }.padding(top = 4.dp), color = C.accentText, fontSize = TS.title, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Text("$value", color = C.text, fontSize = TS.body)
-        Text("+", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(1) }.padding(top = 4.dp), color = C.accentText, fontSize = TS.title, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).clickable { onStep(-1) }, contentAlignment = Alignment.Center) {
+            Text("−", color = C.accentText, fontSize = TS.title)
+        }
+        Text("$value", Modifier.padding(horizontal = 2.dp), color = C.text, fontSize = TS.body)
+        Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).clickable { onStep(1) }, contentAlignment = Alignment.Center) {
+            Text("+", color = C.accentText, fontSize = TS.title)
+        }
     }
 }
 
@@ -220,7 +247,7 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
     val late = t.isLate(today)
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         TaskCheck(t, { vm.toggleDone(t) })
-        Column(Modifier.weight(1f).clickable { onOpen(t) }.padding(vertical = 8.dp)) {
+        Column(Modifier.weight(1f).clickable { onOpen(t) }.padding(vertical = 6.dp)) {
             Text(t.title, color = if (isBlocked) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
             Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val lead = when {
@@ -244,7 +271,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem) {
         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.width(4.dp).height(26.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
         }
-        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(e.title, color = Color(0xFFCFF4F0), style = MaterialTheme.typography.bodyLarge, maxLines = 2)
             Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}"), color = C.teal, fontSize = TS.caption, fontWeight = FontWeight.Medium)
@@ -270,6 +297,8 @@ private fun greeting(): String {
         else -> tr("สวัสดีตอนเย็น", "Good evening")
     }
 }
+
+private fun hm(minutes: Long): String = tr("%d:%02d ชม.", "%d:%02d h").format(minutes / 60, minutes % 60)
 
 private fun hours(minutes: Long): String =
     if (minutes >= 60) tr("${minutes / 60} ชม.", "${minutes / 60} h") else tr("$minutes นาที", "$minutes min")

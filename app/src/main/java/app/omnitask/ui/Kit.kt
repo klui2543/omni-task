@@ -89,6 +89,9 @@ object Ic {
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
     val flag = icon("flag", "M5 21V4h11l-2 4 2 4H5")
     val calendar = icon("calendar", "M3.5 5h17v15h-17Z", "M3.5 10h17M8 3v4M16 3v4")
+    val star = icon("star", "M12 3.5l2.6 5.4 5.9 0.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-0.8Z")
+    val up = icon("up", "M6 15l6-6 6 6", width = 2f)
+    val down = icon("down", "M6 9l6 6 6-6", width = 2f)
     val mic = icon("mic", "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
     val link = icon("link", "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1", "M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1")
     val share = icon("share", "M12 4v11", "M7 9l5-5 5 5", "M5 14v5h14v-5")
@@ -97,7 +100,8 @@ object Ic {
 
 @Composable
 fun Card(modifier: Modifier = Modifier, color: Color = C.card, border: Color = C.cardBorder, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(18.dp), color = color, border = BorderStroke(1.dp, border)) {
+    // Cards always span the space they are given; a card hugging its text looks unfinished next to full-width ones.
+    Surface(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = color, border = BorderStroke(1.dp, border)) {
         Column(content = content)
     }
 }
@@ -155,7 +159,7 @@ fun ProgressRing(ratio: Float, size: Dp, stroke: Dp, color: Color = C.lime, labe
 
 @Composable
 fun SectionHead(title: String, color: Color = C.text2, trailing: String? = null, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = color, style = MaterialTheme.typography.titleSmall)
         Box(Modifier.weight(1f).padding(horizontal = 10.dp).height(1.dp).background(C.divider))
         if (trailing != null) Text(trailing, color = C.muted, fontSize = TS.caption)

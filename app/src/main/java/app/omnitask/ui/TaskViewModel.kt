@@ -82,6 +82,9 @@ data class UiState(
     val reviewed: Map<String, LocalDate> = emptyMap(),
     /** Set when something outside the screens (a widget, a shortcut) asks for the quick-add sheet. */
     val quickAdd: QuickAddRequest? = null,
+    /** The owner's own project order, and the starred ones that always sit on top. */
+    val projectOrder: List<String> = emptyList(),
+    val starred: Set<String> = emptySet(),
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -144,6 +147,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { e.substringBeforeLast('|') to LocalDate.parse(e.substringAfterLast('|')) }.getOrNull()
             }.toMap(),
             notify = Scheduler.loadSettings(app),
+            projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
+            starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         )
     )
     val state: StateFlow<UiState> = _state
@@ -460,6 +465,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         setPriority(task, if (to.important) Priority.HIGH else Priority.MEDIUM)
     }
 
+    fun toggleStar(project: String) {
+        val next = _state.value.starred.let { if (project in it) it - project else it + project }
+        prefs.edit().putStringSet(KEY_STARRED, next).apply()
+        _state.update { it.copy(starred = next) }
+    }
+
+    /** Moves a project one place up or down within the list as currently shown. */
+    fun moveProject(shown: List<String>, project: String, delta: Int) {
+        val list = shown.toMutableList()
+        val i = list.indexOf(project)
+        val j = i + delta
+        if (i < 0 || j !in list.indices) return
+        list[i] = list[j].also { list[j] = list[i] }
+        prefs.edit().putString(KEY_PROJECT_ORDER, list.joinToString("\n")).apply()
+        _state.update { it.copy(projectOrder = list) }
+    }
+
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
@@ -602,5 +624,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_DECLINED = "declinedInsights"
         const val KEY_DONE_LOG = "doneLog"
         const val KEY_REVIEWED = "reviewedTasks"
+        const val KEY_PROJECT_ORDER = "projectOrder"
+        const val KEY_STARRED = "starredProjects"
     }
 }

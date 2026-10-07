@@ -32,6 +32,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -83,6 +84,7 @@ private enum class Mode(private val th: String, private val en: String) {
 fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var mode by rememberSaveable { mutableStateOf(Mode.KANBAN) }
     var filtering by remember { mutableStateOf(false) }
+    var sorting by remember { mutableStateOf(false) }
     val q = state.query
     // Every view honours the same filters as the task list. Kanban shows all statuses as its columns,
     // so the status filter only narrows the other views, and only when it differs from the default.
@@ -92,7 +94,7 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
             Text(tr("มุมมอง", "Views"), Modifier.padding(start = 4.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineSmall, color = C.text)
             Segmented(Mode.entries.map { it to it.label }, mode, { mode = it }, Modifier.fillMaxWidth())
-            FilterBar(state, vm, onFilter = { filtering = true }, showSort = mode == Mode.KANBAN, modifier = Modifier.padding(top = 8.dp))
+            FilterBar(state, vm, onFilter = { filtering = true }, showSort = mode == Mode.KANBAN, modifier = Modifier.padding(top = 8.dp), onSort = { sorting = true })
         }
         when (mode) {
             Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
@@ -102,6 +104,7 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
     }
     if (filtering) FilterSheet(state, vm) { filtering = false }
+    if (sorting) SortSheet(state.query, vm::setQuery) { sorting = false }
 }
 
 @Composable
@@ -149,36 +152,32 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
     val i = order.indexOf(t.status)
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, Color(0xFF2A2F3E), RoundedCornerShape(14.dp))
-            .taskDragSource(t.key, t.priority.tint) { onOpen(t) }.padding(12.dp),
+            .taskDragSource(t.key, t.priority.tint) { onOpen(t) }.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
     ) {
-        Row {
-            Box(Modifier.width(3.dp).height(20.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
+        Row(verticalAlignment = Alignment.Top) {
+            Box(Modifier.padding(top = 2.dp).width(3.dp).height(18.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
             Text(
-                t.title, Modifier.padding(start = 8.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.body,
+                t.title, Modifier.weight(1f).padding(start = 8.dp, end = 4.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.body,
                 maxLines = 3, overflow = TextOverflow.Ellipsis,
             )
+            // Small arrows for one-tap moves; long-press and drag works too.
+            if (i > 0) MoveButton(Ic.back, tr("ย้ายไป ", "Move to ") + order[i - 1].label) { vm.setStatus(t, order[i - 1]) }
+            if (i in 0 until order.lastIndex) MoveButton(Ic.next, tr("ย้ายไป ", "Move to ") + order[i + 1].label) { vm.setStatus(t, order[i + 1]) }
         }
         val meta = metaOf(t, state.today, compact = true)
         if (meta.isNotEmpty()) {
-            FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            FlowRow(Modifier.padding(start = 11.dp, top = 6.dp, end = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
             }
-        }
-        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (i > 0) MoveButton("← ${order[i - 1].label}") { vm.setStatus(t, order[i - 1]) }
-            if (i in 0 until order.lastIndex) MoveButton("${order[i + 1].label} →") { vm.setStatus(t, order[i + 1]) }
         }
     }
 }
 
 @Composable
-private fun MoveButton(label: String, onClick: () -> Unit) {
-    Text(
-        label,
-        Modifier.height(32.dp).clip(RoundedCornerShape(9.dp)).border(1.dp, C.control, RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
-        color = C.text2, fontSize = TS.caption,
-    )
+private fun MoveButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) {
+    Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, description, tint = C.muted, modifier = Modifier.size(14.dp))
+    }
 }
 
 /** 2×2 grid. Long-press a task and drag it up or down to change its importance. */

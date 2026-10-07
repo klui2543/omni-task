@@ -1,6 +1,7 @@
 package app.omnitask.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,8 +13,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,7 +43,11 @@ private val RING = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red)
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+    // Starred first, then the owner's own order; projects never placed keep the default order after them.
+    val rank = state.projectOrder.withIndex().associate { it.value to it.index }
     val projects = Projects.build(state.tasks, state.today)
+        .sortedWith(compareBy({ it.name !in state.starred }, { rank[it.name] ?: Int.MAX_VALUE }))
+    var arranging by rememberSaveable { mutableStateOf(false) }
     var openName by rememberSaveable { mutableStateOf<String?>(null) }
     val open = projects.firstOrNull { it.name == openName }
     BackHandler(enabled = open != null) { openName = null }
@@ -65,6 +74,14 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         color = C.muted, fontSize = TS.caption,
                     )
                 }
+                if (open == null && projects.size > 1) {
+                    Text(
+                        if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
+                        Modifier.clip(RoundedCornerShape(12.dp)).background(if (arranging) C.accent else C.card)
+                            .clickable { arranging = !arranging }.padding(horizontal = 14.dp, vertical = 9.dp),
+                        color = if (arranging) C.onAccent else C.text2, fontSize = TS.caption,
+                    )
+                }
             }
         }
 
@@ -80,6 +97,13 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
                                     Text(tr("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", "${p.done} of ${p.tasks.size} done"), color = C.muted, fontSize = TS.caption)
                                 }
+                                val names = projects.map { it.name }
+                                if (arranging) {
+                                    IconTap(Ic.up, tr("เลื่อนขึ้น", "Move up"), C.text2) { vm.moveProject(names, p.name, -1) }
+                                    IconTap(Ic.down, tr("เลื่อนลง", "Move down"), C.text2) { vm.moveProject(names, p.name, 1) }
+                                }
+                                val on = p.name in state.starred
+                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
                             }
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 p.next?.let { Pill(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), C.raised, C.text2) }
@@ -136,5 +160,12 @@ private fun StatCard(value: String, label: String, color: Color, modifier: Modif
             Text(value, fontSize = TS.stat, fontWeight = FontWeight.Medium, color = color)
             Text(label, fontSize = TS.caption, color = C.muted)
         }
+    }
+}
+
+@Composable
+private fun IconTap(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, tint: Color, onClick: () -> Unit) {
+    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, description, tint = tint, modifier = Modifier.size(20.dp))
     }
 }

@@ -11,7 +11,8 @@ enum class GroupBy(private val th: String, private val en: String) {
 }
 
 enum class SortBy(private val th: String, private val en: String) {
-    DUE("ครบกำหนด", "Due"), SCHEDULED("วันนัดทำ", "Scheduled"), PRIORITY("ความสำคัญ", "Priority"), CREATED("วันที่สร้าง", "Created"),
+    DUE("ครบกำหนด", "Due"), SCHEDULED("วันนัดทำ", "Scheduled"), START("วันเริ่ม", "Start"), PRIORITY("ความสำคัญ", "Priority"),
+    CREATED("วันที่สร้าง", "Created"), STATUS("สถานะ", "Status"), PROJECT("โปรเจกต์", "Project"), NOTE("โน้ต", "Note"),
     TITLE("ชื่องาน", "Title"),
     ;
 
@@ -42,6 +43,8 @@ data class TaskQuery(
     val groupBy: GroupBy = GroupBy.DATE,
     val sortBy: SortBy = SortBy.DUE,
     val ascending: Boolean = true,
+    /** Further sort levels after [sortBy], e.g. priority then due date. */
+    val thenBy: List<Pair<SortBy, Boolean>> = emptyList(),
 ) {
     /** How many filters are narrowing the list, for the badge on the filter button. */
     val activeFilters: Int
@@ -80,20 +83,44 @@ data class TaskQuery(
         }.filter { it.tasks.isNotEmpty() }
     }
 
+    /** Every sort level in order: the main one, then each "then by". */
+    val sorts: List<Pair<SortBy, Boolean>> get() = listOf(sortBy to ascending) + thenBy.filter { it.first != sortBy }
+
     private fun comparator(): Comparator<Task> {
-        val primary: Comparator<Task> = when (sortBy) {
-            SortBy.DUE -> compareBy(nullsLast()) { it.due ?: it.scheduled }
-            SortBy.SCHEDULED -> compareBy(nullsLast()) { it.scheduled ?: it.due }
-            SortBy.PRIORITY -> compareBy { it.priority.ordinal }
-            SortBy.CREATED -> compareBy(nullsLast()) { it.created }
-            SortBy.TITLE -> compareBy { it.title.lowercase() }
+        var c: Comparator<Task> = Comparator { _, _ -> 0 }
+        sorts.forEach { (by, asc) -> c = c.then(level(by, asc)) }
+        return c.thenBy { it.priority.ordinal }.thenBy { it.title }
+    }
+
+    /** One sort level. Tasks missing the value (no date, no project) always go last, whichever the direction. */
+    private fun level(by: SortBy, asc: Boolean): Comparator<Task> {
+        fun key(get: (Task) -> Comparable<*>?) = Comparator<Task> { a, b ->
+            val x = get(a)
+            val y = get(b)
+            when {
+                x == null && y == null -> 0
+                x == null -> 1
+                y == null -> -1
+                asc -> compareValues(x, y)
+                else -> compareValues(y, x)
+            }
         }
-        val ordered = if (ascending) primary else primary.reversed()
-        return ordered.thenBy { it.priority.ordinal }.thenBy { it.title }
+        return when (by) {
+            SortBy.DUE -> key { it.due ?: it.scheduled }
+            SortBy.SCHEDULED -> key { it.scheduled ?: it.due }
+            SortBy.START -> key { it.start ?: it.scheduled }
+            SortBy.PRIORITY -> key { it.priority.ordinal }
+            SortBy.CREATED -> key { it.created }
+            SortBy.STATUS -> key { STATUS_ORDER.indexOf(it.status) }
+            SortBy.PROJECT -> key { Projects.projectOf(it)?.lowercase() }
+            SortBy.NOTE -> key { it.noteName.lowercase() }
+            SortBy.TITLE -> key { it.title.lowercase() }
+        }
     }
 
     companion object {
         val DEFAULT = TaskQuery()
+        private val STATUS_ORDER = listOf(Status.IN_PROGRESS, Status.TODO, Status.DONE, Status.CANCELLED)
         private val DATE_ORDER = listOf(
             DateBucket.OVERDUE, DateBucket.TODAY, DateBucket.THIS_WEEK, DateBucket.NEXT_WEEK, DateBucket.FUTURE, DateBucket.NO_DATE,
         )
