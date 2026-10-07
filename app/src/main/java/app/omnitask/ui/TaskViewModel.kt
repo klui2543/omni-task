@@ -193,17 +193,34 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleDone(task: Task) {
-        // Completing a repeating task must also create its next occurrence, which arrives in phase 2.
-        if (task.recurrence != null && task.isOpen) {
-            val text = tr(
-                "งานวนซ้ำยังติ๊กในแอปนี้ไม่ได้ (ช่วง 2) ติ๊กใน TaskForge ไปก่อน",
-                "Repeating tasks cannot be ticked here yet (phase 2). Tick them in TaskForge for now.",
-            )
-            _state.update { it.copy(message = text) }
-            return
-        }
+        if (task.recurrence != null && task.isOpen) return completeRecurring(task)
         if (task.isOpen) logDone(task)
         edit(task) { TaskLine.setDone(it, task.isOpen, LocalDate.now()) }
+    }
+
+    /** Ticks a repeating task and adds its next occurrence above it, as the Tasks plugin does. */
+    private fun completeRecurring(task: Task) {
+        logDone(task)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } }
+            val text = result.fold(
+                { made ->
+                    if (made) null else tr(
+                        "อ่านรอบวนซ้ำ \"${task.recurrence}\" ไม่ได้ จึงยังไม่ได้ติ๊ก ลองติ๊กใน TaskForge",
+                        "Could not read the repeat rule \"${task.recurrence}\", so the task was not ticked. Try TaskForge.",
+                    )
+                },
+                { e ->
+                    if (e is VaultRepository.ConflictException) {
+                        tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere. Reloaded, please try again.")
+                    } else {
+                        tr("บันทึกไม่ได้: ", "Could not save: ") + e.message
+                    }
+                },
+            )
+            text?.let { t -> _state.update { it.copy(message = t) } }
+            reload()
+        }
     }
 
     fun setStatus(task: Task, status: Status) {

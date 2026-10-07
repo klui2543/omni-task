@@ -1,11 +1,13 @@
 package app.omnitask.data
 
 import app.omnitask.model.Priority
+import app.omnitask.model.Recurrence
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.temporal.ChronoUnit
 
 /**
  * Reads and edits one checkbox line in the Tasks-emoji format that TaskForge and Task Genius write:
@@ -145,6 +147,24 @@ object TaskLine {
         val m = LINE.matchEntire(raw) ?: return raw
         val marked = m.groupValues[1] + (if (done) "x" else " ") + m.groupValues[3] + m.groupValues[4]
         return setDate(marked, DateField.DONE, if (done) today else null)
+    }
+
+    /**
+     * The next copy of a repeating task, as the Tasks plugin makes it: unticked, its dates moved by
+     * the rule (from the old due, scheduled or start date, or from today for "when done"), and a fresh ➕.
+     * Null when the rule cannot be read or the task has no date to repeat from.
+     */
+    fun nextOccurrence(raw: String, today: LocalDate): String? {
+        val t = parse(raw) ?: return null
+        val rule = Recurrence.parse(t.recurrence) ?: return null
+        val ref = t.due ?: t.scheduled ?: t.start ?: return null
+        val shift = ChronoUnit.DAYS.between(ref, Recurrence.next(rule, if (rule.whenDone) today else ref))
+        var line = setDone(raw, false, today)
+        listOf(DateField.START to t.start, DateField.SCHEDULED to t.scheduled, DateField.DUE to t.due).forEach { (field, date) ->
+            if (date != null) line = setDate(line, field, date.plusDays(shift))
+        }
+        if (t.created != null) line = setDate(line, DateField.CREATED, today)
+        return line
     }
 
     private fun editBody(raw: String, edit: (String) -> String): String {

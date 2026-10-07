@@ -63,7 +63,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw } ?: return
                 if (!task.isOpen) return
                 val b = base(context, CHANNEL_TASKS, title, text)
-                if (task.recurrence == null) b.addAction(0, tr("เสร็จ", "Done"), action(context, ACTION_DONE, intent))
+                b.addAction(0, tr("เสร็จ", "Done"), action(context, ACTION_DONE, intent))
                 b.addAction(0, tr("อีก 1 ชม.", "In 1 hour"), action(context, ACTION_SNOOZE_HOUR, intent))
                 b.addAction(0, tr("พรุ่งนี้", "Tomorrow"), action(context, ACTION_SNOOZE_DAY, intent))
                 post(context, id, b)
@@ -91,8 +91,13 @@ class AlarmReceiver : BroadcastReceiver() {
     private fun onDone(context: Context, intent: Intent) {
         val raw = intent.getStringExtra(Scheduler.EXTRA_RAW) ?: return
         val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw }
-        if (task != null && task.isOpen && task.recurrence == null) {
-            runCatching { VaultRepository(context).rewriteLine(task) { TaskLine.setDone(it, true, LocalDate.now()) } }
+        if (task != null && task.isOpen) {
+            runCatching {
+                val repo = VaultRepository(context)
+                // A repeating task also gets its next occurrence; if its rule can't be read it stays open.
+                if (task.recurrence != null) repo.completeRecurring(task, LocalDate.now())
+                else repo.rewriteLine(task) { TaskLine.setDone(it, true, LocalDate.now()) }
+            }
         }
         cancel(context, intent)
     }

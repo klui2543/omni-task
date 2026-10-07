@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import app.omnitask.model.Task
+import java.time.LocalDate
 import app.omnitask.model.tr
 
 /** Reads and writes task lines in the vault folder the user picked through the system folder picker. */
@@ -35,6 +36,19 @@ class VaultRepository(private val context: Context) {
      */
     fun rewriteLine(task: Task, transform: (String) -> String) = editLines(task) { lines, index ->
         lines[index] = transform(task.raw)
+    }
+
+    /**
+     * Ticks a repeating task and writes its next occurrence on a new line above it, the way the Tasks
+     * plugin does. Returns false (and writes nothing) when the rule cannot be read.
+     */
+    fun completeRecurring(task: Task, today: LocalDate): Boolean {
+        val next = TaskLine.nextOccurrence(task.raw, today) ?: return false
+        editLines(task) { lines, index ->
+            lines[index] = TaskLine.setDone(task.raw, true, today)
+            lines.add(index, next)
+        }
+        return true
     }
 
     /** Appends `line` as the last indented line under the task (after its existing notes). */
