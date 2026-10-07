@@ -71,6 +71,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
+        item { CalendarConnect(state, vm) }
+
         item {
             Card {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

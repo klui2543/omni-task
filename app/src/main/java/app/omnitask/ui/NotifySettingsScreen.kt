@@ -65,6 +65,10 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
         tick++
         onPermissionChanged()
     }
+    val requestCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        tick++
+        onPermissionChanged()
+    }
     val openSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         tick++
         onPermissionChanged()
@@ -83,7 +87,7 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
                 }
             },
             Perm("อ่านปฏิทิน (Google Calendar)", Scheduler.hasCalendarPermission(context)) {
-                requestPermission.launch(Manifest.permission.READ_CALENDAR)
+                requestCalendar.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
             },
             Perm("ไม่จำกัดแบตเตอรี่", ignoringBattery(context)) {
                 openSettings.launch(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")))

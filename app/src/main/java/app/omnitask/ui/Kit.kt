@@ -86,6 +86,7 @@ object Ic {
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
     val flag = icon("flag", "M5 21V4h11l-2 4 2 4H5")
     val calendar = icon("calendar", "M3.5 5h17v15h-17Z", "M3.5 10h17M8 3v4M16 3v4")
+    val link = icon("link", "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1", "M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1")
     val share = icon("share", "M12 4v11", "M7 9l5-5 5 5", "M5 14v5h14v-5")
     val folderOpen = icon("folderOpen", "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v1", "M3.5 18.5l2.5-8h15l-2.5 8Z")
 }
@@ -257,6 +258,7 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
         }
     }
     if (t.attachments.isNotEmpty()) add(Meta(t.attachments.size.toString(), C.raised, C.text2, Ic.image))
+    if (t.links.isNotEmpty()) add(Meta(t.links.size.toString(), C.raised, C.text2, Ic.link))
 }
 
 @OptIn(ExperimentalLayoutApi::class)

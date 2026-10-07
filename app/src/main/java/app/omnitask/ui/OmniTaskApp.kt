@@ -80,7 +80,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     }
 
     if (notifyOpen) {
-        NotifySettingsScreen(state.notify, vm::setNotify, vm::refreshAlarms) { notifyOpen = false }
+        NotifySettingsScreen(state.notify, vm::setNotify, vm::calendarChanged) { notifyOpen = false }
         return
     }
 

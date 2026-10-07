@@ -14,6 +14,7 @@ import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.Status
@@ -57,7 +58,13 @@ data class UiState(
     val savedView: Int = 0,
     /** Calendar events around the shown month; empty until calendar access is granted. */
     val events: List<CalendarEvent> = emptyList(),
+    /** Null until the first load; then whether the app may read the phone's calendars. */
+    val calendarAccess: Boolean? = null,
+    val calendars: List<CalendarReader.Calendar> = emptyList(),
     val pendingImage: PendingImage? = null,
+    /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
+    val notePaths: List<String> = emptyList(),
+    val vaultName: String? = null,
 ) {
     val todayEvents get() = events.filter { it.begin.toLocalDate() <= today && it.end.toLocalDate() >= today && it.end > today.atStartOfDay() }
 
@@ -111,7 +118,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
         prefs.edit().putString(KEY_VAULT, uri.toString()).apply()
-        _state.update { it.copy(vault = uri) }
+        _state.update { it.copy(vault = uri, vaultName = null) }
         reload()
     }
 
@@ -129,20 +136,27 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(loading = true) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { repo.loadTasks(vault) }.onSuccess { tasks ->
+                runCatching { repo.load(vault) }.onSuccess { snap ->
                     // Every load refreshes the reminders, so edits made anywhere reach the alarms.
-                    runCatching { Scheduler.reschedule(getApplication(), tasks) }
+                    runCatching { Scheduler.reschedule(getApplication(), snap.tasks) }
                 }
             }
+            val app = getApplication<Application>()
             val events = withContext(Dispatchers.IO) {
-                runCatching { CalendarReader.month(getApplication(), LocalDate.now()) }.getOrDefault(emptyList())
+                runCatching { CalendarReader.month(app, LocalDate.now()) }.getOrDefault(emptyList())
             }
+            val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
+            val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
                     events = events,
+                    calendarAccess = CalendarReader.hasPermission(app),
+                    calendars = calendars,
                     loading = false,
                     today = LocalDate.now(),
-                    tasks = result.getOrDefault(it.tasks),
+                    tasks = result.getOrNull()?.tasks ?: it.tasks,
+                    notePaths = result.getOrNull()?.notePaths ?: it.notePaths,
+                    vaultName = vaultName,
                     message = result.exceptionOrNull()?.let { e -> "อ่านตู้โน้ตไม่ได้: ${e.message}" } ?: it.message,
                 )
             }
@@ -255,6 +269,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { Scheduler.reschedule(getApplication(), tasks) } }
     }
 
+    /** Calendar access just changed: read the events again and let the alarms pick them up. */
+    fun calendarChanged() = reload()
+
     fun setFutureCount(count: Int) {
         prefs.edit().putInt(KEY_FUTURE_COUNT, count).apply()
         _state.update { it.copy(futureCount = count) }
@@ -277,6 +294,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun acceptSuggestion(s: Focus.Suggestion) = when (s.kind) {
         Focus.Kind.RAISE_PRIORITY -> setPriority(s.task, Priority.HIGH)
         Focus.Kind.SOFT_DATE -> setDate(s.task, DateField.SCHEDULED, Focus.softDate(LocalDate.now()))
+    }
+
+    /** Links a note on its own line under the task, the same way Obsidian writes `[[links]]`. */
+    fun addLink(task: Task, notePath: String) {
+        val name = NoteLinks.linkText(notePath, _state.value.notePaths)
+        if (name in task.links) return
+        sub(task) { repo.addSubLine(task, "[[$name]]") }
+    }
+
+    fun removeLink(task: Task, name: String) = sub(task) { repo.removeSubLine(task, "[[$name") }
+
+    private fun sub(task: Task, write: () -> Unit) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching(write) }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = "บันทึกไม่ได้: ${e.message}") } }
+            reload()
+        }
     }
 
     fun addTag(task: Task, tag: String) = edit(task) { TaskLine.addTag(it, tag) }

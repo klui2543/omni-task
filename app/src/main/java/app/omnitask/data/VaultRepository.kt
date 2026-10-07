@@ -13,8 +13,19 @@ class VaultRepository(private val context: Context) {
 
     class ConflictException : Exception()
 
-    fun loadTasks(treeUri: Uri): List<Task> =
-        listMarkdown(treeUri).flatMap { file -> parseFile(file.uri.toString(), file.path, readText(file.uri)) }
+    fun loadTasks(treeUri: Uri): List<Task> = load(treeUri).tasks
+
+    /** Tasks plus the path of every note in the vault (for linking notes to tasks). */
+    class Snapshot(val tasks: List<Task>, val notePaths: List<String>)
+
+    fun load(treeUri: Uri): Snapshot {
+        val files = listMarkdown(treeUri)
+        return Snapshot(files.flatMap { file -> parseFile(file.uri.toString(), file.path, readText(file.uri)) }, files.map { it.path })
+    }
+
+    /** The vault's folder name, which is also its name in Obsidian. */
+    fun vaultName(treeUri: Uri): String? =
+        queryName(DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri)))
 
     /**
      * Rewrites one line of the task's file. The file is read again right before writing, so a change

@@ -51,8 +51,16 @@ data class Task(
     val attachments: List<String>
         get() = notes.mapNotNull { EMBED.find(it)?.groupValues?.get(1) }
 
-    /** Notes the user wrote, without the image embeds. */
-    val textNotes: List<String> get() = notes.filter { EMBED.find(it) == null }
+    /** Notes linked on their own line under the task, e.g. `- [[ประชุมทีม]]`; these can be removed in the app. */
+    val linkLines: List<String>
+        get() = notes.mapNotNull { LINK_LINE.find(it)?.groupValues?.get(1)?.trim() }.distinct()
+
+    /** Every linked note: the lines under the task plus `[[links]]` written in the task text itself. */
+    val links: List<String>
+        get() = (linkLines + LINK_INLINE.findAll(raw).map { it.groupValues[1].trim() }).distinct()
+
+    /** Notes the user wrote, without the image embeds and note links. */
+    val textNotes: List<String> get() = notes.filter { EMBED.find(it) == null && LINK_LINE.find(it) == null }
 
     /** When this task's reminder fires, or null when it has no time or no date to hang it on. */
     val reminderAt: LocalDateTime?
@@ -66,6 +74,8 @@ data class Task(
         }
 }
 
+private val LINK_LINE = Regex("""^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?]]$""")
+private val LINK_INLINE = Regex("""(?<!!)\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?]]""")
 private val EMBED = Regex("""^!\[\[([^\]|]+\.(?:webp|png|jpe?g|gif))(?:\|[^\]]*)?]]$""", RegexOption.IGNORE_CASE)
 
 enum class DateBucket(val label: String) {

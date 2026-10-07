@@ -1,6 +1,11 @@
 package app.omnitask.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,6 +57,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,6 +68,7 @@ import androidx.compose.ui.window.DialogProperties
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
+import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
@@ -77,6 +85,8 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     var addingTag by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
+    var linking by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.attachImage(task, uri)
     }
@@ -120,6 +130,37 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             }
         }
 
+        Label("โน้ตที่เกี่ยวข้อง")
+        Column(Modifier.clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
+            task.links.forEach { link ->
+                val path = NoteLinks.resolve(link, state.notePaths)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openNote(context, state.vaultName, path ?: "$link.md") }
+                        .padding(start = 14.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Ic.link, null, tint = C.accentText, modifier = Modifier.size(16.dp))
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Text(link.substringAfterLast('/'), color = C.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            path?.substringBeforeLast('/', "")?.ifEmpty { "ราก Vault" } ?: "ยังไม่มีโน้ตนี้",
+                            color = if (path == null) C.amber else C.faint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (link in task.linkLines) SquareButton(Ic.close, "เอาลิงก์ออก", { vm.removeLink(task, link) })
+                }
+                Divider(start = 40.dp)
+            }
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { linking = true }.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(16.dp))
+                Text("ลิงก์โน้ต", Modifier.padding(start = 10.dp), color = C.text2, fontSize = 14.sp)
+            }
+        }
+        if (task.links.isNotEmpty()) Text("แตะเพื่อเปิดใน Obsidian", Modifier.padding(top = 6.dp), color = C.faint, fontSize = 12.sp)
+
         Row(Modifier.padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("รูปแนบ (${task.attachments.size})", Modifier.weight(1f), color = C.muted, fontSize = 13.sp)
             Text("บันทึกเป็น WebP เสมอ", color = C.faint, fontSize = 12.sp)
@@ -161,6 +202,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }
     }
     viewing?.let { name -> ImageViewer(name, vm) { viewing = null } }
+    if (linking) {
+        NotePicker(state.notePaths.filterNot { NoteLinks.linkText(it, state.notePaths) in task.links }, { vm.addLink(task, it); linking = false }) { linking = false }
+    }
     confirmDelete?.let { name ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
@@ -257,6 +301,57 @@ private fun DateDialog(task: Task, field: DateField, onSet: (LocalDate?) -> Unit
             }
         },
     ) { DatePicker(state = ps, colors = DatePickerDefaults.colors(containerColor = C.raised)) }
+}
+
+@Composable
+private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    val matches = NoteLinks.search(text, notes)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text("ลิงก์โน้ต") },
+        text = {
+            Column {
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = C.text, fontSize = 15.sp, fontFamily = Prompt),
+                    cursorBrush = SolidColor(C.accent),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (text.isEmpty()) Text("ค้นหาชื่อโน้ต", color = C.faint, fontSize = 15.sp)
+                            inner()
+                        }
+                    },
+                )
+                if (notes.isEmpty()) Text("ยังไม่พบโน้ตใน Vault", Modifier.padding(top = 12.dp), color = C.muted, fontSize = 13.sp)
+                LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 320.dp)) {
+                    items(matches) { path ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(path) }.padding(vertical = 9.dp, horizontal = 4.dp)) {
+                            Text(NoteLinks.displayName(path), color = C.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(path.substringBeforeLast('/', "").ifEmpty { "ราก Vault" }, color = C.faint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ปิด", color = C.text2) } },
+    )
+}
+
+/** Opens a vault note in Obsidian; the vault is named after its folder. */
+private fun openNote(context: Context, vault: String?, path: String) {
+    val file = Uri.encode(path.removeSuffix(".md"))
+    val uri = if (vault != null) "obsidian://open?vault=${Uri.encode(vault)}&file=$file" else "obsidian://open?file=$file"
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "ไม่พบแอป Obsidian", Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable

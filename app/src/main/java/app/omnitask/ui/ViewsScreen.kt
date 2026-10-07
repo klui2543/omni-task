@@ -299,6 +299,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = NavClearance),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        item { CalendarConnect(state, vm) }
         item {
             Card {
                 Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.padding(start = 16.dp, top = 12.dp), color = C.text, style = MaterialTheme.typography.titleSmall)
