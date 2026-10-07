@@ -34,6 +34,7 @@ import app.omnitask.model.quadrant
 import app.omnitask.model.tr
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
+import app.omnitask.widget.OmniWidgets
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -172,11 +173,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
-                    // Every load refreshes the reminders, so edits made anywhere reach the alarms.
+                    // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
                     runCatching { Scheduler.reschedule(getApplication(), snap.tasks) }
                 }
             }
             val app = getApplication<Application>()
+            launch { runCatching { OmniWidgets.refresh(app) } }
             val events = withContext(Dispatchers.IO) {
                 runCatching {
                     val now = CalendarReader.month(app, LocalDate.now())

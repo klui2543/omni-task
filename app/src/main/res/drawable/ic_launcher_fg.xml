@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- A progress ring three-quarters full (lime on violet track) with a check, inside the 66dp safe zone. -->
+    <path android:pathData="M54,30a24,24 0,1 0,0.01 0z"
+        android:strokeColor="#2A2550" android:strokeWidth="7" android:fillColor="#00000000" />
+    <path android:pathData="M54,30a24,24 0,1 1,-24 24"
+        android:strokeColor="#B9F26B" android:strokeWidth="7" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M43.5,54.5l7,7l14,-15"
+        android:strokeColor="#A99CFF" android:strokeWidth="6" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>

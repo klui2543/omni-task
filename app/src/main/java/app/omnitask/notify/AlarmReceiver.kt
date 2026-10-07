@@ -12,6 +12,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import app.omnitask.MainActivity
+import app.omnitask.widget.OmniWidgets
+import kotlinx.coroutines.runBlocking
 import app.omnitask.R
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultRepository
@@ -49,6 +51,8 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         // Boot, package update and every alarm all end the same way: a fresh plan.
         Scheduler.reschedule(context, Scheduler.loadVaultTasks(context))
+        // The same wakes keep the home-screen widgets current (and roll them over at the 3-hour rescan).
+        runCatching { runBlocking { OmniWidgets.refresh(context) } }
     }
 
     private fun onAlarm(context: Context, intent: Intent) {

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_quick_add">เพิ่มงานด่วน</string>
+    <string name="widget_today">วันนี้ (ติ๊กได้)</string>
+    <string name="widget_next">ทำต่อเลย</string>
+    <string name="widget_matrix">Eisenhower</string>
+    <string name="widget_waiting">คนรอและงานอนาคต</string>
+</resources>
