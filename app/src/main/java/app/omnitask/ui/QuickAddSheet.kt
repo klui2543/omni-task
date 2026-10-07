@@ -79,7 +79,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
             onValueChange = { text = it },
             modifier = Modifier.padding(top = 12.dp).fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(14.dp))
                 .background(C.sunken).padding(14.dp).focusRequester(focus),
-            textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+            textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
             cursorBrush = SolidColor(C.accent),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { add() }),

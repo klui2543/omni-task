@@ -100,7 +100,7 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
             Mode.MATRIX -> Matrix(state, narrowed, vm, onOpen)
             Mode.GANTT -> Gantt(state, narrowed, onOpen)
-            Mode.CALENDAR -> MonthCalendar(state, narrowed, vm, onOpen)
+            Mode.CALENDAR -> CalendarViews(state, narrowed, vm, onOpen)
         }
     }
     if (filtering) FilterSheet(state, vm) { filtering = false }
@@ -343,6 +343,28 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
     }
 }
 
+/** The calendar's own views: the month grid, or a timeline of 7, 3 or 1 days. */
+private enum class CalendarSpan(val days: Int, private val th: String, private val en: String) {
+    MONTH(0, "เดือน", "Month"), WEEK(7, "7 วัน", "7 days"), THREE(3, "3 วัน", "3 days"), DAY(1, "วัน", "Day");
+
+    val label get() = tr(th, en)
+}
+
+@Composable
+private fun CalendarViews(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+    var span by rememberSaveable { mutableStateOf(CalendarSpan.MONTH) }
+    Column(Modifier.fillMaxSize()) {
+        Segmented(CalendarSpan.entries.map { it to it.label }, span, { span = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
+        if (span == CalendarSpan.MONTH) {
+            MonthCalendar(state, pool, vm, onOpen)
+        } else {
+            // The month list carries this card itself; the timelines keep it above their fixed grid.
+            CalendarConnect(state, vm, Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
+            CalendarTimeline(state, pool, vm, span.days, onOpen, Modifier.weight(1f))
+        }
+    }
+}
+
 @Composable
 private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var selected by rememberSaveable { mutableStateOf(state.today.toString()) }
@@ -448,7 +470,8 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     }
 }
 
-private fun DayOfWeek.short() = when (this) {
+/** Short weekday names for the month grid, the Gantt and the timelines in CalendarTimeline.kt. */
+internal fun DayOfWeek.short() = when (this) {
     DayOfWeek.MONDAY -> tr("จ", "Mo")
     DayOfWeek.TUESDAY -> tr("อ", "Tu")
     DayOfWeek.WEDNESDAY -> tr("พ", "We")

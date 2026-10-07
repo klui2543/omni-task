@@ -118,7 +118,7 @@ private fun TextDialog(
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
-                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
@@ -161,7 +161,7 @@ fun FuturePicker(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->

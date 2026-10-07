@@ -351,7 +351,7 @@ private fun RepeatDialog(task: Task, onSet: (String?) -> Unit, onDismiss: () -> 
                     value = rule,
                     onValueChange = { rule = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
@@ -448,7 +448,7 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
@@ -500,7 +500,7 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->

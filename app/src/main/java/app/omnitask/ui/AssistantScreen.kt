@@ -217,7 +217,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f),
-                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                 cursorBrush = SolidColor(C.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send() }),
@@ -353,7 +353,7 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
                     Text(tr("ชื่องาน", "Title"), Modifier.width(56.dp), color = C.muted, fontSize = TS.caption)
                     BasicTextField(
                         value = title, onValueChange = { title = it }, singleLine = true, modifier = Modifier.weight(1f),
-                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt), cursorBrush = SolidColor(C.accent),
+                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont), cursorBrush = SolidColor(C.accent),
                     )
                 }
             }

@@ -9,6 +9,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.omnitask.R
 import app.omnitask.model.Priority
@@ -51,10 +53,11 @@ object C {
     val tealChip = Color(0xFF7EDCD1)
 }
 
-val Prompt = FontFamily(
-    Font(R.font.prompt_regular, FontWeight.Normal),
-    Font(R.font.prompt_medium, FontWeight.Medium),
-    Font(R.font.prompt_semibold, FontWeight.SemiBold),
+/** IBM Plex Sans Thai Looped: Thai with loops (ตัวมีหัว), which the owner finds easier to read, and matching Latin. */
+val AppFont = FontFamily(
+    Font(R.font.plex_thai_looped_regular, FontWeight.Normal),
+    Font(R.font.plex_thai_looped_medium, FontWeight.Medium),
+    Font(R.font.plex_thai_looped_semibold, FontWeight.SemiBold),
 )
 
 private val Scheme = darkColorScheme(
@@ -97,22 +100,25 @@ object TS {
     val stat = 20.sp
 }
 
-private fun style(size: Number, line: Int, weight: FontWeight = FontWeight.Normal) =
-    TextStyle(fontFamily = Prompt, fontSize = size.toFloat().sp, lineHeight = line.sp, fontWeight = weight)
+// Line height is relative to the size, so a Text that only changes fontSize keeps room for Thai marks above and below.
+private fun style(size: Number, weight: FontWeight = FontWeight.Normal) = TextStyle(
+    fontFamily = AppFont, fontSize = size.toFloat().sp, lineHeight = 1.45.em, fontWeight = weight,
+    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+)
 
 private val AppTypography = Typography(
-    displaySmall = style(32, 40, FontWeight.Medium),
-    headlineMedium = style(26, 32, FontWeight.Medium),
-    headlineSmall = style(23, 30, FontWeight.Medium),
-    titleLarge = style(20, 26, FontWeight.Medium),
-    titleMedium = style(16, 22, FontWeight.Medium),
-    titleSmall = style(14, 20, FontWeight.Medium),
-    bodyLarge = style(14, 21),
-    bodyMedium = style(14, 20),
-    bodySmall = style(12.5f, 18),
-    labelLarge = style(14, 20, FontWeight.Medium),
-    labelMedium = style(12.5f, 18),
-    labelSmall = style(12.5f, 17),
+    displaySmall = style(32, FontWeight.Medium),
+    headlineMedium = style(26, FontWeight.Medium),
+    headlineSmall = style(23, FontWeight.Medium),
+    titleLarge = style(20, FontWeight.Medium),
+    titleMedium = style(16, FontWeight.Medium),
+    titleSmall = style(14, FontWeight.Medium),
+    bodyLarge = style(14),
+    bodyMedium = style(14),
+    bodySmall = style(12.5f),
+    labelLarge = style(14, FontWeight.Medium),
+    labelMedium = style(12.5f),
+    labelSmall = style(12.5f),
 )
 
 @Composable

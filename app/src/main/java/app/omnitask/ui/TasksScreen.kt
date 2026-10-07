@@ -78,7 +78,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         value = q.text,
                         onValueChange = { vm.setQuery(q.copy(text = it)) },
                         singleLine = true,
-                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                         cursorBrush = SolidColor(C.accent),
                         modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card)
                             .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
