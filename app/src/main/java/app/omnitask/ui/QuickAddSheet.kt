@@ -46,6 +46,7 @@ import app.omnitask.model.Lang
 import app.omnitask.model.Priority
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.tr
+import kotlinx.coroutines.delay
 
 /** Add a task in one line; day words, times, #tags and ! marks are read out of the sentence. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -70,7 +71,16 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
         vm.quickAdd(draft)
         onDismiss()
     }
-    LaunchedEffect(Unit) { if (voice) startListening() else runCatching { focus.requestFocus() } }
+    // Focus (and the keyboard) only after the sheet has finished opening; asking earlier is the likeliest
+    // cause of the crash on the owner's phone.
+    LaunchedEffect(Unit) {
+        if (voice) {
+            startListening()
+        } else {
+            delay(350)
+            runCatching { focus.requestFocus() }
+        }
+    }
 
     SheetFrame(onDismiss) {
         Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)

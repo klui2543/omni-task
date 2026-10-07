@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
+import app.omnitask.CrashLog
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.SettingsSync
@@ -77,6 +78,8 @@ data class UiState(
     val calendarAccess: Boolean? = null,
     val calendars: List<CalendarReader.Calendar> = emptyList(),
     val pendingImage: PendingImage? = null,
+    /** The report of a crash since the app was last open, shown once so it can be copied. */
+    val crash: String? = null,
     /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
@@ -210,6 +213,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setFilters(filters: Filters) = _state.update { it.copy(filters = filters) }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    fun showCrash(report: String) = _state.update { it.copy(crash = report) }
+
+    fun dismissCrash() {
+        CrashLog.clear(getApplication())
+        _state.update { it.copy(crash = null) }
+    }
 
     fun reload() {
         val vault = _state.value.vault ?: return

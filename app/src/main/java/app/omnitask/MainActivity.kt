@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         Lang.load(this)
         // The app is always dark, so the system bars use light icons on a transparent bar.
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
             OmniTheme { OmniTaskApp(viewModel) }
         }
         handle(intent)
+        CrashLog.read(this)?.let { viewModel.showCrash(it) }
     }
 
     override fun onNewIntent(intent: Intent) {

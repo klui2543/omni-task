@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -30,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -39,6 +41,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -53,8 +56,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -197,6 +202,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         EditSheet(editing, state, vm, onDismiss = { editingKey = null })
     }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
+    state.crash?.let { report -> CrashDialog(report, vm::dismissCrash) }
     adding?.let { r ->
         QuickAddSheet(state, vm, r.voice, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
     }
@@ -313,3 +319,45 @@ private const val WIDE_DP = 600
 
 /** Width from which an opened task shows beside the list instead of in a sheet. */
 private const val TWO_PANE_DP = 720
+
+/** Shown once after a crash: the report can be copied or shared, so the bug can be fixed from the real error. */
+@Composable
+private fun CrashDialog(report: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("แอปปิดไปเองเมื่อครั้งก่อน", "The app closed unexpectedly last time")) },
+        text = {
+            Column {
+                Text(
+                    tr("คัดลอกข้อความนี้ส่งให้ผู้พัฒนา จะช่วยแก้ได้ตรงจุด", "Copy this report and send it to the developer to get it fixed"),
+                    color = C.text2, fontSize = TS.caption,
+                )
+                Text(
+                    report,
+                    Modifier.padding(top = 8.dp).heightIn(max = 260.dp).verticalScroll(rememberScrollState())
+                        .clip(RoundedCornerShape(10.dp)).background(C.sunken).padding(10.dp),
+                    color = C.muted, fontSize = TS.micro,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(report))
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, report),
+                            tr("ส่งรายงาน", "Send report"),
+                        ),
+                    )
+                }
+                onDismiss()
+            }) { Text(tr("คัดลอกและส่ง", "Copy and share"), color = C.accent) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
+    )
+}
+
