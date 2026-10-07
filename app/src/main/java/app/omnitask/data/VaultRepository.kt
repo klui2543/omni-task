@@ -68,6 +68,33 @@ class VaultRepository(private val context: Context) {
             ?: throw java.io.IOException("Cannot open ${task.filePath} for writing")
     }
 
+    /** The text of a vault file by its path, or null when it does not exist. */
+    fun readPath(treeUri: Uri, path: String): String? {
+        val dirId = if ('/' in path) findDirId(treeUri, path.substringBeforeLast('/')) ?: return null else DocumentsContract.getTreeDocumentId(treeUri)
+        val file = childOf(treeUri, dirId, path.substringAfterLast('/'))?.first ?: return null
+        return readText(file)
+    }
+
+    /** Replaces (or creates, with its folders) a vault file. */
+    fun writePath(treeUri: Uri, path: String, text: String) {
+        val dir = if ('/' in path) findOrCreateDir(treeUri, path.substringBeforeLast('/')) else
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+        val name = path.substringAfterLast('/')
+        val existing = childOf(treeUri, DocumentsContract.getDocumentId(dir), name)?.first
+        val file = existing ?: DocumentsContract.createDocument(context.contentResolver, dir, "text/markdown", name)
+            ?: throw java.io.IOException("Cannot create $path")
+        context.contentResolver.openOutputStream(file, "wt")?.use { it.write(text.toByteArray()) }
+            ?: throw java.io.IOException("Cannot write $path")
+    }
+
+    /** Adds a task line at the end of a file, keeping its line endings. */
+    fun appendLine(treeUri: Uri, path: String, line: String) {
+        val text = readPath(treeUri, path) ?: throw java.io.IOException("ไม่พบ $path")
+        val separator = if (text.contains("\r\n")) "\r\n" else "\n"
+        val body = text.trimEnd('\r', '\n')
+        writePath(treeUri, path, body + separator + line + separator)
+    }
+
     /** Writes an image into the vault's attachment folder (made if missing) and returns its file name. */
     fun saveAttachment(treeUri: Uri, name: String, mime: String, bytes: ByteArray): String {
         val dir = findOrCreateDir(treeUri, ATTACHMENT_DIR)
@@ -167,6 +194,9 @@ class VaultRepository(private val context: Context) {
     companion object {
         /** Where the owner's Obsidian keeps attachments, relative to the vault root. */
         const val ATTACHMENT_DIR = "📁 Folder/หลังบ้าน/Attachments"
+
+        /** The live TaskForge file, where new tasks are added. */
+        const val TASK_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge.md"
 
         fun parseFile(fileUri: String, filePath: String, text: String): List<Task> {
             val lines = text.split("\r\n", "\n")

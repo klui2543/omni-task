@@ -14,6 +14,11 @@ import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.Insight
+import app.omnitask.model.Planner
+import app.omnitask.model.Profile
+import app.omnitask.notify.Digest
+import java.time.LocalDateTime
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
@@ -65,6 +70,10 @@ data class UiState(
     /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
+    val profile: Profile = Profile(),
+    val insight: Insight.Ask? = null,
+    /** The assistant conversation for this session, newest last. */
+    val chat: List<Chat> = emptyList(),
 ) {
     val todayEvents get() = events.filter { it.begin.toLocalDate() <= today && it.end.toLocalDate() >= today && it.end > today.atStartOfDay() }
 
@@ -83,6 +92,14 @@ data class UiState(
         }
 
     val visible get() = scoped.filter { filters.bucket == null || it.bucket(today) == filters.bucket }
+}
+
+/** One entry in the assistant conversation. */
+sealed interface Chat {
+    data class Asked(val text: String) : Chat
+    data class Slots(val plan: Planner.Plan, val page: Int = 0, val picked: Int = 0, val done: String? = null) : Chat
+    data class Today(val tasks: List<Task>) : Chat
+    data class Review(val title: String, val lines: List<String>) : Chat
 }
 
 /** A photo prepared for a task, waiting for the user to choose full size or reduced. */
@@ -146,6 +163,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { CalendarReader.month(app, LocalDate.now()) }.getOrDefault(emptyList())
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
+            val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH)) }.getOrDefault(_state.value.profile) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -157,6 +175,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     tasks = result.getOrNull()?.tasks ?: it.tasks,
                     notePaths = result.getOrNull()?.notePaths ?: it.notePaths,
                     vaultName = vaultName,
+                    profile = profile,
+                    insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined()),
                     message = result.exceptionOrNull()?.let { e -> "อ่านตู้โน้ตไม่ได้: ${e.message}" } ?: it.message,
                 )
             }
@@ -169,11 +189,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(message = "งานวนซ้ำยังติ๊กในแอปนี้ไม่ได้ (ช่วง 2) ติ๊กใน TaskForge ไปก่อน") }
             return
         }
+        if (task.isOpen) logDone(task)
         edit(task) { TaskLine.setDone(it, task.isOpen, LocalDate.now()) }
     }
 
     fun setStatus(task: Task, status: Status) {
         if (status == Status.DONE && task.recurrence != null) return toggleDone(task)
+        if (status == Status.DONE && task.isOpen) logDone(task)
         edit(task) { TaskLine.setStatus(it, status, LocalDate.now()) }
     }
 
@@ -332,6 +354,100 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         setPriority(task, if (to.important) Priority.HIGH else Priority.MEDIUM)
     }
 
+    // ---- Assistant ----
+
+    fun ask(text: String) {
+        val s = _state.value
+        val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
+        _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
+    }
+
+    fun planToday() {
+        val b = _state.value.brief
+        _state.update { it.copy(chat = it.chat + Chat.Asked("จัดลำดับวันนี้ให้หน่อย") + Chat.Today((b.must + b.waiting + b.future).distinct())) }
+    }
+
+    fun reviewWeek() {
+        val s = _state.value
+        val m = Digest.weekly(s.tasks, s.today)
+        _state.update { it.copy(chat = it.chat + Chat.Asked("ทบทวนสัปดาห์นี้") + Chat.Review(m.title, m.lines)) }
+    }
+
+    fun clearChat() = _state.update { it.copy(chat = emptyList()) }
+
+    private fun updateSlots(index: Int, change: (Chat.Slots) -> Chat.Slots) = _state.update {
+        val item = it.chat.getOrNull(index) as? Chat.Slots ?: return@update it
+        it.copy(chat = it.chat.toMutableList().also { list -> list[index] = change(item) })
+    }
+
+    fun pickSlot(index: Int, slot: Int) = updateSlots(index) { it.copy(picked = slot, done = null) }
+
+    fun moreSlots(index: Int) = updateSlots(index) {
+        val pages = (it.plan.slots.size + 2) / 3
+        val next = if (pages == 0) 0 else (it.page + 1) % pages
+        it.copy(page = next, picked = next * 3, done = null)
+    }
+
+    /** Adds the chosen slot as a TaskForge task, and as a calendar event when the calendar can be written. */
+    fun confirmSlot(index: Int, title: String) {
+        val vault = _state.value.vault ?: return
+        val item = _state.value.chat.getOrNull(index) as? Chat.Slots ?: return
+        val slot = item.plan.slots.getOrNull(item.picked) ?: return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    repo.appendLine(vault, VaultRepository.TASK_FILE, Planner.taskLine(title, slot, LocalDate.now()))
+                    CalendarReader.primaryWritable(app)?.let { cal ->
+                        CalendarReader.insert(app, cal.id, title, slot.day.atTime(slot.start), slot.day.atTime(slot.end))
+                    }
+                }
+            }
+            result.fold(
+                { eventId -> updateSlots(index) { it.copy(done = if (eventId != null) "เพิ่มงาน + ลงปฏิทินแล้ว" else "เพิ่มงานแล้ว (ยังลงปฏิทินไม่ได้)") } },
+                { e -> _state.update { it.copy(message = "เพิ่มงานไม่ได้: ${e.message}") } },
+            )
+            reload()
+        }
+    }
+
+    fun answerInsight(yes: Boolean) {
+        val ask = _state.value.insight ?: return
+        if (yes) {
+            val p = _state.value.profile
+            saveProfile(ask.apply(p).copy(remembered = (p.remembered + ask.remember).distinct()))
+        } else {
+            prefs.edit().putStringSet(KEY_DECLINED, declined() + ask.id).apply()
+        }
+        _state.update { it.copy(insight = null) }
+    }
+
+    /** Writes the profile note; saving also counts as "still true", so the re-ask clock restarts. */
+    fun saveProfile(profile: Profile) {
+        val vault = _state.value.vault ?: return
+        val next = profile.copy(exists = true, updated = LocalDate.now())
+        _state.update { it.copy(profile = next) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.writePath(vault, Profile.PATH, next.render()) } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = "บันทึกโปรไฟล์ไม่ได้: ${e.message}") } }
+        }
+    }
+
+    private fun declined() = prefs.getStringSet(KEY_DECLINED, emptySet()).orEmpty().toSet()
+
+    private fun doneLog(): List<Insight.Done> = prefs.getStringSet(KEY_DONE_LOG, emptySet()).orEmpty().mapNotNull { e ->
+        val at = runCatching { LocalDateTime.parse(e.substringBefore('|')) }.getOrNull() ?: return@mapNotNull null
+        val kind = Planner.Kind.entries.firstOrNull { it.name == e.substringAfter('|') } ?: return@mapNotNull null
+        Insight.Done(at, kind)
+    }
+
+    /** Remembers when work gets done, so the assistant can notice the owner's rhythm. */
+    private fun logDone(task: Task) {
+        val entry = "${LocalDateTime.now().withNano(0)}|${Planner.kindOf(task.title).name}"
+        val kept = prefs.getStringSet(KEY_DONE_LOG, emptySet()).orEmpty().sorted().takeLast(199)
+        prefs.edit().putStringSet(KEY_DONE_LOG, (kept + entry).toSet()).apply()
+    }
+
     private fun edit(task: Task, transform: (String) -> String) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } }
@@ -353,5 +469,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_FUTURE_COUNT = "futureCount"
         const val KEY_SKIPPED = "skippedFuture"
         const val KEY_DISMISSED = "dismissedSuggestions"
+        const val KEY_DECLINED = "declinedInsights"
+        const val KEY_DONE_LOG = "doneLog"
     }
 }
