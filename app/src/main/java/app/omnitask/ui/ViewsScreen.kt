@@ -35,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -296,7 +297,14 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
 private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var selected by rememberSaveable { mutableStateOf(state.today.toString()) }
     val sel = LocalDate.parse(selected)
-    val month = YearMonth.from(state.today)
+    var shown by rememberSaveable { mutableStateOf(YearMonth.from(state.today).toString()) }
+    val month = YearMonth.parse(shown)
+    LaunchedEffect(month) { vm.loadMonth(month.atDay(1)) }
+    fun go(delta: Long) {
+        val next = month.plusMonths(delta)
+        shown = next.toString()
+        selected = (if (next == YearMonth.from(state.today)) state.today else next.atDay(1)).toString()
+    }
     val firstCell = month.atDay(1).let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
     fun tasksOn(d: LocalDate) = pool.filter { it.status != Status.CANCELLED && (it.due == d || it.scheduled == d) }
     fun eventsOn(d: LocalDate) = state.events.filter { it.begin.toLocalDate() <= d && (it.end.toLocalDate() > d || it.begin.toLocalDate() == d) }
@@ -309,7 +317,20 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
         item { CalendarConnect(state, vm) }
         item {
             Card {
-                Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.padding(start = 16.dp, top = 12.dp), color = C.text, style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
+                    if (month != YearMonth.from(state.today)) {
+                        Text(
+                            tr("วันนี้", "Today"),
+                            Modifier.padding(end = 6.dp).clip(RoundedCornerShape(10.dp)).clickable { go(YearMonth.from(state.today).let { java.time.temporal.ChronoUnit.MONTHS.between(month, it) }) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            color = C.accentText, fontSize = TS.caption,
+                        )
+                    }
+                    SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { go(-1) })
+                    Box(Modifier.width(6.dp))
+                    SquareButton(Ic.next, tr("เดือนถัดไป", "Next month"), { go(1) })
+                }
                 Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                     DayOfWeek.entries.forEach { Text(it.short(), Modifier.weight(1f), color = C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                 }

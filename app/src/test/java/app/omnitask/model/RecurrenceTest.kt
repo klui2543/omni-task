@@ -53,4 +53,24 @@ class RecurrenceTest {
         assertEquals("- [ ] ตัดผม 🔁 every 4 weeks when done 📅 2026-11-04", TaskLine.nextOccurrence(raw, d("2026-10-07")))
         assertNull(TaskLine.nextOccurrence("- [ ] ไม่มีวันที่ 🔁 every day", d("2026-10-07")))
     }
+
+    @Test
+    fun editsRuleAndReminderInPlace() {
+        val raw = "- [ ] ส่งรายงาน #งาน ⏫ ➕ 2026-09-01 📅 2026-10-07"
+        val repeating = TaskLine.setRecurrence(raw, "every week")
+        assertEquals("- [ ] ส่งรายงาน #งาน ⏫ 🔁 every week ➕ 2026-09-01 📅 2026-10-07", repeating)
+        assertEquals(raw, TaskLine.setRecurrence(repeating, null))
+
+        val reminded = TaskLine.setReminder(raw, java.time.LocalTime.of(9, 0), ReminderOn.DUE)
+        assertEquals("- [ ] ส่งรายงาน #งาน #remind-at-due ⏰ 09:00 ⏫ ➕ 2026-09-01 📅 2026-10-07", reminded)
+        assertEquals(
+            "- [ ] ส่งรายงาน #งาน #remind-at-scheduled 🎯 17:30 ⏫ ➕ 2026-09-01 📅 2026-10-07",
+            TaskLine.setReminder(reminded, java.time.LocalTime.of(17, 30), ReminderOn.SCHEDULED),
+        )
+        assertEquals(raw, TaskLine.setReminder(reminded, null, ReminderOn.DUE))
+        assertEquals(
+            "- [ ] โทรหาแม่ #remind-at-due ⏰ 20:00 📅 2026-10-07",
+            TaskLine.setReminder("- [ ] โทรหาแม่ 📅 2026-10-07", java.time.LocalTime.of(20, 0), ReminderOn.DUE),
+        )
+    }
 }

@@ -115,6 +115,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     private val thumbs = HashMap<String, Bitmap?>()
 
+    /** The month the calendar view shows, so a reload keeps its events. */
+    private var shownMonth: LocalDate? = null
+
     private val repo = VaultRepository(app)
     private val prefs = app.getSharedPreferences("omnitask", Context.MODE_PRIVATE)
 
@@ -169,7 +172,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             val app = getApplication<Application>()
             val events = withContext(Dispatchers.IO) {
-                runCatching { CalendarReader.month(app, LocalDate.now()) }.getOrDefault(emptyList())
+                runCatching {
+                    val now = CalendarReader.month(app, LocalDate.now())
+                    val other = shownMonth?.takeIf { it.withDayOfMonth(1) != LocalDate.now().withDayOfMonth(1) }?.let { CalendarReader.month(app, it) }.orEmpty()
+                    (now + other).distinctBy { it.id to it.begin }
+                }.getOrDefault(emptyList())
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH)) }.getOrDefault(_state.value.profile) }
@@ -311,6 +318,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPriority(task: Task, priority: Priority) = edit(task) { TaskLine.setPriority(it, priority) }
 
+    fun setRecurrence(task: Task, rule: String?) = edit(task) { TaskLine.setRecurrence(it, rule) }
+
+    fun setReminder(task: Task, time: java.time.LocalTime?, on: app.omnitask.model.ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
+
     fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
 
     fun setNotify(settings: NotifySettings) {
@@ -324,6 +335,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshAlarms() {
         val tasks = _state.value.tasks
         viewModelScope.launch(Dispatchers.IO) { runCatching { Scheduler.reschedule(getApplication(), tasks) } }
+    }
+
+    /** Adds the events around another month, for the calendar view's month arrows. */
+    fun loadMonth(day: LocalDate) {
+        shownMonth = day
+        viewModelScope.launch {
+            val more = withContext(Dispatchers.IO) { runCatching { CalendarReader.month(getApplication(), day) }.getOrDefault(emptyList()) }
+            if (more.isEmpty()) return@launch
+            _state.update { s -> s.copy(events = (s.events + more).distinctBy { it.id to it.begin }) }
+        }
     }
 
     /** Calendar access just changed: read the events again and let the alarms pick them up. */

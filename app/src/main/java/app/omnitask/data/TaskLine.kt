@@ -149,6 +149,33 @@ object TaskLine {
         return setDate(marked, DateField.DONE, if (done) today else null)
     }
 
+    /** Sets or clears the 🔁 rule, keeping TaskForge's token order. */
+    fun setRecurrence(raw: String, rule: String?): String = editBody(raw) { body ->
+        val cleared = RECURRENCE.find(body)?.let { remove(body, it.range) } ?: body
+        rule?.trim()?.ifEmpty { null }?.let { insertByRank(cleared, "🔁 $it", RECURRENCE_RANK) } ?: cleared
+    }
+
+    private val REMIND_TAG = Regex("""(?<!\S)#remind-at-(?:due|scheduled)(?!\S)""")
+
+    /**
+     * Sets or clears the reminder, written the TaskForge way right after the plain tags:
+     * `#remind-at-due ⏰ 09:00` (on the due date) or `#remind-at-scheduled 🎯 09:00` (on the scheduled date).
+     */
+    fun setReminder(raw: String, time: LocalTime?, on: ReminderOn): String = editBody(raw) { body ->
+        var b = body
+        TIME.find(b)?.let { b = remove(b, it.range) }
+        REMIND_TAG.find(b)?.let { b = remove(b, it.range) }
+        if (time == null) return@editBody b
+        val token = if (on == ReminderOn.SCHEDULED) "#remind-at-scheduled 🎯 " else "#remind-at-due ⏰ "
+        val full = token + "%02d:%02d".format(time.hour, time.minute)
+        val pos = TAG.findAll(b).lastOrNull()?.let { it.range.last + 1 }
+            ?: listOf(PRIORITY, RECURRENCE, ANY_DATE).mapNotNull { it.find(b)?.range?.first }.minOrNull()
+            ?: return@editBody if (b.isBlank()) full else "${b.trimEnd()} $full"
+        val before = b.substring(0, pos).trimEnd()
+        val after = b.substring(pos).trimStart()
+        listOf(before, full, after).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+
     /**
      * The next copy of a repeating task, as the Tasks plugin makes it: unticked, its dates moved by
      * the rule (from the old due, scheduled or start date, or from today for "when done"), and a fresh ➕.

@@ -43,7 +43,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,6 +73,8 @@ import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
+import app.omnitask.model.Recurrence
+import app.omnitask.model.ReminderOn
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -77,6 +82,7 @@ import app.omnitask.model.label
 import app.omnitask.model.tr
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneOffset
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -87,6 +93,8 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     var viewing by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     var linking by remember { mutableStateOf(false) }
+    var repeating by remember { mutableStateOf(false) }
+    var reminding by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.attachImage(task, uri)
@@ -193,15 +201,22 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             FieldRow(tr("วันนัดทำ", "Scheduled"), task.scheduled?.format(SHORT_DATE)) { picking = DateField.SCHEDULED }
             FieldRow(tr("วันเริ่ม", "Start"), task.start?.format(SHORT_DATE)) { picking = DateField.START }
             FieldRow(tr("วันที่สร้าง", "Created"), task.created?.format(SHORT_DATE), null)
-            FieldRow(tr("วนซ้ำ", "Repeats"), task.recurrence, null)
-            FieldRow(tr("เวลาเตือน", "Reminder"), task.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) }, null)
+            FieldRow(tr("วนซ้ำ", "Repeats"), task.recurrence?.let { Recurrence.describe(it) }) { repeating = true }
+            FieldRow(
+                tr("เวลาเตือน", "Reminder"),
+                task.reminderTime?.let {
+                    "%02d:%02d".format(it.hour, it.minute) +
+                        if (task.reminderOn == ReminderOn.SCHEDULED) tr(" วันนัดทำ", ", scheduled day") else tr(" วันครบกำหนด", ", due day")
+                },
+            ) { reminding = true }
             FieldRow(tr("โปรเจกต์", "Project"), Projects.projectOf(task), null)
             FieldRow(tr("ต้องรอ", "Waits on"), Projects.waitingOn(task, state.tasks), null)
         }
-        Text(tr("วนซ้ำและเวลาเตือนยังแก้ได้ใน TaskForge ก่อน", "Edit repeats and reminders in TaskForge for now"), Modifier.padding(top = 8.dp), color = C.faint, fontSize = TS.caption)
     }
 
     picking?.let { field -> DateDialog(task, field, { vm.setDate(task, field, it) }) { picking = null } }
+    if (repeating) RepeatDialog(task, { vm.setRecurrence(task, it) }) { repeating = false }
+    if (reminding) ReminderDialog(task, { time, on -> vm.setReminder(task, time, on) }) { reminding = false }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }
     }
@@ -312,6 +327,111 @@ private fun DateDialog(task: Task, field: DateField, onSet: (LocalDate?) -> Unit
             }
         },
     ) { DatePicker(state = ps, colors = DatePickerDefaults.colors(containerColor = C.raised)) }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RepeatDialog(task: Task, onSet: (String?) -> Unit, onDismiss: () -> Unit) {
+    val current = task.recurrence?.removeSuffix(" when done")?.trim()
+    var rule by remember { mutableStateOf(current ?: "") }
+    var whenDone by remember { mutableStateOf(task.recurrence?.trim()?.endsWith("when done") == true) }
+    val full = rule.trim().let { if (it.isEmpty()) "" else if (whenDone) "$it when done" else it }
+    val valid = full.isEmpty() || Recurrence.parse(full) != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("วนซ้ำ", "Repeats")) },
+        text = {
+            Column {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Recurrence.PRESETS.forEach { p -> Chip(Recurrence.describe(p), rule.trim() == p, { rule = p }) }
+                }
+                Text(tr("หรือพิมพ์เองแบบปลั๊กอิน Tasks", "Or type a Tasks plugin rule"), Modifier.padding(top = 14.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption)
+                BasicTextField(
+                    value = rule,
+                    onValueChange = { rule = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
+                    cursorBrush = SolidColor(C.accent),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (rule.isEmpty()) Text("every week on Monday", color = C.faint, fontSize = TS.body)
+                            inner()
+                        }
+                    },
+                )
+                Text(
+                    when {
+                        full.isEmpty() -> tr("ไม่วนซ้ำ", "Does not repeat")
+                        valid -> Recurrence.describe(full)
+                        else -> tr("ยังอ่านรูปแบบนี้ไม่ได้", "This rule can't be read")
+                    },
+                    Modifier.padding(top = 6.dp), color = if (valid) C.accentText else C.red, fontSize = TS.caption,
+                )
+                Row(
+                    Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { whenDone = !whenDone }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("นับจากวันที่ทำเสร็จ", "Count from completion"), color = C.text, fontSize = TS.body)
+                        Text(tr("เช่น ตัดผมทุก 4 สัปดาห์หลังตัดครั้งล่าสุด", "e.g. a haircut 4 weeks after the last one"), color = C.muted, fontSize = TS.caption)
+                    }
+                    OnOff(whenDone)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSet(full.ifEmpty { null }); onDismiss() }, enabled = valid) { Text(tr("บันทึก", "Save"), color = if (valid) C.accent else C.faint) }
+        },
+        dismissButton = {
+            Row {
+                if (task.recurrence != null) TextButton(onClick = { onSet(null); onDismiss() }) { Text(tr("ไม่วนซ้ำ", "Stop repeating"), color = C.red) }
+                TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderDialog(task: Task, onSet: (LocalTime?, ReminderOn) -> Unit, onDismiss: () -> Unit) {
+    val start = task.reminderTime ?: LocalTime.of(9, 0)
+    val time = rememberTimePickerState(start.hour, start.minute, is24Hour = true)
+    var on by remember { mutableStateOf(task.reminderOn ?: if (task.due == null && task.scheduled != null) ReminderOn.SCHEDULED else ReminderOn.DUE) }
+    val day = if (on == ReminderOn.SCHEDULED) task.scheduled ?: task.due else task.due ?: task.scheduled
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("เวลาเตือน", "Reminder")) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Segmented(
+                    listOf(ReminderOn.DUE to tr("วันครบกำหนด", "Due day"), ReminderOn.SCHEDULED to tr("วันนัดทำ", "Scheduled day")),
+                    on, { on = it }, Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                )
+                TimeInput(
+                    state = time,
+                    colors = TimePickerDefaults.colors(
+                        timeSelectorSelectedContainerColor = C.accentSoft, timeSelectorSelectedContentColor = C.accentText,
+                        timeSelectorUnselectedContainerColor = C.sunken, timeSelectorUnselectedContentColor = C.text,
+                    ),
+                )
+                Text(
+                    if (day == null) tr("งานนี้ยังไม่มีวันที่ ตั้งวันก่อนแล้วการเตือนจะทำงาน", "Set a date first, then the reminder will fire")
+                    else tr("จะเตือน ", "Fires ") + day.format(SHORT_DATE),
+                    color = if (day == null) C.amber else C.muted, fontSize = TS.caption,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSet(LocalTime.of(time.hour, time.minute), on); onDismiss() }) { Text(tr("บันทึก", "Save"), color = C.accent) } },
+        dismissButton = {
+            Row {
+                if (task.reminderTime != null) TextButton(onClick = { onSet(null, on); onDismiss() }) { Text(tr("ไม่เตือน", "Remove"), color = C.red) }
+                TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
+            }
+        },
+    )
 }
 
 @Composable
