@@ -5,13 +5,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      OMNI_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -20,10 +25,39 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Test and build
-        run: gradle testDebugUnitTest assembleDebug --no-daemon --stacktrace
+      - name: Unit tests
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Write release key
+        env:
+          KEYSTORE_B64: ${{ secrets.OMNI_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Secret OMNI_KEYSTORE_B64 is missing. Add the release key secrets in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/omni-release.jks"
+          echo "OMNI_KEYSTORE_FILE=$RUNNER_TEMP/omni-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release
+        env:
+          OMNI_KEYSTORE_PASSWORD: ${{ secrets.OMNI_KEYSTORE_PASSWORD }}
+          OMNI_KEY_ALIAS: ${{ secrets.OMNI_KEY_ALIAS }}
+        run: |
+          gradle assembleRelease --no-daemon --stacktrace
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/omni-task-0.2.${OMNI_BUILD_NUMBER}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: omni-task-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: omni-task
+          path: dist/*.apk
+
+      # Obtainium on the phone watches these releases and offers each update.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v0.2.${OMNI_BUILD_NUMBER}" dist/*.apk \
+            --title "Omni Task 0.2.${OMNI_BUILD_NUMBER}" \
+            --notes "$(git log -1 --pretty=%s)"

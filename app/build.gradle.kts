@@ -12,17 +12,29 @@ android {
         applicationId = "app.omnitask"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI passes the run number, so every release installs over the last one.
+        val build = (System.getenv("OMNI_BUILD_NUMBER") ?: "1").toInt()
+        versionCode = build
+        versionName = "0.2.$build"
     }
 
-    // Fixed key so every CI build installs over the previous one.
+    // The release key never lives in the repo: CI writes it from GitHub secrets.
+    val releaseKeystore = System.getenv("OMNI_KEYSTORE_FILE")
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("omni-debug.jks")
-            storePassword = "omnitask"
-            keyAlias = "omni"
-            keyPassword = "omnitask"
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("OMNI_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("OMNI_KEY_ALIAS")
+                keyPassword = System.getenv("OMNI_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
