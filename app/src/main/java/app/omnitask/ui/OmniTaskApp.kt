@@ -39,7 +39,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -139,7 +141,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         return
     }
 
-    var matrix by rememberSaveable { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf(Screen.FOCUS) }
     var menuOpen by remember { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -159,7 +161,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.background),
                 title = {
                     Column {
-                        Text(if (matrix) "Eisenhower" else "งาน", style = MaterialTheme.typography.titleLarge)
+                        Text(screen.title, style = MaterialTheme.typography.titleLarge)
                         Text(
                             state.today.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale("th"))),
                             style = MaterialTheme.typography.labelMedium,
@@ -218,32 +220,34 @@ fun OmniTaskApp(vm: TaskViewModel) {
                         unselectedIconColor = colors.onSurfaceVariant,
                         unselectedTextColor = colors.onSurfaceVariant,
                     )
-                    NavigationBarItem(
-                        selected = !matrix,
-                        onClick = { matrix = false },
-                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
-                        label = { Text("รายการ") },
-                        colors = itemColors,
-                    )
-                    NavigationBarItem(
-                        selected = matrix,
-                        onClick = { matrix = true },
-                        icon = { Icon(Icons.Default.Star, contentDescription = null) },
-                        label = { Text("Eisenhower") },
-                        colors = itemColors,
-                    )
+                    Screen.entries.forEach { s ->
+                        NavigationBarItem(
+                            selected = screen == s,
+                            onClick = { screen = s },
+                            icon = { Icon(s.icon, contentDescription = null) },
+                            label = { Text(s.label) },
+                            colors = itemColors,
+                        )
+                    }
                 }
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            if (screen == Screen.FOCUS) {
+                if (state.loading) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary, trackColor = colors.outlineVariant)
+                }
+                FocusScreen(state, vm) { editingKey = it.key }
+                return@Column
+            }
             FilterBar(state, vm::setFilters)
             if (state.loading) {
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary, trackColor = colors.outlineVariant)
             }
             val tasks = state.visible.sortedWith(TASK_ORDER)
-            if (matrix) {
+            if (screen == Screen.MATRIX) {
                 MatrixView(tasks, state, vm::toggleDone, vm::moveToQuadrant) { editingKey = it.key }
             } else if (tasks.isEmpty() && !state.loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -271,6 +275,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
             onRemoveTag = { vm.removeTag(task, it) },
         )
     }
+}
+
+private enum class Screen(val label: String, val title: String, val icon: ImageVector) {
+    FOCUS("โฟกัส", "โฟกัสวันนี้", Icons.Default.Home),
+    LIST("รายการ", "งาน", Icons.AutoMirrored.Filled.List),
+    MATRIX("Eisenhower", "Eisenhower", Icons.Default.Star),
 }
 
 @Composable
@@ -427,7 +437,7 @@ private fun TaskMeta(task: Task, today: LocalDate, compact: Boolean) {
 }
 
 @Composable
-private fun TaskRow(task: Task, today: LocalDate, onToggle: () -> Unit, onOpen: () -> Unit) {
+internal fun TaskRow(task: Task, today: LocalDate, onToggle: () -> Unit, onOpen: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 18.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.Top,
