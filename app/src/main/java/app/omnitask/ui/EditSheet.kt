@@ -93,8 +93,8 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
     SheetFrame(onDismiss) {
         Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
-        Text("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", color = C.faint, fontSize = 12.5.sp)
-        task.textNotes.forEach { Text(it, Modifier.padding(top = 4.dp), color = C.muted, fontSize = 13.sp) }
+        Text("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", color = C.faint, fontSize = TS.caption)
+        task.textNotes.forEach { Text(it, Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body) }
 
         Segmented(
             Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
@@ -115,7 +115,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("#$tag", color = C.accentText, fontSize = 13.sp)
+                    Text("#$tag", color = C.accentText, fontSize = TS.body)
                     Icon(Ic.close, "ลบ #$tag", tint = C.muted, modifier = Modifier.size(13.dp))
                 }
             }
@@ -126,7 +126,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(13.dp))
-                Text("เพิ่ม", color = C.text2, fontSize = 13.sp)
+                Text("เพิ่ม", color = C.text2, fontSize = TS.body)
             }
         }
 
@@ -144,10 +144,10 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 ) {
                     Icon(Ic.link, null, tint = C.accentText, modifier = Modifier.size(16.dp))
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text(link.substringAfterLast('/'), color = C.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(link.substringAfterLast('/'), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             path?.substringBeforeLast('/', "")?.ifEmpty { "ราก Vault" } ?: "ยังไม่มีโน้ตนี้",
-                            color = if (path == null) C.amber else C.faint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = if (path == null) C.amber else C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (link in task.linkLines) SquareButton(Ic.close, "เอาลิงก์ออก", { vm.removeLink(task, link) })
@@ -159,14 +159,14 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(16.dp))
-                Text("ลิงก์โน้ต", Modifier.padding(start = 10.dp), color = C.text2, fontSize = 14.sp)
+                Text("ลิงก์โน้ต", Modifier.padding(start = 10.dp), color = C.text2, fontSize = TS.body)
             }
         }
-        if (task.links.isNotEmpty()) Text("แตะเพื่อเปิดใน Obsidian", Modifier.padding(top = 6.dp), color = C.faint, fontSize = 12.sp)
+        if (task.links.isNotEmpty()) Text("แตะเพื่อเปิดใน Obsidian", Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
 
         Row(Modifier.padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("รูปแนบ (${task.attachments.size})", Modifier.weight(1f), color = C.muted, fontSize = 13.sp)
-            Text("บันทึกเป็น WebP เสมอ", color = C.faint, fontSize = 12.sp)
+            Text("รูปแนบ (${task.attachments.size})", Modifier.weight(1f), color = C.muted, fontSize = TS.body)
+            Text("บันทึกเป็น WebP เสมอ", color = C.faint, fontSize = TS.caption)
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             task.attachments.forEach { name ->
@@ -179,11 +179,11 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 verticalArrangement = Arrangement.Center,
             ) {
                 Icon(Ic.camera, null, tint = C.text2, modifier = Modifier.size(22.dp))
-                Text("แนบรูป", color = C.text2, fontSize = 12.sp)
+                Text("แนบรูป", color = C.text2, fontSize = TS.caption)
             }
         }
         if (task.attachments.isNotEmpty()) {
-            Text("แตะเพื่อดูเต็มจอ กดค้างเพื่อลบ", Modifier.padding(top = 6.dp), color = C.faint, fontSize = 12.sp)
+            Text("แตะเพื่อดูเต็มจอ กดค้างเพื่อลบ", Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
         }
 
         Label("วันที่และรายละเอียด")
@@ -197,7 +197,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             FieldRow("โปรเจกต์", Projects.projectOf(task), null)
             FieldRow("ต้องรอ", Projects.waitingOn(task, state.tasks), null)
         }
-        Text("วนซ้ำและเวลาเตือนยังแก้ได้ใน TaskForge ก่อน", Modifier.padding(top = 8.dp), color = C.faint, fontSize = 12.sp)
+        Text("วนซ้ำและเวลาเตือนยังแก้ได้ใน TaskForge ก่อน", Modifier.padding(top = 8.dp), color = C.faint, fontSize = TS.caption)
     }
 
     picking?.let { field -> DateDialog(task, field, { vm.setDate(task, field, it) }) { picking = null } }
@@ -227,8 +227,8 @@ private fun FieldRow(label: String, value: String?, onClick: (() -> Unit)?) {
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, Modifier.width(116.dp), color = C.muted, fontSize = 13.5.sp)
-        Text(value ?: if (onClick != null) "ตั้งค่า" else "ไม่มี", Modifier.weight(1f), color = if (value != null) C.text else C.faint, fontSize = 14.sp)
+        Text(label, Modifier.width(116.dp), color = C.muted, fontSize = TS.body)
+        Text(value ?: if (onClick != null) "ตั้งค่า" else "ไม่มี", Modifier.weight(1f), color = if (value != null) C.text else C.faint, fontSize = TS.body)
         if (onClick != null) Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
     }
 }
@@ -254,7 +254,7 @@ private fun ImageViewer(name: String, vm: TaskViewModel, onDismiss: () -> Unit) 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
             bmp?.let { Image(it.asImageBitmap(), name, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit) }
-            Text(name, Modifier.align(Alignment.BottomCenter).padding(24.dp), color = C.muted, fontSize = 12.sp)
+            Text(name, Modifier.align(Alignment.BottomCenter).padding(24.dp), color = C.muted, fontSize = TS.caption)
         }
     }
 }
@@ -320,22 +320,22 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = 15.sp, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (text.isEmpty()) Text("ค้นหาชื่อโน้ต", color = C.faint, fontSize = 15.sp)
+                            if (text.isEmpty()) Text("ค้นหาชื่อโน้ต", color = C.faint, fontSize = TS.body)
                             inner()
                         }
                     },
                 )
-                if (notes.isEmpty()) Text("ยังไม่พบโน้ตใน Vault", Modifier.padding(top = 12.dp), color = C.muted, fontSize = 13.sp)
+                if (notes.isEmpty()) Text("ยังไม่พบโน้ตใน Vault", Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.body)
                 LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 320.dp)) {
                     items(matches) { path ->
                         Column(Modifier.fillMaxWidth().clickable { onPick(path) }.padding(vertical = 9.dp, horizontal = 4.dp)) {
-                            Text(NoteLinks.displayName(path), color = C.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(path.substringBeforeLast('/', "").ifEmpty { "ราก Vault" }, color = C.faint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(NoteLinks.displayName(path), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(path.substringBeforeLast('/', "").ifEmpty { "ราก Vault" }, color = C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -372,14 +372,14 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = 15.sp, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
                         Row {
-                            Text("#", color = C.faint, fontSize = 15.sp)
+                            Text("#", color = C.faint, fontSize = TS.body)
                             Box {
-                                if (text.isEmpty()) Text("เช่น รอ/พี่เอ", color = C.faint, fontSize = 15.sp)
+                                if (text.isEmpty()) Text("เช่น รอ/พี่เอ", color = C.faint, fontSize = TS.body)
                                 inner()
                             }
                         }

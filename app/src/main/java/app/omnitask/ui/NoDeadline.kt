@@ -62,7 +62,7 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
         TaskKind.FUTURE -> "หมุนเวียนขึ้นหน้าโฟกัสวันละงาน ทบทวนทุก 14 วัน"
         TaskKind.SOMEDAY -> "ไม่ขึ้นในรายการหลัก แต่จะกลับมาให้ทบทวนทุก 30 วัน ไม่หายไปไหน"
     }
-    hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = 12.sp) }
+    hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption) }
 
     Row(
         Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
@@ -70,8 +70,8 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("ก้าวแรกที่เล็กที่สุด", color = C.muted, fontSize = 12.5.sp)
-            Text(task.firstStep ?: "งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", color = if (task.firstStep != null) C.text else C.faint, fontSize = 14.sp)
+            Text("ก้าวแรกที่เล็กที่สุด", color = C.muted, fontSize = TS.caption)
+            Text(task.firstStep ?: "งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", color = if (task.firstStep != null) C.text else C.faint, fontSize = TS.body)
         }
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
     }
@@ -116,12 +116,12 @@ private fun TextDialog(
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
-                    textStyle = TextStyle(color = C.text, fontSize = 15.sp, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (text.isEmpty()) Text(placeholder, color = C.faint, fontSize = 15.sp)
+                            if (text.isEmpty()) Text(placeholder, color = C.faint, fontSize = TS.body)
                             inner()
                         }
                     },
@@ -154,26 +154,26 @@ fun FuturePicker(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
         title = { Text("เลือกงานลงทุนอนาคต") },
         text = {
             Column {
-                Text("งานที่ไม่มีเดดไลน์แต่สำคัญกับชีวิต หน้าโฟกัสจะหยิบขึ้นมาวันละงาน", color = C.text2, fontSize = 13.sp)
+                Text("งานที่ไม่มีเดดไลน์แต่สำคัญกับชีวิต หน้าโฟกัสจะหยิบขึ้นมาวันละงาน", color = C.text2, fontSize = TS.body)
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = C.text, fontSize = 15.sp, fontFamily = Prompt),
+                    textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
                     cursorBrush = SolidColor(C.accent),
                     modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (text.isEmpty()) Text("ค้นหางาน", color = C.faint, fontSize = 15.sp)
+                            if (text.isEmpty()) Text("ค้นหางาน", color = C.faint, fontSize = TS.body)
                             inner()
                         }
                     },
                 )
                 LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 340.dp)) {
                     if (chosen.isNotEmpty()) {
-                        item { Text("เลือกไว้แล้ว ${chosen.size} งาน (แตะเพื่อเอาออก)", Modifier.padding(vertical = 6.dp), color = C.muted, fontSize = 12.5.sp) }
+                        item { Text("เลือกไว้แล้ว ${chosen.size} งาน (แตะเพื่อเอาออก)", Modifier.padding(vertical = 6.dp), color = C.muted, fontSize = TS.caption) }
                         items(chosen, key = { "c" + it.key }) { t -> PickRow(t, true) { vm.setKind(t, TaskKind.NORMAL) } }
-                        item { Text("งานอื่นที่ไม่มีเดดไลน์", Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.muted, fontSize = 12.5.sp) }
+                        item { Text("งานอื่นที่ไม่มีเดดไลน์", Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption) }
                     }
                     items(candidates, key = { it.key }) { t -> PickRow(t, false) { vm.setKind(t, TaskKind.FUTURE) } }
                 }
@@ -191,9 +191,9 @@ private fun PickRow(t: Task, on: Boolean, onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) { if (on) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(13.dp)) }
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(t.title, color = C.text, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val sub = listOfNotNull(if (Focus.isSomeday(t)) "พักไว้" else null, t.noteName.takeIf { it.isNotEmpty() }).joinToString(", ")
-            if (sub.isNotEmpty()) Text(sub, color = C.faint, fontSize = 12.sp)
+            if (sub.isNotEmpty()) Text(sub, color = C.faint, fontSize = TS.caption)
         }
     }
 }
@@ -209,8 +209,8 @@ fun ReviewPrompt(state: UiState, onStart: () -> Unit) {
     ) {
         Icon(Ic.refresh, null, tint = C.accentText, modifier = Modifier.size(18.dp))
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text("$n งานไม่มีเดดไลน์ถึงรอบทบทวน", color = C.text, fontSize = 14.sp)
-            Text("ทีละงาน ทำ พัก หรือทิ้ง ใช้ไม่ถึง 2 นาที", color = C.muted, fontSize = 12.5.sp)
+            Text("$n งานไม่มีเดดไลน์ถึงรอบทบทวน", color = C.text, fontSize = TS.body)
+            Text("ทีละงาน ทำ พัก หรือทิ้ง ใช้ไม่ถึง 2 นาที", color = C.muted, fontSize = TS.caption)
         }
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
     }
@@ -241,10 +241,10 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                             age?.let { "สร้างมา $it วัน" },
                             since?.let { "ทบทวนล่าสุด ${it.format(SHORT_DATE)}" },
                         ).joinToString(", "),
-                        Modifier.padding(top = 4.dp), color = C.muted, fontSize = 12.5.sp,
+                        Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
                     )
-                    t.firstStep?.let { Text("ก้าวแรก: $it", Modifier.padding(top = 6.dp), color = C.accentText, fontSize = 13.sp) }
-                    Text("ยังอยากทำไหม", Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = 13.sp)
+                    t.firstStep?.let { Text("ก้าวแรก: $it", Modifier.padding(top = 6.dp), color = C.accentText, fontSize = TS.body) }
+                    Text("ยังอยากทำไหม", Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = TS.body)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         fun act(a: TaskViewModel.ReviewAction) { vm.review(t, a); handled++ }
                         ReviewButton("ทำเสาร์นี้", C.lime) { act(TaskViewModel.ReviewAction.THIS_WEEK) }
@@ -253,7 +253,7 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                         ReviewButton("เก็บไว้แบบเดิม", C.text2) { act(TaskViewModel.ReviewAction.KEEP) }
                         ReviewButton("ทิ้ง", C.red) { act(TaskViewModel.ReviewAction.DROP) }
                     }
-                    Text("ทิ้ง = ทำเครื่องหมายยกเลิก [-] บรรทัดยังอยู่ในไฟล์", Modifier.padding(top = 10.dp), color = C.faint, fontSize = 12.sp)
+                    Text("ทิ้ง = ทำเครื่องหมายยกเลิก [-] บรรทัดยังอยู่ในไฟล์", Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
                 }
             }
         },
@@ -266,6 +266,6 @@ private fun ReviewButton(label: String, color: Color, onClick: () -> Unit) {
     Text(
         label,
         Modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.14f)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
-        color = color, fontSize = 13.5.sp,
+        color = color, fontSize = TS.body,
     )
 }

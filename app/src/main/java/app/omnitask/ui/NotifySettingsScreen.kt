@@ -112,19 +112,19 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("สิทธิ์ที่ต้องใช้", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = C.text)
-                        Text(if (missing > 0) "ยังขาด $missing ข้อ" else "ครบแล้ว", color = if (missing > 0) C.amber else C.lime, fontSize = 12.5.sp)
+                        Text(if (missing > 0) "ยังขาด $missing ข้อ" else "ครบแล้ว", color = if (missing > 0) C.amber else C.lime, fontSize = TS.caption)
                     }
                     perms.forEach { p ->
                         Divider()
                         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.label, Modifier.weight(1f), color = C.text, fontSize = 14.sp)
-                            if (p.granted) Text("อนุญาตแล้ว", color = C.lime, fontSize = 12.5.sp) else PrimaryButton("อนุญาต", p.fix)
+                            Text(p.label, Modifier.weight(1f), color = C.text, fontSize = TS.body)
+                            if (p.granted) Text("อนุญาตแล้ว", color = C.lime, fontSize = TS.caption) else PrimaryButton("อนุญาต", p.fix)
                         }
                     }
                     Text(
                         "มือถือ OPPO ต้องเปิด “เริ่มอัตโนมัติ” ให้ Omni Task ด้วย ไม่อย่างนั้นการแจ้งเตือนอาจไม่ดังตอนปิดแอป",
                         Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.accentDeep).padding(12.dp),
-                        color = C.accentText, fontSize = 13.sp,
+                        color = C.accentText, fontSize = TS.body,
                     )
                     Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         GhostButton("เปิดการเริ่มอัตโนมัติ", {
@@ -150,7 +150,7 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
         }
         item {
             Group("สรุปงาน") {
-                Text("เวลาสรุป เลือกได้หลายรอบต่อวัน", Modifier.padding(top = 4.dp), color = C.muted, fontSize = 13.sp)
+                Text("เวลาสรุป เลือกได้หลายรอบต่อวัน", Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body)
                 FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     NotifySettings.DIGEST_PRESETS.forEach { time ->
                         val on = time in settings.digestTimes
@@ -197,8 +197,8 @@ private fun Group(title: String, content: @Composable () -> Unit) {
 private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = C.text, fontSize = 14.5.sp)
-            subtitle?.let { Text(it, color = C.muted, fontSize = 12.5.sp) }
+            Text(title, color = C.text, fontSize = TS.body)
+            subtitle?.let { Text(it, color = C.muted, fontSize = TS.caption) }
         }
         Box(Modifier.width(12.dp))
         OnOff(checked)

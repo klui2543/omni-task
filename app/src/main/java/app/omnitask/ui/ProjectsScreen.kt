@@ -57,7 +57,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Text(open?.name ?: "โปรเจกต์", style = MaterialTheme.typography.headlineSmall, color = C.text)
                     Text(
                         if (open != null) "ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่" else "โปรเจกต์มาจาก Tag แรกของงาน",
-                        color = C.muted, fontSize = 12.5.sp,
+                        color = C.muted, fontSize = TS.caption,
                     )
                 }
             }
@@ -73,7 +73,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                 ProgressRing(p.ratio, 52.dp, 5.dp, RING[i % RING.size], "${(p.ratio * 100).toInt()}%", 12)
                                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
-                                    Text("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", color = C.muted, fontSize = 12.5.sp)
+                                    Text("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", color = C.muted, fontSize = TS.caption)
                                 }
                             }
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -114,7 +114,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             item {
                 Text(
                     "Milestone จะมาพร้อมรูปแบบไฟล์ dotpm ส่วนงานที่ต้องรองานอื่นใช้ 🆔 และ ⛔ แบบปลั๊กอิน Tasks",
-                    Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = 12.sp,
+                    Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = TS.caption,
                 )
             }
         }
@@ -125,8 +125,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
 private fun StatCard(value: String, label: String, color: Color, modifier: Modifier) {
     Card(modifier) {
         Column(Modifier.padding(12.dp)) {
-            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = color)
-            Text(label, fontSize = 12.sp, color = C.muted)
+            Text(value, fontSize = TS.stat, fontWeight = FontWeight.Medium, color = color)
+            Text(label, fontSize = TS.caption, color = C.muted)
         }
     }
 }

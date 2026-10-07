@@ -106,7 +106,7 @@ fun Pill(text: String, bg: Color, fg: Color, icon: ImageVector? = null, modifier
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(12.dp))
-        Text(text, color = fg, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1)
+        Text(text, color = fg, fontSize = TS.caption, lineHeight = 16.sp, maxLines = 1)
     }
 }
 
@@ -154,7 +154,7 @@ fun SectionHead(title: String, color: Color = C.text2, trailing: String? = null,
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = color, style = MaterialTheme.typography.titleSmall)
         Box(Modifier.weight(1f).padding(horizontal = 10.dp).height(1.dp).background(C.divider))
-        if (trailing != null) Text(trailing, color = C.muted, fontSize = 12.5.sp)
+        if (trailing != null) Text(trailing, color = C.muted, fontSize = TS.caption)
     }
 }
 
@@ -171,7 +171,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
                     .background(if (on) C.accent else Color.Transparent).clickable { onSelect(value) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = if (on) C.onAccent else C.muted, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
+                Text(label, color = if (on) C.onAccent else C.muted, fontSize = TS.body, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
             }
         }
     }
@@ -188,7 +188,7 @@ fun Chip(label: String, selected: Boolean, onClick: () -> Unit, dot: Color? = nu
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (dot != null) Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-        Text(label, color = if (selected) C.text else C.text2, fontSize = 13.sp, maxLines = 1)
+        Text(label, color = if (selected) C.text else C.text2, fontSize = TS.body, maxLines = 1)
     }
 }
 
@@ -210,7 +210,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
     Box(
         modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(color).clickable(onClick = onClick).padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = C.onAccent, fontWeight = FontWeight.Medium, fontSize = 14.sp, textAlign = TextAlign.Center) }
+    ) { Text(text, color = C.onAccent, fontWeight = FontWeight.Medium, fontSize = TS.body, textAlign = TextAlign.Center) }
 }
 
 @Composable
@@ -219,7 +219,7 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, C.control, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick).padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = C.text2, fontSize = 14.sp, textAlign = TextAlign.Center) }
+    ) { Text(text, color = C.text2, fontSize = TS.body, textAlign = TextAlign.Center) }
 }
 
 @Composable

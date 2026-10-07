@@ -143,7 +143,7 @@ private fun FloatingNav(selected: Screen, onSelect: (Screen) -> Unit, modifier: 
                 verticalArrangement = Arrangement.Center,
             ) {
                 Icon(s.icon, null, tint = if (on) C.onAccent else C.muted, modifier = Modifier.size(20.dp))
-                Text(s.label, fontSize = 11.sp, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+                Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
             }
         }
     }

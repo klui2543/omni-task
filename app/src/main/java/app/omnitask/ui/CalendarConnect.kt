@@ -48,7 +48,7 @@ fun CalendarConnect(state: UiState, vm: TaskViewModel, modifier: Modifier = Modi
                 } else {
                     "ให้แอปอ่านนัดและเวรจากปฏิทินในเครื่อง เพื่อจัดเวลาว่าง เตือนนัด และให้ผู้ช่วยลงนัดให้ได้"
                 },
-                Modifier.padding(top = 6.dp), color = C.text2, fontSize = 13.sp,
+                Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.body,
             )
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (access) {

@@ -71,7 +71,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(today.format(LONG_DATE), color = C.muted, fontSize = 13.sp)
+                    Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
                     Text(greeting(), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 }
                 SquareButton(Ic.spark, "ผู้ช่วย", onAssistant)
@@ -125,7 +125,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f).clickable { onOpen(s.task) }.padding(vertical = 4.dp)) {
                                 Text(s.task.title, color = C.text, style = MaterialTheme.typography.bodyMedium)
-                                Text(s.text, color = C.muted, fontSize = 12.5.sp)
+                                Text(s.text, color = C.muted, fontSize = TS.caption)
                             }
                             SquareButton(Ic.close, "ไม่เอา", { vm.dismissSuggestion(s) })
                             Box(Modifier.width(6.dp))
@@ -141,20 +141,20 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Card(Modifier.weight(1f).fillMaxHeight()) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("คนรออยู่", Modifier.weight(1f), color = C.muted, fontSize = 13.sp)
-                            Text("${brief.waiting.size}", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = C.text)
+                            Text("คนรออยู่", Modifier.weight(1f), color = C.muted, fontSize = TS.body)
+                            Text("${brief.waiting.size}", fontSize = TS.stat, fontWeight = FontWeight.Medium, color = C.text)
                         }
                         if (brief.waiting.isEmpty()) {
-                            Text("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", Modifier.padding(top = 8.dp), color = C.muted, fontSize = 12.5.sp)
+                            Text("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
                         }
                         brief.waiting.forEach { t ->
                             val age = Focus.ageDays(t, today)
                             Column(Modifier.padding(top = 8.dp).clickable { onOpen(t) }) {
-                                Text(t.title, color = C.text, fontSize = 13.5.sp, maxLines = 2)
-                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = 12.5.sp, maxLines = 2) }
+                                Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2)
+                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = TS.caption, maxLines = 2) }
                                 Text(
                                     (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { "รอ $it วัน" } ?: "รออยู่"),
-                                    color = if ((age ?: 0) >= 7) C.red else C.muted, fontSize = 12.5.sp,
+                                    color = if ((age ?: 0) >= 7) C.red else C.muted, fontSize = TS.caption,
                                 )
                             }
                         }
@@ -163,22 +163,22 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Card(Modifier.weight(1f).fillMaxHeight(), color = C.accentDeep, border = Color(0xFF2D2852)) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("ลงทุนอนาคต", Modifier.weight(1f), color = C.accentText, fontSize = 13.sp)
+                            Text("ลงทุนอนาคต", Modifier.weight(1f), color = C.accentText, fontSize = TS.body)
                             Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
                         }
                         if (brief.future.isEmpty()) {
-                            Text("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", Modifier.padding(top = 8.dp), color = C.muted, fontSize = 12.5.sp)
+                            Text("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
                         }
                         brief.future.forEach { t ->
                             Column(Modifier.padding(top = 8.dp)) {
-                                Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = 14.sp, maxLines = 2)
-                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = 12.5.sp, maxLines = 2) }
-                                Focus.ageDays(t, today)?.let { Text("ค้าง $it วัน", color = C.muted, fontSize = 12.5.sp) }
+                                Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = TS.body, maxLines = 2)
+                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = TS.caption, maxLines = 2) }
+                                Focus.ageDays(t, today)?.let { Text("ค้าง $it วัน", color = C.muted, fontSize = TS.caption) }
                                 Text(
                                     "ข้ามวันนี้",
                                     Modifier.padding(top = 6.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft)
                                         .clickable { vm.skipFuture(t) }.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    color = C.accentText, fontSize = 12.5.sp,
+                                    color = C.accentText, fontSize = TS.caption,
                                 )
                             }
                         }
@@ -186,7 +186,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             "เลือกงาน",
                             Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(12.dp))
                                 .clickable { picking = true }.padding(horizontal = 10.dp, vertical = 4.dp),
-                            color = C.accentText, fontSize = 12.5.sp,
+                            color = C.accentText, fontSize = TS.caption,
                         )
                     }
                 }
@@ -198,17 +198,17 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 @Composable
 private fun Stepper(value: Int, onStep: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("−", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(-1) }.padding(top = 4.dp), color = C.accentText, fontSize = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Text("$value", color = C.text, fontSize = 14.sp)
-        Text("+", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(1) }.padding(top = 4.dp), color = C.accentText, fontSize = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("−", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(-1) }.padding(top = 4.dp), color = C.accentText, fontSize = TS.title, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("$value", color = C.text, fontSize = TS.body)
+        Text("+", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(1) }.padding(top = 4.dp), color = C.accentText, fontSize = TS.title, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
 @Composable
 private fun Stat(value: String, label: String, color: Color, modifier: Modifier) {
     Column(modifier) {
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = color)
-        Text(label, fontSize = 12.sp, color = C.muted)
+        Text(value, fontSize = TS.title, fontWeight = FontWeight.Medium, color = color)
+        Text(label, fontSize = TS.caption, color = C.muted)
     }
 }
 
@@ -228,9 +228,9 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                     t.due == today -> "ครบวันนี้"
                     else -> "นัดวันนี้"
                 }
-                if (lead != null) Text(lead, color = if (late) C.red else C.text, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                if (lead != null) Text(lead, color = if (late) C.red else C.text, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                 val sub = listOfNotNull(if (t.status == Status.IN_PROGRESS) "กำลังทำ" else null, Projects.projectOf(t)).joinToString(", ")
-                if (sub.isNotEmpty()) Text(sub, color = C.muted, fontSize = 12.5.sp)
+                if (sub.isNotEmpty()) Text(sub, color = C.muted, fontSize = TS.caption)
             }
         }
     }
@@ -246,8 +246,8 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem) {
         Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
             Text(e.title, color = Color(0xFFCFF4F0), style = MaterialTheme.typography.bodyLarge, maxLines = 2)
             Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (e.allDay) "ทั้งวัน" else "${e.begin.format(HM)} ถึง ${e.end.format(HM)}", color = C.teal, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
-                Text("Google Calendar", color = C.tealText, fontSize = 12.5.sp)
+                Text(if (e.allDay) "ทั้งวัน" else "${e.begin.format(HM)} ถึง ${e.end.format(HM)}", color = C.teal, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                Text("Google Calendar", color = C.tealText, fontSize = TS.caption)
             }
         }
     }
@@ -257,7 +257,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem) {
 private fun Notice(text: String) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.amberSoft).padding(14.dp), verticalAlignment = Alignment.Top) {
         Icon(Ic.bell, null, tint = C.amber, modifier = Modifier.size(18.dp))
-        Text(text, Modifier.padding(start = 10.dp), color = C.text, fontSize = 13.5.sp)
+        Text(text, Modifier.padding(start = 10.dp), color = C.text, fontSize = TS.body)
     }
 }
 

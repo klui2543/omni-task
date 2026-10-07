@@ -84,8 +84,21 @@ private val Scheme = darkColorScheme(
     onError = C.onAccent,
 )
 
-private fun style(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
-    TextStyle(fontFamily = Prompt, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
+/** The only text sizes in the app, so every screen reads the same. */
+object TS {
+    /** Dense grids only: the nav bar, Gantt and month cells. */
+    val micro = 12.sp
+    /** Dates, counts, hints and every secondary line. */
+    val caption = 12.5.sp
+    /** All primary text: task titles, buttons, fields. */
+    val body = 14.sp
+    val title = 16.sp
+    /** Big numbers in stat tiles. */
+    val stat = 20.sp
+}
+
+private fun style(size: Number, line: Int, weight: FontWeight = FontWeight.Normal) =
+    TextStyle(fontFamily = Prompt, fontSize = size.toFloat().sp, lineHeight = line.sp, fontWeight = weight)
 
 private val AppTypography = Typography(
     displaySmall = style(32, 40, FontWeight.Medium),
@@ -94,12 +107,12 @@ private val AppTypography = Typography(
     titleLarge = style(20, 26, FontWeight.Medium),
     titleMedium = style(16, 22, FontWeight.Medium),
     titleSmall = style(14, 20, FontWeight.Medium),
-    bodyLarge = style(15, 21),
+    bodyLarge = style(14, 21),
     bodyMedium = style(14, 20),
-    bodySmall = style(13, 18),
+    bodySmall = style(12.5f, 18),
     labelLarge = style(14, 20, FontWeight.Medium),
-    labelMedium = style(13, 18),
-    labelSmall = style(12, 16),
+    labelMedium = style(12.5f, 18),
+    labelSmall = style(12.5f, 17),
 )
 
 @Composable

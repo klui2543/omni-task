@@ -124,7 +124,7 @@ private fun Kanban(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
                         Text(status.label, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleSmall, color = C.text)
-                        Text("${cards.size}", color = C.muted, fontSize = 12.5.sp)
+                        Text("${cards.size}", color = C.muted, fontSize = TS.caption)
                     }
                     LazyColumn(contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(cards, key = { it.key }) { t -> KanbanCard(t, state, vm, onOpen) }
@@ -147,7 +147,7 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
         Row {
             Box(Modifier.width(3.dp).height(20.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
             Text(
-                t.title, Modifier.padding(start = 8.dp), color = if (t.isOpen) C.text else C.muted, fontSize = 14.sp,
+                t.title, Modifier.padding(start = 8.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.body,
                 maxLines = 3, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -170,7 +170,7 @@ private fun MoveButton(label: String, onClick: () -> Unit) {
         label,
         Modifier.height(32.dp).clip(RoundedCornerShape(9.dp)).border(1.dp, C.control, RoundedCornerShape(9.dp))
             .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
-        color = C.text2, fontSize = 12.5.sp,
+        color = C.text2, fontSize = TS.caption,
     )
 }
 
@@ -190,7 +190,7 @@ private fun Matrix(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
                 }
             }
         }
-        Text("กดค้างแล้วลากขึ้นหรือลงเพื่อเปลี่ยนความสำคัญ", Modifier.fillMaxWidth(), color = C.muted, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("กดค้างแล้วลากขึ้นหรือลงเพื่อเปลี่ยนความสำคัญ", Modifier.fillMaxWidth(), color = C.muted, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -204,15 +204,15 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
     ) {
         Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(q.accent))
-            Text(q.label, Modifier.weight(1f).padding(start = 6.dp), color = q.accent, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-            Text("${tasks.size}", color = C.muted, fontSize = 12.5.sp)
+            Text(q.label, Modifier.weight(1f).padding(start = 6.dp), color = q.accent, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text("${tasks.size}", color = C.muted, fontSize = TS.caption)
         }
         LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 10.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(tasks, key = { it.key }) { t ->
                 Column(Modifier.fillMaxWidth().taskDragSource(t.key, q.accent) { onOpen(t) }) {
-                    Text(t.title, color = C.text, fontSize = 13.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val d = t.due ?: t.scheduled
-                    if (d != null) Text(if (d == today) "วันนี้" else d.format(SHORT_DATE), color = if (d < today) C.red else C.muted, fontSize = 12.sp)
+                    if (d != null) Text(if (d == today) "วันนี้" else d.format(SHORT_DATE), color = if (d < today) C.red else C.muted, fontSize = TS.caption)
                 }
             }
         }
@@ -240,11 +240,11 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                         for (i in 0 until days) {
                             val d = first.plusDays(i.toLong())
                             Column(Modifier.width(dayW), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(d.dayOfWeek.thai(), color = C.faint, fontSize = 10.5.sp)
+                                Text(d.dayOfWeek.thai(), color = C.faint, fontSize = TS.micro)
                                 Text(
                                     "${d.dayOfMonth}",
                                     Modifier.size(22.dp).clip(CircleShape).background(if (d == state.today) C.accent else Color.Transparent).padding(top = 2.dp),
-                                    color = if (d == state.today) C.onAccent else C.text2, fontSize = 11.5.sp,
+                                    color = if (d == state.today) C.onAccent else C.text2, fontSize = TS.micro,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 )
                             }
@@ -252,7 +252,7 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                     }
                 }
                 rows.forEach { (project, tasks) ->
-                    Text(project, Modifier.fillMaxWidth().background(C.sunken).padding(horizontal = 12.dp, vertical = 6.dp), color = C.tealChip, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                    Text(project, Modifier.fillMaxWidth().background(C.sunken).padding(horizontal = 12.dp, vertical = 6.dp), color = C.tealChip, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                     tasks.sortedBy { it.start ?: it.scheduled ?: it.due }.forEach { t ->
                         val a = t.start ?: t.scheduled ?: t.due!!
                         val b = maxOf(a, t.due ?: t.scheduled ?: a)
@@ -265,7 +265,7 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                             else -> t.priority.tint.takeIf { it != C.faint } ?: C.muted
                         }
                         Row(Modifier.height(42.dp).clickable { onOpen(t) }, verticalAlignment = Alignment.CenterVertically) {
-                            Text(t.title, Modifier.width(nameW).padding(horizontal = 12.dp), color = if (t.isOpen) C.text else C.muted, fontSize = 12.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(t.title, Modifier.width(nameW).padding(horizontal = 12.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Box(Modifier.horizontalScroll(hScroll).width(dayW * days).fillMaxHeight()) {
                                 Box(Modifier.offset(x = dayW * (ChronoUnit.DAYS.between(first, state.today).toInt()) + dayW / 2).width(1.dp).fillMaxHeight().background(C.accent.copy(alpha = 0.5f)))
                                 if (visible) {
@@ -304,7 +304,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
             Card {
                 Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.padding(start = 16.dp, top = 12.dp), color = C.text, style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                    DayOfWeek.entries.forEach { Text(it.thai(), Modifier.weight(1f), color = C.faint, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                    DayOfWeek.entries.forEach { Text(it.thai(), Modifier.weight(1f), color = C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                 }
                 for (week in 0 until 6) {
                     val rowStart = firstCell.plusDays(week * 7L)
@@ -333,7 +333,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                                         !inMonth -> C.faint
                                         else -> C.text
                                     },
-                                    fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 )
                                 Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                     dots.forEach { Box(Modifier.size(5.dp).clip(CircleShape).background(it)) }
@@ -358,8 +358,8 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
                         Column(Modifier.padding(start = 12.dp)) {
-                            Text(e.title, color = C.text, fontSize = 14.sp)
-                            Text(if (e.allDay) "ทั้งวัน" else "${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", color = C.tealText, fontSize = 12.5.sp)
+                            Text(e.title, color = C.text, fontSize = TS.body)
+                            Text(if (e.allDay) "ทั้งวัน" else "${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", color = C.tealText, fontSize = TS.caption)
                         }
                     }
                 }

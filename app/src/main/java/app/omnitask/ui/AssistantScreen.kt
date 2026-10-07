@@ -116,7 +116,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("ผู้ช่วย", style = MaterialTheme.typography.headlineSmall, color = C.text)
-                Text(sources(state), color = C.muted, fontSize = 12.5.sp)
+                Text(sources(state), color = C.muted, fontSize = TS.caption)
             }
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, "เริ่มใหม่", vm::clearChat)
         }
@@ -145,13 +145,13 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 item(key = "examples") {
                     Card {
                         Column(Modifier.padding(14.dp)) {
-                            Text("ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล", color = C.text2, fontSize = 13.5.sp, lineHeight = 20.sp)
+                            Text("ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล", color = C.text2, fontSize = TS.body, lineHeight = 20.sp)
                             EXAMPLES.forEach { q ->
                                 Text(
                                     q,
                                     Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken)
                                         .clickable { send(q) }.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    color = C.accentText, fontSize = 13.5.sp,
+                                    color = C.accentText, fontSize = TS.body,
                                 )
                             }
                         }
@@ -194,14 +194,14 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f),
-                textStyle = TextStyle(color = C.text, fontSize = 14.sp, fontFamily = Prompt),
+                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
                 cursorBrush = SolidColor(C.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send() }),
                 maxLines = 3,
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text("อยากทำอะไร หรือถามเรื่องงาน", color = C.faint, fontSize = 14.sp)
+                        if (input.isEmpty()) Text("อยากทำอะไร หรือถามเรื่องงาน", color = C.faint, fontSize = TS.body)
                         inner()
                     }
                 },
@@ -229,19 +229,19 @@ private fun AskCard(title: String, badge: String, body: String, noLabel: String,
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-                Text(title, Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = 12.5.sp)
-                Text(badge, color = C.muted, fontSize = 12.5.sp)
+                Text(title, Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
+                Text(badge, color = C.muted, fontSize = TS.caption)
             }
-            Text(body, Modifier.padding(top = 8.dp), color = C.text, fontSize = 14.sp, lineHeight = 21.sp)
+            Text(body, Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body, lineHeight = 21.sp)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(
                     Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(10.dp)).clickable(onClick = onNo),
                     contentAlignment = Alignment.Center,
-                ) { Text(noLabel, color = C.accentText, fontSize = 12.5.sp) }
+                ) { Text(noLabel, color = C.accentText, fontSize = TS.caption) }
                 Box(
                     Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(10.dp)).background(C.accent).clickable(onClick = onYes),
                     contentAlignment = Alignment.Center,
-                ) { Text(yesLabel, color = C.onAccent, fontSize = 12.5.sp, fontWeight = FontWeight.Medium) }
+                ) { Text(yesLabel, color = C.onAccent, fontSize = TS.caption, fontWeight = FontWeight.Medium) }
             }
         }
     }
@@ -256,17 +256,17 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-                Text(if (first) "ขอรู้จักกันก่อน" else "ปรับโปรไฟล์", Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = 12.5.sp)
-                Text("4 ข้อ", color = C.muted, fontSize = 12.5.sp)
+                Text(if (first) "ขอรู้จักกันก่อน" else "ปรับโปรไฟล์", Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
+                Text("4 ข้อ", color = C.muted, fontSize = TS.caption)
             }
             Text(
                 "คำตอบจะเก็บใน ${Profile.PATH} แก้ใน Obsidian ได้ และผู้ช่วยจะถามใหม่ทุกเดือนเพราะชีวิตเปลี่ยนได้",
-                Modifier.padding(top = 6.dp), color = C.text2, fontSize = 13.sp, lineHeight = 19.sp,
+                Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.body, lineHeight = 19.sp,
             )
             fun times(vararg hm: String) = hm.map { LocalTime.parse(it) }
             Question("ปกติตื่นกี่โมง", times("05:30", "06:00", "06:30", "07:00", "08:00"), p.wake) { p = p.copy(wake = it) }
             Question("เข้านอนกี่โมง", times("21:30", "22:00", "22:30", "23:00", "23:30"), p.sleep) { p = p.copy(sleep = it) }
-            Text("ช่วงไหนสมองดีที่สุด", Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = 13.5.sp)
+            Text("ช่วงไหนสมองดีที่สุด", Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = TS.body)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("08:00" to "11:00", "10:00" to "13:00", "13:00" to "16:00", "19:00" to "22:00").forEach { (a, b) ->
                     val from = LocalTime.parse(a)
@@ -276,7 +276,7 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
             Question("ชอบออกกำลังกายตอนไหน", times("06:00", "07:00", "17:30", "18:30", "20:00"), p.exercise) { p = p.copy(exercise = it) }
             Text(
                 "เวรอ่านจากนัดใน Google Calendar ที่มีคำว่า \"${p.shiftWords.joinToString("\", \"")}\" และเวรดึกจากคำว่า \"${p.nightWords.joinToString("\", \"")}\"",
-                Modifier.padding(top = 12.dp), color = C.muted, fontSize = 12.5.sp, lineHeight = 18.sp,
+                Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.caption, lineHeight = 18.sp,
             )
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onCancel != null) GhostButton("ยกเลิก", onCancel, Modifier.weight(1f))
@@ -289,7 +289,7 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Question(title: String, options: List<LocalTime>, selected: LocalTime, onPick: (LocalTime) -> Unit) {
-    Text(title, Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = 13.5.sp)
+    Text(title, Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = TS.body)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         options.forEach { t -> Chip(Profile.hm(t), t == selected, { onPick(t) }) }
     }
@@ -301,7 +301,7 @@ private fun Bubble(text: String) {
         Text(
             text,
             Modifier.widthIn(max = 280.dp).clip(RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp)).background(C.accent).padding(horizontal = 14.dp, vertical = 10.dp),
-            color = C.onAccent, fontSize = 14.sp, lineHeight = 20.sp,
+            color = C.onAccent, fontSize = TS.body, lineHeight = 20.sp,
         )
     }
 }
@@ -314,16 +314,16 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
     val shown = plan.slots.drop(first).take(3)
     Card {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 10.dp)) {
-            Text(plan.intro, color = C.text, fontSize = 14.sp, lineHeight = 21.sp)
+            Text(plan.intro, color = C.text, fontSize = TS.body, lineHeight = 21.sp)
             if (shown.isNotEmpty()) {
                 Row(
                     Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("ชื่องาน", Modifier.width(56.dp), color = C.muted, fontSize = 12.5.sp)
+                    Text("ชื่องาน", Modifier.width(56.dp), color = C.muted, fontSize = TS.caption)
                     BasicTextField(
                         value = title, onValueChange = { title = it }, singleLine = true, modifier = Modifier.weight(1f),
-                        textStyle = TextStyle(color = C.text, fontSize = 14.sp, fontFamily = Prompt), cursorBrush = SolidColor(C.accent),
+                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt), cursorBrush = SolidColor(C.accent),
                     )
                 }
             }
@@ -337,21 +337,21 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
                             .clickable { onPick(index) }.padding(12.dp),
                     ) {
                         Column(Modifier.width(56.dp)) {
-                            Text(slot.dayLabel, color = if (on) C.accentText else C.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text(Profile.hm(slot.start), color = C.muted, fontSize = 12.5.sp)
+                            Text(slot.dayLabel, color = if (on) C.accentText else C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
+                            Text(Profile.hm(slot.start), color = C.muted, fontSize = TS.caption)
                         }
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(slot.title, color = C.text, fontSize = 13.5.sp)
+                                Text(slot.title, color = C.text, fontSize = TS.body)
                                 if (index == 0) {
                                     Text(
                                         "แนะนำ",
                                         Modifier.padding(start = 6.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF2B3A1A)).padding(horizontal = 7.dp, vertical = 1.dp),
-                                        color = C.lime, fontSize = 12.sp,
+                                        color = C.lime, fontSize = TS.caption,
                                     )
                                 }
                             }
-                            Text(slot.why, Modifier.padding(top = 2.dp), color = C.muted, fontSize = 12.5.sp, lineHeight = 17.sp)
+                            Text(slot.why, Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption, lineHeight = 17.sp)
                         }
                     }
                 }
@@ -369,7 +369,7 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
             Text(
                 "ให้ Claude ช่วยคิดแทน",
                 Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClaude).padding(vertical = 6.dp, horizontal = 2.dp),
-                color = C.accentText, fontSize = 12.5.sp,
+                color = C.accentText, fontSize = TS.caption,
             )
         }
     }
@@ -381,14 +381,14 @@ private fun TodayCard(tasks: List<Task>, state: UiState, onOpen: (Task) -> Unit)
         Column(Modifier.padding(vertical = 10.dp)) {
             Text(
                 if (tasks.isEmpty()) "วันนี้ไม่มีงานเร่ง ลองหยิบงานลงทุนอนาคตสักงาน" else "เรียงจากต้องทำก่อน ไปคนที่รอ แล้วค่อยงานเพื่ออนาคต",
-                Modifier.padding(horizontal = 14.dp), color = C.text, fontSize = 14.sp, lineHeight = 21.sp,
+                Modifier.padding(horizontal = 14.dp), color = C.text, fontSize = TS.body, lineHeight = 21.sp,
             )
             tasks.forEachIndexed { i, t ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-                    Text("${i + 1}", Modifier.width(22.dp), color = C.accentText, fontSize = 14.sp)
+                    Text("${i + 1}", Modifier.width(22.dp), color = C.accentText, fontSize = TS.body)
                     Column(Modifier.weight(1f)) {
-                        Text(t.title, color = C.text, fontSize = 14.sp)
-                        reason(t, state).takeIf { it.isNotEmpty() }?.let { Text(it, color = C.muted, fontSize = 12.5.sp) }
+                        Text(t.title, color = C.text, fontSize = TS.body)
+                        reason(t, state).takeIf { it.isNotEmpty() }?.let { Text(it, color = C.muted, fontSize = TS.caption) }
                     }
                 }
             }
@@ -401,7 +401,7 @@ private fun ReviewCard(item: Chat.Review) {
     Card {
         Column(Modifier.padding(14.dp)) {
             Text(item.title, color = C.text, style = MaterialTheme.typography.titleSmall)
-            item.lines.forEach { Text(it, Modifier.padding(top = 6.dp), color = C.text2, fontSize = 13.5.sp) }
+            item.lines.forEach { Text(it, Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.body) }
         }
     }
 }
@@ -412,8 +412,8 @@ private fun QuickCard(title: String, subtitle: String, modifier: Modifier, onCli
         modifier.clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Text(title, color = C.text, fontSize = 13.5.sp)
-        Text(subtitle, color = C.muted, fontSize = 12.5.sp)
+        Text(title, color = C.text, fontSize = TS.body)
+        Text(subtitle, color = C.muted, fontSize = TS.caption)
     }
 }
 

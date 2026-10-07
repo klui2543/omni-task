@@ -77,12 +77,12 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         value = q.text,
                         onValueChange = { vm.setQuery(q.copy(text = it)) },
                         singleLine = true,
-                        textStyle = TextStyle(color = C.text, fontSize = 15.sp, fontFamily = Prompt),
+                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt),
                         cursorBrush = SolidColor(C.accent),
                         modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card)
                             .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
                         decorationBox = { inner ->
-                            if (q.text.isEmpty()) Text("ค้นหาชื่องาน", color = C.faint, fontSize = 15.sp)
+                            if (q.text.isEmpty()) Text("ค้นหาชื่องาน", color = C.faint, fontSize = TS.body)
                             inner()
                         },
                     )
@@ -103,7 +103,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(7.dp).clip(CircleShape).background(g.tone.color))
                         Text(g.label, Modifier.weight(1f).padding(start = 8.dp), color = g.tone.color, style = MaterialTheme.typography.titleSmall)
-                        Text("${g.tasks.size}", color = C.muted, fontSize = 12.5.sp)
+                        Text("${g.tasks.size}", color = C.muted, fontSize = TS.caption)
                     }
                     g.tasks.forEachIndexed { i, t ->
                         if (i > 0) Divider(start = 48.dp)
@@ -146,7 +146,7 @@ fun FilterBar(
                     Modifier.height(34.dp).clip(CircleShape).background(if (on) C.accent else C.card)
                         .border(1.dp, if (on) C.accent else C.cardBorder, CircleShape)
                         .clickable { vm.pickSavedView(i) }.padding(horizontal = 14.dp, vertical = 7.dp),
-                    color = if (on) C.onAccent else C.text2, fontSize = 13.sp,
+                    color = if (on) C.onAccent else C.text2, fontSize = TS.body,
                 )
             }
         }
@@ -171,7 +171,7 @@ private fun ToolButton(label: String, active: Boolean, icon: androidx.compose.ui
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = if (active) C.accentText else C.text2, modifier = Modifier.size(14.dp))
-        Text(label, color = if (active) C.accentText else C.text2, fontSize = 13.sp)
+        Text(label, color = if (active) C.accentText else C.text2, fontSize = TS.body)
     }
 }
 
@@ -237,7 +237,7 @@ private fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, onDismiss: ()
         Text("เรียงลำดับ", style = MaterialTheme.typography.titleMedium)
         Segmented(listOf(true to "↑ น้อยไปมาก", false to "↓ มากไปน้อย"), q.ascending, { onChange(q.copy(ascending = it)) }, Modifier.padding(top = 12.dp).fillMaxWidth())
         SortBy.entries.forEach { s -> OptionRow(s.label, s == q.sortBy) { onChange(q.copy(sortBy = s)) } }
-        Text("ลำดับรอง: ความสำคัญ แล้วตามด้วยชื่องาน", Modifier.padding(top = 10.dp), color = C.muted, fontSize = 12.5.sp)
+        Text("ลำดับรอง: ความสำคัญ แล้วตามด้วยชื่องาน", Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
     }
 }
 
@@ -252,7 +252,7 @@ fun <T> OptionSheet(title: String, options: List<Pair<T, String>>, selected: T, 
 @Composable
 private fun OptionRow(label: String, on: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(50.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), color = C.text, fontSize = 15.sp)
+        Text(label, Modifier.weight(1f), color = C.text, fontSize = TS.body)
         if (on) Icon(Ic.check, null, tint = C.accent, modifier = Modifier.size(18.dp))
     }
     Divider()
@@ -260,7 +260,7 @@ private fun OptionRow(label: String, on: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun Label(text: String) {
-    Text(text, Modifier.padding(top = 18.dp, bottom = 8.dp), color = C.muted, fontSize = 13.sp)
+    Text(text, Modifier.padding(top = 18.dp, bottom = 8.dp), color = C.muted, fontSize = TS.body)
 }
 
 private fun <T> Set<T>.toggle(v: T): Set<T> = if (v in this) this - v else this + v
