@@ -10,14 +10,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -30,19 +40,23 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -112,14 +126,21 @@ fun OmniTaskApp(vm: TaskViewModel) {
         )
     }
 
-    Box(Modifier.fillMaxSize().background(C.bg)) {
+    val width = LocalConfiguration.current.screenWidthDp
+    val wide = width >= WIDE_DP
+    val twoPane = width >= TWO_PANE_DP
+    val editing = state.tasks.firstOrNull { it.key == editingKey }
+
+    val content: @Composable () -> Unit = {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             if (state.loading) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = C.accent, trackColor = C.bg)
             } else {
                 Box(Modifier.height(2.dp))
             }
-            Box(Modifier.weight(1f)) {
+            // On wide screens reading columns stay a comfortable width; the views (Kanban, Gantt, calendar) use it all.
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.widthIn(max = if (screen == Screen.VIEWS) Dp.Unspecified else 760.dp)) {
                 when (screen) {
                     Screen.FOCUS -> FocusScreen(state, vm, open, menu) { screen = Screen.AI }
                     Screen.TASKS -> TasksScreen(state, vm, open)
@@ -127,27 +148,88 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     Screen.PROJECTS -> ProjectsScreen(state, vm, open)
                     Screen.AI -> AssistantScreen(state, vm, open)
                 }
+                }
             }
         }
-        FloatingNav(screen, { screen = it }, Modifier.align(Alignment.BottomCenter))
+    }
+    val addButton: @Composable (Modifier) -> Unit = { m ->
         if (screen != Screen.AI) {
             Box(
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 92.dp)
-                    .size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accent).clickable { adding = QuickAddRequest() },
+                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accent).clickable { adding = QuickAddRequest() },
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp)) {
-            Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
+    }
+
+    if (wide) {
+        // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
+        CompositionLocalProvider(LocalNavClearance provides 24.dp) {
+            Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
+                NavRail(screen) { screen = it }
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    content()
+                    addButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
+                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
+                        Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
+                    }
+                }
+                if (twoPane && editing != null) {
+                    Box(Modifier.width(400.dp).fillMaxHeight().background(C.card).statusBarsPadding()) {
+                        CompositionLocalProvider(LocalPane provides true) {
+                            EditSheet(editing, state, vm, onDismiss = { editingKey = null })
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Box(Modifier.fillMaxSize().background(C.bg)) {
+            content()
+            FloatingNav(screen, { screen = it }, Modifier.align(Alignment.BottomCenter))
+            addButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 92.dp))
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp)) {
+                Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
+            }
         }
     }
 
-    state.tasks.firstOrNull { it.key == editingKey }?.let { task ->
-        EditSheet(task, state, vm, onDismiss = { editingKey = null })
+    if (editing != null && !(wide && twoPane)) {
+        EditSheet(editing, state, vm, onDismiss = { editingKey = null })
     }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
     adding?.let { r ->
         QuickAddSheet(state, vm, r.voice, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
+    }
+}
+
+/** The same five destinations as a vertical pill on the left, for wide screens. */
+@Composable
+private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
+    // A phone on its side is short: smaller items, and the rail scrolls rather than clips.
+    val itemH = if (LocalConfiguration.current.screenHeightDp < 440) 46.dp else 56.dp
+    Column(
+        Modifier.fillMaxHeight().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Column(
+            Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xF0171A23))
+                .border(1.dp, C.cardBorder, RoundedCornerShape(20.dp)).padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Screen.entries.forEach { s ->
+                val on = s == selected
+                Column(
+                    Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp))
+                        .background(if (on) C.accent else Color.Transparent).clickable { onSelect(s) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(s.icon, null, tint = if (on) C.onAccent else C.muted, modifier = Modifier.size(20.dp))
+                    Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
@@ -220,4 +302,14 @@ private fun Welcome(onPick: () -> Unit) {
 }
 
 /** Space the floating nav covers, so the last row of every list can scroll above it. */
-val NavClearance = 100.dp
+val NavClearance: Dp
+    @Composable get() = LocalNavClearance.current
+
+/** Bottom space the floating nav needs; on wide screens the nav sits at the side and only a margin is left. */
+val LocalNavClearance = staticCompositionLocalOf { 100.dp }
+
+/** Width from which the app lays out for landscape, tablets and the unfolded Find N: nav rail on the left. */
+private const val WIDE_DP = 600
+
+/** Width from which an opened task shows beside the list instead of in a sheet. */
+private const val TWO_PANE_DP = 720

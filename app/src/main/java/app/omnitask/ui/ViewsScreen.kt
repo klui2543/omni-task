@@ -45,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
@@ -112,6 +113,9 @@ private fun Kanban(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
     val q = state.query
     val columns = listOf(Status.TODO to C.faint, Status.IN_PROGRESS to C.accent, Status.DONE to C.lime)
     val ordered = q.copy(statuses = emptySet(), groupBy = GroupBy.NONE).run(pool, state.today).flatMap { it.tasks }
+    // Three columns share a wide screen (landscape, unfolded); on a phone they keep 272dp and scroll sideways.
+    val screenW = LocalConfiguration.current.screenWidthDp.dp
+    val colW = maxOf(272.dp, (screenW - 28.dp - 20.dp - if (screenW >= 600.dp) 96.dp else 0.dp) / 3)
     Column(Modifier.fillMaxSize()) {
         LazyRow(
             Modifier.fillMaxSize().padding(top = 4.dp),
@@ -126,7 +130,7 @@ private fun Kanban(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
                     state.tasks.firstOrNull { it.key == key }?.let { if (it.status != status) vm.setStatus(it, status) }
                 }
                 Column(
-                    Modifier.width(272.dp).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                    Modifier.width(colW).fillMaxHeight().clip(RoundedCornerShape(18.dp))
                         .background(if (hovering.value) C.accentDeep else C.sunken)
                         .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(18.dp))
                         .then(drop),

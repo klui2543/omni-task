@@ -29,6 +29,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -180,12 +182,27 @@ private fun ToolButton(label: String, active: Boolean, icon: androidx.compose.ui
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SheetFrame(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    if (LocalPane.current) {
+        // Beside the list on a wide screen: same content, a close button instead of a swipe-down sheet.
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 10.dp), horizontalArrangement = Arrangement.End) {
+                SquareButton(Ic.close, tr("ปิด", "Close"), onDismiss)
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
+                CompositionLocalProvider(LocalPane provides false) { content() }
+            }
+        }
+        return
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.card, contentColor = C.text, scrimColor = Color(0x99000000)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
             content()
         }
     }
 }
+
+/** True while a sheet is shown as a side pane (wide screens); nested sheets inside it still open normally. */
+val LocalPane = staticCompositionLocalOf { false }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
