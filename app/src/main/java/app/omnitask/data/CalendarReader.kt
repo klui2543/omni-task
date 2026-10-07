@@ -74,6 +74,20 @@ object CalendarReader {
         return runCatching { context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)?.let { ContentUris.parseId(it) } }.getOrNull()
     }
 
+    /** Adds an all-day event on [day]; all-day events are stored as UTC midnights. */
+    fun insertAllDay(context: Context, calendarId: Long, title: String, day: LocalDate): Long? {
+        if (!canWrite(context)) return null
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId)
+            put(CalendarContract.Events.TITLE, title)
+            put(CalendarContract.Events.ALL_DAY, 1)
+            put(CalendarContract.Events.DTSTART, day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+            put(CalendarContract.Events.DTEND, day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+        }
+        return runCatching { context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)?.let { ContentUris.parseId(it) } }.getOrNull()
+    }
+
     /** Events overlapping [from, to). All-day events come back starting at midnight with [CalendarEvent.allDay] set. */
     fun events(context: Context, from: LocalDateTime, to: LocalDateTime): List<CalendarEvent> {
         if (!hasPermission(context)) return emptyList()

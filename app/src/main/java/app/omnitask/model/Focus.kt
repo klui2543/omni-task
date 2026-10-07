@@ -133,6 +133,38 @@ object Focus {
             .forEach { add(Suggestion(it, Kind.MARK_FUTURE, tr("สำคัญแต่ไม่มีเดดไลน์ ตั้งเป็นงานลงทุนอนาคตไหม?", "Important but no deadline. Make it future work?"))) }
     }
 
+    /**
+     * Every open task in the order it should be done, with the reason it sits there: late work, then what is
+     * due soon, people waiting (longest first), today's plan, importance, and work for the future.
+     */
+    fun rank(tasks: List<Task>, today: LocalDate): List<Pair<Task, String>> =
+        tasks.filter { it.isOpen && !isSomeday(it) }.map { t ->
+            val due = t.due
+            val late = due?.let { ChronoUnit.DAYS.between(it, today) }?.takeIf { it > 0 }
+            val left = due?.let { ChronoUnit.DAYS.between(today, it) }?.takeIf { it >= 0 }
+            val age = ageDays(t, today) ?: 0
+            var score = when (t.priority) {
+                Priority.HIGHEST -> 30L
+                Priority.HIGH -> 20L
+                Priority.MEDIUM -> 10L
+                Priority.LOW -> -5L
+                Priority.LOWEST -> -10L
+                else -> 0L
+            }
+            val reason = when {
+                late != null -> { score += 100 + late * 2; tr("เลยกำหนดมา $late วัน", "$late days overdue") }
+                left == 0L -> { score += 80; tr("ครบวันนี้", "Due today") }
+                left != null && left <= 3 -> { score += 60 - left * 5; tr("ครบในอีก $left วัน", "Due in $left days") }
+                isWaiting(t) -> { score += 40 + age; (waitingFor(t) ?: tr("มีคน", "Someone")) + tr(" รอมา $age วัน", " waiting $age days") }
+                t.scheduled == today -> { score += 50; tr("นัดทำวันนี้", "Scheduled today") }
+                left != null -> { score += 30 - minOf(left, 25); tr("ครบในอีก $left วัน", "Due in $left days") }
+                isFutureWork(t) -> { score += 15 + minOf(age, 30) / 3; tr("ลงทุนอนาคต", "Future work") }
+                else -> tr("ไม่มีเดดไลน์", "No deadline")
+            }
+            if (t.status == Status.IN_PROGRESS) score += 10
+            Triple(t, reason, score)
+        }.sortedByDescending { it.third }.map { it.first to it.second }
+
     /** The coming Saturday (today if today is Saturday): the default soft date for neglected future work. */
     fun softDate(today: LocalDate): LocalDate = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
 }

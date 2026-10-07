@@ -3,18 +3,21 @@ package app.omnitask.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.ImageAttach
+import app.omnitask.data.SettingsSync
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Insight
+import app.omnitask.model.Lang
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
@@ -37,6 +40,8 @@ import app.omnitask.notify.Scheduler
 import app.omnitask.widget.OmniWidgets
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -116,7 +121,19 @@ sealed interface Chat {
     data class Slots(val plan: Planner.Plan, val page: Int = 0, val picked: Int = 0, val done: String? = null) : Chat
     data class Today(val tasks: List<Task>) : Chat
     data class Review(val title: String, val lines: List<String>) : Chat
+    /** "How long will it take?" before looking for time; [answered] is the minutes picked, -1 for "don't know". */
+    data class Duration(val request: String, val answered: Int? = null) : Chat
+    data class Agenda(val title: String, val summary: String, val days: List<AgendaDay>) : Chat
+    data class RangePlan(
+        val title: String,
+        val proposals: List<Planner.Proposal>,
+        val accepted: Set<Int> = emptySet(),
+        val toCalendar: Boolean = false,
+    ) : Chat
+    data class Ranked(val items: List<Pair<Task, String>>) : Chat
 }
+
+data class AgendaDay(val day: LocalDate, val events: List<CalendarEvent>, val tasks: List<Task>)
 
 /** A photo prepared for a task, waiting for the user to choose full size or reduced. */
 data class PendingImage(val task: Task, val prepared: ImageAttach.Prepared)
@@ -131,26 +148,47 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = VaultRepository(app)
     private val prefs = app.getSharedPreferences("omnitask", Context.MODE_PRIVATE)
 
-    private val _state = MutableStateFlow(
-        UiState(
-            vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse),
-            urgentRule = prefs.getString(KEY_URGENT, null)
-                ?.let { name -> UrgentRule.entries.firstOrNull { it.name == name } }
-                ?: UrgentRule.THIS_WEEK,
-            futureCount = prefs.getInt(KEY_FUTURE_COUNT, 1),
-            skippedToday = prefs.getStringSet(KEY_SKIPPED, emptySet()).orEmpty()
-                .filter { it.startsWith("${LocalDate.now()}|") }
-                .map { it.substringAfter('|') }
-                .toSet(),
-            dismissed = prefs.getStringSet(KEY_DISMISSED, emptySet()).orEmpty().toSet(),
-            reviewed = prefs.getStringSet(KEY_REVIEWED, emptySet()).orEmpty().mapNotNull { e ->
-                runCatching { e.substringBeforeLast('|') to LocalDate.parse(e.substringAfterLast('|')) }.getOrNull()
-            }.toMap(),
-            notify = Scheduler.loadSettings(app),
-            projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
-            starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
-        )
+    private val _state = MutableStateFlow(fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse))))
+
+    /** The settings kept in preferences (and synced through the vault file), laid over [base]. */
+    private fun fromPrefs(base: UiState) = base.copy(
+        urgentRule = prefs.getString(KEY_URGENT, null)
+            ?.let { name -> UrgentRule.entries.firstOrNull { it.name == name } }
+            ?: UrgentRule.THIS_WEEK,
+        futureCount = prefs.getInt(KEY_FUTURE_COUNT, 1),
+        skippedToday = prefs.getStringSet(KEY_SKIPPED, emptySet()).orEmpty()
+            .filter { it.startsWith("${LocalDate.now()}|") }
+            .map { it.substringAfter('|') }
+            .toSet(),
+        dismissed = prefs.getStringSet(KEY_DISMISSED, emptySet()).orEmpty().toSet(),
+        reviewed = prefs.getStringSet(KEY_REVIEWED, emptySet()).orEmpty().mapNotNull { e ->
+            runCatching { e.substringBeforeLast('|') to LocalDate.parse(e.substringAfterLast('|')) }.getOrNull()
+        }.toMap(),
+        notify = Scheduler.loadSettings(getApplication()),
+        projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
+        starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
     )
+
+    // Any settings change is copied to the vault file a moment later, batching quick taps into one write.
+    private var saveJob: Job? = null
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key in SYNC_IGNORED) return@OnSharedPreferenceChangeListener
+        val vault = _state.value.vault ?: return@OnSharedPreferenceChangeListener
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            delay(1500)
+            withContext(Dispatchers.IO) { runCatching { SettingsSync.save(getApplication(), repo, vault) } }
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(settingsListener)
+    }
+
+    override fun onCleared() {
+        prefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
+    }
+
     val state: StateFlow<UiState> = _state
 
     fun setVault(uri: Uri) {
@@ -176,6 +214,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
         viewModelScope.launch {
+            // Settings saved from another phone (or before the app was cleared) come in first.
+            val imported = withContext(Dispatchers.IO) {
+                runCatching {
+                    SettingsSync.load(getApplication(), repo, vault).also { loaded ->
+                        // First run with this vault: start the file from what this phone has.
+                        if (!loaded && repo.readPath(vault, SettingsSync.PATH) == null) SettingsSync.save(getApplication(), repo, vault)
+                    }
+                }.getOrDefault(false)
+            }
+            if (imported) {
+                Lang.load(getApplication())
+                _state.update { fromPrefs(it) }
+            }
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
                     // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
@@ -502,10 +553,157 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Assistant ----
 
+    /** Reads what the owner asked for: a look-ahead, a plan for a range, a ranking, or time for something new. */
     fun ask(text: String) {
+        val t = text.lowercase()
+        val today = LocalDate.now()
+        val range = Planner.rangeOf(text, today)
+        when {
+            listOf("วางแผน", "plan ").any { it in "$t " } && !t.startsWith("plan my day") ->
+                planRange(range ?: (today to today.plusDays(6)), text)
+            listOf("มีอะไร", "what's on", "whats on", "what do i have", "agenda").any { it in t } ->
+                showAgenda(range ?: (today to today.plusDays(6)), text)
+            listOf("จัดลำดับ", "ทำอะไรก่อน", "ควรทำอะไร", "prioritize", "priorities", "what first").any { it in t } -> rankAll(text)
+            Planner.explicitMinutes(text) != null -> {
+                val s = _state.value
+                val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
+                _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
+            }
+            else -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
+        }
+    }
+
+    /** The owner said how long it takes (or -1: "don't know"); now find the time. */
+    fun answerDuration(index: Int, minutes: Int) {
+        val item = _state.value.chat.getOrNull(index) as? Chat.Duration ?: return
+        if (item.answered != null) return
         val s = _state.value
-        val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
-        _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
+        val plan = Planner.plan(item.request, s.tasks, s.events, s.profile, LocalDateTime.now(), minutes.takeIf { it > 0 })
+        _state.update {
+            it.copy(chat = it.chat.toMutableList().also { list -> list[index] = item.copy(answered = minutes) } + Chat.Slots(plan))
+        }
+    }
+
+    fun rankAll(asked: String = tr("จัดลำดับงานทั้งหมดให้หน่อย", "Prioritize all my tasks")) {
+        val s = _state.value
+        _state.update { it.copy(chat = it.chat + Chat.Asked(asked) + Chat.Ranked(Focus.rank(s.tasks, s.today).take(12))) }
+    }
+
+    /** What is coming in a range, from both the vault and Google Calendar, day by day. */
+    fun showAgenda(range: Pair<LocalDate, LocalDate>, asked: String) {
+        val (from, to) = range
+        viewModelScope.launch {
+            val events = withContext(Dispatchers.IO) {
+                runCatching { CalendarReader.events(getApplication(), from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+            }
+            val tasks = _state.value.tasks.filter { it.status != Status.CANCELLED && !Focus.isSomeday(it) }
+            val days = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= to }.map { d ->
+                AgendaDay(
+                    d,
+                    events.filter { it.begin.toLocalDate() <= d && (it.end.minusNanos(1).toLocalDate() >= d) }.sortedBy { it.begin },
+                    tasks.filter { t -> t.isOpen && (t.due == d || t.scheduled == d) }.sortedBy { it.priority.ordinal },
+                )
+            }.toList()
+            val busiest = days.maxByOrNull { it.events.count { e -> !e.allDay } + it.tasks.size }
+            val due = days.sumOf { d -> d.tasks.count { it.due == d.day } }
+            val summary = tr(
+                "นัด ${events.size} รายการ งานครบกำหนด $due งาน",
+                "${events.size} events, $due tasks due",
+            ) + (busiest?.takeIf { it.events.size + it.tasks.size > 2 }?.let { b ->
+                tr(" วันที่แน่นสุดคือ ", ". Busiest: ") + b.day.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", Lang.locale))
+            } ?: "")
+            val title = rangeTitle(from, to)
+            _state.update { it.copy(chat = it.chat + Chat.Asked(asked) + Chat.Agenda(title, summary, days.filter { d -> d.events.isNotEmpty() || d.tasks.isNotEmpty() })) }
+        }
+    }
+
+    /** Places undated work into the free time of a range; nothing is written until a proposal is accepted. */
+    fun planRange(range: Pair<LocalDate, LocalDate>, asked: String) {
+        val (from, to) = range
+        val now = LocalDateTime.now()
+        val today = now.toLocalDate()
+        viewModelScope.launch {
+            val events = withContext(Dispatchers.IO) {
+                runCatching { CalendarReader.events(getApplication(), from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+            }
+            val s = _state.value
+            val candidates = Focus.rank(s.tasks, today).map { it.first }.filter { t ->
+                (t.scheduled == null || t.scheduled < today) && (t.due == null || t.due >= from) && t.reminderTime == null
+            }.take(12)
+            val days = generateSequence(maxOf(from, today)) { it.plusDays(1) }.takeWhile { it <= to }.toList()
+            val proposals = withContext(Dispatchers.Default) { Planner.planRange(candidates, days, s.tasks, events, s.profile, now) }
+            _state.update { it.copy(chat = it.chat + Chat.Asked(asked) + Chat.RangePlan(rangeTitle(from, to), proposals)) }
+        }
+    }
+
+    private fun rangeTitle(from: LocalDate, to: LocalDate): String {
+        val f = java.time.format.DateTimeFormatter.ofPattern("d MMM", Lang.locale)
+        return if (from == to) from.format(f) else from.format(f) + tr(" ถึง ", " to ") + to.format(f)
+    }
+
+    private fun updatePlan(index: Int, change: (Chat.RangePlan) -> Chat.RangePlan) = _state.update {
+        val item = it.chat.getOrNull(index) as? Chat.RangePlan ?: return@update it
+        it.copy(chat = it.chat.toMutableList().also { list -> list[index] = change(item) })
+    }
+
+    fun toggleRangeCalendar(index: Int) = updatePlan(index) { it.copy(toCalendar = !it.toCalendar) }
+
+    /** Writes accepted proposals: ⏳ the day and 🎯 the time on each task, and a calendar event if asked. */
+    fun acceptProposals(index: Int, which: List<Int>) {
+        val item = _state.value.chat.getOrNull(index) as? Chat.RangePlan ?: return
+        val todo = which.filter { it !in item.accepted }
+        if (todo.isEmpty()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                val cal = if (item.toCalendar) CalendarReader.primaryWritable(app) else null
+                todo.filter { i ->
+                    val p = item.proposals[i]
+                    runCatching {
+                        repo.rewriteLine(p.task) { raw ->
+                            TaskLine.setReminder(TaskLine.setDate(raw, DateField.SCHEDULED, p.slot.day), p.slot.start, app.omnitask.model.ReminderOn.SCHEDULED)
+                        }
+                        cal?.let { c ->
+                            val start = p.slot.day.atTime(p.slot.start)
+                            CalendarReader.insert(app, c.id, p.task.title, start, start.plusMinutes(p.minutes.toLong()))
+                        }
+                    }.isSuccess
+                }
+            }
+            updatePlan(index) { it.copy(accepted = it.accepted + done) }
+            if (done.size < todo.size) _state.update { it.copy(message = tr("บางงานบันทึกไม่ได้ ไฟล์อาจถูกแก้จากที่อื่น", "Some tasks could not be saved; the file may have changed")) }
+            reload()
+        }
+    }
+
+    /** "None of these": add the task as an all-day item on [day], or at a time the owner picks. */
+    fun confirmCustom(index: Int, title: String, day: LocalDate, time: java.time.LocalTime?, minutes: Int) {
+        val vault = _state.value.vault ?: return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val today = LocalDate.now()
+                    val line = if (time != null) {
+                        Planner.taskLine(title, Planner.Slot(day, time, time.plusMinutes(minutes.toLong()), "", "", 0), today)
+                    } else {
+                        "- [ ] $title ➕ $today ⏳ $day"
+                    }
+                    repo.appendLine(vault, VaultRepository.TASK_FILE, line)
+                    CalendarReader.primaryWritable(app)?.let { cal ->
+                        if (time != null) CalendarReader.insert(app, cal.id, title, day.atTime(time), day.atTime(time).plusMinutes(minutes.toLong()))
+                        else CalendarReader.insertAllDay(app, cal.id, title, day)
+                    }
+                }
+            }
+            result.fold(
+                { eventId ->
+                    updateSlots(index) { it.copy(done = if (eventId != null) tr("เพิ่มงาน + ลงปฏิทินแล้ว", "Task added + on calendar") else tr("เพิ่มงานแล้ว (ยังลงปฏิทินไม่ได้)", "Task added (not on calendar)")) }
+                },
+                { e -> _state.update { it.copy(message = tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}")) } },
+            )
+            reload()
+        }
     }
 
     fun planToday() {
@@ -626,5 +824,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+
+        /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
+        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT)
     }
 }

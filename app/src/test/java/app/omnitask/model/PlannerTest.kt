@@ -68,4 +68,34 @@ class PlannerTest {
             remembered = listOf("วันเสาร์เขียนงานได้ดี"), updated = LocalDate.parse("2026-10-07"))
         assertEquals(p, Profile.parse(p.render()))
     }
+
+    @Test
+    fun rangePlanNeverDoubleBooks() {
+        val tasks = listOf("เขียน proposal", "อ่าน paper", "ไปวิ่ง", "โทรหาแม่").map { app.omnitask.data.TaskLine.parse("- [ ] $it")!! }
+        val days = (1L..3L).map { now.toLocalDate().plusDays(it) }
+        val plan = Planner.planRange(tasks, days, tasks, emptyList(), profile, now)
+        assertEquals(4, plan.size)
+        plan.forEach { a ->
+            plan.filter { it !== a && it.slot.day == a.slot.day }.forEach { b ->
+                val aEnd = a.slot.start.plusMinutes(a.minutes.toLong())
+                val bEnd = b.slot.start.plusMinutes(b.minutes.toLong())
+                assertFalse("${a.task.title} overlaps ${b.task.title}", a.slot.start < bEnd && b.slot.start < aEnd)
+            }
+        }
+        assertEquals(null, Planner.explicitMinutes("อยากไปวิ่ง"))
+        assertEquals(30, Planner.explicitMinutes("โทรหาแม่ 30 นาที"))
+    }
+
+    @Test
+    fun rankPutsLateAndWaitingFirst() {
+        val today = now.toLocalDate()
+        fun t(line: String) = app.omnitask.data.TaskLine.parse(line)!!
+        val late = t("- [ ] ส่งรายงาน 📅 2026-10-05")
+        val waiting = t("- [ ] ตอบพี่เอ #รอ/พี่เอ ➕ 2026-09-27")
+        val plain = t("- [ ] จัดโต๊ะ ⏫")
+        val parked = t("- [ ] ปลูกต้นไม้ #สักวัน")
+        val ranked = Focus.rank(listOf(plain, parked, waiting, late), today).map { it.first }
+        assertEquals(listOf(late, waiting, plain), ranked)
+    }
 }
+

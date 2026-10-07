@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,22 +24,35 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDateRangePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,6 +66,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
@@ -61,8 +76,13 @@ import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.Task
 import app.omnitask.model.tr
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 private val EXAMPLES: List<String>
     get() = listOf(
@@ -83,6 +103,8 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var input by rememberSaveable { mutableStateOf("") }
     var interviewing by rememberSaveable { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    var custom by remember { mutableStateOf<CustomRequest?>(null) }
+    var pickingRange by remember { mutableStateOf(false) }
     val calendarAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         pendingConfirm?.let { (i, title) -> vm.confirmSlot(i, title) }
         pendingConfirm = null
@@ -177,14 +199,34 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             itemsIndexed(state.chat) { index, item ->
                 when (item) {
                     is Chat.Asked -> Bubble(item.text)
-                    is Chat.Slots -> SlotsCard(item, { vm.pickSlot(index, it) }, { vm.moreSlots(index) }, { confirm(index, it) }) { askClaude(item.plan.request) }
+                    is Chat.Slots -> SlotsCard(
+                        item, { vm.pickSlot(index, it) }, { vm.moreSlots(index) }, { confirm(index, it) },
+                        onCustom = { title, allDay -> custom = CustomRequest(index, title, allDay, item.plan.minutes, item.plan.slots.firstOrNull()?.day ?: state.today) },
+                    ) { askClaude(item.plan.request) }
                     is Chat.Today -> TodayCard(item.tasks, state, onOpen)
                     is Chat.Review -> ReviewCard(item)
+                    is Chat.Duration -> DurationCard(item) { vm.answerDuration(index, it) }
+                    is Chat.Agenda -> AgendaCard(item, state, onOpen)
+                    is Chat.RangePlan -> RangePlanCard(item, state, onOpen, { vm.toggleRangeCalendar(index) }) { which ->
+                        if (item.toCalendar && !CalendarReader.canWrite(context)) {
+                            calendarAsk.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
+                        }
+                        vm.acceptProposals(index, which)
+                    }
+                    is Chat.Ranked -> RankedCard(item, onOpen)
                 }
             }
 
-            item(key = "quick") {
+            if (state.chat.isEmpty()) item(key = "quick") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickCard(tr("สัปดาห์หน้ามีอะไร", "Next week"), tr("งานและนัดทั้งหมด", "Tasks and events"), Modifier.weight(1f)) {
+                            vm.showAgenda(nextWeek(state.today), tr("สัปดาห์หน้ามีอะไรบ้าง", "What's on next week?"))
+                        }
+                        QuickCard(tr("วางแผนสัปดาห์หน้า", "Plan next week"), tr("จัดงานที่ยังไม่มีวันลงช่องว่าง", "Fit undated work into free time"), Modifier.weight(1f)) {
+                            vm.planRange(nextWeek(state.today), tr("วางแผนสัปดาห์หน้าให้หน่อย", "Plan next week"))
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val morning = state.notify.digestTimes.firstOrNull()?.let { tr("แผนตอนเช้า ${Profile.hm(it)}", "Morning plan ${Profile.hm(it)}") } ?: tr("ตามงานและนัดวันนี้", "From today's tasks and events")
                         QuickCard(tr("จัดลำดับวันนี้", "Plan today"), morning, Modifier.weight(1f), vm::planToday)
@@ -206,6 +248,25 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
 
         val ime = WindowInsets.isImeVisible
+        // Once the conversation has started the big cards give way to this row, so the chat keeps the space.
+        if (state.chat.isNotEmpty() && !ime) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                QuickChip(tr("จัดลำดับวันนี้", "Plan today"), vm::planToday)
+                QuickChip(tr("จัดลำดับทั้งหมด", "Prioritize all")) { vm.rankAll() }
+                QuickChip(tr("สัปดาห์หน้ามีอะไร", "Next week")) { vm.showAgenda(nextWeek(state.today), tr("สัปดาห์หน้ามีอะไรบ้าง", "What's on next week?")) }
+                QuickChip(tr("เดือนหน้ามีอะไร", "Next month")) { vm.showAgenda(nextMonth(state.today), tr("เดือนหน้ามีอะไรบ้าง", "What's on next month?")) }
+                QuickChip(tr("วางแผนสัปดาห์หน้า", "Plan next week")) { vm.planRange(nextWeek(state.today), tr("วางแผนสัปดาห์หน้าให้หน่อย", "Plan next week")) }
+                QuickChip(tr("วางแผนเดือนนี้", "Plan this month")) {
+                    vm.planRange(state.today to state.today.with(TemporalAdjusters.lastDayOfMonth()), tr("วางแผนเดือนนี้ให้หน่อย", "Plan this month"))
+                }
+                QuickChip(tr("เลือกช่วงเอง", "Pick dates")) { pickingRange = true }
+                QuickChip(tr("ทบทวนสัปดาห์", "Weekly review"), vm::reviewWeek)
+                QuickChip(tr("ถาม Claude", "Ask Claude")) { askClaude(tr("ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน", "Please order today's tasks around the free time in my calendar")) }
+            }
+        }
         Row(
             Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp)
                 .then(if (ime) Modifier.imePadding() else Modifier)
@@ -234,6 +295,233 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.send, tr("ส่ง", "Send"), tint = C.onAccent, modifier = Modifier.size(17.dp)) }
         }
+    }
+
+    custom?.let { c ->
+        CustomTimeDialog(c, onDismiss = { custom = null }) { day, time ->
+            if (!CalendarReader.canWrite(context)) calendarAsk.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
+            vm.confirmCustom(c.index, c.title, day, time, c.minutes)
+            custom = null
+        }
+    }
+    if (pickingRange) {
+        RangeDialog(
+            onDismiss = { pickingRange = false },
+            onAgenda = { from, to -> vm.showAgenda(from to to, tr("ช่วงนี้มีอะไรบ้าง", "What's on in this range?")); pickingRange = false },
+            onPlan = { from, to -> vm.planRange(from to to, tr("วางแผนช่วงนี้ให้หน่อย", "Plan this range")); pickingRange = false },
+        )
+    }
+}
+
+private fun nextWeek(today: LocalDate) = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY)).let { it to it.plusDays(6) }
+
+private fun nextMonth(today: LocalDate) = today.plusMonths(1).withDayOfMonth(1).let { it to it.with(TemporalAdjusters.lastDayOfMonth()) }
+
+/** A slot the owner sets by hand: all-day on a date, or a date and a time. */
+private data class CustomRequest(val index: Int, val title: String, val allDay: Boolean, val minutes: Int, val day: LocalDate)
+
+@Composable
+private fun QuickChip(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        Modifier.clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+        color = C.text2, fontSize = TS.caption, maxLines = 1,
+    )
+}
+
+/** "About how long?" with ready answers, including "don't know" (the assistant then estimates from the kind of work). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DurationCard(item: Chat.Duration, onAnswer: (Int) -> Unit) {
+    Card {
+        Column(Modifier.padding(14.dp)) {
+            Text(tr("งานนี้น่าจะใช้เวลาประมาณเท่าไร", "About how long will this take?"), color = C.text, fontSize = TS.body)
+            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(15, 30, 45, 60, 90, 120, 180).forEach { m ->
+                    Chip(Planner.duration(m), item.answered == m, { onAnswer(m) })
+                }
+                Chip(tr("ไม่รู้", "Not sure"), item.answered == -1, { onAnswer(-1) })
+            }
+            if (item.answered == -1) {
+                Text(tr("ใช้ค่าประมาณจากประเภทงานแทน", "Estimating from the kind of work"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgendaCard(item: Chat.Agenda, state: UiState, onOpen: (Task) -> Unit) {
+    val dayFmt = java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", TH)
+    val hm = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+    Card {
+        Column(Modifier.padding(vertical = 12.dp)) {
+            Text(item.title, Modifier.padding(horizontal = 14.dp), color = C.text, style = MaterialTheme.typography.titleSmall)
+            Text(item.summary, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
+            if (item.days.isEmpty()) Text(tr("ว่างทั้งช่วง ไม่มีงานหรือนัด", "Nothing on in this range"), Modifier.padding(14.dp), color = C.muted, fontSize = TS.body)
+            item.days.forEach { d ->
+                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 10.dp)) {
+                    Text(
+                        if (d.day == state.today) tr("วันนี้", "Today") else d.day.format(dayFmt),
+                        Modifier.width(76.dp), color = if (d.day == state.today) C.accentText else C.text2, fontSize = TS.caption,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        d.events.forEach { e ->
+                            Text(
+                                (if (e.allDay) tr("ทั้งวัน ", "All day ") else e.begin.format(hm) + " ") + e.title,
+                                color = C.tealText, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        d.tasks.forEach { t ->
+                            Text(
+                                (if (t.due == d.day) tr("ครบ: ", "Due: ") else tr("นัดทำ: ", "Do: ")) + t.title,
+                                Modifier.clickable { onOpen(t) },
+                                color = if (t.due == d.day) C.text else C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RangePlanCard(item: Chat.RangePlan, state: UiState, onOpen: (Task) -> Unit, onToggleCalendar: () -> Unit, onAccept: (List<Int>) -> Unit) {
+    val dayFmt = java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", TH)
+    Card {
+        Column(Modifier.padding(14.dp)) {
+            Text(tr("แผน ", "Plan for ") + item.title, color = C.text, style = MaterialTheme.typography.titleSmall)
+            Text(
+                if (item.proposals.isEmpty()) tr("ไม่มีงานที่ยังไม่มีวัน หรือช่วงนี้ไม่มีเวลาว่างพอ", "No undated work, or no free time in this range")
+                else tr("จัดงานที่ยังไม่มีวันลงช่องว่าง เรียงจากเร่งสุด ไม่ชนนัดและเวร", "Undated work placed in free time, most urgent first, around events and shifts"),
+                Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption,
+            )
+            item.proposals.forEachIndexed { i, p ->
+                val done = i in item.accepted
+                Row(
+                    Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.width(78.dp)) {
+                        Text(p.slot.day.format(dayFmt), color = C.text2, fontSize = TS.caption)
+                        Text(Profile.hm(p.slot.start), color = C.accentText, fontSize = TS.caption)
+                    }
+                    Column(Modifier.weight(1f).clickable { onOpen(p.task) }) {
+                        Text(p.task.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(Planner.duration(p.minutes), color = C.muted, fontSize = TS.caption)
+                    }
+                    if (done) {
+                        Icon(Ic.check, tr("ลงแผนแล้ว", "Planned"), tint = C.lime, modifier = Modifier.padding(10.dp).size(18.dp))
+                    } else {
+                        SquareButton(Ic.plus, tr("ลงแผน", "Plan it"), { onAccept(listOf(i)) })
+                    }
+                }
+            }
+            if (item.proposals.isNotEmpty()) {
+                Row(
+                    Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onToggleCalendar).padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(tr("ลง Google Calendar ด้วย", "Also add to Google Calendar"), Modifier.weight(1f), color = C.text, fontSize = TS.body)
+                    OnOff(item.toCalendar)
+                }
+                val left = item.proposals.indices.filter { it !in item.accepted }
+                PrimaryButton(
+                    if (left.isEmpty()) tr("ลงแผนครบแล้ว", "All planned") else tr("ลงแผนทั้งหมด ${left.size} งาน", "Plan all ${left.size}"),
+                    { if (left.isNotEmpty()) onAccept(left) },
+                    Modifier.padding(top = 8.dp).fillMaxWidth(), color = if (left.isEmpty()) C.lime else C.accent,
+                )
+                Text(
+                    tr("ลงแผน = ใส่ ⏳ วันนัดทำ และ 🎯 เวลาเตือนให้งานนั้น", "Planning sets the task's ⏳ scheduled date and 🎯 reminder time"),
+                    Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RankedCard(item: Chat.Ranked, onOpen: (Task) -> Unit) {
+    Card {
+        Column(Modifier.padding(vertical = 10.dp)) {
+            Text(
+                tr("ลำดับที่ควรทำ เรียงจากเลยกำหนด ใกล้ครบ คนรอ แล้วค่อยความสำคัญ", "Do them in this order: overdue, due soon, people waiting, then importance"),
+                Modifier.padding(horizontal = 14.dp), color = C.text, fontSize = TS.body,
+            )
+            item.items.forEachIndexed { i, (t, why) ->
+                Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.Top) {
+                    Text("${i + 1}", Modifier.width(24.dp), color = C.accentText, fontSize = TS.body)
+                    Column(Modifier.weight(1f)) {
+                        Text(t.title, color = C.text, fontSize = TS.body)
+                        Text(why, color = if (i < 3) C.amber else C.muted, fontSize = TS.caption)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomTimeDialog(c: CustomRequest, onDismiss: () -> Unit, onSet: (LocalDate, LocalTime?) -> Unit) {
+    val date = rememberDatePickerState(initialSelectedDateMillis = c.day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+    var pickingTime by remember { mutableStateOf(false) }
+    val time = rememberTimePickerState(9, 0, is24Hour = true)
+    fun day() = date.selectedDateMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() } ?: c.day
+    if (!pickingTime) {
+        DatePickerDialog(
+            onDismissRequest = onDismiss,
+            colors = DatePickerDefaults.colors(containerColor = C.raised),
+            confirmButton = {
+                TextButton(onClick = { if (c.allDay) onSet(day(), null) else pickingTime = true }) {
+                    Text(if (c.allDay) tr("ลงทั้งวัน", "Add all day") else tr("ต่อไป: เลือกเวลา", "Next: time"), color = C.accent)
+                }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+        ) { DatePicker(state = date, colors = DatePickerDefaults.colors(containerColor = C.raised)) }
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = C.raised,
+            title = { Text(tr("เริ่มกี่โมง", "Start time")) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    TimeInput(state = time)
+                    Text(day().format(SHORT_DATE) + tr(", ยาว ", ", ") + Planner.duration(c.minutes), color = C.muted, fontSize = TS.caption)
+                }
+            },
+            confirmButton = { TextButton(onClick = { onSet(day(), LocalTime.of(time.hour, time.minute)) }) { Text(tr("ลงตาราง", "Add"), color = C.accent) } },
+            dismissButton = { TextButton(onClick = { pickingTime = false }) { Text(tr("กลับ", "Back"), color = C.text2) } },
+        )
+    }
+}
+
+/** Pick any range, then either look at it or plan it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RangeDialog(onDismiss: () -> Unit, onAgenda: (LocalDate, LocalDate) -> Unit, onPlan: (LocalDate, LocalDate) -> Unit) {
+    val range = rememberDateRangePickerState()
+    fun d(ms: Long?) = ms?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
+    val from = d(range.selectedStartDateMillis)
+    val to = d(range.selectedEndDateMillis) ?: from
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        colors = DatePickerDefaults.colors(containerColor = C.raised),
+        confirmButton = {
+            Row {
+                TextButton(onClick = { if (from != null && to != null) onAgenda(from, to) }, enabled = from != null) { Text(tr("ดูว่ามีอะไร", "Look"), color = C.accentText) }
+                TextButton(onClick = { if (from != null && to != null) onPlan(from, to) }, enabled = from != null) { Text(tr("วางแผนให้", "Plan it"), color = C.accent) }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+    ) {
+        DateRangePicker(
+            state = range,
+            modifier = Modifier.weight(1f),
+            title = { Text(tr("เลือกช่วงวัน", "Pick a date range"), Modifier.padding(start = 24.dp, top = 16.dp), color = C.text) },
+            colors = DatePickerDefaults.colors(containerColor = C.raised),
+        )
     }
 }
 
@@ -276,6 +564,10 @@ private fun AskCard(title: String, badge: String, body: String, noLabel: String,
 @Composable
 private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Unit, onCancel: (() -> Unit)?) {
     var p by remember { mutableStateOf(current) }
+    // Free answers per question; those that aren't a plain time are kept in the profile as written.
+    val others = remember { mutableStateMapOf<String, String>() }
+    fun other(key: String) = others[key]
+    fun setOther(key: String, v: String?) { if (v == null) others.remove(key) else others[key] = v }
     Card(color = C.accentDeep, border = Color(0xFF2D2852)) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -291,16 +583,36 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
                 Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.body, lineHeight = 19.sp,
             )
             fun times(vararg hm: String) = hm.map { LocalTime.parse(it) }
-            Question(tr("ปกติตื่นกี่โมง", "When do you usually wake up?"), times("05:30", "06:00", "06:30", "07:00", "08:00"), p.wake) { p = p.copy(wake = it) }
-            Question(tr("เข้านอนกี่โมง", "When do you go to bed?"), times("21:30", "22:00", "22:30", "23:00", "23:30"), p.sleep) { p = p.copy(sleep = it) }
+            Question(
+                tr("ปกติตื่นกี่โมง", "When do you usually wake up?"), times("05:30", "06:00", "06:30", "07:00", "08:00"), p.wake,
+                other("ตื่น"), { setOther("ตื่น", it) },
+            ) { p = p.copy(wake = it) }
+            Question(
+                tr("เข้านอนกี่โมง", "When do you go to bed?"), times("21:30", "22:00", "22:30", "23:00", "23:30"), p.sleep,
+                other("นอน"), { setOther("นอน", it) },
+            ) { p = p.copy(sleep = it) }
             Text(tr("ช่วงไหนสมองดีที่สุด", "When is your mind sharpest?"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = TS.body)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("08:00" to "11:00", "10:00" to "13:00", "13:00" to "16:00", "19:00" to "22:00").forEach { (a, b) ->
                     val from = LocalTime.parse(a)
-                    Chip(tr("$a ถึง $b", "$a to $b"), p.focusFrom == from, { p = p.copy(focusFrom = from, focusTo = LocalTime.parse(b)) })
+                    Chip(tr("$a ถึง $b", "$a to $b"), other("ช่วงสมองดี") == null && p.focusFrom == from, {
+                        setOther("ช่วงสมองดี", null)
+                        p = p.copy(focusFrom = from, focusTo = LocalTime.parse(b))
+                    })
+                }
+                Chip(tr("อื่นๆ", "Other"), other("ช่วงสมองดี") != null, { setOther("ช่วงสมองดี", other("ช่วงสมองดี") ?: "") })
+            }
+            other("ช่วงสมองดี")?.let { v ->
+                OtherField(v, tr("เช่น 05:00-07:00 หรือ หลังลงเวรเช้า", "e.g. 05:00-07:00, or after a morning shift")) { text ->
+                    setOther("ช่วงสมองดี", text)
+                    val found = TIME_TEXT.findAll(text).mapNotNull { parseTime(it.value) }.toList()
+                    if (found.size >= 2) p = p.copy(focusFrom = found[0], focusTo = found[1])
                 }
             }
-            Question(tr("ชอบออกกำลังกายตอนไหน", "When do you like to exercise?"), times("06:00", "07:00", "17:30", "18:30", "20:00"), p.exercise) { p = p.copy(exercise = it) }
+            Question(
+                tr("ชอบออกกำลังกายตอนไหน", "When do you like to exercise?"), times("06:00", "07:00", "17:30", "18:30", "20:00"), p.exercise,
+                other("ออกกำลังกาย"), { setOther("ออกกำลังกาย", it) },
+            ) { p = p.copy(exercise = it) }
             Text(
                 tr(
                     "เวรอ่านจากนัดใน Google Calendar ที่มีคำว่า \"${p.shiftWords.joinToString("\", \"")}\" และเวรดึกจากคำว่า \"${p.nightWords.joinToString("\", \"")}\"",
@@ -310,7 +622,11 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
             )
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onCancel != null) GhostButton(tr("ยกเลิก", "Cancel"), onCancel, Modifier.weight(1f))
-                PrimaryButton(tr("บันทึกลงโปรไฟล์", "Save to profile"), { onSave(p) }, Modifier.weight(1.4f))
+                PrimaryButton(tr("บันทึกลงโปรไฟล์", "Save to profile"), {
+                    // A described answer ("แล้วแต่เวร") is remembered word for word under its question.
+                    val described = others.filter { (_, v) -> v.isNotBlank() && TIME_TEXT.find(v) == null }.map { (k, v) -> "$k: ${v.trim()}" }
+                    onSave(p.copy(remembered = (p.remembered.filterNot { r -> described.any { r.startsWith(it.substringBefore(':') + ":") } } + described).distinct()))
+                }, Modifier.weight(1.4f))
             }
         }
     }
@@ -318,11 +634,45 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Question(title: String, options: List<LocalTime>, selected: LocalTime, onPick: (LocalTime) -> Unit) {
+private fun Question(
+    title: String, options: List<LocalTime>, selected: LocalTime, other: String?,
+    onOther: (String?) -> Unit, onPick: (LocalTime) -> Unit,
+) {
     Text(title, Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = TS.body)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.forEach { t -> Chip(Profile.hm(t), t == selected, { onPick(t) }) }
+        options.forEach { t -> Chip(Profile.hm(t), other == null && t == selected, { onOther(null); onPick(t) }) }
+        Chip(tr("อื่นๆ", "Other"), other != null, { onOther(other ?: "") })
     }
+    if (other != null) OtherField(other, tr("พิมพ์เวลา เช่น 05:45 หรือเล่าเอง เช่น แล้วแต่เวร", "Type a time like 05:45, or describe it, e.g. depends on shifts")) { text ->
+        onOther(text)
+        parseTime(text)?.let(onPick)
+    }
+}
+
+/** A free answer when no choice fits: a time is used as the answer, anything else is remembered as written. */
+@Composable
+private fun OtherField(value: String, hint: String, onChange: (String) -> Unit) {
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
+        cursorBrush = SolidColor(C.accent),
+        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(12.dp),
+        decorationBox = { inner ->
+            Box {
+                if (value.isEmpty()) Text(hint, color = C.faint, fontSize = TS.caption)
+                inner()
+            }
+        },
+    )
+}
+
+private val TIME_TEXT = Regex("""(\d{1,2})[:.](\d{2})""")
+
+private fun parseTime(text: String): LocalTime? = TIME_TEXT.find(text)?.let {
+    val h = it.groupValues[1].toInt()
+    val m = it.groupValues[2].toInt()
+    if (h in 0..23 && m in 0..59) LocalTime.of(h, m) else null
 }
 
 @Composable
@@ -337,7 +687,10 @@ private fun Bubble(text: String) {
 }
 
 @Composable
-private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Unit, onConfirm: (String) -> Unit, onClaude: () -> Unit) {
+private fun SlotsCard(
+    item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Unit, onConfirm: (String) -> Unit,
+    onCustom: (title: String, allDay: Boolean) -> Unit, onClaude: () -> Unit,
+) {
     val plan = item.plan
     var title by remember(plan) { mutableStateOf(plan.title) }
     val first = item.page * 3
@@ -345,7 +698,7 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
     Card {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 10.dp)) {
             Text(plan.intro, color = C.text, fontSize = TS.body, lineHeight = 21.sp)
-            if (shown.isNotEmpty()) {
+            if (item.done == null) {
                 Row(
                     Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -396,11 +749,18 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
                     )
                 }
             }
-            Text(
-                tr("ให้ Claude ช่วยคิดแทน", "Ask Claude instead"),
-                Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClaude).padding(vertical = 6.dp, horizontal = 2.dp),
-                color = C.accentText, fontSize = TS.caption,
-            )
+            // When no time fits, or the time isn't known yet: put it on a day as all-day, or pick the time yourself.
+            if (item.done == null) {
+                Text(
+                    if (shown.isEmpty()) tr("ลงตารางแบบไหนดี", "How should it go on the calendar?") else tr("ไม่ใช่ช่วงไหนเลย", "None of these?"),
+                    Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.caption,
+                )
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    QuickChip(tr("ลงทั้งวัน", "All day")) { if (title.isNotBlank()) onCustom(title.trim(), true) }
+                    QuickChip(tr("ตั้งเวลาเอง", "Pick a time")) { if (title.isNotBlank()) onCustom(title.trim(), false) }
+                    QuickChip(tr("ถาม Claude", "Ask Claude"), onClaude)
+                }
+            }
         }
     }
 }

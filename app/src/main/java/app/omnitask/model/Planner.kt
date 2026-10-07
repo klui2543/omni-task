@@ -78,10 +78,12 @@ object Planner {
     private val MINUTES = Regex("""(\d+)\s*(?:นาที|min)""")
     private val HOURS = Regex("""(\d+(?:\.\d+)?)\s*(?:ชม|ชั่วโมง|hour|hr)""")
 
-    fun minutesOf(text: String, kind: Kind): Int =
+    fun minutesOf(text: String, kind: Kind): Int = explicitMinutes(text) ?: kind.minutes
+
+    /** The duration written in the request ("45 นาที", "2 ชม."), or null so the assistant asks. */
+    fun explicitMinutes(text: String): Int? =
         MINUTES.find(text)?.groupValues?.get(1)?.toIntOrNull()
             ?: HOURS.find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.let { (it * 60).toInt() }
-            ?: kind.minutes
 
     /** Which days the request is about. */
     fun daysOf(text: String, today: LocalDate): List<LocalDate> {
@@ -98,6 +100,24 @@ object Planner {
                 listOf(sat, sat.plusDays(1)).let { if (today.dayOfWeek == DayOfWeek.SUNDAY) listOf(today) + it else it }
             }
             else -> (0L..6L).map { today.plusDays(it) }
+        }
+    }
+
+    /**
+     * The date range a look-ahead or planning request is about: this or next week, this or next month,
+     * "14 วัน", tomorrow or today. Null when the text names none.
+     */
+    fun rangeOf(text: String, today: LocalDate): Pair<LocalDate, LocalDate>? {
+        val t = text.lowercase()
+        Regex("""(\d+)\s*(?:วัน|days?)""").find(t)?.groupValues?.get(1)?.toLongOrNull()?.takeIf { it in 1..92 }?.let { return today to today.plusDays(it - 1) }
+        return when {
+            "เดือนหน้า" in t || "next month" in t -> today.plusMonths(1).withDayOfMonth(1).let { it to it.with(TemporalAdjusters.lastDayOfMonth()) }
+            "เดือนนี้" in t || "this month" in t -> today to today.with(TemporalAdjusters.lastDayOfMonth())
+            "สัปดาห์หน้า" in t || "อาทิตย์หน้า" in t || "next week" in t -> today.with(TemporalAdjusters.next(DayOfWeek.MONDAY)).let { it to it.plusDays(6) }
+            "สัปดาห์นี้" in t || "this week" in t -> today to today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
+            "พรุ่งนี้" in t || "tomorrow" in t -> today.plusDays(1).let { it to it }
+            "วันนี้" in t || "today" in t -> today to today
+            else -> null
         }
     }
 
@@ -121,9 +141,9 @@ object Planner {
         return t.ifEmpty { text.trim() }
     }
 
-    fun plan(text: String, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime): Plan {
+    fun plan(text: String, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, minutesOverride: Int? = null): Plan {
         val kind = kindOf(text)
-        val minutes = minutesOf(text, kind)
+        val minutes = minutesOverride ?: minutesOf(text, kind)
         val need = minutes + kind.buffer
         val today = now.toLocalDate()
         val slots = daysOf(text, today).flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, need, tasks, events, profile, now) }
@@ -139,6 +159,33 @@ object Planner {
                 tr("ผมเลือกช่วงที่ไม่ชนนัดและเวร", "I picked times that avoid your events and shifts.")
             }
         return Plan(text, titleOf(text), kind, minutes, intro, ordered)
+    }
+
+    /** Ranked slots for work of this kind and length over the given days. */
+    fun slotsFor(kind: Kind, minutes: Int, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime): List<Slot> =
+        days.flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, minutes + kind.buffer, tasks, events, profile, now) }
+            .sortedByDescending { it.score }
+
+    /** One task placed in a range plan. */
+    data class Proposal(val task: Task, val slot: Slot, val minutes: Int)
+
+    /**
+     * Places tasks that have no date yet into the free time of [days], most urgent first. Each placed task
+     * blocks its slot for the next, so two never land on the same time. Tasks with no room are left out.
+     */
+    fun planRange(candidates: List<Task>, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime): List<Proposal> {
+        val busy = events.toMutableList()
+        val out = ArrayList<Proposal>()
+        candidates.forEach { t ->
+            val kind = kindOf(t.title)
+            val minutes = minutesOf(t.title, kind)
+            // Spread the work: each task already placed on a day makes that day a little less attractive.
+            val slot = slotsFor(kind, minutes, days, tasks, busy, profile, now)
+                .maxByOrNull { sl -> sl.score - 8 * out.count { it.slot.day == sl.day } } ?: return@forEach
+            out += Proposal(t, slot, minutes)
+            busy += CalendarEvent(-1L - out.size, t.title, slot.day.atTime(slot.start), slot.day.atTime(slot.start).plusMinutes((minutes + kind.buffer).toLong()))
+        }
+        return out.sortedWith(compareBy({ it.slot.day }, { it.slot.start }))
     }
 
     private fun slotsOn(
