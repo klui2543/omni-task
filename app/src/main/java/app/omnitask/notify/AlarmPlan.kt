@@ -26,7 +26,13 @@ data class NotifySettings(
 }
 
 /** One event from the phone's calendars (Google Calendar syncs into these). */
-data class CalendarEvent(val id: Long, val title: String, val begin: LocalDateTime, val end: LocalDateTime)
+data class CalendarEvent(
+    val id: Long,
+    val title: String,
+    val begin: LocalDateTime,
+    val end: LocalDateTime,
+    val allDay: Boolean = false,
+)
 
 enum class AlarmKind { TASK, EVENT, DIGEST, WEEKLY, RESCAN, TEST }
 
@@ -67,7 +73,7 @@ object AlarmPlan {
             }
         }
         if (settings.calendarEvents) {
-            events.forEach { e ->
+            events.filterNot { it.allDay }.forEach { e ->
                 val at = e.begin.minusMinutes(settings.calendarLeadMinutes.toLong())
                 if (at.isAfter(now) && !e.begin.isAfter(now.plusHours(EVENT_HORIZON_HOURS))) {
                     add(PlannedAlarm(AlarmKind.EVENT, at, "event:${e.id}:${e.begin}", e.title, eventText(e, settings.calendarLeadMinutes)))

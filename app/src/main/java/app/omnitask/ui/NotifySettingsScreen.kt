@@ -12,57 +12,55 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.omnitask.notify.AlarmReceiver
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
 import java.time.LocalTime
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+private class Perm(val label: String, val granted: Boolean, val fix: () -> Unit)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) -> Unit, onPermissionChanged: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
-    val colors = MaterialTheme.colorScheme
     BackHandler(onBack = onBack)
 
     // Bumped after returning from a system screen so the permission rows re-read their state.
     var tick by remember { mutableIntStateOf(0) }
+    var tested by remember { mutableStateOf(false) }
     val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         tick++
         onPermissionChanged()
@@ -73,144 +71,133 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
     }
     LaunchedEffect(Unit) { AlarmReceiver.ensureChannels(context) }
 
-    Scaffold(
-        containerColor = colors.background,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.background),
-                title = { Text("การแจ้งเตือน") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "กลับ") }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp),
-        ) {
-            Section("สิทธิ์ที่ต้องใช้")
-            key(tick) {
-                PermissionRow(
-                    "แสดงการแจ้งเตือน",
-                    granted = Build.VERSION.SDK_INT < 33 ||
-                        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
-                ) { if (Build.VERSION.SDK_INT >= 33) requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }
-                PermissionRow("ตั้งเวลาเตือนแบบตรงเวลา", granted = Scheduler.canScheduleExact(context)) {
-                    if (Build.VERSION.SDK_INT >= 31) {
-                        openSettings.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
+    val perms = remember(tick) {
+        listOf(
+            Perm(
+                "แสดงการแจ้งเตือน",
+                Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            ) { if (Build.VERSION.SDK_INT >= 33) requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+            Perm("เตือนตรงเวลา", Scheduler.canScheduleExact(context)) {
+                if (Build.VERSION.SDK_INT >= 31) {
+                    openSettings.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
+                }
+            },
+            Perm("อ่านปฏิทิน (Google Calendar)", Scheduler.hasCalendarPermission(context)) {
+                requestPermission.launch(Manifest.permission.READ_CALENDAR)
+            },
+            Perm("ไม่จำกัดแบตเตอรี่", ignoringBattery(context)) {
+                openSettings.launch(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")))
+            },
+        )
+    }
+    val missing = perms.count { !it.granted }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SquareButton(Ic.back, "กลับ", onBack)
+                Text("การแจ้งเตือน", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = C.text)
+            }
+        }
+        item {
+            Card {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("สิทธิ์ที่ต้องใช้", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = C.text)
+                        Text(if (missing > 0) "ยังขาด $missing ข้อ" else "ครบแล้ว", color = if (missing > 0) C.amber else C.lime, fontSize = 12.5.sp)
                     }
-                }
-                PermissionRow("อ่านปฏิทิน (Google Calendar)", granted = Scheduler.hasCalendarPermission(context)) {
-                    requestPermission.launch(Manifest.permission.READ_CALENDAR)
-                }
-                PermissionRow("ไม่จำกัดแบตเตอรี่", granted = ignoringBattery(context)) {
-                    openSettings.launch(
-                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")),
-                    )
-                }
-            }
-            Text(
-                "มือถือ OPPO (ColorOS): เปิด “อนุญาตให้เริ่มอัตโนมัติ” และตั้งแบตเตอรี่ของแอปเป็น “ไม่จำกัด” ไม่อย่างนั้นการแจ้งเตือนอาจไม่ดังตอนปิดแอป",
-                Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-            )
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    // ColorOS may refuse its own screen; the app's settings page always opens.
-                    runCatching { openSettings.launch(autoStartIntent(context)) }.onFailure {
-                        openSettings.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                    perms.forEach { p ->
+                        Divider()
+                        Row(Modifier.fillMaxWidth().heightIn(min = 54.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(p.label, Modifier.weight(1f), color = C.text, fontSize = 14.sp)
+                            if (p.granted) Text("อนุญาตแล้ว", color = C.lime, fontSize = 12.5.sp) else PrimaryButton("อนุญาต", p.fix)
+                        }
                     }
-                }, shape = RoundedCornerShape(10.dp)) {
-                    Text("เปิดการเริ่มอัตโนมัติ")
-                }
-                Button(onClick = { AlarmReceiver.scheduleTest(context) }, shape = RoundedCornerShape(10.dp)) {
-                    Text("ทดสอบ (อีก 1 นาที)")
-                }
-            }
-
-            Section("งาน")
-            Toggle("เตือนตามเวลาในงาน (⏰ / 🎯)", "กดเสร็จ หรือเลื่อน 1 ชม. หรือเลื่อนเป็นพรุ่งนี้ได้จากแจ้งเตือน", settings.taskReminders) {
-                onChange(settings.copy(taskReminders = it))
-            }
-
-            Section("สรุปงาน")
-            Text("เวลาสรุป (เลือกได้หลายเวลา)", style = MaterialTheme.typography.bodyMedium)
-            FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NotifySettings.DIGEST_PRESETS.forEach { time ->
-                    val on = time in settings.digestTimes
-                    FilterChip(
-                        selected = on,
-                        onClick = {
-                            val next = if (on) settings.digestTimes - time else settings.digestTimes + time
-                            onChange(settings.copy(digestTimes = next.sorted()))
-                        },
-                        label = { Text(hhmm(time)) },
+                    Text(
+                        "มือถือ OPPO ต้องเปิด “เริ่มอัตโนมัติ” ให้ Omni Task ด้วย ไม่อย่างนั้นการแจ้งเตือนอาจไม่ดังตอนปิดแอป",
+                        Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.accentDeep).padding(12.dp),
+                        color = C.accentText, fontSize = 13.sp,
                     )
-                }
-            }
-            Toggle("งานเลยกำหนด", null, settings.digestOverdue) { onChange(settings.copy(digestOverdue = it)) }
-            Toggle("งานครบวันนี้", null, settings.digestDueToday) { onChange(settings.copy(digestDueToday = it)) }
-            Toggle("งานที่มีคนรอ (#รอ)", null, settings.digestWaiting) { onChange(settings.copy(digestWaiting = it)) }
-            Toggle("ทบทวนสัปดาห์", "วันอาทิตย์ 20:00", settings.weeklyReview) { onChange(settings.copy(weeklyReview = it)) }
-
-            Section("ปฏิทิน")
-            Toggle("เตือนนัดใน Google Calendar", "อ่านจากปฏิทินในเครื่อง ไม่ต้องล็อกอินเพิ่ม", settings.calendarEvents) {
-                onChange(settings.copy(calendarEvents = it))
-            }
-            if (settings.calendarEvents) {
-                Text("เตือนล่วงหน้า", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium)
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NotifySettings.LEAD_PRESETS.forEach { m ->
-                        FilterChip(
-                            selected = settings.calendarLeadMinutes == m,
-                            onClick = { onChange(settings.copy(calendarLeadMinutes = m)) },
-                            label = { Text("$m นาที") },
+                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GhostButton("เปิดการเริ่มอัตโนมัติ", {
+                            runCatching { openSettings.launch(autoStartIntent(context)) }.onFailure {
+                                openSettings.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                            }
+                        }, Modifier.weight(1f))
+                        PrimaryButton(
+                            if (tested) "จะเด้งในอีก 1 นาที" else "ทดสอบแจ้งเตือน",
+                            { AlarmReceiver.scheduleTest(context); tested = true },
+                            Modifier.weight(1f), color = if (tested) C.lime else C.accent,
                         )
                     }
                 }
             }
         }
+        item {
+            Group("งาน") {
+                SwitchRow("เตือนตามเวลาในงาน", "อ่าน ⏰ และ 🎯 จาก TaskForge กดเสร็จหรือเลื่อนได้จากแจ้งเตือน", settings.taskReminders) {
+                    onChange(settings.copy(taskReminders = it))
+                }
+            }
+        }
+        item {
+            Group("สรุปงาน") {
+                Text("เวลาสรุป เลือกได้หลายรอบต่อวัน", Modifier.padding(top = 4.dp), color = C.muted, fontSize = 13.sp)
+                FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    NotifySettings.DIGEST_PRESETS.forEach { time ->
+                        val on = time in settings.digestTimes
+                        Chip(hhmm(time), on, {
+                            val next = if (on) settings.digestTimes - time else settings.digestTimes + time
+                            onChange(settings.copy(digestTimes = next.sorted()))
+                        })
+                    }
+                }
+                SwitchRow("งานเลยกำหนด", null, settings.digestOverdue) { onChange(settings.copy(digestOverdue = it)) }
+                SwitchRow("งานครบวันนี้", null, settings.digestDueToday) { onChange(settings.copy(digestDueToday = it)) }
+                SwitchRow("งานที่มีคนรอ", "งานที่ติด #รอ เรียงตามที่รอนานสุด", settings.digestWaiting) { onChange(settings.copy(digestWaiting = it)) }
+                SwitchRow("ทบทวนสัปดาห์", "ทุกวันอาทิตย์ 20:00", settings.weeklyReview) { onChange(settings.copy(weeklyReview = it)) }
+            }
+        }
+        item {
+            Group("ปฏิทิน") {
+                SwitchRow("เตือนนัดใน Google Calendar", "อ่านจากปฏิทินในเครื่อง ไม่ต้องล็อกอินเพิ่ม", settings.calendarEvents) {
+                    onChange(settings.copy(calendarEvents = it))
+                }
+                if (settings.calendarEvents) {
+                    FlowRow(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        NotifySettings.LEAD_PRESETS.forEach { m ->
+                            Chip("ก่อน $m นาที", settings.calendarLeadMinutes == m, { onChange(settings.copy(calendarLeadMinutes = m)) })
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun key(tick: Int, content: @Composable () -> Unit) = androidx.compose.runtime.key(tick) { content() }
-
-@Composable
-private fun Section(title: String) {
-    Text(
-        title,
-        Modifier.padding(top = 24.dp, bottom = 8.dp),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-    )
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+private fun Group(title: String, content: @Composable () -> Unit) {
+    Card {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text(title, Modifier.padding(top = 6.dp, bottom = 2.dp), color = C.accentText, style = MaterialTheme.typography.titleSmall)
+            content()
+        }
+    }
 }
 
 @Composable
-private fun Toggle(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text(title, color = C.text, fontSize = 14.5.sp)
+            subtitle?.let { Text(it, color = C.muted, fontSize = 12.5.sp) }
         }
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun PermissionRow(title: String, granted: Boolean, onFix: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        if (granted) {
-            Text("✓ อนุญาตแล้ว", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-        } else {
-            OutlinedButton(onClick = onFix, shape = RoundedCornerShape(10.dp)) { Text("อนุญาต") }
-        }
+        Box(Modifier.width(12.dp))
+        OnOff(checked)
     }
 }
 

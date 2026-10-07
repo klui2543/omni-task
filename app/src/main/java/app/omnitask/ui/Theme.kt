@@ -1,96 +1,132 @@
 package app.omnitask.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import app.omnitask.R
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
+import app.omnitask.model.Tone
 
 /**
- * A fixed, quiet palette in the spirit of Obsidian task plugins: neutral greys, one muted violet accent,
- * colour used only where it carries meaning. Wallpaper-based dynamic colour is deliberately not used.
+ * The C+ "Midnight" palette. Text colours are chosen for contrast on the dark cards:
+ * [text] 16:1, [text2] 11:1, [muted] 8:1, [faint] 5:1 (the floor for anything that must be read).
  */
-private val Light = lightColorScheme(
-    primary = Color(0xFF5B54C9),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFE9E7FA),
-    onPrimaryContainer = Color(0xFF2A2566),
-    secondary = Color(0xFF5F6170),
-    secondaryContainer = Color(0xFFEDEDF2),
-    onSecondaryContainer = Color(0xFF2B2C33),
-    background = Color(0xFFFAFAFB),
-    surface = Color(0xFFFAFAFB),
-    surfaceContainer = Color(0xFFF2F2F5),
-    surfaceContainerLow = Color(0xFFF5F5F7),
-    surfaceContainerHigh = Color(0xFFEDEDF0),
-    surfaceVariant = Color(0xFFEDEDF0),
-    onSurface = Color(0xFF1E1F24),
-    onSurfaceVariant = Color(0xFF6B6D78),
-    outline = Color(0xFFA3A5B0),
-    outlineVariant = Color(0xFFE2E2E8),
-    error = Color(0xFFC0453E),
+object C {
+    val bg = Color(0xFF0D0F14)
+    val card = Color(0xFF151821)
+    val cardBorder = Color(0xFF222736)
+    val raised = Color(0xFF1F2330)
+    val sunken = Color(0xFF12141B)
+    val divider = Color(0xFF1E222D)
+    val control = Color(0xFF2C3140)
+
+    val text = Color(0xFFF3F4F8)
+    val text2 = Color(0xFFCDD1DB)
+    val muted = Color(0xFFAEB3C2)
+    val faint = Color(0xFF858B9D)
+
+    val accent = Color(0xFFA99CFF)
+    val accentSoft = Color(0xFF2A2550)
+    val accentDeep = Color(0xFF1A1730)
+    val accentText = Color(0xFFC7BEFF)
+    val onAccent = Color(0xFF0D0F14)
+
+    val lime = Color(0xFFB9F26B)
+    val red = Color(0xFFFF8A80)
+    val redSoft = Color(0xFF3A1F22)
+    val amber = Color(0xFFFFC266)
+    val amberSoft = Color(0xFF33281A)
+    val blue = Color(0xFF7FB2FF)
+    val teal = Color(0xFF4FD1C5)
+    val tealText = Color(0xFF8CCBC4)
+    val tealSoft = Color(0xFF16302D)
+    val tealChip = Color(0xFF7EDCD1)
+}
+
+val Prompt = FontFamily(
+    Font(R.font.prompt_regular, FontWeight.Normal),
+    Font(R.font.prompt_medium, FontWeight.Medium),
+    Font(R.font.prompt_semibold, FontWeight.SemiBold),
 )
 
-private val Dark = darkColorScheme(
-    primary = Color(0xFF9D97F2),
-    onPrimary = Color(0xFF1E1A4D),
-    primaryContainer = Color(0xFF2E2B52),
-    onPrimaryContainer = Color(0xFFE2DFFF),
-    secondary = Color(0xFFB4B6C2),
-    secondaryContainer = Color(0xFF2A2B31),
-    onSecondaryContainer = Color(0xFFDCDDE4),
-    background = Color(0xFF17181C),
-    surface = Color(0xFF17181C),
-    surfaceContainer = Color(0xFF1F2025),
-    surfaceContainerLow = Color(0xFF1B1C20),
-    surfaceContainerHigh = Color(0xFF25262C),
-    surfaceVariant = Color(0xFF25262C),
-    onSurface = Color(0xFFE4E4E9),
-    onSurfaceVariant = Color(0xFF9A9CA8),
-    outline = Color(0xFF5C5E69),
-    outlineVariant = Color(0xFF2C2D34),
-    error = Color(0xFFE5776F),
+private val Scheme = darkColorScheme(
+    primary = C.accent,
+    onPrimary = C.onAccent,
+    primaryContainer = C.accentSoft,
+    onPrimaryContainer = C.accentText,
+    secondary = C.lime,
+    onSecondary = C.onAccent,
+    tertiary = C.teal,
+    background = C.bg,
+    onBackground = C.text,
+    surface = C.card,
+    onSurface = C.text,
+    surfaceVariant = C.raised,
+    onSurfaceVariant = C.muted,
+    surfaceContainerLowest = C.sunken,
+    surfaceContainerLow = C.card,
+    surfaceContainer = C.card,
+    surfaceContainerHigh = C.raised,
+    surfaceContainerHighest = C.control,
+    inverseSurface = C.text,
+    inverseOnSurface = C.bg,
+    outline = C.faint,
+    outlineVariant = C.divider,
+    error = C.red,
+    onError = C.onAccent,
 )
 
-private val base = Typography()
-private val AppTypography = base.copy(
-    titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold, fontSize = 20.sp),
-    titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-    bodyLarge = base.bodyLarge.copy(fontSize = 15.sp, lineHeight = 22.sp),
-    labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.2.sp),
-    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.2.sp),
+private fun style(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
+    TextStyle(fontFamily = Prompt, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
+
+private val AppTypography = Typography(
+    displaySmall = style(32, 40, FontWeight.Medium),
+    headlineMedium = style(26, 32, FontWeight.Medium),
+    headlineSmall = style(23, 30, FontWeight.Medium),
+    titleLarge = style(20, 26, FontWeight.Medium),
+    titleMedium = style(16, 22, FontWeight.Medium),
+    titleSmall = style(14, 20, FontWeight.Medium),
+    bodyLarge = style(15, 21),
+    bodyMedium = style(14, 20),
+    bodySmall = style(13, 18),
+    labelLarge = style(14, 20, FontWeight.Medium),
+    labelMedium = style(13, 18),
+    labelSmall = style(12, 16),
 )
 
 @Composable
 fun OmniTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) Dark else Light,
-        typography = AppTypography,
-        content = content,
-    )
+    MaterialTheme(colorScheme = Scheme, typography = AppTypography, content = content)
 }
 
-/** Muted signal colours: readable in both themes, never louder than the text they sit beside. */
-val Priority.tint: Color?
+val Priority.tint: Color
     get() = when (this) {
-        Priority.HIGHEST -> Color(0xFFC0574F)
-        Priority.HIGH -> Color(0xFFC08A3E)
-        Priority.MEDIUM -> Color(0xFF5B83B5)
-        Priority.LOW, Priority.LOWEST -> Color(0xFF8A8D99)
-        Priority.NONE -> null
+        Priority.HIGHEST -> C.red
+        Priority.HIGH -> C.amber
+        Priority.MEDIUM -> C.blue
+        Priority.NONE, Priority.LOW, Priority.LOWEST -> C.faint
     }
 
 val Quadrant.accent: Color
     get() = when (this) {
-        Quadrant.DO -> Color(0xFFC0574F)
-        Quadrant.PLAN -> Color(0xFFC08A3E)
-        Quadrant.QUICK -> Color(0xFF5B83B5)
-        Quadrant.LATER -> Color(0xFF6C9479)
+        Quadrant.DO -> C.red
+        Quadrant.PLAN -> C.amber
+        Quadrant.QUICK -> C.blue
+        Quadrant.LATER -> C.tealChip
+    }
+
+val Tone.color: Color
+    get() = when (this) {
+        Tone.ALERT -> C.red
+        Tone.ACCENT -> C.accentText
+        Tone.PLAIN -> C.text
+        Tone.MUTED -> C.muted
     }

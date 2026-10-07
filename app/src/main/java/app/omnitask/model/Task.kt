@@ -34,6 +34,9 @@ data class Task(
     val recurrence: String? = null,
     val reminderTime: LocalTime? = null,
     val reminderOn: ReminderOn? = null,
+    /** Tasks-plugin dependency fields: this task's `🆔 id` and the ids in `⛔ a,b` it waits for. */
+    val id: String? = null,
+    val dependsOn: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
     val notes: List<String> = emptyList(),
     val filePath: String = "",
@@ -43,6 +46,13 @@ data class Task(
     val isOpen get() = status == Status.TODO || status == Status.IN_PROGRESS
     val noteName get() = filePath.substringAfterLast('/').removeSuffix(".md")
     val key get() = "$fileUri#$lineIndex"
+
+    /** Images embedded in the lines under the task, e.g. `- ![[Omni-2026-10-07-1430.webp]]`. */
+    val attachments: List<String>
+        get() = notes.mapNotNull { EMBED.find(it)?.groupValues?.get(1) }
+
+    /** Notes the user wrote, without the image embeds. */
+    val textNotes: List<String> get() = notes.filter { EMBED.find(it) == null }
 
     /** When this task's reminder fires, or null when it has no time or no date to hang it on. */
     val reminderAt: LocalDateTime?
@@ -55,6 +65,8 @@ data class Task(
             return day.atTime(time)
         }
 }
+
+private val EMBED = Regex("""^!\[\[([^\]|]+\.(?:webp|png|jpe?g|gif))(?:\|[^\]]*)?]]$""", RegexOption.IGNORE_CASE)
 
 enum class DateBucket(val label: String) {
     TODAY("วันนี้"),

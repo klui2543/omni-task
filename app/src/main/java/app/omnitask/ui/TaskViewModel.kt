@@ -6,6 +6,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.graphics.Bitmap
+import app.omnitask.data.CalendarReader
+import app.omnitask.data.ImageAttach
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
@@ -13,6 +16,9 @@ import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
+import app.omnitask.model.Status
+import app.omnitask.model.TaskQuery
+import app.omnitask.notify.CalendarEvent
 import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
@@ -47,7 +53,14 @@ data class UiState(
     val skippedToday: Set<String> = emptySet(),
     val dismissed: Set<String> = emptySet(),
     val notify: NotifySettings = NotifySettings(),
+    val query: TaskQuery = TaskQuery(),
+    val savedView: Int = 0,
+    /** Calendar events around the shown month; empty until calendar access is granted. */
+    val events: List<CalendarEvent> = emptyList(),
+    val pendingImage: PendingImage? = null,
 ) {
+    val todayEvents get() = events.filter { it.begin.toLocalDate() <= today && it.end.toLocalDate() >= today && it.end > today.atStartOfDay() }
+
     /** The focus page reads every task in the vault, regardless of the list filters. */
     val brief get() = Focus.build(tasks, today, futureCount, skippedToday, dismissed)
 
@@ -65,7 +78,12 @@ data class UiState(
     val visible get() = scoped.filter { filters.bucket == null || it.bucket(today) == filters.bucket }
 }
 
+/** A photo prepared for a task, waiting for the user to choose full size or reduced. */
+data class PendingImage(val task: Task, val prepared: ImageAttach.Prepared)
+
 class TaskViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val thumbs = HashMap<String, Bitmap?>()
 
     private val repo = VaultRepository(app)
     private val prefs = app.getSharedPreferences("omnitask", Context.MODE_PRIVATE)
@@ -116,8 +134,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     runCatching { Scheduler.reschedule(getApplication(), tasks) }
                 }
             }
+            val events = withContext(Dispatchers.IO) {
+                runCatching { CalendarReader.month(getApplication(), LocalDate.now()) }.getOrDefault(emptyList())
+            }
             _state.update {
                 it.copy(
+                    events = events,
                     loading = false,
                     today = LocalDate.now(),
                     tasks = result.getOrDefault(it.tasks),
@@ -134,6 +156,86 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         edit(task) { TaskLine.setDone(it, task.isOpen, LocalDate.now()) }
+    }
+
+    fun setStatus(task: Task, status: Status) {
+        if (status == Status.DONE && task.recurrence != null) return toggleDone(task)
+        edit(task) { TaskLine.setStatus(it, status, LocalDate.now()) }
+    }
+
+    fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query, savedView = -1) }
+
+    fun pickSavedView(index: Int) = _state.update {
+        it.copy(query = TaskQuery.SAVED[index].second(it.query), savedView = index)
+    }
+
+    /** Reads and encodes the photo off the main thread; small photos are saved straight away. */
+    fun attachImage(task: Task, uri: Uri) {
+        viewModelScope.launch {
+            val prepared = withContext(Dispatchers.IO) { runCatching { ImageAttach.prepare(getApplication(), uri) } }
+            prepared.onFailure { e -> _state.update { it.copy(message = "แนบรูปไม่ได้: ${e.message}") } }
+            prepared.onSuccess { p ->
+                if (p.needsChoice) _state.update { it.copy(pendingImage = PendingImage(task, p)) } else saveImage(task, p.full)
+            }
+        }
+    }
+
+    fun resolvePendingImage(reduced: Boolean?) {
+        val pending = _state.value.pendingImage ?: return
+        _state.update { it.copy(pendingImage = null) }
+        if (reduced == null) return
+        saveImage(pending.task, if (reduced) pending.prepared.reduced ?: pending.prepared.full else pending.prepared.full)
+    }
+
+    private fun saveImage(task: Task, bytes: ByteArray) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val name = repo.saveAttachment(vault, ImageAttach.fileName(), "image/webp", bytes)
+                    repo.addSubLine(task, "![[$name]]")
+                    name
+                }
+            }
+            _state.update {
+                it.copy(message = result.fold({ n -> "แนบรูปแล้ว ($n, ${ImageAttach.sizeLabel(bytes.size.toLong())})" }, { e -> "แนบรูปไม่ได้: ${e.message}" }))
+            }
+            reload()
+        }
+    }
+
+    fun removeImage(task: Task, name: String) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    repo.removeSubLine(task, "![[$name")
+                    repo.deleteAttachment(vault, name)
+                }
+            }
+            thumbs.remove(name)
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = "ลบรูปไม่ได้: ${e.message}") } }
+            reload()
+        }
+    }
+
+    /** Small preview of an attachment, cached for the session. */
+    suspend fun thumbnail(name: String): Bitmap? {
+        if (thumbs.containsKey(name)) return thumbs[name]
+        val vault = _state.value.vault ?: return null
+        val bmp = withContext(Dispatchers.IO) {
+            runCatching { repo.readAttachment(vault, name)?.let { ImageAttach.thumbnail(it) } }.getOrNull()
+        }
+        thumbs[name] = bmp
+        return bmp
+    }
+
+    /** Full-size image bytes for the viewer. */
+    suspend fun image(name: String): Bitmap? {
+        val vault = _state.value.vault ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching { repo.readAttachment(vault, name)?.let { ImageAttach.thumbnail(it, 1600) } }.getOrNull()
+        }
     }
 
     fun setPriority(task: Task, priority: Priority) = edit(task) { TaskLine.setPriority(it, priority) }

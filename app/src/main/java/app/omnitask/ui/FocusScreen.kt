@@ -1,194 +1,252 @@
 package app.omnitask.ui
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
+import app.omnitask.model.Projects
+import app.omnitask.model.Status
 import app.omnitask.model.Task
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+
+private val HM = DateTimeFormatter.ofPattern("HH:mm")
+private val LONG_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
-fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit, onAssistant: () -> Unit) {
+    val today = state.today
     val brief = state.brief
-    val colors = MaterialTheme.colorScheme
+    val events = state.todayEvents
+    val plan = DayPlan.build(state.tasks, events, today)
+    val openToday = plan.flatMap { it.items }.filterIsInstance<DayPlan.Item.TaskItem>().size
+    // Done today counts anything ticked today that belonged to today (or was overdue).
+    val doneToday = state.tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
+    val total = openToday + doneToday
+    val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
+    val free = DayPlan.freeMinutes(events, today)
+    val blocked = Projects.blocked(state.tasks)
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        if (brief.warnings.isNotEmpty()) {
-            item(key = "warnings") {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    brief.warnings.forEach { Notice(it) }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(today.format(LONG_DATE), color = C.muted, fontSize = 13.sp)
+                    Text(greeting(), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 }
+                SquareButton(Ic.spark, "ผู้ช่วย", onAssistant)
+                Box(Modifier.width(8.dp))
+                menu()
+            }
+        }
+
+        item {
+            Card {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ProgressRing(if (total == 0) 0f else doneToday.toFloat() / total, 64.dp, 6.dp, label = "$doneToday/$total", labelSize = 15)
+                    Row(Modifier.weight(1f).padding(start = 16.dp)) {
+                        Stat("$overdue", "เลยกำหนด", if (overdue > 0) C.red else C.text, Modifier.weight(1f))
+                        Stat("${events.count { !it.allDay }}", "นัดวันนี้", C.text, Modifier.weight(1f))
+                        Stat(hours(free), "เวลาว่าง", C.lime, Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        brief.warnings.forEach { w -> item { Notice(w) } }
+
+        item {
+            Card {
+                if (plan.isEmpty()) {
+                    Text("วันนี้ยังไม่มีงานหรือนัด", Modifier.padding(16.dp), color = C.muted)
+                }
+                plan.forEach { section ->
+                    SectionHead(section.part.label, if (section.part == DayPlan.Part.LATE) C.red else C.text2)
+                    section.items.forEach { item ->
+                        when (item) {
+                            is DayPlan.Item.TaskItem -> TimelineTask(item, state, vm, onOpen, item.task in blocked)
+                            is DayPlan.Item.EventItem -> TimelineEvent(item)
+                        }
+                    }
+                }
+                Box(Modifier.height(6.dp))
             }
         }
 
         if (brief.suggestions.isNotEmpty()) {
-            sectionHeader("ข้อเสนอ", brief.suggestions.size.toString())
-            items(brief.suggestions, key = { "s:" + it.id }) { s ->
-                SuggestionRow(s, onAccept = { vm.acceptSuggestion(s) }, onDismiss = { vm.dismissSuggestion(s) }, onOpen = { onOpen(s.task) })
-                HorizontalDivider(Modifier.padding(start = 18.dp), color = colors.outlineVariant)
-            }
-        }
-
-        sectionHeader("ต้องทำ", "เลยกำหนด / ครบวันนี้")
-        taskSection("must", brief.must, state, vm, onOpen, empty = "ไม่มีงานเลยกำหนด")
-
-        sectionHeader("คนรออยู่", "#${Focus.WAITING_TAG}/ชื่อ")
-        if (brief.waiting.isEmpty()) {
-            emptyLine("waiting", "ยังไม่มีงานที่ติด #${Focus.WAITING_TAG} ใส่ได้ในหน้าแก้งาน")
-        } else {
-            items(brief.waiting, key = { "w:" + it.key }) { task ->
-                val age = Focus.ageDays(task, state.today)
-                val who = Focus.waitingFor(task)
-                Column {
-                    TaskRow(task, state.today, onToggle = { vm.toggleDone(task) }, onOpen = { onOpen(task) })
-                    Text(
-                        (who?.let { "$it " } ?: "มีคน") + (age?.let { "รอมา $it วันแล้ว" } ?: "รออยู่"),
-                        Modifier.padding(start = 52.dp, bottom = 10.dp).padding(top = 0.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if ((age ?: 0) >= 7) colors.error else colors.onSurfaceVariant,
-                    )
-                    HorizontalDivider(Modifier.padding(start = 52.dp), color = colors.outlineVariant)
-                }
-            }
-        }
-
-        item(key = "h:future") {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("ลงทุนอนาคต", style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
-                    Text("สำคัญ ไม่มีเดดไลน์ และไม่มีคนรอ", style = MaterialTheme.typography.labelSmall, color = colors.outline)
-                }
-                IconButton(onClick = { vm.setFutureCount((state.futureCount - 1).coerceAtLeast(1)) }, enabled = state.futureCount > 1) {
-                    Text("−", color = if (state.futureCount > 1) colors.onSurfaceVariant else colors.outlineVariant)
-                }
-                Text(state.futureCount.toString(), style = MaterialTheme.typography.labelLarge)
-                IconButton(onClick = { vm.setFutureCount((state.futureCount + 1).coerceAtMost(5)) }, enabled = state.futureCount < 5) {
-                    Icon(Icons.Default.Add, contentDescription = "เพิ่มจำนวน", tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-            HorizontalDivider(Modifier.padding(top = 4.dp), color = colors.outlineVariant)
-        }
-        if (brief.future.isEmpty()) {
-            emptyLine("future", "ไม่มีงานสำคัญที่ไม่มีเดดไลน์ ลองตั้ง priority ⏫ ให้งานเพื่ออนาคต")
-        } else {
-            items(brief.future, key = { "f:" + it.key }) { task ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        TaskRow(task, state.today, onToggle = { vm.toggleDone(task) }, onOpen = { onOpen(task) })
-                    }
-                    TextButton(onClick = { vm.skipFuture(task) }) {
-                        Text("ข้ามวันนี้", style = MaterialTheme.typography.labelMedium, color = colors.outline)
+            item {
+                Card {
+                    SectionHead("ข้อเสนอ", C.accentText)
+                    brief.suggestions.forEach { s ->
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).clickable { onOpen(s.task) }.padding(vertical = 4.dp)) {
+                                Text(s.task.title, color = C.text, style = MaterialTheme.typography.bodyMedium)
+                                Text(s.text, color = C.muted, fontSize = 12.5.sp)
+                            }
+                            SquareButton(Ic.close, "ไม่เอา", { vm.dismissSuggestion(s) })
+                            Box(Modifier.width(6.dp))
+                            SquareButton(Ic.check, "ยอมรับ", { vm.acceptSuggestion(s) }, filled = true)
+                        }
                     }
                 }
-                HorizontalDivider(Modifier.padding(start = 52.dp), color = colors.outlineVariant)
+            }
+        }
+
+        item {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Card(Modifier.weight(1f).fillMaxHeight()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("คนรออยู่", Modifier.weight(1f), color = C.muted, fontSize = 13.sp)
+                            Text("${brief.waiting.size}", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = C.text)
+                        }
+                        if (brief.waiting.isEmpty()) {
+                            Text("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", Modifier.padding(top = 8.dp), color = C.muted, fontSize = 12.5.sp)
+                        }
+                        brief.waiting.forEach { t ->
+                            val age = Focus.ageDays(t, today)
+                            Column(Modifier.padding(top = 8.dp).clickable { onOpen(t) }) {
+                                Text(t.title, color = C.text, fontSize = 13.5.sp, maxLines = 2)
+                                Text(
+                                    (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { "รอ $it วัน" } ?: "รออยู่"),
+                                    color = if ((age ?: 0) >= 7) C.red else C.muted, fontSize = 12.5.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+                Card(Modifier.weight(1f).fillMaxHeight(), color = C.accentDeep, border = Color(0xFF2D2852)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("ลงทุนอนาคต", Modifier.weight(1f), color = C.accentText, fontSize = 13.sp)
+                            Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
+                        }
+                        if (brief.future.isEmpty()) {
+                            Text("ตั้ง ⏫ ให้งานสำคัญที่ไม่มีเดดไลน์", Modifier.padding(top = 8.dp), color = C.muted, fontSize = 12.5.sp)
+                        }
+                        brief.future.forEach { t ->
+                            Column(Modifier.padding(top = 8.dp)) {
+                                Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = 14.sp, maxLines = 2)
+                                Focus.ageDays(t, today)?.let { Text("ค้าง $it วัน", color = C.muted, fontSize = 12.5.sp) }
+                                Text(
+                                    "ข้ามวันนี้",
+                                    Modifier.padding(top = 6.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft)
+                                        .clickable { vm.skipFuture(t) }.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    color = C.accentText, fontSize = 12.5.sp,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-private fun LazyListScope.sectionHeader(title: String, hint: String) {
-    item(key = "h:$title") {
-        val colors = MaterialTheme.colorScheme
-        Column {
-            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
-                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
-                Text(hint, style = MaterialTheme.typography.labelSmall, color = colors.outline)
+@Composable
+private fun Stepper(value: Int, onStep: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("−", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(-1) }.padding(top = 4.dp), color = C.accentText, fontSize = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("$value", color = C.text, fontSize = 14.sp)
+        Text("+", Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { onStep(1) }.padding(top = 4.dp), color = C.accentText, fontSize = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+@Composable
+private fun Stat(value: String, label: String, color: Color, modifier: Modifier) {
+    Column(modifier) {
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = color)
+        Text(label, fontSize = 12.sp, color = C.muted)
+    }
+}
+
+@Composable
+private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, isBlocked: Boolean) {
+    val t = item.task
+    val today = state.today
+    val late = t.isLate(today)
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        TaskCheck(t, { vm.toggleDone(t) })
+        Column(Modifier.weight(1f).clickable { onOpen(t) }.padding(vertical = 8.dp)) {
+            Text(t.title, color = if (isBlocked) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+            Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val lead = when {
+                    item.time != null -> item.time.format(HM)
+                    late -> t.due?.let { "เลย ${ChronoUnit.DAYS.between(it, today)} วัน" }
+                    t.due == today -> "ครบวันนี้"
+                    else -> "นัดวันนี้"
+                }
+                if (lead != null) Text(lead, color = if (late) C.red else C.text, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                val sub = listOfNotNull(if (t.status == Status.IN_PROGRESS) "กำลังทำ" else null, Projects.projectOf(t)).joinToString(", ")
+                if (sub.isNotEmpty()) Text(sub, color = C.muted, fontSize = 12.5.sp)
             }
-            HorizontalDivider(color = colors.outlineVariant)
         }
     }
 }
 
-private fun LazyListScope.emptyLine(key: String, text: String) {
-    item(key = "e:$key") {
-        Text(
-            text,
-            Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-        )
-    }
-}
-
-private fun LazyListScope.taskSection(
-    key: String,
-    tasks: List<Task>,
-    state: UiState,
-    vm: TaskViewModel,
-    onOpen: (Task) -> Unit,
-    empty: String,
-) {
-    if (tasks.isEmpty()) {
-        emptyLine(key, empty)
-        return
-    }
-    items(tasks, key = { "$key:" + it.key }) { task ->
-        TaskRow(task, state.today, onToggle = { vm.toggleDone(task) }, onOpen = { onOpen(task) })
-        HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.outlineVariant)
+@Composable
+private fun TimelineEvent(item: DayPlan.Item.EventItem) {
+    val e = item.event
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(4.dp).height(26.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
+        }
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            Text(e.title, color = Color(0xFFCFF4F0), style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+            Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (e.allDay) "ทั้งวัน" else "${e.begin.format(HM)} ถึง ${e.end.format(HM)}", color = C.teal, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                Text("Google Calendar", color = C.tealText, fontSize = 12.5.sp)
+            }
+        }
     }
 }
 
 @Composable
 private fun Notice(text: String) {
-    val colors = MaterialTheme.colorScheme
-    val tone = Color(0xFFC08A3E)
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = tone.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, tone.copy(alpha = 0.35f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            Icon(Icons.Default.Info, contentDescription = null, tint = tone, modifier = Modifier.size(18.dp))
-            Text(text, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
-        }
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.amberSoft).padding(14.dp), verticalAlignment = Alignment.Top) {
+        Icon(Ic.bell, null, tint = C.amber, modifier = Modifier.size(18.dp))
+        Text(text, Modifier.padding(start = 10.dp), color = C.text, fontSize = 13.5.sp)
     }
 }
 
-@Composable
-private fun SuggestionRow(s: Focus.Suggestion, onAccept: () -> Unit, onDismiss: () -> Unit, onOpen: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            TextButton(onClick = onOpen, contentPadding = PaddingValues(0.dp)) {
-                Text(s.task.title, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, maxLines = 2)
-            }
-            Text(s.text, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-        }
-        IconButton(onClick = onDismiss) {
-            Icon(Icons.Default.Close, contentDescription = "ไม่เอา", tint = colors.outline, modifier = Modifier.size(18.dp))
-        }
-        IconButton(onClick = onAccept) {
-            Icon(Icons.Default.Check, contentDescription = "ยอมรับ", tint = colors.primary, modifier = Modifier.size(20.dp))
-        }
+private fun greeting(): String {
+    val h = LocalTime.now().hour
+    return when {
+        h < 12 -> "สวัสดีตอนเช้า"
+        h < 17 -> "สวัสดีตอนบ่าย"
+        else -> "สวัสดีตอนเย็น"
     }
 }
+
+private fun hours(minutes: Long): String = if (minutes >= 60) "${minutes / 60} ชม." else "$minutes นาที"

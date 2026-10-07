@@ -1,19 +1,15 @@
 package app.omnitask.notify
 
-import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.provider.CalendarContract
+import app.omnitask.data.CalendarReader
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.Task
-import java.time.Instant
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -121,36 +117,8 @@ object Scheduler {
         return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
-    fun hasCalendarPermission(context: Context) =
-        context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+    fun hasCalendarPermission(context: Context) = CalendarReader.hasPermission(context)
 
-    /** Timed events in the next two days from every calendar on the phone, Google Calendar included. */
-    private fun readCalendar(context: Context, now: LocalDateTime): List<CalendarEvent> {
-        if (!hasCalendarPermission(context)) return emptyList()
-        val zone = ZoneId.systemDefault()
-        val start = now.atZone(zone).toInstant().toEpochMilli()
-        val end = now.plusHours(48).atZone(zone).toInstant().toEpochMilli()
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
-            ContentUris.appendId(it, start)
-            ContentUris.appendId(it, end)
-        }.build()
-        val cols = arrayOf(
-            CalendarContract.Instances.EVENT_ID,
-            CalendarContract.Instances.TITLE,
-            CalendarContract.Instances.BEGIN,
-            CalendarContract.Instances.END,
-            CalendarContract.Instances.ALL_DAY,
-        )
-        val out = ArrayList<CalendarEvent>()
-        runCatching {
-            context.contentResolver.query(uri, cols, null, null, null)?.use { c ->
-                while (c.moveToNext()) {
-                    if (c.getInt(4) == 1) continue
-                    fun at(ms: Long) = LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), zone)
-                    out += CalendarEvent(c.getLong(0), c.getString(1) ?: "(ไม่มีชื่อ)", at(c.getLong(2)), at(c.getLong(3)))
-                }
-            }
-        }
-        return out
-    }
+    private fun readCalendar(context: Context, now: LocalDateTime): List<CalendarEvent> =
+        CalendarReader.events(context, now, now.plusHours(48))
 }

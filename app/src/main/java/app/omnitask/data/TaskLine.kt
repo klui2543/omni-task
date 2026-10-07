@@ -34,6 +34,8 @@ object TaskLine {
     private val TIME = Regex("""(⏰|🎯)$VS\s*(\d{1,2}):(\d{2})""")
     private val TAG = Regex("""(?<!\S)#[^\s#]+""")
     private val ANY_DATE = Regex("""(?:➕|🛫|⏳|📅|✅|❌)$VS\s*$DATE""")
+    private val ID = Regex("""🆔$VS\s*([A-Za-z0-9_-]+)""")
+    private val DEPENDS = Regex("""⛔$VS\s*([A-Za-z0-9_,-]+)""")
 
     private fun dateRegex(field: DateField) = Regex("""${field.emoji}$VS\s*($DATE)""")
 
@@ -54,7 +56,7 @@ object TaskLine {
 
         val priority = PRIORITY.find(body)?.let { p -> Priority.entries.first { it.emoji == p.groupValues[1] } }
             ?: Priority.NONE
-        val title = listOf(ANY_DATE, RECURRENCE, PRIORITY, TIME, TAG)
+        val title = listOf(ANY_DATE, RECURRENCE, PRIORITY, TIME, ID, DEPENDS, TAG)
             .fold(body) { acc, re -> acc.replace(re, " ") }
             .replace(Regex("""\s+"""), " ")
             .trim()
@@ -76,6 +78,8 @@ object TaskLine {
             done = date(DateField.DONE),
             recurrence = RECURRENCE.find(body)?.groupValues?.get(1)?.trim()?.ifEmpty { null },
             reminderTime = reminderTime,
+            id = ID.find(body)?.groupValues?.get(1),
+            dependsOn = DEPENDS.find(body)?.groupValues?.get(1)?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
             reminderOn = reminder?.let { if (it.groupValues[1] == "🎯") ReminderOn.SCHEDULED else ReminderOn.DUE },
             tags = TAG.findAll(body).map { it.value.removePrefix("#") }.toList(),
         )
@@ -122,6 +126,19 @@ object TaskLine {
 
     fun removeTag(raw: String, tag: String): String = editBody(raw) { body ->
         TAG.findAll(body).firstOrNull { it.value == "#$tag" }?.let { remove(body, it.range) } ?: body
+    }
+
+    /** Sets the checkbox character, and the ✅ date when the task becomes or stops being done. */
+    fun setStatus(raw: String, status: Status, today: LocalDate): String {
+        val m = LINE.matchEntire(raw) ?: return raw
+        val mark = when (status) {
+            Status.TODO -> " "
+            Status.IN_PROGRESS -> "/"
+            Status.DONE -> "x"
+            Status.CANCELLED -> "-"
+        }
+        val marked = m.groupValues[1] + mark + m.groupValues[3] + m.groupValues[4]
+        return setDate(marked, DateField.DONE, if (status == Status.DONE) today else null)
     }
 
     fun setDone(raw: String, done: Boolean, today: LocalDate): String {
