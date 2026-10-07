@@ -62,7 +62,7 @@ class AlarmPlanTest {
         )
         val on = AlarmPlan.plan(emptyList(), events, NotifySettings(calendarLeadMinutes = 15), now).filter { it.kind == AlarmKind.EVENT }
         assertEquals(listOf(LocalDateTime.parse("2026-10-07T12:45")), on.map { it.at })
-        assertEquals("อีก 15 นาที · 13:00–14:00", on.single().text)
+        assertEquals("อีก 15 นาที (13:00 ถึง 14:00)", on.single().text)
         val off = AlarmPlan.plan(emptyList(), events, NotifySettings(calendarEvents = false), now)
         assertTrue(off.none { it.kind == AlarmKind.EVENT })
     }
@@ -76,8 +76,8 @@ class AlarmPlanTest {
             t("- [ ] ตอบ #รอ/พี่เอ ➕ 2026-09-25"),
         )
         val all = Digest.daily(tasks, today, NotifySettings())!!
-        assertEquals("เลยกำหนด 1 · วันนี้ 1 · คนรอ 1", all.title)
-        assertTrue(all.lines.any { it.startsWith("รอ พี่เอ 12 วัน") })
+        assertEquals("เลยกำหนด 1, วันนี้ 1, คนรอ 1", all.title)
+        assertTrue(all.lines.any { it == "รอ พี่เอ 12 วัน: ตอบ" })
         val noWaiting = Digest.daily(tasks, today, NotifySettings(digestWaiting = false))!!
         assertTrue(noWaiting.lines.none { it.startsWith("รอ") })
     }

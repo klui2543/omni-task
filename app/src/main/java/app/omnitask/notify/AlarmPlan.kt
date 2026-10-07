@@ -97,7 +97,7 @@ object AlarmPlan {
         t.due?.let { add("ครบ $it") }
         if (t.due == null) t.scheduled?.let { add("นัด $it") }
         t.tags.filterNot { it.startsWith("remind-at-") }.take(2).forEach { add("#$it") }
-    }.joinToString(" · ")
+    }.joinToString(", ")
 
-    private fun eventText(e: CalendarEvent, lead: Int) = "อีก $lead นาที · ${hhmm(e.begin)}–${hhmm(e.end)}"
+    private fun eventText(e: CalendarEvent, lead: Int) = "อีก $lead นาที (${hhmm(e.begin)} ถึง ${hhmm(e.end)})"
 }

@@ -60,7 +60,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
 
         sectionHeader("คนรออยู่", "#${Focus.WAITING_TAG}/ชื่อ")
         if (brief.waiting.isEmpty()) {
-            emptyLine("waiting", "ยังไม่มีงานที่ติด #${Focus.WAITING_TAG} — ใส่ในหน้าแก้งาน")
+            emptyLine("waiting", "ยังไม่มีงานที่ติด #${Focus.WAITING_TAG} ใส่ได้ในหน้าแก้งาน")
         } else {
             items(brief.waiting, key = { "w:" + it.key }) { task ->
                 val age = Focus.ageDays(task, state.today)
@@ -68,7 +68,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 Column {
                     TaskRow(task, state.today, onToggle = { vm.toggleDone(task) }, onOpen = { onOpen(task) })
                     Text(
-                        listOfNotNull(who?.let { "รอ: $it" }, age?.let { "$it วันแล้ว" }).joinToString(" · "),
+                        (who?.let { "$it " } ?: "มีคน") + (age?.let { "รอมา $it วันแล้ว" } ?: "รออยู่"),
                         Modifier.padding(start = 52.dp, bottom = 10.dp).padding(top = 0.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = if ((age ?: 0) >= 7) colors.error else colors.onSurfaceVariant,
@@ -85,7 +85,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("ลงทุนอนาคต", style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
-                    Text("สำคัญ · ไม่มีเดดไลน์ · ไม่มีคนรอ", style = MaterialTheme.typography.labelSmall, color = colors.outline)
+                    Text("สำคัญ ไม่มีเดดไลน์ และไม่มีคนรอ", style = MaterialTheme.typography.labelSmall, color = colors.outline)
                 }
                 IconButton(onClick = { vm.setFutureCount((state.futureCount - 1).coerceAtLeast(1)) }, enabled = state.futureCount > 1) {
                     Text("−", color = if (state.futureCount > 1) colors.onSurfaceVariant else colors.outlineVariant)
@@ -98,7 +98,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             HorizontalDivider(Modifier.padding(top = 4.dp), color = colors.outlineVariant)
         }
         if (brief.future.isEmpty()) {
-            emptyLine("future", "ไม่มีงานสำคัญที่ไม่มีเดดไลน์ — ตั้ง priority ⏫ ให้งานเพื่ออนาคต")
+            emptyLine("future", "ไม่มีงานสำคัญที่ไม่มีเดดไลน์ ลองตั้ง priority ⏫ ให้งานเพื่ออนาคต")
         } else {
             items(brief.future, key = { "f:" + it.key }) { task ->
                 Row(verticalAlignment = Alignment.CenterVertically) {

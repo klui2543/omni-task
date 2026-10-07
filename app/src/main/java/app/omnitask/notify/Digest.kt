@@ -14,14 +14,14 @@ object Digest {
         val overdue = brief.must.filter { t -> t.due?.let { it < today } == true }
         val dueToday = brief.must - overdue.toSet()
         val lines = buildList {
-            if (settings.digestOverdue) overdue.forEach { add("เลยกำหนด · ${it.title}") }
-            if (settings.digestDueToday) dueToday.forEach { add("วันนี้ · ${it.title}") }
+            if (settings.digestOverdue) overdue.forEach { add("เลยกำหนด: ${it.title}") }
+            if (settings.digestDueToday) dueToday.forEach { add("วันนี้: ${it.title}") }
             if (settings.digestWaiting) brief.waiting.forEach { t ->
                 val who = Focus.waitingFor(t)?.let { "$it " } ?: ""
                 val age = Focus.ageDays(t, today)?.let { "$it วัน" } ?: ""
-                add("รอ ${who}$age · ${t.title}".replace("  ", " "))
+                add("รอ ${who}$age: ${t.title}".replace("  ", " ").replace(" :", ":"))
             }
-            brief.future.firstOrNull()?.let { add("ลงทุนอนาคต · ${it.title}") }
+            brief.future.firstOrNull()?.let { add("ลงทุนอนาคต: ${it.title}") }
         }
         if (lines.isEmpty()) return null
         val parts = buildList {
@@ -29,7 +29,7 @@ object Digest {
             if (settings.digestDueToday) add("วันนี้ ${dueToday.size}")
             if (settings.digestWaiting && brief.waiting.isNotEmpty()) add("คนรอ ${brief.waiting.size}")
         }
-        return Message(parts.joinToString(" · ").ifEmpty { "แผนวันนี้" }, lines)
+        return Message(parts.joinToString(", ").ifEmpty { "แผนวันนี้" }, lines)
     }
 
     fun weekly(tasks: List<Task>, today: LocalDate): Message {
@@ -42,7 +42,7 @@ object Digest {
         return Message(
             "สัปดาห์นี้เสร็จ ${done.size} งาน",
             listOf(
-                "งานที่มีคนรอ เสร็จ $waitingDone · ยังค้าง ${stillWaiting.size}",
+                "งานที่มีคนรอ: เสร็จ $waitingDone ค้าง ${stillWaiting.size}",
                 "ลงทุนอนาคต เสร็จ $futureDone",
                 "เลยกำหนดค้างอยู่ ${overdue.size}",
             ),

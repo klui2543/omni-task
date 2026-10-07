@@ -130,7 +130,7 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
             }
 
             Section("งาน")
-            Toggle("เตือนตามเวลาในงาน (⏰ / 🎯)", "ปุ่ม เสร็จ · อีก 1 ชม. · พรุ่งนี้", settings.taskReminders) {
+            Toggle("เตือนตามเวลาในงาน (⏰ / 🎯)", "กดเสร็จ หรือเลื่อน 1 ชม. หรือเลื่อนเป็นพรุ่งนี้ได้จากแจ้งเตือน", settings.taskReminders) {
                 onChange(settings.copy(taskReminders = it))
             }
 

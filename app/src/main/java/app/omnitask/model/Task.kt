@@ -88,10 +88,10 @@ enum class UrgentRule(val label: String) {
 }
 
 enum class Quadrant(val label: String, val urgent: Boolean, val important: Boolean) {
-    DO("ด่วน · สำคัญ", urgent = true, important = true),
-    PLAN("ไม่ด่วน · สำคัญ", urgent = false, important = true),
-    QUICK("ด่วน · ไม่สำคัญ", urgent = true, important = false),
-    LATER("ไม่ด่วน · ไม่สำคัญ", urgent = false, important = false),
+    DO("ด่วนและสำคัญ", urgent = true, important = true),
+    PLAN("ไม่ด่วนแต่สำคัญ", urgent = false, important = true),
+    QUICK("ด่วนแต่ไม่สำคัญ", urgent = true, important = false),
+    LATER("ไม่ด่วนไม่สำคัญ", urgent = false, important = false),
 }
 
 fun Task.isUrgent(today: LocalDate, rule: UrgentRule): Boolean {
