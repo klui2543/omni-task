@@ -17,6 +17,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Insight
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
+import app.omnitask.model.QuickAdd
 import app.omnitask.notify.Digest
 import java.time.LocalDateTime
 import app.omnitask.model.NoteLinks
@@ -78,6 +79,8 @@ data class UiState(
     val chat: List<Chat> = emptyList(),
     /** When each no-deadline task was last reviewed, by title. */
     val reviewed: Map<String, LocalDate> = emptyMap(),
+    /** Set when something outside the screens (a widget, a shortcut) asks for the quick-add sheet. */
+    val quickAdd: QuickAddRequest? = null,
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -99,6 +102,9 @@ data class UiState(
 
     val visible get() = scoped.filter { filters.bucket == null || it.bucket(today) == filters.bucket }
 }
+
+/** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
+data class QuickAddRequest(val voice: Boolean = false, val assistant: Boolean = false)
 
 /** One entry in the assistant conversation. */
 sealed interface Chat {
@@ -448,6 +454,24 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         setPriority(task, if (to.important) Priority.HIGH else Priority.MEDIUM)
+    }
+
+    fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
+
+    /** Adds a task typed in the quick-add sheet to the TaskForge file. */
+    fun quickAdd(draft: QuickAdd.Draft) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, draft.line(LocalDate.now())) }
+            }
+            val text = result.fold(
+                { tr("เพิ่มงานแล้ว: ${draft.title}", "Added: ${draft.title}") },
+                { e -> tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}") },
+            )
+            _state.update { it.copy(message = text) }
+            reload()
+        }
     }
 
     // ---- Assistant ----

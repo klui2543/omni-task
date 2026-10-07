@@ -77,6 +77,15 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var notifyOpen by rememberSaveable { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
+
+    // A widget or shortcut asked for quick add (or the assistant): open it once, then clear the request.
+    LaunchedEffect(state.quickAdd) {
+        state.quickAdd?.let { r ->
+            if (r.assistant) screen = Screen.AI else adding = r
+            vm.requestQuickAdd(null)
+        }
+    }
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -121,7 +130,14 @@ fun OmniTaskApp(vm: TaskViewModel) {
             }
         }
         FloatingNav(screen, { screen = it }, Modifier.align(Alignment.BottomCenter))
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
+        if (screen != Screen.AI) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 92.dp)
+                    .size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accent).clickable { adding = QuickAddRequest() },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp)) {
             Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
         }
     }
@@ -130,6 +146,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
         EditSheet(task, state, vm, onDismiss = { editingKey = null })
     }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
+    adding?.let { r ->
+        QuickAddSheet(state, vm, r.voice, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
+    }
 }
 
 /** The floating pill bar from the C+ mockup. */
