@@ -3,6 +3,8 @@ package app.omnitask.model
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * What the assistant knows about the owner, kept as a plain note in the vault (`Omni/โปรไฟล์.md`)
@@ -44,7 +46,12 @@ data class Profile(
 
     companion object {
         const val PATH = "Omni/โปรไฟล์.md"
+        /** Day names as written in the profile note; always Thai, since the note is parsed back. */
         val DAY_NAMES = listOf("จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์", "อาทิตย์")
+
+        /** A day's full name for display, in the app's language. */
+        fun dayName(day: DayOfWeek): String =
+            tr(DAY_NAMES[day.value - 1], day.getDisplayName(TextStyle.FULL, Locale.ENGLISH))
 
         fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
 

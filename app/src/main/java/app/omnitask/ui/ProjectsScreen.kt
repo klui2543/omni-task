@@ -31,6 +31,7 @@ import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.label
+import app.omnitask.model.tr
 
 private val RING = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red)
 
@@ -50,13 +51,17 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (open != null) {
-                    SquareButton(Ic.back, "กลับ", { openName = null })
+                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null })
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(open?.name ?: "โปรเจกต์", style = MaterialTheme.typography.headlineSmall, color = C.text)
+                    Text(open?.name ?: tr("โปรเจกต์", "Projects"), style = MaterialTheme.typography.headlineSmall, color = C.text)
                     Text(
-                        if (open != null) "ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่" else "โปรเจกต์มาจาก Tag แรกของงาน",
+                        if (open != null) {
+                            tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
+                        } else {
+                            tr("โปรเจกต์มาจาก Tag แรกของงาน", "Projects come from each task's first tag")
+                        },
                         color = C.muted, fontSize = TS.caption,
                     )
                 }
@@ -64,7 +69,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
 
         if (open == null) {
-            if (projects.isEmpty()) item { Card { Text("ยังไม่มีงานที่ติด Tag", Modifier.padding(16.dp), color = C.muted) } }
+            if (projects.isEmpty()) item { Card { Text(tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet"), Modifier.padding(16.dp), color = C.muted) } }
             projects.forEachIndexed { i, p ->
                 item(key = p.name) {
                     Card(Modifier.clickable { openName = p.name }) {
@@ -73,13 +78,13 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                 ProgressRing(p.ratio, 52.dp, 5.dp, RING[i % RING.size], "${(p.ratio * 100).toInt()}%", 12)
                                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
-                                    Text("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", color = C.muted, fontSize = TS.caption)
+                                    Text(tr("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", "${p.done} of ${p.tasks.size} done"), color = C.muted, fontSize = TS.caption)
                                 }
                             }
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                p.next?.let { Pill("ถัดไป: ${it.title}", C.raised, C.text2) }
-                                if (p.overdue > 0) Pill("เลยกำหนด ${p.overdue}", C.redSoft, C.red)
-                                if (p.blocked.isNotEmpty()) Pill("ติดรองานอื่น ${p.blocked.size}", C.amberSoft, C.amber, Ic.lock)
+                                p.next?.let { Pill(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), C.raised, C.text2) }
+                                if (p.overdue > 0) Pill(tr("เลยกำหนด ${p.overdue}", "Overdue ${p.overdue}"), C.redSoft, C.red)
+                                if (p.blocked.isNotEmpty()) Pill(tr("ติดรองานอื่น ${p.blocked.size}", "Blocked ${p.blocked.size}"), C.amberSoft, C.amber, Ic.lock)
                             }
                         }
                     }
@@ -88,9 +93,9 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         } else {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatCard("${(open.ratio * 100).toInt()}%", "เสร็จแล้ว", C.lime, Modifier.weight(1f))
-                    StatCard("${open.overdue}", "เลยกำหนด", if (open.overdue > 0) C.red else C.text, Modifier.weight(1f))
-                    StatCard("${open.blocked.size}", "ติดรองานอื่น", if (open.blocked.isNotEmpty()) C.amber else C.text, Modifier.weight(1f))
+                    StatCard("${(open.ratio * 100).toInt()}%", tr("เสร็จแล้ว", "Done"), C.lime, Modifier.weight(1f))
+                    StatCard("${open.overdue}", tr("เลยกำหนด", "Overdue"), if (open.overdue > 0) C.red else C.text, Modifier.weight(1f))
+                    StatCard("${open.blocked.size}", tr("ติดรองานอื่น", "Blocked"), if (open.blocked.isNotEmpty()) C.amber else C.text, Modifier.weight(1f))
                 }
             }
             listOf(Status.IN_PROGRESS, Status.TODO, Status.DONE).forEach { status ->
@@ -113,7 +118,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             }
             item {
                 Text(
-                    "Milestone จะมาพร้อมรูปแบบไฟล์ dotpm ส่วนงานที่ต้องรองานอื่นใช้ 🆔 และ ⛔ แบบปลั๊กอิน Tasks",
+                    tr(
+                        "Milestone จะมาพร้อมรูปแบบไฟล์ dotpm ส่วนงานที่ต้องรองานอื่นใช้ 🆔 และ ⛔ แบบปลั๊กอิน Tasks",
+                        "Milestones will come with the dotpm file format. Dependencies use 🆔 and ⛔ like the Tasks plugin.",
+                    ),
                     Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = TS.caption,
                 )
             }

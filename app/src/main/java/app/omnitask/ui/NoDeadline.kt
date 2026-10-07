@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import app.omnitask.model.Focus
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
+import app.omnitask.model.tr
 
 /** The "ประเภทงาน" field in the edit sheet: a choice, stored as a tag behind the scenes. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -58,9 +59,10 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
     }
     val hint = when (kind) {
         TaskKind.NORMAL -> null
-        TaskKind.WAITING -> (Focus.waitingFor(task)?.let { "$it รออยู่" } ?: "มีคนรออยู่") + " ขึ้นในการ์ด \"คนรออยู่\" ตามที่รอนานสุด"
-        TaskKind.FUTURE -> "หมุนเวียนขึ้นหน้าโฟกัสวันละงาน ทบทวนทุก 14 วัน"
-        TaskKind.SOMEDAY -> "ไม่ขึ้นในรายการหลัก แต่จะกลับมาให้ทบทวนทุก 30 วัน ไม่หายไปไหน"
+        TaskKind.WAITING -> (Focus.waitingFor(task)?.let { tr("$it รออยู่", "$it is waiting.") } ?: tr("มีคนรออยู่", "Someone is waiting.")) +
+            tr(" ขึ้นในการ์ด \"คนรออยู่\" ตามที่รอนานสุด", " Shows in the \"Waiting\" card, longest wait first")
+        TaskKind.FUTURE -> tr("หมุนเวียนขึ้นหน้าโฟกัสวันละงาน ทบทวนทุก 14 วัน", "Rotates onto Focus one a day, reviewed every 14 days")
+        TaskKind.SOMEDAY -> tr("ไม่ขึ้นในรายการหลัก แต่จะกลับมาให้ทบทวนทุก 30 วัน ไม่หายไปไหน", "Hidden from the main lists, but comes back for review every 30 days")
     }
     hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption) }
 
@@ -70,8 +72,8 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("ก้าวแรกที่เล็กที่สุด", color = C.muted, fontSize = TS.caption)
-            Text(task.firstStep ?: "งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", color = if (task.firstStep != null) C.text else C.faint, fontSize = TS.body)
+            Text(tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"), color = C.muted, fontSize = TS.caption)
+            Text(task.firstStep ?: tr("งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", "Big tasks are hard to start. Write something you can do in 10 minutes"), color = if (task.firstStep != null) C.text else C.faint, fontSize = TS.body)
         }
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
     }
@@ -79,22 +81,22 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
     if (askingWho) {
         val names = state.tasks.mapNotNull { Focus.waitingFor(it) }.distinct().sorted()
         TextDialog(
-            title = "ใครรองานนี้",
+            title = tr("ใครรองานนี้", "Who is waiting on this?"),
             initial = Focus.waitingFor(task) ?: "",
-            placeholder = "ชื่อ (เว้นว่างได้)",
+            placeholder = tr("ชื่อ (เว้นว่างได้)", "Name (optional)"),
             suggestions = names,
-            confirm = "ตั้งเป็นมีคนรอ",
+            confirm = tr("ตั้งเป็นมีคนรอ", "Mark as waiting"),
             onConfirm = { vm.setKind(task, TaskKind.WAITING, it); askingWho = false },
             onDismiss = { askingWho = false },
         )
     }
     if (editingStep) {
         TextDialog(
-            title = "ก้าวแรกที่เล็กที่สุด",
+            title = tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"),
             initial = task.firstStep ?: "",
-            placeholder = "เช่น เปิดไฟล์แล้วเขียนหัวข้อ 3 ข้อ",
+            placeholder = tr("เช่น เปิดไฟล์แล้วเขียนหัวข้อ 3 ข้อ", "e.g. open the file and write 3 headings"),
             suggestions = emptyList(),
-            confirm = "บันทึก",
+            confirm = tr("บันทึก", "Save"),
             onConfirm = { vm.setFirstStep(task, it); editingStep = false },
             onDismiss = { editingStep = false },
         )
@@ -136,7 +138,7 @@ private fun TextDialog(
             }
         },
         confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text(confirm, color = C.accent) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก", color = C.text2) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
     )
 }
 
@@ -151,10 +153,10 @@ fun FuturePicker(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text("เลือกงานลงทุนอนาคต") },
+        title = { Text(tr("เลือกงานลงทุนอนาคต", "Pick future work")) },
         text = {
             Column {
-                Text("งานที่ไม่มีเดดไลน์แต่สำคัญกับชีวิต หน้าโฟกัสจะหยิบขึ้นมาวันละงาน", color = C.text2, fontSize = TS.body)
+                Text(tr("งานที่ไม่มีเดดไลน์แต่สำคัญกับชีวิต หน้าโฟกัสจะหยิบขึ้นมาวันละงาน", "Work with no deadline that matters for your life. Focus brings up one a day."), color = C.text2, fontSize = TS.body)
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -164,22 +166,22 @@ fun FuturePicker(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
                     modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (text.isEmpty()) Text("ค้นหางาน", color = C.faint, fontSize = TS.body)
+                            if (text.isEmpty()) Text(tr("ค้นหางาน", "Search tasks"), color = C.faint, fontSize = TS.body)
                             inner()
                         }
                     },
                 )
                 LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 340.dp)) {
                     if (chosen.isNotEmpty()) {
-                        item { Text("เลือกไว้แล้ว ${chosen.size} งาน (แตะเพื่อเอาออก)", Modifier.padding(vertical = 6.dp), color = C.muted, fontSize = TS.caption) }
+                        item { Text(tr("เลือกไว้แล้ว ${chosen.size} งาน (แตะเพื่อเอาออก)", "${chosen.size} picked (tap to remove)"), Modifier.padding(vertical = 6.dp), color = C.muted, fontSize = TS.caption) }
                         items(chosen, key = { "c" + it.key }) { t -> PickRow(t, true) { vm.setKind(t, TaskKind.NORMAL) } }
-                        item { Text("งานอื่นที่ไม่มีเดดไลน์", Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption) }
+                        item { Text(tr("งานอื่นที่ไม่มีเดดไลน์", "Other tasks without a deadline"), Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption) }
                     }
                     items(candidates, key = { it.key }) { t -> PickRow(t, false) { vm.setKind(t, TaskKind.FUTURE) } }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("เสร็จ", color = C.accent) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("เสร็จ", "Done"), color = C.accent) } },
     )
 }
 
@@ -192,7 +194,7 @@ private fun PickRow(t: Task, on: Boolean, onClick: () -> Unit) {
         ) { if (on) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(13.dp)) }
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val sub = listOfNotNull(if (Focus.isSomeday(t)) "พักไว้" else null, t.noteName.takeIf { it.isNotEmpty() }).joinToString(", ")
+            val sub = listOfNotNull(if (Focus.isSomeday(t)) tr("พักไว้", "Someday") else null, t.noteName.takeIf { it.isNotEmpty() }).joinToString(", ")
             if (sub.isNotEmpty()) Text(sub, color = C.faint, fontSize = TS.caption)
         }
     }
@@ -209,8 +211,8 @@ fun ReviewPrompt(state: UiState, onStart: () -> Unit) {
     ) {
         Icon(Ic.refresh, null, tint = C.accentText, modifier = Modifier.size(18.dp))
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text("$n งานไม่มีเดดไลน์ถึงรอบทบทวน", color = C.text, fontSize = TS.body)
-            Text("ทีละงาน ทำ พัก หรือทิ้ง ใช้ไม่ถึง 2 นาที", color = C.muted, fontSize = TS.caption)
+            Text(tr("$n งานไม่มีเดดไลน์ถึงรอบทบทวน", "$n tasks without a deadline are due for review"), color = C.text, fontSize = TS.body)
+            Text(tr("ทีละงาน ทำ พัก หรือทิ้ง ใช้ไม่ถึง 2 นาที", "One at a time: do, park or drop. Under 2 minutes."), color = C.muted, fontSize = TS.caption)
         }
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
     }
@@ -226,10 +228,17 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text(if (t == null) "ทบทวนครบแล้ว" else "ทบทวนงาน (เหลือ ${queue.size})") },
+        title = { Text(if (t == null) tr("ทบทวนครบแล้ว", "All reviewed") else tr("ทบทวนงาน (เหลือ ${queue.size})", "Review (${queue.size} left)")) },
         text = {
             if (t == null) {
-                Text(if (handled > 0) "จัดการไป $handled งาน งานที่เหลือจะกลับมาเมื่อถึงรอบ" else "ไม่มีงานค้างทบทวน", color = C.text2)
+                Text(
+                    if (handled > 0) {
+                        tr("จัดการไป $handled งาน งานที่เหลือจะกลับมาเมื่อถึงรอบ", "Handled $handled tasks. The rest come back when they are due.")
+                    } else {
+                        tr("ไม่มีงานค้างทบทวน", "Nothing to review")
+                    },
+                    color = C.text2,
+                )
             } else {
                 Column {
                     Text(t.title, Modifier.clickable { onOpen(t) }, style = MaterialTheme.typography.titleMedium, color = C.text)
@@ -238,26 +247,26 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                     Text(
                         listOfNotNull(
                             TaskKind.of(t).takeIf { it != TaskKind.NORMAL }?.label,
-                            age?.let { "สร้างมา $it วัน" },
-                            since?.let { "ทบทวนล่าสุด ${it.format(SHORT_DATE)}" },
+                            age?.let { tr("สร้างมา $it วัน", "created $it days ago") },
+                            since?.let { tr("ทบทวนล่าสุด ${it.format(SHORT_DATE)}", "last reviewed ${it.format(SHORT_DATE)}") },
                         ).joinToString(", "),
                         Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
                     )
-                    t.firstStep?.let { Text("ก้าวแรก: $it", Modifier.padding(top = 6.dp), color = C.accentText, fontSize = TS.body) }
-                    Text("ยังอยากทำไหม", Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = TS.body)
+                    t.firstStep?.let { Text(tr("ก้าวแรก: $it", "First step: $it"), Modifier.padding(top = 6.dp), color = C.accentText, fontSize = TS.body) }
+                    Text(tr("ยังอยากทำไหม", "Still want to do it?"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = TS.body)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         fun act(a: TaskViewModel.ReviewAction) { vm.review(t, a); handled++ }
-                        ReviewButton("ทำเสาร์นี้", C.lime) { act(TaskViewModel.ReviewAction.THIS_WEEK) }
-                        if (!Focus.isFutureWork(t)) ReviewButton("ลงทุนอนาคต", C.accent) { act(TaskViewModel.ReviewAction.FUTURE) }
-                        if (!Focus.isSomeday(t)) ReviewButton("พักไว้ก่อน", C.amber) { act(TaskViewModel.ReviewAction.SOMEDAY) }
-                        ReviewButton("เก็บไว้แบบเดิม", C.text2) { act(TaskViewModel.ReviewAction.KEEP) }
-                        ReviewButton("ทิ้ง", C.red) { act(TaskViewModel.ReviewAction.DROP) }
+                        ReviewButton(tr("ทำเสาร์นี้", "Do this Saturday"), C.lime) { act(TaskViewModel.ReviewAction.THIS_WEEK) }
+                        if (!Focus.isFutureWork(t)) ReviewButton(tr("ลงทุนอนาคต", "Future"), C.accent) { act(TaskViewModel.ReviewAction.FUTURE) }
+                        if (!Focus.isSomeday(t)) ReviewButton(tr("พักไว้ก่อน", "Someday"), C.amber) { act(TaskViewModel.ReviewAction.SOMEDAY) }
+                        ReviewButton(tr("เก็บไว้แบบเดิม", "Keep as is"), C.text2) { act(TaskViewModel.ReviewAction.KEEP) }
+                        ReviewButton(tr("ทิ้ง", "Drop"), C.red) { act(TaskViewModel.ReviewAction.DROP) }
                     }
-                    Text("ทิ้ง = ทำเครื่องหมายยกเลิก [-] บรรทัดยังอยู่ในไฟล์", Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
+                    Text(tr("ทิ้ง = ทำเครื่องหมายยกเลิก [-] บรรทัดยังอยู่ในไฟล์", "Drop = mark cancelled [-]. The line stays in the file."), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(if (t == null) "ปิด" else "พอก่อน", color = C.text2) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (t == null) tr("ปิด", "Close") else tr("พอก่อน", "Stop for now"), color = C.text2) } },
     )
 }
 

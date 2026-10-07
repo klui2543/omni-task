@@ -1,6 +1,7 @@
 package app.omnitask.notify
 
 import app.omnitask.model.Task
+import app.omnitask.model.tr
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -100,10 +101,11 @@ object AlarmPlan {
     private fun hhmm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)
 
     private fun reminderText(t: Task): String = buildList {
-        t.due?.let { add("ครบ $it") }
-        if (t.due == null) t.scheduled?.let { add("นัด $it") }
+        t.due?.let { add(tr("ครบ $it", "Due $it")) }
+        if (t.due == null) t.scheduled?.let { add(tr("นัด $it", "Scheduled $it")) }
         t.tags.filterNot { it.startsWith("remind-at-") }.take(2).forEach { add("#$it") }
     }.joinToString(", ")
 
-    private fun eventText(e: CalendarEvent, lead: Int) = "อีก $lead นาที (${hhmm(e.begin)} ถึง ${hhmm(e.end)})"
+    private fun eventText(e: CalendarEvent, lead: Int) =
+        tr("อีก $lead นาที (${hhmm(e.begin)} ถึง ${hhmm(e.end)})", "In $lead min (${hhmm(e.begin)} to ${hhmm(e.end)})")
 }

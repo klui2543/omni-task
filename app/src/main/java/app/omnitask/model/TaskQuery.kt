@@ -2,12 +2,20 @@ package app.omnitask.model
 
 import java.time.LocalDate
 
-enum class GroupBy(val label: String) {
-    DATE("วันที่"), NOTE("โน้ต"), PRIORITY("ความสำคัญ"), TAG("Tag"), STATUS("สถานะ"), NONE("ไม่จัดกลุ่ม"),
+enum class GroupBy(private val th: String, private val en: String) {
+    DATE("วันที่", "Date"), NOTE("โน้ต", "Note"), PRIORITY("ความสำคัญ", "Priority"), TAG("Tag", "Tag"), STATUS("สถานะ", "Status"),
+    NONE("ไม่จัดกลุ่ม", "None"),
+    ;
+
+    val label get() = tr(th, en)
 }
 
-enum class SortBy(val label: String) {
-    DUE("ครบกำหนด"), SCHEDULED("วันนัดทำ"), PRIORITY("ความสำคัญ"), CREATED("วันที่สร้าง"), TITLE("ชื่องาน"),
+enum class SortBy(private val th: String, private val en: String) {
+    DUE("ครบกำหนด", "Due"), SCHEDULED("วันนัดทำ", "Scheduled"), PRIORITY("ความสำคัญ", "Priority"), CREATED("วันที่สร้าง", "Created"),
+    TITLE("ชื่องาน", "Title"),
+    ;
+
+    val label get() = tr(th, en)
 }
 
 /** How a group header is coloured: overdue groups warn, today stands out, the rest stay quiet. */
@@ -17,10 +25,10 @@ data class TaskGroup(val label: String, val tone: Tone, val tasks: List<Task>)
 
 val Status.label
     get() = when (this) {
-        Status.TODO -> "ยังไม่เริ่ม"
-        Status.IN_PROGRESS -> "กำลังทำ"
-        Status.DONE -> "เสร็จ"
-        Status.CANCELLED -> "ยกเลิก"
+        Status.TODO -> tr("ยังไม่เริ่ม", "To do")
+        Status.IN_PROGRESS -> tr("กำลังทำ", "In progress")
+        Status.DONE -> tr("เสร็จ", "Done")
+        Status.CANCELLED -> tr("ยกเลิก", "Cancelled")
     }
 
 /** Every filter, grouping and sort the task list supports, in the spirit of TaskForge's query options. */
@@ -55,7 +63,7 @@ data class TaskQuery(
     fun run(tasks: List<Task>, today: LocalDate): List<TaskGroup> {
         val sorted = tasks.filter { matches(it, today) }.sortedWith(comparator())
         return when (groupBy) {
-            GroupBy.NONE -> listOf(TaskGroup("ทั้งหมด", Tone.PLAIN, sorted))
+            GroupBy.NONE -> listOf(TaskGroup(tr("ทั้งหมด", "All"), Tone.PLAIN, sorted))
             GroupBy.DATE -> DATE_ORDER.map { b ->
                 TaskGroup(b.label, toneOf(b), sorted.filter { it.bucket(today) == b })
             }
@@ -64,8 +72,11 @@ data class TaskQuery(
                 TaskGroup(s.label, if (s == Status.IN_PROGRESS) Tone.ACCENT else Tone.PLAIN, sorted.filter { it.status == s })
             }
             GroupBy.NOTE -> sorted.groupBy { it.noteName }.map { (k, v) -> TaskGroup(k, Tone.PLAIN, v) }
-            GroupBy.TAG -> sorted.groupBy { it.tags.firstOrNull { t -> !t.startsWith("remind-at-") }?.let { "#$it" } ?: "ไม่มี Tag" }
-                .map { (k, v) -> TaskGroup(k, if (k == "ไม่มี Tag") Tone.MUTED else Tone.PLAIN, v) }
+            GroupBy.TAG -> {
+                val none = tr("ไม่มี Tag", "No tag")
+                sorted.groupBy { it.tags.firstOrNull { t -> !t.startsWith("remind-at-") }?.let { "#$it" } ?: none }
+                    .map { (k, v) -> TaskGroup(k, if (k == none) Tone.MUTED else Tone.PLAIN, v) }
+            }
         }.filter { it.tasks.isNotEmpty() }
     }
 
@@ -94,13 +105,13 @@ data class TaskQuery(
         }
 
         /** The quick views above the list. Each one replaces the filters but keeps grouping and sort. */
-        val SAVED: List<Pair<String, (TaskQuery) -> TaskQuery>> = listOf(
-            "ทั้งหมด" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = null) },
-            "วันนี้" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = DateBucket.TODAY) },
-            "มีคนรอ" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.WAITING_TAG), notes = emptySet(), bucket = null) },
-            "สำคัญ" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = setOf(Priority.HIGHEST, Priority.HIGH), tags = emptySet(), notes = emptySet(), bucket = null) },
-            "ลงทุนอนาคต" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.FUTURE_TAG), notes = emptySet(), bucket = null) },
-            "พักไว้" to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.SOMEDAY_TAG), notes = emptySet(), bucket = null) },
+        val SAVED: List<Pair<String, (TaskQuery) -> TaskQuery>> get() = listOf(
+            tr("ทั้งหมด", "All") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = null) },
+            tr("วันนี้", "Today") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = DateBucket.TODAY) },
+            tr("มีคนรอ", "Waiting") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.WAITING_TAG), notes = emptySet(), bucket = null) },
+            tr("สำคัญ", "Important") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = setOf(Priority.HIGHEST, Priority.HIGH), tags = emptySet(), notes = emptySet(), bucket = null) },
+            tr("ลงทุนอนาคต", "Future") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.FUTURE_TAG), notes = emptySet(), bucket = null) },
+            tr("พักไว้", "Someday") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.SOMEDAY_TAG), notes = emptySet(), bucket = null) },
         )
     }
 }

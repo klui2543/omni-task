@@ -15,6 +15,8 @@ import app.omnitask.MainActivity
 import app.omnitask.R
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultRepository
+import app.omnitask.model.Lang
+import app.omnitask.model.tr
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.concurrent.thread
@@ -26,6 +28,7 @@ import kotlin.concurrent.thread
 class AlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        Lang.load(context)
         val pending = goAsync()
         thread {
             try {
@@ -60,9 +63,9 @@ class AlarmReceiver : BroadcastReceiver() {
                 val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw } ?: return
                 if (!task.isOpen) return
                 val b = base(context, CHANNEL_TASKS, title, text)
-                if (task.recurrence == null) b.addAction(0, "เสร็จ", action(context, ACTION_DONE, intent))
-                b.addAction(0, "อีก 1 ชม.", action(context, ACTION_SNOOZE_HOUR, intent))
-                b.addAction(0, "พรุ่งนี้", action(context, ACTION_SNOOZE_DAY, intent))
+                if (task.recurrence == null) b.addAction(0, tr("เสร็จ", "Done"), action(context, ACTION_DONE, intent))
+                b.addAction(0, tr("อีก 1 ชม.", "In 1 hour"), action(context, ACTION_SNOOZE_HOUR, intent))
+                b.addAction(0, tr("พรุ่งนี้", "Tomorrow"), action(context, ACTION_SNOOZE_DAY, intent))
                 post(context, id, b)
             }
             AlarmKind.EVENT -> post(context, id, base(context, CHANNEL_CALENDAR, title, text))
@@ -76,7 +79,10 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             AlarmKind.TEST -> post(
                 context, id,
-                base(context, CHANNEL_TASKS, "ทดสอบการแจ้งเตือน", "ถ้าเห็นข้อความนี้ตอนปิดแอปอยู่ แปลว่าการแจ้งเตือนใช้ได้แล้ว"),
+                base(
+                    context, CHANNEL_TASKS, tr("ทดสอบการแจ้งเตือน", "Test notification"),
+                    tr("ถ้าเห็นข้อความนี้ตอนปิดแอปอยู่ แปลว่าการแจ้งเตือนใช้ได้แล้ว", "If you see this while the app is closed, notifications work."),
+                ),
             )
             AlarmKind.RESCAN -> Unit
         }
@@ -155,9 +161,9 @@ class AlarmReceiver : BroadcastReceiver() {
 
         fun ensureChannels(context: Context) {
             val nm = context.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_TASKS, "งานถึงเวลา", NotificationManager.IMPORTANCE_HIGH))
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_CALENDAR, "นัดในปฏิทิน", NotificationManager.IMPORTANCE_HIGH))
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_DIGEST, "สรุปงาน", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_TASKS, tr("งานถึงเวลา", "Task reminders"), NotificationManager.IMPORTANCE_HIGH))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_CALENDAR, tr("นัดในปฏิทิน", "Calendar events"), NotificationManager.IMPORTANCE_HIGH))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_DIGEST, tr("สรุปงาน", "Summaries"), NotificationManager.IMPORTANCE_DEFAULT))
         }
 
         /** Fires a test notification a minute from now, so the user can close the app and check it arrives. */

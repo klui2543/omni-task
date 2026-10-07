@@ -60,14 +60,16 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.Task
+import app.omnitask.model.tr
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-private val EXAMPLES = listOf(
-    "อยากไปวิ่งสัปดาห์นี้ ควรไปตอนไหนดี",
-    "อยากเขียน proposal 2 ชม. ควรทำตอนไหน",
-    "ต้องไปธนาคาร พรุ่งนี้ตอนไหนดี",
-)
+private val EXAMPLES: List<String>
+    get() = listOf(
+        tr("อยากไปวิ่งสัปดาห์นี้ ควรไปตอนไหนดี", "When should I go running this week?"),
+        tr("อยากเขียน proposal 2 ชม. ควรทำตอนไหน", "When should I write the proposal for 2 hours?"),
+        tr("ต้องไปธนาคาร พรุ่งนี้ตอนไหนดี", "When should I go to the bank tomorrow?"),
+    )
 
 /**
  * The assistant from the C+ mockup: it reads the profile note, the tasks and Google Calendar,
@@ -104,7 +106,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         try {
             context.startActivity(Intent(share).setPackage("com.anthropic.claude"))
         } catch (_: ActivityNotFoundException) {
-            context.startActivity(Intent.createChooser(share, "ส่งให้ Claude"))
+            context.startActivity(Intent.createChooser(share, tr("ส่งให้ Claude", "Send to Claude")))
         }
     }
 
@@ -115,10 +117,10 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("ผู้ช่วย", style = MaterialTheme.typography.headlineSmall, color = C.text)
+                Text(tr("ผู้ช่วย", "Assistant"), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 Text(sources(state), color = C.muted, fontSize = TS.caption)
             }
-            if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, "เริ่มใหม่", vm::clearChat)
+            if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
         }
 
         LazyColumn(
@@ -132,12 +134,22 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Interview(profile, first = !profile.exists, onSave = { vm.saveProfile(it); interviewing = false }, onCancel = if (profile.exists) ({ interviewing = false }) else null)
                 }
                 profile.stale(state.today) -> item(key = "stale") {
-                    AskCard("ชีวิตช่วงนี้ยังเหมือนเดิมไหม?", "ไม่ได้ทบทวนมา 30 วัน", "ตื่น ${Profile.hm(profile.wake)} นอน ${Profile.hm(profile.sleep)} สมองดี ${Profile.hm(profile.focusFrom)} ถึง ${Profile.hm(profile.focusTo)} ออกกำลังกาย ${Profile.hm(profile.exercise)}",
-                        "ปรับ", { interviewing = true }, "ยังเหมือนเดิม", { vm.saveProfile(profile) })
+                    AskCard(
+                        tr("ชีวิตช่วงนี้ยังเหมือนเดิมไหม?", "Is life still the same lately?"),
+                        tr("ไม่ได้ทบทวนมา 30 วัน", "Not reviewed in 30 days"),
+                        tr(
+                            "ตื่น ${Profile.hm(profile.wake)} นอน ${Profile.hm(profile.sleep)} สมองดี ${Profile.hm(profile.focusFrom)} ถึง ${Profile.hm(profile.focusTo)} ออกกำลังกาย ${Profile.hm(profile.exercise)}",
+                            "Wake ${Profile.hm(profile.wake)}, sleep ${Profile.hm(profile.sleep)}, focus ${Profile.hm(profile.focusFrom)} to ${Profile.hm(profile.focusTo)}, exercise ${Profile.hm(profile.exercise)}",
+                        ),
+                        tr("ปรับ", "Update"), { interviewing = true }, tr("ยังเหมือนเดิม", "Still the same"), { vm.saveProfile(profile) },
+                    )
                 }
                 state.insight != null -> item(key = "insight") {
                     val ask = state.insight
-                    AskCard("จำไว้ไหม?", ask.window, ask.text, "ไม่ใช่", { vm.answerInsight(false) }, "ใช่ จำไว้", { vm.answerInsight(true) })
+                    AskCard(
+                        tr("จำไว้ไหม?", "Remember this?"), ask.window, ask.text,
+                        tr("ไม่ใช่", "No"), { vm.answerInsight(false) }, tr("ใช่ จำไว้", "Yes, remember"), { vm.answerInsight(true) },
+                    )
                 }
             }
 
@@ -145,7 +157,10 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 item(key = "examples") {
                     Card {
                         Column(Modifier.padding(14.dp)) {
-                            Text("ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล", color = C.text2, fontSize = TS.body, lineHeight = 20.sp)
+                            Text(
+                                tr("ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล", "Say what you want to do and the assistant finds 3 good times, with reasons"),
+                                color = C.text2, fontSize = TS.body, lineHeight = 20.sp,
+                            )
                             EXAMPLES.forEach { q ->
                                 Text(
                                     q,
@@ -171,12 +186,20 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             item(key = "quick") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val morning = state.notify.digestTimes.firstOrNull()?.let { "แผนตอนเช้า ${Profile.hm(it)}" } ?: "ตามงานและนัดวันนี้"
-                        QuickCard("จัดลำดับวันนี้", morning, Modifier.weight(1f), vm::planToday)
-                        QuickCard("ทบทวนสัปดาห์", if (state.notify.weeklyReview) "ทุกอาทิตย์ 20:00" else "สรุป 7 วันที่ผ่านมา", Modifier.weight(1f), vm::reviewWeek)
+                        val morning = state.notify.digestTimes.firstOrNull()?.let { tr("แผนตอนเช้า ${Profile.hm(it)}", "Morning plan ${Profile.hm(it)}") } ?: tr("ตามงานและนัดวันนี้", "From today's tasks and events")
+                        QuickCard(tr("จัดลำดับวันนี้", "Plan today"), morning, Modifier.weight(1f), vm::planToday)
+                        QuickCard(
+                            tr("ทบทวนสัปดาห์", "Weekly review"),
+                            if (state.notify.weeklyReview) tr("ทุกอาทิตย์ 20:00", "Sundays 20:00") else tr("สรุป 7 วันที่ผ่านมา", "The last 7 days"),
+                            Modifier.weight(1f), vm::reviewWeek,
+                        )
                     }
-                    QuickCard("ถาม Claude", "ส่งงานและนัดวันนี้ไปที่แอป Claude ใช้ subscription ไม่ต้องจ่าย API", Modifier.fillMaxWidth()) {
-                        askClaude("ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน")
+                    QuickCard(
+                        tr("ถาม Claude", "Ask Claude"),
+                        tr("ส่งงานและนัดวันนี้ไปที่แอป Claude ใช้ subscription ไม่ต้องจ่าย API", "Send today's tasks and events to the Claude app, on your subscription, no API cost"),
+                        Modifier.fillMaxWidth(),
+                    ) {
+                        askClaude(tr("ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน", "Please order today's tasks around the free time in my calendar"))
                     }
                 }
             }
@@ -201,7 +224,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 maxLines = 3,
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text("อยากทำอะไร หรือถามเรื่องงาน", color = C.faint, fontSize = TS.body)
+                        if (input.isEmpty()) Text(tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body)
                         inner()
                     }
                 },
@@ -209,18 +232,19 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             Box(
                 Modifier.padding(start = 8.dp).size(40.dp).clip(CircleShape).background(C.accent).clickable { send() },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Ic.send, "ส่ง", tint = C.onAccent, modifier = Modifier.size(17.dp)) }
+            ) { Icon(Ic.send, tr("ส่ง", "Send"), tint = C.onAccent, modifier = Modifier.size(17.dp)) }
         }
     }
 }
 
 private fun sources(state: UiState): String {
     val parts = buildList {
-        if (state.profile.exists) add("โปรไฟล์.md")
-        add("งาน ${state.tasks.count { it.isOpen }} รายการ")
+        if (state.profile.exists) add(Profile.PATH.substringAfterLast('/'))
+        add(tr("งาน ${state.tasks.count { it.isOpen }} รายการ", "${state.tasks.count { it.isOpen }} tasks"))
         if (state.calendarAccess == true) add("Google Calendar")
     }
-    return "อ่านจาก " + parts.dropLast(1).joinToString(", ").let { if (it.isEmpty()) parts.last() else "$it และ ${parts.last()}" }
+    val and = tr("และ", "and")
+    return tr("อ่านจาก ", "Reading ") + parts.dropLast(1).joinToString(", ").let { if (it.isEmpty()) parts.last() else "$it $and ${parts.last()}" }
 }
 
 @Composable
@@ -256,31 +280,37 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-                Text(if (first) "ขอรู้จักกันก่อน" else "ปรับโปรไฟล์", Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
-                Text("4 ข้อ", color = C.muted, fontSize = TS.caption)
+                Text(if (first) tr("ขอรู้จักกันก่อน", "Getting to know you") else tr("ปรับโปรไฟล์", "Update profile"), Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
+                Text(tr("4 ข้อ", "4 questions"), color = C.muted, fontSize = TS.caption)
             }
             Text(
-                "คำตอบจะเก็บใน ${Profile.PATH} แก้ใน Obsidian ได้ และผู้ช่วยจะถามใหม่ทุกเดือนเพราะชีวิตเปลี่ยนได้",
+                tr(
+                    "คำตอบจะเก็บใน ${Profile.PATH} แก้ใน Obsidian ได้ และผู้ช่วยจะถามใหม่ทุกเดือนเพราะชีวิตเปลี่ยนได้",
+                    "Answers are saved in ${Profile.PATH}, editable in Obsidian. The assistant asks again every month, since life changes.",
+                ),
                 Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.body, lineHeight = 19.sp,
             )
             fun times(vararg hm: String) = hm.map { LocalTime.parse(it) }
-            Question("ปกติตื่นกี่โมง", times("05:30", "06:00", "06:30", "07:00", "08:00"), p.wake) { p = p.copy(wake = it) }
-            Question("เข้านอนกี่โมง", times("21:30", "22:00", "22:30", "23:00", "23:30"), p.sleep) { p = p.copy(sleep = it) }
-            Text("ช่วงไหนสมองดีที่สุด", Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = TS.body)
+            Question(tr("ปกติตื่นกี่โมง", "When do you usually wake up?"), times("05:30", "06:00", "06:30", "07:00", "08:00"), p.wake) { p = p.copy(wake = it) }
+            Question(tr("เข้านอนกี่โมง", "When do you go to bed?"), times("21:30", "22:00", "22:30", "23:00", "23:30"), p.sleep) { p = p.copy(sleep = it) }
+            Text(tr("ช่วงไหนสมองดีที่สุด", "When is your mind sharpest?"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text, fontSize = TS.body)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("08:00" to "11:00", "10:00" to "13:00", "13:00" to "16:00", "19:00" to "22:00").forEach { (a, b) ->
                     val from = LocalTime.parse(a)
-                    Chip("$a ถึง $b", p.focusFrom == from, { p = p.copy(focusFrom = from, focusTo = LocalTime.parse(b)) })
+                    Chip(tr("$a ถึง $b", "$a to $b"), p.focusFrom == from, { p = p.copy(focusFrom = from, focusTo = LocalTime.parse(b)) })
                 }
             }
-            Question("ชอบออกกำลังกายตอนไหน", times("06:00", "07:00", "17:30", "18:30", "20:00"), p.exercise) { p = p.copy(exercise = it) }
+            Question(tr("ชอบออกกำลังกายตอนไหน", "When do you like to exercise?"), times("06:00", "07:00", "17:30", "18:30", "20:00"), p.exercise) { p = p.copy(exercise = it) }
             Text(
-                "เวรอ่านจากนัดใน Google Calendar ที่มีคำว่า \"${p.shiftWords.joinToString("\", \"")}\" และเวรดึกจากคำว่า \"${p.nightWords.joinToString("\", \"")}\"",
+                tr(
+                    "เวรอ่านจากนัดใน Google Calendar ที่มีคำว่า \"${p.shiftWords.joinToString("\", \"")}\" และเวรดึกจากคำว่า \"${p.nightWords.joinToString("\", \"")}\"",
+                    "Shifts are Google Calendar events containing \"${p.shiftWords.joinToString("\", \"")}\", night shifts those containing \"${p.nightWords.joinToString("\", \"")}\"",
+                ),
                 Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.caption, lineHeight = 18.sp,
             )
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (onCancel != null) GhostButton("ยกเลิก", onCancel, Modifier.weight(1f))
-                PrimaryButton("บันทึกลงโปรไฟล์", { onSave(p) }, Modifier.weight(1.4f))
+                if (onCancel != null) GhostButton(tr("ยกเลิก", "Cancel"), onCancel, Modifier.weight(1f))
+                PrimaryButton(tr("บันทึกลงโปรไฟล์", "Save to profile"), { onSave(p) }, Modifier.weight(1.4f))
             }
         }
     }
@@ -320,7 +350,7 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
                     Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("ชื่องาน", Modifier.width(56.dp), color = C.muted, fontSize = TS.caption)
+                    Text(tr("ชื่องาน", "Title"), Modifier.width(56.dp), color = C.muted, fontSize = TS.caption)
                     BasicTextField(
                         value = title, onValueChange = { title = it }, singleLine = true, modifier = Modifier.weight(1f),
                         textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = Prompt), cursorBrush = SolidColor(C.accent),
@@ -345,7 +375,7 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
                                 Text(slot.title, color = C.text, fontSize = TS.body)
                                 if (index == 0) {
                                     Text(
-                                        "แนะนำ",
+                                        tr("แนะนำ", "Best"),
                                         Modifier.padding(start = 6.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF2B3A1A)).padding(horizontal = 7.dp, vertical = 1.dp),
                                         color = C.lime, fontSize = TS.caption,
                                     )
@@ -358,16 +388,16 @@ private fun SlotsCard(item: Chat.Slots, onPick: (Int) -> Unit, onMore: () -> Uni
             }
             if (shown.isNotEmpty()) {
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (plan.slots.size > 3) GhostButton("ดูช่วงอื่น", onMore, Modifier.weight(1f))
+                    if (plan.slots.size > 3) GhostButton(tr("ดูช่วงอื่น", "More times"), onMore, Modifier.weight(1f))
                     PrimaryButton(
-                        item.done ?: "สร้างงาน + ลงปฏิทิน",
+                        item.done ?: tr("สร้างงาน + ลงปฏิทิน", "Add task + calendar"),
                         { if (item.done == null && title.isNotBlank()) onConfirm(title.trim()) },
                         Modifier.weight(1.4f), color = if (item.done != null) C.lime else C.accent,
                     )
                 }
             }
             Text(
-                "ให้ Claude ช่วยคิดแทน",
+                tr("ให้ Claude ช่วยคิดแทน", "Ask Claude instead"),
                 Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClaude).padding(vertical = 6.dp, horizontal = 2.dp),
                 color = C.accentText, fontSize = TS.caption,
             )
@@ -380,7 +410,11 @@ private fun TodayCard(tasks: List<Task>, state: UiState, onOpen: (Task) -> Unit)
     Card {
         Column(Modifier.padding(vertical = 10.dp)) {
             Text(
-                if (tasks.isEmpty()) "วันนี้ไม่มีงานเร่ง ลองหยิบงานลงทุนอนาคตสักงาน" else "เรียงจากต้องทำก่อน ไปคนที่รอ แล้วค่อยงานเพื่ออนาคต",
+                if (tasks.isEmpty()) {
+                    tr("วันนี้ไม่มีงานเร่ง ลองหยิบงานลงทุนอนาคตสักงาน", "Nothing urgent today. Try picking some future work.")
+                } else {
+                    tr("เรียงจากต้องทำก่อน ไปคนที่รอ แล้วค่อยงานเพื่ออนาคต", "Must-dos first, then people waiting, then future work")
+                },
                 Modifier.padding(horizontal = 14.dp), color = C.text, fontSize = TS.body, lineHeight = 21.sp,
             )
             tasks.forEachIndexed { i, t ->
@@ -420,11 +454,15 @@ private fun QuickCard(title: String, subtitle: String, modifier: Modifier, onCli
 private fun reason(t: Task, state: UiState): String {
     val b = state.brief
     return when {
-        t.due?.let { it < state.today } == true -> "เลยกำหนดแล้ว"
-        t.due == state.today -> "ครบวันนี้"
-        t.scheduled == state.today -> "นัดทำวันนี้"
-        t in b.waiting -> (Focus.waitingFor(t) ?: "มีคน") + " รอ " + (Focus.ageDays(t, state.today)?.let { "$it วัน" } ?: "อยู่")
-        t in b.future -> "ลงทุนอนาคต ไม่มีเดดไลน์แต่สำคัญ"
+        t.due?.let { it < state.today } == true -> tr("เลยกำหนดแล้ว", "Overdue")
+        t.due == state.today -> tr("ครบวันนี้", "Due today")
+        t.scheduled == state.today -> tr("นัดทำวันนี้", "Scheduled today")
+        t in b.waiting -> {
+            val who = Focus.waitingFor(t)
+            val age = Focus.ageDays(t, state.today)
+            tr((who ?: "มีคน") + " รอ " + (age?.let { "$it วัน" } ?: "อยู่"), (who ?: "Someone") + " waiting" + (age?.let { " $it days" } ?: ""))
+        }
+        t in b.future -> tr("ลงทุนอนาคต ไม่มีเดดไลน์แต่สำคัญ", "Future work: no deadline, but it matters")
         else -> ""
     }
 }

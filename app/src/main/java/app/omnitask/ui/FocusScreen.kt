@@ -38,12 +38,13 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
+import app.omnitask.model.tr
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
-private val LONG_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
+private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
 fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit, onAssistant: () -> Unit) {
@@ -74,7 +75,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
                     Text(greeting(), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 }
-                SquareButton(Ic.spark, "ผู้ช่วย", onAssistant)
+                SquareButton(Ic.spark, tr("ผู้ช่วย", "Assistant"), onAssistant)
                 Box(Modifier.width(8.dp))
                 menu()
             }
@@ -87,9 +88,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     ProgressRing(if (total == 0) 0f else doneToday.toFloat() / total, 64.dp, 6.dp, label = "$doneToday/$total", labelSize = 15)
                     Row(Modifier.weight(1f).padding(start = 16.dp)) {
-                        Stat("$overdue", "เลยกำหนด", if (overdue > 0) C.red else C.text, Modifier.weight(1f))
-                        Stat("${events.count { !it.allDay }}", "นัดวันนี้", C.text, Modifier.weight(1f))
-                        Stat(hours(free), "เวลาว่าง", C.lime, Modifier.weight(1f))
+                        Stat("$overdue", tr("เลยกำหนด", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
+                        Stat("${events.count { !it.allDay }}", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
+                        Stat(hours(free), tr("เวลาว่าง", "Free time"), C.lime, Modifier.weight(1f))
                     }
                 }
             }
@@ -102,7 +103,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         item {
             Card {
                 if (plan.isEmpty()) {
-                    Text("วันนี้ยังไม่มีงานหรือนัด", Modifier.padding(16.dp), color = C.muted)
+                    Text(tr("วันนี้ยังไม่มีงานหรือนัด", "Nothing due or booked today"), Modifier.padding(16.dp), color = C.muted)
                 }
                 plan.forEach { section ->
                     SectionHead(section.part.label, if (section.part == DayPlan.Part.LATE) C.red else C.text2)
@@ -120,16 +121,16 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         if (brief.suggestions.isNotEmpty()) {
             item {
                 Card {
-                    SectionHead("ข้อเสนอ", C.accentText)
+                    SectionHead(tr("ข้อเสนอ", "Suggestions"), C.accentText)
                     brief.suggestions.forEach { s ->
                         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f).clickable { onOpen(s.task) }.padding(vertical = 4.dp)) {
                                 Text(s.task.title, color = C.text, style = MaterialTheme.typography.bodyMedium)
                                 Text(s.text, color = C.muted, fontSize = TS.caption)
                             }
-                            SquareButton(Ic.close, "ไม่เอา", { vm.dismissSuggestion(s) })
+                            SquareButton(Ic.close, tr("ไม่เอา", "Dismiss"), { vm.dismissSuggestion(s) })
                             Box(Modifier.width(6.dp))
-                            SquareButton(Ic.check, "ยอมรับ", { vm.acceptSuggestion(s) }, filled = true)
+                            SquareButton(Ic.check, tr("ยอมรับ", "Accept"), { vm.acceptSuggestion(s) }, filled = true)
                         }
                     }
                 }
@@ -141,19 +142,19 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Card(Modifier.weight(1f).fillMaxHeight()) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("คนรออยู่", Modifier.weight(1f), color = C.muted, fontSize = TS.body)
+                            Text(tr("คนรออยู่", "Waiting"), Modifier.weight(1f), color = C.muted, fontSize = TS.body)
                             Text("${brief.waiting.size}", fontSize = TS.stat, fontWeight = FontWeight.Medium, color = C.text)
                         }
                         if (brief.waiting.isEmpty()) {
-                            Text("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
+                            Text(tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
                         }
                         brief.waiting.forEach { t ->
                             val age = Focus.ageDays(t, today)
                             Column(Modifier.padding(top = 8.dp).clickable { onOpen(t) }) {
                                 Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2)
-                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = TS.caption, maxLines = 2) }
+                                t.firstStep?.let { Text(tr("ก้าวแรก: $it", "First step: $it"), color = C.accentText, fontSize = TS.caption, maxLines = 2) }
                                 Text(
-                                    (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { "รอ $it วัน" } ?: "รออยู่"),
+                                    (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { tr("รอ $it วัน", "waiting $it days") } ?: tr("รออยู่", "waiting")),
                                     color = if ((age ?: 0) >= 7) C.red else C.muted, fontSize = TS.caption,
                                 )
                             }
@@ -163,19 +164,19 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Card(Modifier.weight(1f).fillMaxHeight(), color = C.accentDeep, border = Color(0xFF2D2852)) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("ลงทุนอนาคต", Modifier.weight(1f), color = C.accentText, fontSize = TS.body)
+                            Text(tr("ลงทุนอนาคต", "Future"), Modifier.weight(1f), color = C.accentText, fontSize = TS.body)
                             Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
                         }
                         if (brief.future.isEmpty()) {
-                            Text("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
+                            Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
                         }
                         brief.future.forEach { t ->
                             Column(Modifier.padding(top = 8.dp)) {
                                 Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = TS.body, maxLines = 2)
-                                t.firstStep?.let { Text("ก้าวแรก: $it", color = C.accentText, fontSize = TS.caption, maxLines = 2) }
-                                Focus.ageDays(t, today)?.let { Text("ค้าง $it วัน", color = C.muted, fontSize = TS.caption) }
+                                t.firstStep?.let { Text(tr("ก้าวแรก: $it", "First step: $it"), color = C.accentText, fontSize = TS.caption, maxLines = 2) }
+                                Focus.ageDays(t, today)?.let { Text(tr("ค้าง $it วัน", "open $it days"), color = C.muted, fontSize = TS.caption) }
                                 Text(
-                                    "ข้ามวันนี้",
+                                    tr("ข้ามวันนี้", "Skip today"),
                                     Modifier.padding(top = 6.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft)
                                         .clickable { vm.skipFuture(t) }.padding(horizontal = 10.dp, vertical = 4.dp),
                                     color = C.accentText, fontSize = TS.caption,
@@ -183,7 +184,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             }
                         }
                         Text(
-                            "เลือกงาน",
+                            tr("เลือกงาน", "Pick tasks"),
                             Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(12.dp))
                                 .clickable { picking = true }.padding(horizontal = 10.dp, vertical = 4.dp),
                             color = C.accentText, fontSize = TS.caption,
@@ -224,12 +225,12 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
             Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val lead = when {
                     item.time != null -> item.time.format(HM)
-                    late -> t.due?.let { "เลย ${ChronoUnit.DAYS.between(it, today)} วัน" }
-                    t.due == today -> "ครบวันนี้"
-                    else -> "นัดวันนี้"
+                    late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
+                    t.due == today -> tr("ครบวันนี้", "Due today")
+                    else -> tr("นัดวันนี้", "Scheduled today")
                 }
                 if (lead != null) Text(lead, color = if (late) C.red else C.text, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                val sub = listOfNotNull(if (t.status == Status.IN_PROGRESS) "กำลังทำ" else null, Projects.projectOf(t)).joinToString(", ")
+                val sub = listOfNotNull(if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null, Projects.projectOf(t)).joinToString(", ")
                 if (sub.isNotEmpty()) Text(sub, color = C.muted, fontSize = TS.caption)
             }
         }
@@ -246,7 +247,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem) {
         Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
             Text(e.title, color = Color(0xFFCFF4F0), style = MaterialTheme.typography.bodyLarge, maxLines = 2)
             Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (e.allDay) "ทั้งวัน" else "${e.begin.format(HM)} ถึง ${e.end.format(HM)}", color = C.teal, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                Text(if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}"), color = C.teal, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                 Text("Google Calendar", color = C.tealText, fontSize = TS.caption)
             }
         }
@@ -264,10 +265,11 @@ private fun Notice(text: String) {
 private fun greeting(): String {
     val h = LocalTime.now().hour
     return when {
-        h < 12 -> "สวัสดีตอนเช้า"
-        h < 17 -> "สวัสดีตอนบ่าย"
-        else -> "สวัสดีตอนเย็น"
+        h < 12 -> tr("สวัสดีตอนเช้า", "Good morning")
+        h < 17 -> tr("สวัสดีตอนบ่าย", "Good afternoon")
+        else -> tr("สวัสดีตอนเย็น", "Good evening")
     }
 }
 
-private fun hours(minutes: Long): String = if (minutes >= 60) "${minutes / 60} ชม." else "$minutes นาที"
+private fun hours(minutes: Long): String =
+    if (minutes >= 60) tr("${minutes / 60} ชม.", "${minutes / 60} h") else tr("$minutes นาที", "$minutes min")

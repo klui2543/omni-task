@@ -41,18 +41,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.omnitask.model.Lang
 import app.omnitask.model.UrgentRule
+import app.omnitask.model.tr
 
-enum class Screen(val label: String, val icon: ImageVector) {
-    FOCUS("โฟกัส", Ic.focus),
-    TASKS("งาน", Ic.tasks),
-    VIEWS("มุมมอง", Ic.views),
-    PROJECTS("โปรเจกต์", Ic.folder),
-    AI("ผู้ช่วย", Ic.spark),
+enum class Screen(private val th: String, private val en: String, val icon: ImageVector) {
+    FOCUS("โฟกัส", "Focus", Ic.focus),
+    TASKS("งาน", "Tasks", Ic.tasks),
+    VIEWS("มุมมอง", "Views", Ic.views),
+    PROJECTS("โปรเจกต์", "Projects", Ic.folder),
+    AI("ผู้ช่วย", "Assistant", Ic.spark),
+    ;
+
+    val label get() = tr(th, en)
 }
 
 @Composable
@@ -153,17 +159,23 @@ private fun FloatingNav(selected: Screen, onSelect: (Screen) -> Unit, modifier: 
 private fun AppMenu(urgentRule: UrgentRule, onUrgent: (UrgentRule) -> Unit, onNotify: () -> Unit, onReload: () -> Unit, onVault: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        SquareButton(Icons.Default.MoreVert, "เมนู", { open = true })
+        SquareButton(Icons.Default.MoreVert, tr("เมนู", "Menu"), { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = C.raised) {
-            DropdownMenuItem(text = { Text("การแจ้งเตือน") }, onClick = { open = false; onNotify() })
-            DropdownMenuItem(text = { Text("โหลดใหม่") }, onClick = { open = false; onReload() })
+            DropdownMenuItem(text = { Text(tr("การแจ้งเตือน", "Notifications")) }, onClick = { open = false; onNotify() })
+            DropdownMenuItem(text = { Text(tr("โหลดใหม่", "Reload")) }, onClick = { open = false; onReload() })
             UrgentRule.entries.forEach { rule ->
                 DropdownMenuItem(
-                    text = { Text("ด่วน = " + rule.label, color = if (rule == urgentRule) C.accentText else C.text) },
+                    text = { Text(tr("ด่วน = ", "Urgent = ") + rule.label, color = if (rule == urgentRule) C.accentText else C.text) },
                     onClick = { open = false; onUrgent(rule) },
                 )
             }
-            DropdownMenuItem(text = { Text("เปลี่ยนโฟลเดอร์ตู้โน้ต") }, onClick = { open = false; onVault() })
+            DropdownMenuItem(text = { Text(tr("เปลี่ยนโฟลเดอร์ตู้โน้ต", "Change vault folder")) }, onClick = { open = false; onVault() })
+            val context = LocalContext.current
+            DropdownMenuItem(
+                text = { Text(if (Lang.english) "ภาษาไทย" else "English") },
+                // Reload too, so text the view model keeps (like the assistant's insight card) follows the new language.
+                onClick = { open = false; Lang.set(context, !Lang.english); onReload() },
+            )
         }
     }
 }
@@ -177,11 +189,14 @@ private fun Welcome(onPick: () -> Unit) {
         ProgressRing(0.7f, 64.dp, 7.dp)
         Text("Omni Task", Modifier.padding(top = 20.dp), style = MaterialTheme.typography.headlineMedium, color = C.text)
         Text(
-            "เลือกโฟลเดอร์ตู้โน้ต Obsidian บนเครื่องนี้ แอปจะอ่านและแก้ไฟล์งานในโฟลเดอร์นั้นโดยตรง",
+            tr(
+                "เลือกโฟลเดอร์ตู้โน้ต Obsidian บนเครื่องนี้ แอปจะอ่านและแก้ไฟล์งานในโฟลเดอร์นั้นโดยตรง",
+                "Pick your Obsidian vault folder on this phone. The app reads and edits the task files there directly.",
+            ),
             Modifier.padding(top = 8.dp, bottom = 24.dp),
             color = C.muted,
         )
-        PrimaryButton("เลือกโฟลเดอร์ตู้โน้ต", onPick, Modifier.fillMaxWidth())
+        PrimaryButton(tr("เลือกโฟลเดอร์ตู้โน้ต", "Choose vault folder"), onPick, Modifier.fillMaxWidth())
     }
 }
 

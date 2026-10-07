@@ -50,6 +50,7 @@ import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.TaskQuery
 import app.omnitask.model.label
+import app.omnitask.model.tr
 
 private enum class Sheet { FILTER, GROUP, SORT }
 
@@ -69,8 +70,8 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         item {
             Column {
                 Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("งาน", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                    SquareButton(Ic.search, "ค้นหา", { searching = !searching; if (!searching) vm.setQuery(q.copy(text = "")) })
+                    Text(tr("งาน", "Tasks"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
+                    SquareButton(Ic.search, tr("ค้นหา", "Search"), { searching = !searching; if (!searching) vm.setQuery(q.copy(text = "")) })
                 }
                 if (searching) {
                     BasicTextField(
@@ -82,7 +83,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card)
                             .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
                         decorationBox = { inner ->
-                            if (q.text.isEmpty()) Text("ค้นหาชื่องาน", color = C.faint, fontSize = TS.body)
+                            if (q.text.isEmpty()) Text(tr("ค้นหาชื่องาน", "Search task titles"), color = C.faint, fontSize = TS.body)
                             inner()
                         },
                     )
@@ -95,7 +96,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
 
         if (groups.isEmpty()) {
-            item { Card { Text("ไม่มีงานตรงตัวกรอง", Modifier.padding(16.dp), color = C.muted) } }
+            item { Card { Text(tr("ไม่มีงานตรงตัวกรอง", "No tasks match the filters"), Modifier.padding(16.dp), color = C.muted) } }
         }
         groups.forEach { g ->
             item(key = "g:" + g.label) {
@@ -119,7 +120,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
 
     when (sheet) {
         Sheet.FILTER -> FilterSheet(state, vm) { sheet = null }
-        Sheet.GROUP -> OptionSheet("จัดกลุ่มตาม", GroupBy.entries.map { it to it.label }, q.groupBy, { vm.setQuery(q.copy(groupBy = it)) }) { sheet = null }
+        Sheet.GROUP -> OptionSheet(tr("จัดกลุ่มตาม", "Group by"), GroupBy.entries.map { it to it.label }, q.groupBy, { vm.setQuery(q.copy(groupBy = it)) }) { sheet = null }
         Sheet.SORT -> SortSheet(q, vm::setQuery) { sheet = null }
         null -> Unit
     }
@@ -152,10 +153,10 @@ fun FilterBar(
         }
         Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
-            ToolButton(if (active > 0) "กรอง $active" else "กรอง", active > 0, Ic.filter, onFilter)
-            if (onGroup != null) ToolButton("กลุ่ม: ${q.groupBy.label}", false, onClick = onGroup)
+            ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter, onFilter)
+            if (onGroup != null) ToolButton(tr("กลุ่ม: ", "Group: ") + q.groupBy.label, false, onClick = onGroup)
             if (showSort) {
-                ToolButton("เรียง: ${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
+                ToolButton(tr("เรียง: ", "Sort: ") + "${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
             }
         }
     }
@@ -191,53 +192,53 @@ fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     val q = state.query
     SheetFrame(onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("กรองงาน", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Text(tr("กรองงาน", "Filter tasks"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             Text(
-                "ล้างทั้งหมด",
+                tr("ล้างทั้งหมด", "Clear all"),
                 Modifier.clip(RoundedCornerShape(8.dp)).clickable {
                     vm.setQuery(q.copy(statuses = TaskQuery.DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = null))
                 }.padding(8.dp),
                 color = C.accentText,
             )
         }
-        Label("สถานะ")
+        Label(tr("สถานะ", "Status"))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Status.entries.forEach { s -> Chip(s.label, s in q.statuses, { vm.setQuery(q.copy(statuses = q.statuses.toggle(s))) }) }
         }
-        Label("ความสำคัญ")
+        Label(tr("ความสำคัญ", "Priority"))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Priority.entries.forEach { p -> Chip(p.label, p in q.priorities, { vm.setQuery(q.copy(priorities = q.priorities.toggle(p))) }, dot = p.tint) }
         }
-        Label("ช่วงวันที่")
+        Label(tr("ช่วงวันที่", "Date range"))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Chip("ทุกวัน", q.bucket == null, { vm.setQuery(q.copy(bucket = null)) })
+            Chip(tr("ทุกวัน", "Any date"), q.bucket == null, { vm.setQuery(q.copy(bucket = null)) })
             DateBucket.entries.forEach { b -> Chip(b.label, q.bucket == b, { vm.setQuery(q.copy(bucket = if (q.bucket == b) null else b)) }) }
         }
         val tags = state.tags.filterNot { it.startsWith("remind-at-") }
         if (tags.isNotEmpty()) {
-            Label("Tag (ตรงอย่างน้อยหนึ่ง)")
+            Label(tr("Tag (ตรงอย่างน้อยหนึ่ง)", "Tags (match any)"))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 tags.forEach { t -> Chip("#$t", t in q.tags, { vm.setQuery(q.copy(tags = q.tags.toggle(t))) }) }
             }
         }
         if (state.notes.size > 1) {
-            Label("โน้ต")
+            Label(tr("โน้ต", "Notes"))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.notes.forEach { n -> Chip(n, n in q.notes, { vm.setQuery(q.copy(notes = q.notes.toggle(n))) }) }
             }
         }
         val count = state.tasks.count { q.matches(it, state.today) }
-        PrimaryButton("แสดง $count งาน", onDismiss, Modifier.fillMaxWidth().padding(top = 20.dp))
+        PrimaryButton(tr("แสดง $count งาน", "Show $count tasks"), onDismiss, Modifier.fillMaxWidth().padding(top = 20.dp))
     }
 }
 
 @Composable
 private fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, onDismiss: () -> Unit) {
     SheetFrame(onDismiss) {
-        Text("เรียงลำดับ", style = MaterialTheme.typography.titleMedium)
-        Segmented(listOf(true to "↑ น้อยไปมาก", false to "↓ มากไปน้อย"), q.ascending, { onChange(q.copy(ascending = it)) }, Modifier.padding(top = 12.dp).fillMaxWidth())
+        Text(tr("เรียงลำดับ", "Sort"), style = MaterialTheme.typography.titleMedium)
+        Segmented(listOf(true to tr("↑ น้อยไปมาก", "↑ Ascending"), false to tr("↓ มากไปน้อย", "↓ Descending")), q.ascending, { onChange(q.copy(ascending = it)) }, Modifier.padding(top = 12.dp).fillMaxWidth())
         SortBy.entries.forEach { s -> OptionRow(s.label, s == q.sortBy) { onChange(q.copy(sortBy = s)) } }
-        Text("ลำดับรอง: ความสำคัญ แล้วตามด้วยชื่องาน", Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+        Text(tr("ลำดับรอง: ความสำคัญ แล้วตามด้วยชื่องาน", "Then by priority, then title"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
     }
 }
 

@@ -45,6 +45,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.omnitask.model.Lang
+import app.omnitask.model.tr
 import app.omnitask.notify.AlarmReceiver
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
@@ -75,21 +77,21 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
     }
     LaunchedEffect(Unit) { AlarmReceiver.ensureChannels(context) }
 
-    val perms = remember(tick) {
+    val perms = remember(tick, Lang.english) {
         listOf(
             Perm(
-                "แสดงการแจ้งเตือน",
+                tr("แสดงการแจ้งเตือน", "Show notifications"),
                 Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
             ) { if (Build.VERSION.SDK_INT >= 33) requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
-            Perm("เตือนตรงเวลา", Scheduler.canScheduleExact(context)) {
+            Perm(tr("เตือนตรงเวลา", "Exact alarms"), Scheduler.canScheduleExact(context)) {
                 if (Build.VERSION.SDK_INT >= 31) {
                     openSettings.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
                 }
             },
-            Perm("อ่านปฏิทิน (Google Calendar)", Scheduler.hasCalendarPermission(context)) {
+            Perm(tr("อ่านปฏิทิน (Google Calendar)", "Read calendar (Google Calendar)"), Scheduler.hasCalendarPermission(context)) {
                 requestCalendar.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
             },
-            Perm("ไม่จำกัดแบตเตอรี่", ignoringBattery(context)) {
+            Perm(tr("ไม่จำกัดแบตเตอรี่", "Unrestricted battery"), ignoringBattery(context)) {
                 openSettings.launch(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")))
             },
         )
@@ -103,37 +105,40 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SquareButton(Ic.back, "กลับ", onBack)
-                Text("การแจ้งเตือน", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = C.text)
+                SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
+                Text(tr("การแจ้งเตือน", "Notifications"), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = C.text)
             }
         }
         item {
             Card {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("สิทธิ์ที่ต้องใช้", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = C.text)
-                        Text(if (missing > 0) "ยังขาด $missing ข้อ" else "ครบแล้ว", color = if (missing > 0) C.amber else C.lime, fontSize = TS.caption)
+                        Text(tr("สิทธิ์ที่ต้องใช้", "Required permissions"), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = C.text)
+                        Text(if (missing > 0) tr("ยังขาด $missing ข้อ", "$missing missing") else tr("ครบแล้ว", "All set"), color = if (missing > 0) C.amber else C.lime, fontSize = TS.caption)
                     }
                     perms.forEach { p ->
                         Divider()
                         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(p.label, Modifier.weight(1f), color = C.text, fontSize = TS.body)
-                            if (p.granted) Text("อนุญาตแล้ว", color = C.lime, fontSize = TS.caption) else PrimaryButton("อนุญาต", p.fix)
+                            if (p.granted) Text(tr("อนุญาตแล้ว", "Allowed"), color = C.lime, fontSize = TS.caption) else PrimaryButton(tr("อนุญาต", "Allow"), p.fix)
                         }
                     }
                     Text(
-                        "มือถือ OPPO ต้องเปิด “เริ่มอัตโนมัติ” ให้ Omni Task ด้วย ไม่อย่างนั้นการแจ้งเตือนอาจไม่ดังตอนปิดแอป",
+                        tr(
+                            "มือถือ OPPO ต้องเปิด “เริ่มอัตโนมัติ” ให้ Omni Task ด้วย ไม่อย่างนั้นการแจ้งเตือนอาจไม่ดังตอนปิดแอป",
+                            "On OPPO phones, turn on “Auto-launch” for Omni Task, or notifications may not ring while the app is closed.",
+                        ),
                         Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.accentDeep).padding(12.dp),
                         color = C.accentText, fontSize = TS.body,
                     )
                     Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GhostButton("เปิดการเริ่มอัตโนมัติ", {
+                        GhostButton(tr("เปิดการเริ่มอัตโนมัติ", "Open auto-launch"), {
                             runCatching { openSettings.launch(autoStartIntent(context)) }.onFailure {
                                 openSettings.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                             }
                         }, Modifier.weight(1f))
                         PrimaryButton(
-                            if (tested) "จะเด้งในอีก 1 นาที" else "ทดสอบแจ้งเตือน",
+                            if (tested) tr("จะเด้งในอีก 1 นาที", "Arrives in 1 minute") else tr("ทดสอบแจ้งเตือน", "Test notification"),
                             { AlarmReceiver.scheduleTest(context); tested = true },
                             Modifier.weight(1f), color = if (tested) C.lime else C.accent,
                         )
@@ -142,15 +147,19 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
             }
         }
         item {
-            Group("งาน") {
-                SwitchRow("เตือนตามเวลาในงาน", "อ่าน ⏰ และ 🎯 จาก TaskForge กดเสร็จหรือเลื่อนได้จากแจ้งเตือน", settings.taskReminders) {
+            Group(tr("งาน", "Tasks")) {
+                SwitchRow(
+                    tr("เตือนตามเวลาในงาน", "Task reminders"),
+                    tr("อ่าน ⏰ และ 🎯 จาก TaskForge กดเสร็จหรือเลื่อนได้จากแจ้งเตือน", "Reads ⏰ and 🎯 from TaskForge. Mark done or snooze from the notification."),
+                    settings.taskReminders,
+                ) {
                     onChange(settings.copy(taskReminders = it))
                 }
             }
         }
         item {
-            Group("สรุปงาน") {
-                Text("เวลาสรุป เลือกได้หลายรอบต่อวัน", Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body)
+            Group(tr("สรุปงาน", "Summaries")) {
+                Text(tr("เวลาสรุป เลือกได้หลายรอบต่อวัน", "Summary times, pick as many as you like"), Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body)
                 FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     NotifySettings.DIGEST_PRESETS.forEach { time ->
                         val on = time in settings.digestTimes
@@ -160,21 +169,25 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
                         })
                     }
                 }
-                SwitchRow("งานเลยกำหนด", null, settings.digestOverdue) { onChange(settings.copy(digestOverdue = it)) }
-                SwitchRow("งานครบวันนี้", null, settings.digestDueToday) { onChange(settings.copy(digestDueToday = it)) }
-                SwitchRow("งานที่มีคนรอ", "งานที่ติด #รอ เรียงตามที่รอนานสุด", settings.digestWaiting) { onChange(settings.copy(digestWaiting = it)) }
-                SwitchRow("ทบทวนสัปดาห์", "ทุกวันอาทิตย์ 20:00", settings.weeklyReview) { onChange(settings.copy(weeklyReview = it)) }
+                SwitchRow(tr("งานเลยกำหนด", "Overdue tasks"), null, settings.digestOverdue) { onChange(settings.copy(digestOverdue = it)) }
+                SwitchRow(tr("งานครบวันนี้", "Due today"), null, settings.digestDueToday) { onChange(settings.copy(digestDueToday = it)) }
+                SwitchRow(tr("งานที่มีคนรอ", "Waiting tasks"), tr("งานที่ติด #รอ เรียงตามที่รอนานสุด", "Tasks tagged #รอ, longest wait first"), settings.digestWaiting) { onChange(settings.copy(digestWaiting = it)) }
+                SwitchRow(tr("ทบทวนสัปดาห์", "Weekly review"), tr("ทุกวันอาทิตย์ 20:00", "Sundays at 20:00"), settings.weeklyReview) { onChange(settings.copy(weeklyReview = it)) }
             }
         }
         item {
-            Group("ปฏิทิน") {
-                SwitchRow("เตือนนัดใน Google Calendar", "อ่านจากปฏิทินในเครื่อง ไม่ต้องล็อกอินเพิ่ม", settings.calendarEvents) {
+            Group(tr("ปฏิทิน", "Calendar")) {
+                SwitchRow(
+                    tr("เตือนนัดใน Google Calendar", "Google Calendar events"),
+                    tr("อ่านจากปฏิทินในเครื่อง ไม่ต้องล็อกอินเพิ่ม", "Reads the calendars on this phone, no extra sign-in"),
+                    settings.calendarEvents,
+                ) {
                     onChange(settings.copy(calendarEvents = it))
                 }
                 if (settings.calendarEvents) {
                     FlowRow(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         NotifySettings.LEAD_PRESETS.forEach { m ->
-                            Chip("ก่อน $m นาที", settings.calendarLeadMinutes == m, { onChange(settings.copy(calendarLeadMinutes = m)) })
+                            Chip(tr("ก่อน $m นาที", "$m min before"), settings.calendarLeadMinutes == m, { onChange(settings.copy(calendarLeadMinutes = m)) })
                         }
                     }
                 }

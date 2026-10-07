@@ -6,13 +6,16 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 
-enum class Priority(val emoji: String?, val label: String) {
-    HIGHEST("🔺", "สูงสุด"),
-    HIGH("⏫", "สูง"),
-    MEDIUM("🔼", "กลาง"),
-    NONE(null, "ปกติ"),
-    LOW("🔽", "ต่ำ"),
-    LOWEST("⏬", "ต่ำสุด"),
+enum class Priority(val emoji: String?, private val th: String, private val en: String) {
+    HIGHEST("🔺", "สูงสุด", "Highest"),
+    HIGH("⏫", "สูง", "High"),
+    MEDIUM("🔼", "กลาง", "Medium"),
+    NONE(null, "ปกติ", "Normal"),
+    LOW("🔽", "ต่ำ", "Low"),
+    LOWEST("⏬", "ต่ำสุด", "Lowest"),
+    ;
+
+    val label get() = tr(th, en)
 }
 
 enum class Status { TODO, IN_PROGRESS, DONE, CANCELLED }
@@ -87,13 +90,16 @@ private val LINK_LINE = Regex("""^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?]]$"""
 private val LINK_INLINE = Regex("""(?<!!)\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?]]""")
 private val EMBED = Regex("""^!\[\[([^\]|]+\.(?:webp|png|jpe?g|gif))(?:\|[^\]]*)?]]$""", RegexOption.IGNORE_CASE)
 
-enum class DateBucket(val label: String) {
-    TODAY("วันนี้"),
-    OVERDUE("เลยกำหนด"),
-    THIS_WEEK("สัปดาห์นี้"),
-    NEXT_WEEK("สัปดาห์หน้า"),
-    FUTURE("อนาคต"),
-    NO_DATE("ไม่มีวันที่"),
+enum class DateBucket(private val th: String, private val en: String) {
+    TODAY("วันนี้", "Today"),
+    OVERDUE("เลยกำหนด", "Overdue"),
+    THIS_WEEK("สัปดาห์นี้", "This week"),
+    NEXT_WEEK("สัปดาห์หน้า", "Next week"),
+    FUTURE("อนาคต", "Later"),
+    NO_DATE("ไม่มีวันที่", "No date"),
+    ;
+
+    val label get() = tr(th, en)
 }
 
 /** Weeks run Monday to Sunday. */
@@ -112,17 +118,23 @@ fun Task.bucket(today: LocalDate): DateBucket {
     }
 }
 
-enum class UrgentRule(val label: String) {
-    TWO_DAYS("ภายใน 2 วัน"),
-    THREE_DAYS("ภายใน 3 วัน"),
-    THIS_WEEK("ภายในสัปดาห์นี้"),
+enum class UrgentRule(private val th: String, private val en: String) {
+    TWO_DAYS("ภายใน 2 วัน", "Within 2 days"),
+    THREE_DAYS("ภายใน 3 วัน", "Within 3 days"),
+    THIS_WEEK("ภายในสัปดาห์นี้", "Within this week"),
+    ;
+
+    val label get() = tr(th, en)
 }
 
-enum class Quadrant(val label: String, val urgent: Boolean, val important: Boolean) {
-    DO("ด่วนและสำคัญ", urgent = true, important = true),
-    PLAN("ไม่ด่วนแต่สำคัญ", urgent = false, important = true),
-    QUICK("ด่วนแต่ไม่สำคัญ", urgent = true, important = false),
-    LATER("ไม่ด่วนไม่สำคัญ", urgent = false, important = false),
+enum class Quadrant(private val th: String, private val en: String, val urgent: Boolean, val important: Boolean) {
+    DO("ด่วนและสำคัญ", "Urgent and important", urgent = true, important = true),
+    PLAN("ไม่ด่วนแต่สำคัญ", "Important, not urgent", urgent = false, important = true),
+    QUICK("ด่วนแต่ไม่สำคัญ", "Urgent, not important", urgent = true, important = false),
+    LATER("ไม่ด่วนไม่สำคัญ", "Neither", urgent = false, important = false),
+    ;
+
+    val label get() = tr(th, en)
 }
 
 fun Task.isUrgent(today: LocalDate, rule: UrgentRule): Boolean {

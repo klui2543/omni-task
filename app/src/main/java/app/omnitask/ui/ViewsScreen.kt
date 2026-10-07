@@ -63,6 +63,7 @@ import app.omnitask.model.TaskQuery
 import app.omnitask.model.Task
 import app.omnitask.model.label
 import app.omnitask.model.quadrant
+import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -70,7 +71,11 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-private enum class Mode(val label: String) { KANBAN("Kanban"), MATRIX("Matrix"), GANTT("Gantt"), CALENDAR("ปฏิทิน") }
+private enum class Mode(private val th: String, private val en: String) {
+    KANBAN("Kanban", "Kanban"), MATRIX("Matrix", "Matrix"), GANTT("Gantt", "Gantt"), CALENDAR("ปฏิทิน", "Calendar");
+
+    val label get() = tr(th, en)
+}
 
 @Composable
 fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
@@ -83,7 +88,7 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val narrowed = if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
-            Text("มุมมอง", Modifier.padding(start = 4.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineSmall, color = C.text)
+            Text(tr("มุมมอง", "Views"), Modifier.padding(start = 4.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineSmall, color = C.text)
             Segmented(Mode.entries.map { it to it.label }, mode, { mode = it }, Modifier.fillMaxWidth())
             FilterBar(state, vm, onFilter = { filtering = true }, showSort = mode == Mode.KANBAN, modifier = Modifier.padding(top = 8.dp))
         }
@@ -190,7 +195,7 @@ private fun Matrix(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
                 }
             }
         }
-        Text("กดค้างแล้วลากขึ้นหรือลงเพื่อเปลี่ยนความสำคัญ", Modifier.fillMaxWidth(), color = C.muted, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(tr("กดค้างแล้วลากขึ้นหรือลงเพื่อเปลี่ยนความสำคัญ", "Long-press and drag up or down to change priority"), Modifier.fillMaxWidth(), color = C.muted, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -212,7 +217,7 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
                 Column(Modifier.fillMaxWidth().taskDragSource(t.key, q.accent) { onOpen(t) }) {
                     Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val d = t.due ?: t.scheduled
-                    if (d != null) Text(if (d == today) "วันนี้" else d.format(SHORT_DATE), color = if (d < today) C.red else C.muted, fontSize = TS.caption)
+                    if (d != null) Text(if (d == today) tr("วันนี้", "Today") else d.format(SHORT_DATE), color = if (d < today) C.red else C.muted, fontSize = TS.caption)
                 }
             }
         }
@@ -226,10 +231,12 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
     val days = 21
     val dayW = 30.dp
     val nameW = 128.dp
-    val rows = pool.filter { t -> t.status != Status.CANCELLED && (t.due != null || t.scheduled != null || t.start != null) }
+    val dated = pool.filter { t -> t.status != Status.CANCELLED && (t.due != null || t.scheduled != null || t.start != null) }
         .filter { t -> t.isOpen || t.done?.let { it >= first } == true }
-        .groupBy { Projects.projectOf(it) ?: "ไม่มีโปรเจกต์" }
-        .toSortedMap(compareBy<String> { it == "ไม่มีโปรเจกต์" }.thenBy { it })
+    val noProject = tr("ไม่มีโปรเจกต์", "No project")
+    val rows = dated
+        .groupBy { Projects.projectOf(it) ?: noProject }
+        .toSortedMap(compareBy<String> { it == noProject }.thenBy { it })
     val hScroll = rememberScrollState()
     Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, bottom = NavClearance - 10.dp)) {
         Card(Modifier.fillMaxSize()) {
@@ -240,7 +247,7 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                         for (i in 0 until days) {
                             val d = first.plusDays(i.toLong())
                             Column(Modifier.width(dayW), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(d.dayOfWeek.thai(), color = C.faint, fontSize = TS.micro)
+                                Text(d.dayOfWeek.short(), color = C.faint, fontSize = TS.micro)
                                 Text(
                                     "${d.dayOfMonth}",
                                     Modifier.size(22.dp).clip(CircleShape).background(if (d == state.today) C.accent else Color.Transparent).padding(top = 2.dp),
@@ -279,7 +286,7 @@ private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
                         }
                     }
                 }
-                if (rows.isEmpty()) Text("ยังไม่มีงานที่มีวันที่", Modifier.padding(16.dp), color = C.muted)
+                if (rows.isEmpty()) Text(tr("ยังไม่มีงานที่มีวันที่", "No dated tasks yet"), Modifier.padding(16.dp), color = C.muted)
             }
         }
     }
@@ -304,7 +311,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
             Card {
                 Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.padding(start = 16.dp, top = 12.dp), color = C.text, style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                    DayOfWeek.entries.forEach { Text(it.thai(), Modifier.weight(1f), color = C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                    DayOfWeek.entries.forEach { Text(it.short(), Modifier.weight(1f), color = C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                 }
                 for (week in 0 until 6) {
                     val rowStart = firstCell.plusDays(week * 7L)
@@ -348,18 +355,18 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
         item {
             Card {
                 Text(
-                    (if (sel == state.today) "วันนี้, " else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)),
+                    (if (sel == state.today) tr("วันนี้, ", "Today, ") else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)),
                     Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), color = C.text2, style = MaterialTheme.typography.titleSmall,
                 )
                 val ev: List<CalendarEvent> = eventsOn(sel)
                 val ts = tasksOn(sel)
-                if (ev.isEmpty() && ts.isEmpty()) Text("ว่างทั้งวัน", Modifier.padding(16.dp), color = C.muted)
+                if (ev.isEmpty() && ts.isEmpty()) Text(tr("ว่างทั้งวัน", "Free all day"), Modifier.padding(16.dp), color = C.muted)
                 ev.forEach { e ->
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
                         Column(Modifier.padding(start = 12.dp)) {
                             Text(e.title, color = C.text, fontSize = TS.body)
-                            Text(if (e.allDay) "ทั้งวัน" else "${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", color = C.tealText, fontSize = TS.caption)
+                            Text(if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", "${e.begin.toLocalTime()} to ${e.end.toLocalTime()}"), color = C.tealText, fontSize = TS.caption)
                         }
                     }
                 }
@@ -370,12 +377,12 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     }
 }
 
-private fun DayOfWeek.thai() = when (this) {
-    DayOfWeek.MONDAY -> "จ"
-    DayOfWeek.TUESDAY -> "อ"
-    DayOfWeek.WEDNESDAY -> "พ"
-    DayOfWeek.THURSDAY -> "พฤ"
-    DayOfWeek.FRIDAY -> "ศ"
-    DayOfWeek.SATURDAY -> "ส"
-    DayOfWeek.SUNDAY -> "อา"
+private fun DayOfWeek.short() = when (this) {
+    DayOfWeek.MONDAY -> tr("จ", "Mo")
+    DayOfWeek.TUESDAY -> tr("อ", "Tu")
+    DayOfWeek.WEDNESDAY -> tr("พ", "We")
+    DayOfWeek.THURSDAY -> tr("พฤ", "Th")
+    DayOfWeek.FRIDAY -> tr("ศ", "Fr")
+    DayOfWeek.SATURDAY -> tr("ส", "Sa")
+    DayOfWeek.SUNDAY -> tr("อา", "Su")
 }

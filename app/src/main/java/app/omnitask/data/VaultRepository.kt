@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import app.omnitask.model.Task
+import app.omnitask.model.tr
 
 /** Reads and writes task lines in the vault folder the user picked through the system folder picker. */
 class VaultRepository(private val context: Context) {
@@ -105,7 +106,7 @@ class VaultRepository(private val context: Context) {
 
     /** Adds a task line at the end of a file, keeping its line endings. */
     fun appendLine(treeUri: Uri, path: String, line: String) {
-        val text = readPath(treeUri, path) ?: throw java.io.IOException("ไม่พบ $path")
+        val text = readPath(treeUri, path) ?: throw java.io.IOException(tr("ไม่พบ $path", "Not found: $path"))
         val separator = if (text.contains("\r\n")) "\r\n" else "\n"
         val body = text.trimEnd('\r', '\n')
         writePath(treeUri, path, body + separator + line + separator)

@@ -27,11 +27,16 @@ object Insight {
         val (hour, count) = (5..19).map { h -> h to deep.count { it.at.hour in h until h + 3 } }.maxBy { it.second }
         if (count < deep.size * 0.6 || abs(hour - profile.focusFrom.hour) < 2) return null
         val range = "%02d:00 ถึง %02d:00".format(hour, hour + 3)
+        val enRange = "%02d:00 to %02d:00".format(hour, hour + 3)
         return Ask(
             "focus:$hour",
-            "ดูเหมือนคุณปิดงานที่ใช้สมองได้บ่อยช่วง $range ($count จาก ${deep.size} งาน)",
+            tr(
+                "ดูเหมือนคุณปิดงานที่ใช้สมองได้บ่อยช่วง $range ($count จาก ${deep.size} งาน)",
+                "You often finish deep work around $enRange ($count of ${deep.size} tasks)",
+            ),
+            // [Ask.remember] is written into the profile note, which stays Thai.
             "ช่วงสมองดีคือ $range",
-            "สังเกต 4 สัปดาห์",
+            tr("สังเกต 4 สัปดาห์", "Seen over 4 weeks"),
         ) { it.copy(focusFrom = LocalTime.of(hour, 0), focusTo = LocalTime.of(hour + 3, 0)) }
     }
 
@@ -44,9 +49,12 @@ object Insight {
         if (abs(median - (profile.exercise.hour * 60 + profile.exercise.minute)) < 60) return null
         return Ask(
             "move:$median",
-            "ดูเหมือนคุณออกกำลังกายราว ${Profile.hm(usual)} บ่อยที่สุด (${moves.size} ครั้ง)",
+            tr(
+                "ดูเหมือนคุณออกกำลังกายราว ${Profile.hm(usual)} บ่อยที่สุด (${moves.size} ครั้ง)",
+                "You usually exercise around ${Profile.hm(usual)} (${moves.size} times)",
+            ),
             "ออกกำลังกายราว ${Profile.hm(usual)}",
-            "สังเกต 4 สัปดาห์",
+            tr("สังเกต 4 สัปดาห์", "Seen over 4 weeks"),
         ) { it.copy(exercise = usual) }
     }
 
@@ -56,11 +64,15 @@ object Insight {
         val (day, count) = DayOfWeek.entries.map { d -> d to done.count { it.dayOfWeek == d } }.maxBy { it.second }
         if (count < done.size * 0.3 || day == profile.bestDay) return null
         val name = Profile.DAY_NAMES[day.value - 1]
+        val enName = Profile.dayName(day)
         return Ask(
             "day:${day.name}",
-            "ดูเหมือนคุณปิดงานได้มากที่สุดวัน$name ($count จาก ${done.size} งาน)",
+            tr(
+                "ดูเหมือนคุณปิดงานได้มากที่สุดวัน$name ($count จาก ${done.size} งาน)",
+                "You finish the most tasks on $enName ($count of ${done.size} tasks)",
+            ),
             "วัน$name เป็นวันที่ทำงานได้ดี",
-            "สังเกต 3 สัปดาห์",
+            tr("สังเกต 3 สัปดาห์", "Seen over 3 weeks"),
         ) { it.copy(bestDay = day) }
     }
 }

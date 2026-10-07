@@ -16,12 +16,26 @@ import kotlin.math.abs
  */
 object Planner {
 
-    enum class Kind(val label: String, val minutes: Int, val buffer: Int, val blurb: String) {
-        MOVE("ใช้แรง", 45, 30, "เป็นงานใช้แรง ไม่ต้องคิดมาก"),
-        DEEP("ใช้สมอง", 90, 0, "เป็นงานที่ต้องใช้สมองต่อเนื่อง"),
-        QUICK("งานสั้น", 20, 0, "เป็นงานสั้น แทรกช่วงว่างได้"),
-        ERRAND("ธุระนอกบ้าน", 60, 30, "ต้องออกไปข้างนอก จึงต้องเป็นเวลาที่ร้านหรือหน่วยงานเปิด"),
-        GENERAL("ทั่วไป", 60, 0, "เป็นงานทั่วไป"),
+    enum class Kind(val minutes: Int, val buffer: Int) {
+        MOVE(45, 30), DEEP(90, 0), QUICK(20, 0), ERRAND(60, 30), GENERAL(60, 0);
+
+        val label: String
+            get() = when (this) {
+                MOVE -> tr("ใช้แรง", "Physical")
+                DEEP -> tr("ใช้สมอง", "Deep work")
+                QUICK -> tr("งานสั้น", "Quick")
+                ERRAND -> tr("ธุระนอกบ้าน", "Errand")
+                GENERAL -> tr("ทั่วไป", "General")
+            }
+
+        val blurb: String
+            get() = when (this) {
+                MOVE -> tr("เป็นงานใช้แรง ไม่ต้องคิดมาก", "It is physical, little thinking needed.")
+                DEEP -> tr("เป็นงานที่ต้องใช้สมองต่อเนื่อง", "It needs unbroken focus.")
+                QUICK -> tr("เป็นงานสั้น แทรกช่วงว่างได้", "It is short and fits in a gap.")
+                ERRAND -> tr("ต้องออกไปข้างนอก จึงต้องเป็นเวลาที่ร้านหรือหน่วยงานเปิด", "It means going out, so it has to be during opening hours.")
+                GENERAL -> tr("เป็นงานทั่วไป", "It is a general task.")
+            }
     }
 
     data class Slot(val day: LocalDate, val start: LocalTime, val end: LocalTime, val title: String, val why: String, val score: Int) {
@@ -30,12 +44,25 @@ object Planner {
 
     data class Plan(val request: String, val title: String, val kind: Kind, val minutes: Int, val intro: String, val slots: List<Slot>)
 
-    val SHORT_DAYS = listOf("จ", "อ", "พ", "พฤ", "ศ", "ส", "อา")
+    val SHORT_DAYS: List<String>
+        get() = if (Lang.english) listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun") else listOf("จ", "อ", "พ", "พฤ", "ศ", "ส", "อา")
 
-    private val MOVE_WORDS = listOf("วิ่ง", "ออกกำลัง", "ยิม", "ฟิตเนส", "ว่ายน้ำ", "ปั่น", "โยคะ", "เดิน", "เตะบอล", "แบด", "เวท", "run", "gym")
-    private val DEEP_WORDS = listOf("เขียน", "อ่าน", "proposal", "สไลด์", "paper", "เรียน", "ทบทวน", "วิเคราะห์", "วางแผน", "เตรียม", "สอบ", "โค้ด", "งานวิจัย", "รายงาน")
-    private val QUICK_WORDS = listOf("โทร", "ตอบ", "ส่ง", "อีเมล", "ไลน์", "จ่าย", "โอน", "นัด", "เช็ค", "ยืนยัน")
-    private val ERRAND_WORDS = listOf("ซื้อ", "ธนาคาร", "ไปรษณีย์", "ร้าน", "ตัดผม", "หาหมอ", "ทำฟัน", "ล้างรถ", "อำเภอ", "ห้าง")
+    private val MOVE_WORDS = listOf(
+        "วิ่ง", "ออกกำลัง", "ยิม", "ฟิตเนส", "ว่ายน้ำ", "ปั่น", "โยคะ", "เดิน", "เตะบอล", "แบด", "เวท", "run", "gym",
+        "exercise", "workout", "swim", "cycling", "bike", "yoga", "walk", "jog", "football", "badminton", "tennis", "weights",
+    )
+    private val DEEP_WORDS = listOf(
+        "เขียน", "อ่าน", "proposal", "สไลด์", "paper", "เรียน", "ทบทวน", "วิเคราะห์", "วางแผน", "เตรียม", "สอบ", "โค้ด", "งานวิจัย", "รายงาน",
+        "write", "read", "slides", "study", "review", "analy", "plan", "prepare", "exam", "code", "research", "report", "thesis",
+    )
+    private val QUICK_WORDS = listOf(
+        "โทร", "ตอบ", "ส่ง", "อีเมล", "ไลน์", "จ่าย", "โอน", "นัด", "เช็ค", "ยืนยัน",
+        "call", "reply", "send", "email", "message", "pay", "transfer", "book", "check", "confirm",
+    )
+    private val ERRAND_WORDS = listOf(
+        "ซื้อ", "ธนาคาร", "ไปรษณีย์", "ร้าน", "ตัดผม", "หาหมอ", "ทำฟัน", "ล้างรถ", "อำเภอ", "ห้าง",
+        "buy", "shopping", "groceries", "bank", "post office", "shop", "store", "haircut", "doctor", "dentist", "car wash", "mall",
+    )
 
     fun kindOf(text: String): Kind {
         val t = text.lowercase()
@@ -57,29 +84,39 @@ object Planner {
             ?: kind.minutes
 
     /** Which days the request is about. */
-    fun daysOf(text: String, today: LocalDate): List<LocalDate> = when {
-        "วันนี้" in text -> listOf(today)
-        "พรุ่งนี้" in text -> listOf(today.plusDays(1))
-        "สัปดาห์หน้า" in text || "อาทิตย์หน้า" in text -> {
-            val mon = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY))
-            (0L..6L).map { mon.plusDays(it) }
+    fun daysOf(text: String, today: LocalDate): List<LocalDate> {
+        val t = text.lowercase()
+        return when {
+            "วันนี้" in t || "today" in t || "tonight" in t -> listOf(today)
+            "พรุ่งนี้" in t || "tomorrow" in t -> listOf(today.plusDays(1))
+            "สัปดาห์หน้า" in t || "อาทิตย์หน้า" in t || "next week" in t -> {
+                val mon = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY))
+                (0L..6L).map { mon.plusDays(it) }
+            }
+            "สุดสัปดาห์" in t || "เสาร์อาทิตย์" in t || "วันหยุด" in t || "weekend" in t || "day off" in t -> {
+                val sat = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
+                listOf(sat, sat.plusDays(1)).let { if (today.dayOfWeek == DayOfWeek.SUNDAY) listOf(today) + it else it }
+            }
+            else -> (0L..6L).map { today.plusDays(it) }
         }
-        "สุดสัปดาห์" in text || "เสาร์อาทิตย์" in text || "วันหยุด" in text -> {
-            val sat = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
-            listOf(sat, sat.plusDays(1)).let { if (today.dayOfWeek == DayOfWeek.SUNDAY) listOf(today) + it else it }
-        }
-        else -> (0L..6L).map { today.plusDays(it) }
     }
 
     private val FILLER = listOf(
         "ควรไปตอนไหนดี", "ควรทำตอนไหนดี", "ตอนไหนดี", "ควรไปตอนไหน", "ควรทำตอนไหน", "ตอนไหน", "เมื่อไหร่ดี", "เมื่อไรดี",
         "สักครั้ง", "สักวัน", "สัปดาห์นี้", "สัปดาห์หน้า", "อาทิตย์หน้า", "สุดสัปดาห์", "วันนี้", "พรุ่งนี้", "หน่อย", "ครับ", "ค่ะ", "คะ",
     )
+    private val EN_WANT = Regex("""^(?:i\s+(?:want|need|have|would like)\s+to|i'd like to|want to|need to)\s+""", RegexOption.IGNORE_CASE)
+    private val EN_FILLER = Regex(
+        """\b(?:when should i|what time should i|when is (?:a good|the best) time to|when can i|this weekend|next week|this week|tomorrow|today|tonight|sometime|please)\b""",
+        RegexOption.IGNORE_CASE,
+    )
 
     /** "อยากไปวิ่ง 5 กม. สักครั้งสัปดาห์นี้ ควรไปตอนไหนดี" becomes "ไปวิ่ง 5 กม.". */
     fun titleOf(text: String): String {
         var t = text.trim().removePrefix("อยากจะ").removePrefix("อยาก").removePrefix("ต้อง").trim()
+        t = t.replace(EN_WANT, "")
         FILLER.forEach { t = t.replace(it, " ") }
+        t = t.replace(EN_FILLER, " ")
         t = t.replace(Regex("""[?？]"""), " ").replace(Regex("""\s+"""), " ").trim()
         return t.ifEmpty { text.trim() }
     }
@@ -94,9 +131,13 @@ object Planner {
         // One option per day first, so the three shown are spread out; the rest come after "ดูช่วงอื่น".
         val firstPerDay = slots.distinctBy { it.day }
         val ordered = firstPerDay + (slots - firstPerDay.toSet())
-        val extra = if (kind.buffer > 0) " + เผื่ออีก ${kind.buffer} นาที" else ""
-        val intro = "ใช้เวลาราว ${duration(minutes)}$extra ${kind.blurb} " +
-            if (ordered.isEmpty()) "แต่ช่วงที่ถามยังไม่มีเวลาว่างพอเลย ลองถามช่วงอื่นดูนะ" else "ผมเลือกช่วงที่ไม่ชนนัดและเวร"
+        val extra = if (kind.buffer > 0) tr(" + เผื่ออีก ${kind.buffer} นาที", " + ${kind.buffer} min buffer") else ""
+        val intro = tr("ใช้เวลาราว ${duration(minutes)}$extra ${kind.blurb} ", "About ${duration(minutes)}$extra. ${kind.blurb} ") +
+            if (ordered.isEmpty()) {
+                tr("แต่ช่วงที่ถามยังไม่มีเวลาว่างพอเลย ลองถามช่วงอื่นดูนะ", "But there is not enough free time then. Try asking about other days.")
+            } else {
+                tr("ผมเลือกช่วงที่ไม่ชนนัดและเวร", "I picked times that avoid your events and shifts.")
+            }
         return Plan(text, titleOf(text), kind, minutes, intro, ordered)
     }
 
@@ -153,26 +194,33 @@ object Planner {
                 score -= (off / 15).toInt() * 2
                 val t = start.toLocalTime()
                 when (kind) {
-                    Kind.MOVE -> if (off <= 30 && anchor == profile.exercise) reasons += "ตรงกับเวลาออกกำลังกายที่คุณตั้งไว้ (${Profile.hm(profile.exercise)})"
+                    Kind.MOVE -> if (off <= 30 && anchor == profile.exercise) reasons += tr("ตรงกับเวลาออกกำลังกายที่คุณตั้งไว้ (${Profile.hm(profile.exercise)})", "Matches your usual exercise time (${Profile.hm(profile.exercise)}).")
                     Kind.DEEP -> if (t >= profile.focusFrom && t < profile.focusTo) {
-                        reasons += "อยู่ในช่วงสมองดีของคุณ ${Profile.hm(profile.focusFrom)} ถึง ${Profile.hm(profile.focusTo)}"
+                        reasons += tr(
+                            "อยู่ในช่วงสมองดีของคุณ ${Profile.hm(profile.focusFrom)} ถึง ${Profile.hm(profile.focusTo)}",
+                            "In your best focus hours, ${Profile.hm(profile.focusFrom)} to ${Profile.hm(profile.focusTo)}.",
+                        )
                         score += 10
                     }
-                    Kind.ERRAND -> if (t < LocalTime.of(9, 0) || t > LocalTime.of(17, 0)) { score -= 25; reasons += "ร้านหรือหน่วยงานอาจยังไม่เปิด" }
+                    Kind.ERRAND -> if (t < LocalTime.of(9, 0) || t > LocalTime.of(17, 0)) { score -= 25; reasons += tr("ร้านหรือหน่วยงานอาจยังไม่เปิด", "Places may be closed.") }
                     else -> Unit
                 }
-                if (profile.bestDay == day.dayOfWeek && kind == Kind.DEEP) { score += 12; reasons += "เป็นวันที่คุณทำงานได้ดี" }
+                if (profile.bestDay == day.dayOfWeek && kind == Kind.DEEP) { score += 12; reasons += tr("เป็นวันที่คุณทำงานได้ดี", "One of your most productive days.") }
                 if (nightToday) {
                     score -= if (kind == Kind.MOVE || kind == Kind.DEEP) 45 else 25
-                    reasons += "วันนี้มีเวรดึก ควรพักให้มาก จึงไม่แนะนำ"
+                    reasons += tr("วันนี้มีเวรดึก ควรพักให้มาก จึงไม่แนะนำ", "Night shift that day, so rest instead. Not recommended.")
                 } else if (shifts.isNotEmpty()) {
                     score -= if (kind == Kind.DEEP) 30 else 12
-                    reasons += if (shifts.all { !it.allDay && it.end <= start }) "หลังเลิกเวร อาจเหนื่อยอยู่บ้าง" else "วันนั้นมีเวร"
+                    reasons += if (shifts.all { !it.allDay && it.end <= start }) {
+                        tr("หลังเลิกเวร อาจเหนื่อยอยู่บ้าง", "After a shift, you may be tired.")
+                    } else {
+                        tr("วันนั้นมีเวร", "You have a shift that day.")
+                    }
                 }
-                if (nightBefore && kind != Kind.QUICK) { score -= 20; reasons += "เพิ่งลงเวรดึกเมื่อคืน" }
-                if (earlyTomorrow && t >= LocalTime.of(19, 30)) { score -= 20; reasons += "พรุ่งนี้มีเวรเช้า ไม่ควรดึก" }
-                if (dueThatDay >= 3 && kind != Kind.QUICK) { score -= 10; reasons += "วันนั้นมีงานครบกำหนด $dueThatDay งาน" }
-                reasons += "ว่างถึง ${Profile.hm(gapEnd.toLocalTime())}"
+                if (nightBefore && kind != Kind.QUICK) { score -= 20; reasons += tr("เพิ่งลงเวรดึกเมื่อคืน", "Just off a night shift.") }
+                if (earlyTomorrow && t >= LocalTime.of(19, 30)) { score -= 20; reasons += tr("พรุ่งนี้มีเวรเช้า ไม่ควรดึก", "Early shift next day, so not too late.") }
+                if (dueThatDay >= 3 && kind != Kind.QUICK) { score -= 10; reasons += tr("วันนั้นมีงานครบกำหนด $dueThatDay งาน", "$dueThatDay tasks due that day.") }
+                reasons += tr("ว่างถึง ${Profile.hm(gapEnd.toLocalTime())}", "Free until ${Profile.hm(gapEnd.toLocalTime())}.")
                 Slot(day, t, t.plusMinutes(minutes.toLong()), titleFor(t, shifts, start, nightToday), reasons.joinToString(" "), score)
             }
         }.distinctBy { it.start }
@@ -180,19 +228,19 @@ object Planner {
 
     private fun titleFor(t: LocalTime, shifts: List<CalendarEvent>, start: LocalDateTime, night: Boolean): String {
         val part = when {
-            t < LocalTime.of(12, 0) -> "ช่วงเช้า"
-            t < LocalTime.of(16, 0) -> "ช่วงบ่าย"
-            t < LocalTime.of(19, 0) -> "ช่วงเย็น"
-            else -> "ช่วงค่ำ"
+            t < LocalTime.of(12, 0) -> tr("ช่วงเช้า", "Morning")
+            t < LocalTime.of(16, 0) -> tr("ช่วงบ่าย", "Afternoon")
+            t < LocalTime.of(19, 0) -> tr("ช่วงเย็น", "Evening")
+            else -> tr("ช่วงค่ำ", "Night")
         }
         val context = when {
-            night -> "ก่อนเวรดึก"
-            shifts.isEmpty() -> "ไม่มีเวร"
-            shifts.all { !it.allDay && it.end <= start } -> "หลังเลิกเวร"
-            shifts.all { !it.allDay && it.begin >= start } -> "ก่อนเข้าเวร"
-            else -> "วันที่มีเวร"
+            night -> tr("ก่อนเวรดึก", "before night shift")
+            shifts.isEmpty() -> tr("ไม่มีเวร", "no shift")
+            shifts.all { !it.allDay && it.end <= start } -> tr("หลังเลิกเวร", "after shift")
+            shifts.all { !it.allDay && it.begin >= start } -> tr("ก่อนเข้าเวร", "before shift")
+            else -> tr("วันที่มีเวร", "shift day")
         }
-        return "$part $context"
+        return tr("$part $context", "$part, $context")
     }
 
     private fun roundUp(t: LocalDateTime): LocalDateTime {
@@ -202,9 +250,9 @@ object Planner {
     }
 
     fun duration(minutes: Int) = when {
-        minutes < 60 -> "$minutes นาที"
-        minutes % 60 == 0 -> "${minutes / 60} ชั่วโมง"
-        else -> "${minutes / 60} ชั่วโมง ${minutes % 60} นาที"
+        minutes < 60 -> tr("$minutes นาที", "$minutes min")
+        minutes % 60 == 0 -> tr("${minutes / 60} ชั่วโมง", "${minutes / 60} h")
+        else -> tr("${minutes / 60} ชั่วโมง ${minutes % 60} นาที", "${minutes / 60} h ${minutes % 60} min")
     }
 
     /** The TaskForge line for a chosen slot, in TaskForge token order. */

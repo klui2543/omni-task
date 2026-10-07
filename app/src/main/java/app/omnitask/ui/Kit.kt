@@ -43,16 +43,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.DateBucket
+import app.omnitask.model.Lang
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
+import app.omnitask.model.tr
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-val TH = Locale("th")
-val SHORT_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM", TH)
+/** The current UI locale for dates; follows the language switch. */
+val TH: Locale get() = Lang.locale
+val SHORT_DATE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("d MMM", TH)
 
 /** Stroke icons drawn from 24×24 path data, matching the mockups. */
 object Ic {
@@ -129,7 +132,7 @@ fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp) {
                 .border(2.dp, ring, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (done) Icon(Ic.check, "เสร็จแล้ว", tint = C.onAccent, modifier = Modifier.size(size * 0.6f))
+            if (done) Icon(Ic.check, tr("เสร็จแล้ว", "Done"), tint = C.onAccent, modifier = Modifier.size(size * 0.6f))
         }
     }
 }
@@ -235,20 +238,20 @@ data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageV
 /** The small labels under a task title. */
 fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false): List<Meta> = buildList {
     val open = t.isOpen
-    if (blockedBy != null) add(Meta("รอ $blockedBy", C.amberSoft, C.amber, Ic.lock))
+    if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
     t.due?.let { d ->
         val late = open && d < today
         val text = when {
-            d == today -> "ครบวันนี้"
-            late -> "เลย ${d.format(SHORT_DATE)}"
-            else -> "ครบ ${d.format(SHORT_DATE)}"
+            d == today -> tr("ครบวันนี้", "Due today")
+            late -> tr("เลย ${d.format(SHORT_DATE)}", "Overdue ${d.format(SHORT_DATE)}")
+            else -> tr("ครบ ${d.format(SHORT_DATE)}", "Due ${d.format(SHORT_DATE)}")
         }
         add(Meta(text, if (late) C.redSoft else C.raised, if (late) C.red else C.text2))
     }
     if (t.due == null || !compact) t.scheduled?.let { d ->
-        add(Meta(if (d == today) "นัดวันนี้" else "นัด ${d.format(SHORT_DATE)}", C.raised, C.text2))
+        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), C.raised, C.text2))
     }
-    if (t.status == Status.IN_PROGRESS) add(Meta("กำลังทำ", C.accentSoft, C.accentText))
+    if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
     t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
     if (t.recurrence != null) add(Meta("↻ ${t.recurrence}", C.raised, C.text2))
     if (!compact) {

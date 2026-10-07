@@ -74,6 +74,7 @@ import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.label
+import app.omnitask.model.tr
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -93,7 +94,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
     SheetFrame(onDismiss) {
         Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
-        Text("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", color = C.faint, fontSize = TS.caption)
+        Text(tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"), color = C.faint, fontSize = TS.caption)
         task.textNotes.forEach { Text(it, Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body) }
 
         Segmented(
@@ -101,7 +102,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             Modifier.padding(top = 14.dp).fillMaxWidth(),
         )
 
-        Label("ความสำคัญ")
+        Label(tr("ความสำคัญ", "Priority"))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Priority.entries.forEach { p -> Chip(p.label, task.priority == p, { vm.setPriority(task, p) }, dot = p.tint) }
         }
@@ -116,7 +117,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text("#$tag", color = C.accentText, fontSize = TS.body)
-                    Icon(Ic.close, "ลบ #$tag", tint = C.muted, modifier = Modifier.size(13.dp))
+                    Icon(Ic.close, tr("ลบ #$tag", "Remove #$tag"), tint = C.muted, modifier = Modifier.size(13.dp))
                 }
             }
             Row(
@@ -126,14 +127,14 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(13.dp))
-                Text("เพิ่ม", color = C.text2, fontSize = TS.body)
+                Text(tr("เพิ่ม", "Add"), color = C.text2, fontSize = TS.body)
             }
         }
 
-        Label("ประเภทงาน")
+        Label(tr("ประเภทงาน", "Task type"))
         KindField(task, state, vm)
 
-        Label("โน้ตที่เกี่ยวข้อง")
+        Label(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"))
         Column(Modifier.clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
             task.links.forEach { link ->
                 val path = NoteLinks.resolve(link, state.notePaths)
@@ -146,11 +147,11 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
                         Text(link.substringAfterLast('/'), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            path?.substringBeforeLast('/', "")?.ifEmpty { "ราก Vault" } ?: "ยังไม่มีโน้ตนี้",
+                            path?.substringBeforeLast('/', "")?.ifEmpty { tr("ราก Vault", "Vault root") } ?: tr("ยังไม่มีโน้ตนี้", "Note does not exist yet"),
                             color = if (path == null) C.amber else C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (link in task.linkLines) SquareButton(Ic.close, "เอาลิงก์ออก", { vm.removeLink(task, link) })
+                    if (link in task.linkLines) SquareButton(Ic.close, tr("เอาลิงก์ออก", "Remove link"), { vm.removeLink(task, link) })
                 }
                 Divider(start = 40.dp)
             }
@@ -159,14 +160,14 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(16.dp))
-                Text("ลิงก์โน้ต", Modifier.padding(start = 10.dp), color = C.text2, fontSize = TS.body)
+                Text(tr("ลิงก์โน้ต", "Link a note"), Modifier.padding(start = 10.dp), color = C.text2, fontSize = TS.body)
             }
         }
-        if (task.links.isNotEmpty()) Text("แตะเพื่อเปิดใน Obsidian", Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
+        if (task.links.isNotEmpty()) Text(tr("แตะเพื่อเปิดใน Obsidian", "Tap to open in Obsidian"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
 
         Row(Modifier.padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("รูปแนบ (${task.attachments.size})", Modifier.weight(1f), color = C.muted, fontSize = TS.body)
-            Text("บันทึกเป็น WebP เสมอ", color = C.faint, fontSize = TS.caption)
+            Text(tr("รูปแนบ (${task.attachments.size})", "Images (${task.attachments.size})"), Modifier.weight(1f), color = C.muted, fontSize = TS.body)
+            Text(tr("บันทึกเป็น WebP เสมอ", "Always saved as WebP"), color = C.faint, fontSize = TS.caption)
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             task.attachments.forEach { name ->
@@ -179,25 +180,25 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 verticalArrangement = Arrangement.Center,
             ) {
                 Icon(Ic.camera, null, tint = C.text2, modifier = Modifier.size(22.dp))
-                Text("แนบรูป", color = C.text2, fontSize = TS.caption)
+                Text(tr("แนบรูป", "Add image"), color = C.text2, fontSize = TS.caption)
             }
         }
         if (task.attachments.isNotEmpty()) {
-            Text("แตะเพื่อดูเต็มจอ กดค้างเพื่อลบ", Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
+            Text(tr("แตะเพื่อดูเต็มจอ กดค้างเพื่อลบ", "Tap to view full screen, long-press to delete"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
         }
 
-        Label("วันที่และรายละเอียด")
+        Label(tr("วันที่และรายละเอียด", "Dates and details"))
         Column(Modifier.clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FieldRow("วันครบกำหนด", task.due?.format(SHORT_DATE)) { picking = DateField.DUE }
-            FieldRow("วันนัดทำ", task.scheduled?.format(SHORT_DATE)) { picking = DateField.SCHEDULED }
-            FieldRow("วันเริ่ม", task.start?.format(SHORT_DATE)) { picking = DateField.START }
-            FieldRow("วันที่สร้าง", task.created?.format(SHORT_DATE), null)
-            FieldRow("วนซ้ำ", task.recurrence, null)
-            FieldRow("เวลาเตือน", task.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) }, null)
-            FieldRow("โปรเจกต์", Projects.projectOf(task), null)
-            FieldRow("ต้องรอ", Projects.waitingOn(task, state.tasks), null)
+            FieldRow(tr("วันครบกำหนด", "Due"), task.due?.format(SHORT_DATE)) { picking = DateField.DUE }
+            FieldRow(tr("วันนัดทำ", "Scheduled"), task.scheduled?.format(SHORT_DATE)) { picking = DateField.SCHEDULED }
+            FieldRow(tr("วันเริ่ม", "Start"), task.start?.format(SHORT_DATE)) { picking = DateField.START }
+            FieldRow(tr("วันที่สร้าง", "Created"), task.created?.format(SHORT_DATE), null)
+            FieldRow(tr("วนซ้ำ", "Repeats"), task.recurrence, null)
+            FieldRow(tr("เวลาเตือน", "Reminder"), task.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) }, null)
+            FieldRow(tr("โปรเจกต์", "Project"), Projects.projectOf(task), null)
+            FieldRow(tr("ต้องรอ", "Waits on"), Projects.waitingOn(task, state.tasks), null)
         }
-        Text("วนซ้ำและเวลาเตือนยังแก้ได้ใน TaskForge ก่อน", Modifier.padding(top = 8.dp), color = C.faint, fontSize = TS.caption)
+        Text(tr("วนซ้ำและเวลาเตือนยังแก้ได้ใน TaskForge ก่อน", "Edit repeats and reminders in TaskForge for now"), Modifier.padding(top = 8.dp), color = C.faint, fontSize = TS.caption)
     }
 
     picking?.let { field -> DateDialog(task, field, { vm.setDate(task, field, it) }) { picking = null } }
@@ -212,10 +213,13 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             containerColor = C.raised,
-            title = { Text("ลบรูปนี้?") },
-            text = { Text("ไฟล์ $name จะถูกลบออกจากโฟลเดอร์ Attachments และบรรทัดใต้งาน", color = C.text2) },
-            confirmButton = { TextButton(onClick = { vm.removeImage(task, name); confirmDelete = null }) { Text("ลบ", color = C.red) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("ยกเลิก", color = C.text2) } },
+            title = { Text(tr("ลบรูปนี้?", "Delete this image?")) },
+            text = { Text(
+                    tr("ไฟล์ $name จะถูกลบออกจากโฟลเดอร์ Attachments และบรรทัดใต้งาน", "$name will be removed from the Attachments folder and from under the task"),
+                    color = C.text2,
+                ) },
+            confirmButton = { TextButton(onClick = { vm.removeImage(task, name); confirmDelete = null }) { Text(tr("ลบ", "Delete"), color = C.red) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
         )
     }
 }
@@ -228,7 +232,7 @@ private fun FieldRow(label: String, value: String?, onClick: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, Modifier.width(116.dp), color = C.muted, fontSize = TS.body)
-        Text(value ?: if (onClick != null) "ตั้งค่า" else "ไม่มี", Modifier.weight(1f), color = if (value != null) C.text else C.faint, fontSize = TS.body)
+        Text(value ?: if (onClick != null) tr("ตั้งค่า", "Set") else tr("ไม่มี", "None"), Modifier.weight(1f), color = if (value != null) C.text else C.faint, fontSize = TS.body)
         if (onClick != null) Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
     }
 }
@@ -266,16 +270,20 @@ fun AttachChoiceDialog(pending: PendingImage, onChoose: (Boolean?) -> Unit) {
     AlertDialog(
         onDismissRequest = { onChoose(null) },
         containerColor = C.raised,
-        title = { Text("รูปนี้ใหญ่ ${ImageAttach.sizeLabel(p.originalBytes)} (${p.width}×${p.height})") },
+        title = { Text(tr("รูปนี้ใหญ่ ${ImageAttach.sizeLabel(p.originalBytes)} (${p.width}×${p.height})", "Large image: ${ImageAttach.sizeLabel(p.originalBytes)} (${p.width}×${p.height})")) },
         text = {
             Text(
-                "ย่อเป็น ${ImageAttach.MAX_SIDE}px แล้วแปลงเป็น WebP จะเหลือประมาณ ${ImageAttach.sizeLabel((p.reduced ?: p.full).size.toLong())}\n" +
-                    "ถ้าเก็บขนาดเต็มเป็น WebP จะได้ ${ImageAttach.sizeLabel(p.full.size.toLong())}\nข้อมูลตำแหน่ง GPS ในรูปจะถูกลบทั้งสองแบบ",
+                tr(
+                    "ย่อเป็น ${ImageAttach.MAX_SIDE}px แล้วแปลงเป็น WebP จะเหลือประมาณ ${ImageAttach.sizeLabel((p.reduced ?: p.full).size.toLong())}\n" +
+                        "ถ้าเก็บขนาดเต็มเป็น WebP จะได้ ${ImageAttach.sizeLabel(p.full.size.toLong())}\nข้อมูลตำแหน่ง GPS ในรูปจะถูกลบทั้งสองแบบ",
+                    "Shrunk to ${ImageAttach.MAX_SIDE}px as WebP: about ${ImageAttach.sizeLabel((p.reduced ?: p.full).size.toLong())}\n" +
+                        "Full size as WebP: ${ImageAttach.sizeLabel(p.full.size.toLong())}\nGPS location is removed either way",
+                ),
                 color = C.text2,
             )
         },
-        confirmButton = { TextButton(onClick = { onChoose(true) }) { Text("ย่อ + WebP", color = C.accent, fontWeight = FontWeight.Medium) } },
-        dismissButton = { TextButton(onClick = { onChoose(false) }) { Text("ขนาดเต็ม", color = C.text2) } },
+        confirmButton = { TextButton(onClick = { onChoose(true) }) { Text(tr("ย่อ + WebP", "Shrink + WebP"), color = C.accent, fontWeight = FontWeight.Medium) } },
+        dismissButton = { TextButton(onClick = { onChoose(false) }) { Text(tr("ขนาดเต็ม", "Full size"), color = C.text2) } },
     )
 }
 
@@ -295,12 +303,12 @@ private fun DateDialog(task: Task, field: DateField, onSet: (LocalDate?) -> Unit
             TextButton(onClick = {
                 ps.selectedDateMillis?.let { onSet(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
                 onDismiss()
-            }) { Text("ตกลง", color = C.accent) }
+            }) { Text(tr("ตกลง", "OK"), color = C.accent) }
         },
         dismissButton = {
             Row {
-                if (current != null) TextButton(onClick = { onSet(null); onDismiss() }) { Text("ล้างวันที่", color = C.red) }
-                TextButton(onClick = onDismiss) { Text("ยกเลิก", color = C.text2) }
+                if (current != null) TextButton(onClick = { onSet(null); onDismiss() }) { Text(tr("ล้างวันที่", "Clear date"), color = C.red) }
+                TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
             }
         },
     ) { DatePicker(state = ps, colors = DatePickerDefaults.colors(containerColor = C.raised)) }
@@ -313,7 +321,7 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text("ลิงก์โน้ต") },
+        title = { Text(tr("ลิงก์โน้ต", "Link a note")) },
         text = {
             Column {
                 BasicTextField(
@@ -325,24 +333,24 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (text.isEmpty()) Text("ค้นหาชื่อโน้ต", color = C.faint, fontSize = TS.body)
+                            if (text.isEmpty()) Text(tr("ค้นหาชื่อโน้ต", "Search notes"), color = C.faint, fontSize = TS.body)
                             inner()
                         }
                     },
                 )
-                if (notes.isEmpty()) Text("ยังไม่พบโน้ตใน Vault", Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.body)
+                if (notes.isEmpty()) Text(tr("ยังไม่พบโน้ตใน Vault", "No notes found in the vault"), Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.body)
                 LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 320.dp)) {
                     items(matches) { path ->
                         Column(Modifier.fillMaxWidth().clickable { onPick(path) }.padding(vertical = 9.dp, horizontal = 4.dp)) {
                             Text(NoteLinks.displayName(path), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(path.substringBeforeLast('/', "").ifEmpty { "ราก Vault" }, color = C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(path.substringBeforeLast('/', "").ifEmpty { tr("ราก Vault", "Vault root") }, color = C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ปิด", color = C.text2) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
     )
 }
 
@@ -353,7 +361,7 @@ private fun openNote(context: Context, vault: String?, path: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
     } catch (_: ActivityNotFoundException) {
-        Toast.makeText(context, "ไม่พบแอป Obsidian", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, tr("ไม่พบแอป Obsidian", "Obsidian app not found"), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -365,7 +373,7 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text("เพิ่ม Tag") },
+        title = { Text(tr("เพิ่ม Tag", "Add tag")) },
         text = {
             Column {
                 BasicTextField(
@@ -379,7 +387,7 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
                         Row {
                             Text("#", color = C.faint, fontSize = TS.body)
                             Box {
-                                if (text.isEmpty()) Text("เช่น รอ/พี่เอ", color = C.faint, fontSize = TS.body)
+                                if (text.isEmpty()) Text(tr("เช่น รอ/พี่เอ", "e.g. รอ/Alex"), color = C.faint, fontSize = TS.body)
                                 inner()
                             }
                         }
@@ -392,7 +400,7 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { if (query.isNotEmpty()) onAdd(query) }, enabled = query.isNotEmpty()) { Text("เพิ่ม", color = C.accent) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก", color = C.text2) } },
+        confirmButton = { TextButton(onClick = { if (query.isNotEmpty()) onAdd(query) }, enabled = query.isNotEmpty()) { Text(tr("เพิ่ม", "Add"), color = C.accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
     )
 }

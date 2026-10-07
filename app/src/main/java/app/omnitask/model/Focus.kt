@@ -104,28 +104,33 @@ object Focus {
         if (staleWaiting.isNotEmpty() && recentDone.isNotEmpty() && recentDone.none { isWaiting(it) }) {
             val who = staleWaiting.mapNotNull { waitingFor(it) }.distinct()
             val names = if (who.isEmpty()) "" else " (" + who.joinToString(", ") + ")"
-            add("3 วันที่ผ่านมาทำงานไป ${recentDone.size} งาน แต่ยังไม่แตะงานที่มีคนรอเลย$names")
+            add(
+                tr(
+                    "3 วันที่ผ่านมาทำงานไป ${recentDone.size} งาน แต่ยังไม่แตะงานที่มีคนรอเลย$names",
+                    "You finished ${recentDone.size} tasks in the last 3 days but none that people are waiting on$names",
+                ),
+            )
         }
 
         val futureWork = tasks.filter { isFutureWork(it) }
         val touched = futureWork.any { t -> t.status == Status.IN_PROGRESS || t.done?.let { it > weekAgo } == true }
         if (futureWork.any { it.isOpen } && !touched) {
-            add("7 วันแล้วยังไม่ได้ลงทุนกับงานเพื่ออนาคตเลย")
+            add(tr("7 วันแล้วยังไม่ได้ลงทุนกับงานเพื่ออนาคตเลย", "No time spent on future work in 7 days"))
         }
     }
 
     private fun suggestions(open: List<Task>, today: LocalDate): List<Suggestion> = buildList {
         open.filter { isWaiting(it) && !it.isImportant && (ageDays(it, today) ?: 0) >= 7 }.forEach {
-            add(Suggestion(it, Kind.RAISE_PRIORITY, "มีคนรอมา ${ageDays(it, today)} วันแล้ว ยกเป็นสำคัญ (⏫)?"))
+            add(Suggestion(it, Kind.RAISE_PRIORITY, tr("มีคนรอมา ${ageDays(it, today)} วันแล้ว ยกเป็นสำคัญ (⏫)?", "Waiting for ${ageDays(it, today)} days. Mark as important (⏫)?")))
         }
         open.filter { isFutureWork(it) && it.scheduled == null && it.status != Status.IN_PROGRESS && (ageDays(it, today) ?: 0) >= 30 }
             .forEach {
-                add(Suggestion(it, Kind.SOFT_DATE, "ค้างมา ${ageDays(it, today)} วัน นัดทำ (⏳) เสาร์นี้?"))
+                add(Suggestion(it, Kind.SOFT_DATE, tr("ค้างมา ${ageDays(it, today)} วัน นัดทำ (⏳) เสาร์นี้?", "Open for ${ageDays(it, today)} days. Schedule (⏳) this Saturday?")))
             }
         // Important work with no deadline that nobody waits on is what "ลงทุนอนาคต" is for; offer it, never assume it.
         open.filter { it.isImportant && it.due == null && !isWaiting(it) && !isFutureWork(it) && !isSomeday(it) && (ageDays(it, today) ?: 0) >= 14 }
             .take(2)
-            .forEach { add(Suggestion(it, Kind.MARK_FUTURE, "สำคัญแต่ไม่มีเดดไลน์ ตั้งเป็นงานลงทุนอนาคตไหม?")) }
+            .forEach { add(Suggestion(it, Kind.MARK_FUTURE, tr("สำคัญแต่ไม่มีเดดไลน์ ตั้งเป็นงานลงทุนอนาคตไหม?", "Important but no deadline. Make it future work?"))) }
     }
 
     /** The coming Saturday (today if today is Saturday): the default soft date for neglected future work. */

@@ -30,6 +30,7 @@ import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
 import app.omnitask.model.quadrant
+import app.omnitask.model.tr
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
 import java.time.LocalDate
@@ -185,7 +186,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     vaultName = vaultName,
                     profile = profile,
                     insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined()),
-                    message = result.exceptionOrNull()?.let { e -> "อ่านตู้โน้ตไม่ได้: ${e.message}" } ?: it.message,
+                    message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") } ?: it.message,
                 )
             }
         }
@@ -194,7 +195,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleDone(task: Task) {
         // Completing a repeating task must also create its next occurrence, which arrives in phase 2.
         if (task.recurrence != null && task.isOpen) {
-            _state.update { it.copy(message = "งานวนซ้ำยังติ๊กในแอปนี้ไม่ได้ (ช่วง 2) ติ๊กใน TaskForge ไปก่อน") }
+            val text = tr(
+                "งานวนซ้ำยังติ๊กในแอปนี้ไม่ได้ (ช่วง 2) ติ๊กใน TaskForge ไปก่อน",
+                "Repeating tasks cannot be ticked here yet (phase 2). Tick them in TaskForge for now.",
+            )
+            _state.update { it.copy(message = text) }
             return
         }
         if (task.isOpen) logDone(task)
@@ -217,7 +222,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun attachImage(task: Task, uri: Uri) {
         viewModelScope.launch {
             val prepared = withContext(Dispatchers.IO) { runCatching { ImageAttach.prepare(getApplication(), uri) } }
-            prepared.onFailure { e -> _state.update { it.copy(message = "แนบรูปไม่ได้: ${e.message}") } }
+            prepared.onFailure { e -> _state.update { it.copy(message = tr("แนบรูปไม่ได้: ${e.message}", "Cannot attach image: ${e.message}")) } }
             prepared.onSuccess { p ->
                 if (p.needsChoice) _state.update { it.copy(pendingImage = PendingImage(task, p)) } else saveImage(task, p.full)
             }
@@ -242,7 +247,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             _state.update {
-                it.copy(message = result.fold({ n -> "แนบรูปแล้ว ($n, ${ImageAttach.sizeLabel(bytes.size.toLong())})" }, { e -> "แนบรูปไม่ได้: ${e.message}" }))
+                it.copy(
+                    message = result.fold(
+                        { n -> tr("แนบรูปแล้ว ($n, ${ImageAttach.sizeLabel(bytes.size.toLong())})", "Image attached ($n, ${ImageAttach.sizeLabel(bytes.size.toLong())})") },
+                        { e -> tr("แนบรูปไม่ได้: ${e.message}", "Cannot attach image: ${e.message}") },
+                    ),
+                )
             }
             reload()
         }
@@ -258,7 +268,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             thumbs.remove(name)
-            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = "ลบรูปไม่ได้: ${e.message}") } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ลบรูปไม่ได้: ${e.message}", "Cannot delete image: ${e.message}")) } }
             reload()
         }
     }
@@ -374,7 +384,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun sub(task: Task, write: () -> Unit) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching(write) }
-            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = "บันทึกไม่ได้: ${e.message}") } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")) } }
             reload()
         }
     }
@@ -392,7 +402,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val from = task.quadrant(s.today, s.urgentRule)
         if (from == to) return
         if (from.urgent != to.urgent) {
-            _state.update { it.copy(message = "ด่วน/ไม่ด่วนมาจากวันครบกำหนด ลากได้แค่ขึ้นลง (สำคัญ ↔ ไม่สำคัญ)") }
+            val text = tr(
+                "ด่วน/ไม่ด่วนมาจากวันครบกำหนด ลากได้แค่ขึ้นลง (สำคัญ ↔ ไม่สำคัญ)",
+                "Urgency comes from the due date, so drag only up or down (important ↔ not important)",
+            )
+            _state.update { it.copy(message = text) }
             return
         }
         setPriority(task, if (to.important) Priority.HIGH else Priority.MEDIUM)
@@ -408,13 +422,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun planToday() {
         val b = _state.value.brief
-        _state.update { it.copy(chat = it.chat + Chat.Asked("จัดลำดับวันนี้ให้หน่อย") + Chat.Today((b.must + b.waiting + b.future).distinct())) }
+        _state.update { it.copy(chat = it.chat + Chat.Asked(tr("จัดลำดับวันนี้ให้หน่อย", "Plan my day")) + Chat.Today((b.must + b.waiting + b.future).distinct())) }
     }
 
     fun reviewWeek() {
         val s = _state.value
         val m = Digest.weekly(s.tasks, s.today)
-        _state.update { it.copy(chat = it.chat + Chat.Asked("ทบทวนสัปดาห์นี้") + Chat.Review(m.title, m.lines)) }
+        _state.update { it.copy(chat = it.chat + Chat.Asked(tr("ทบทวนสัปดาห์นี้", "Review this week")) + Chat.Review(m.title, m.lines)) }
     }
 
     fun clearChat() = _state.update { it.copy(chat = emptyList()) }
@@ -448,8 +462,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             result.fold(
-                { eventId -> updateSlots(index) { it.copy(done = if (eventId != null) "เพิ่มงาน + ลงปฏิทินแล้ว" else "เพิ่มงานแล้ว (ยังลงปฏิทินไม่ได้)") } },
-                { e -> _state.update { it.copy(message = "เพิ่มงานไม่ได้: ${e.message}") } },
+                { eventId -> updateSlots(index) { it.copy(
+                        done = if (eventId != null) {
+                            tr("เพิ่มงาน + ลงปฏิทินแล้ว", "Task added + on calendar")
+                        } else {
+                            tr("เพิ่มงานแล้ว (ยังลงปฏิทินไม่ได้)", "Task added (not on calendar)")
+                        },
+                    ) } },
+                { e -> _state.update { it.copy(message = tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}")) } },
             )
             reload()
         }
@@ -473,7 +493,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(profile = next) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.writePath(vault, Profile.PATH, next.render()) } }
-            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = "บันทึกโปรไฟล์ไม่ได้: ${e.message}") } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกโปรไฟล์ไม่ได้: ${e.message}", "Cannot save profile: ${e.message}")) } }
         }
     }
 
@@ -497,9 +517,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } }
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
-                    "ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง"
+                    tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
                 } else {
-                    "บันทึกไม่ได้: ${e.message}"
+                    tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
                 }
                 _state.update { it.copy(message = text) }
             }

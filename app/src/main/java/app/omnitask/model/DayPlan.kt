@@ -9,8 +9,12 @@ import java.time.temporal.ChronoUnit
 /** Today's tasks and calendar events, laid out by part of the day for the Focus timeline. */
 object DayPlan {
 
-    enum class Part(val label: String) {
-        LATE("ค้างอยู่"), MORNING("เช้า"), AFTERNOON("บ่าย"), EVENING("เย็น"), ANYTIME("ไม่ระบุเวลา"),
+    enum class Part(private val th: String, private val en: String) {
+        LATE("ค้างอยู่", "Overdue"), MORNING("เช้า", "Morning"), AFTERNOON("บ่าย", "Afternoon"), EVENING("เย็น", "Evening"),
+        ANYTIME("ไม่ระบุเวลา", "Any time"),
+        ;
+
+        val label get() = tr(th, en)
     }
 
     sealed interface Item {

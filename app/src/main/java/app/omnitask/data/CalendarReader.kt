@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
+import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import java.time.Instant
 import java.time.LocalDate
@@ -100,7 +101,7 @@ object CalendarReader {
                     } else {
                         LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), zone)
                     }
-                    out += CalendarEvent(c.getLong(0), c.getString(1) ?: "(ไม่มีชื่อ)", at(c.getLong(2)), at(c.getLong(3)), allDay)
+                    out += CalendarEvent(c.getLong(0), c.getString(1) ?: tr("(ไม่มีชื่อ)", "(No title)"), at(c.getLong(2)), at(c.getLong(3)), allDay)
                 }
             }
         }

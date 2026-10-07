@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import app.omnitask.model.tr
 import java.io.ByteArrayOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -34,7 +35,7 @@ object ImageAttach {
 
     fun prepare(context: Context, uri: Uri): Prepared {
         val original = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw java.io.IOException("อ่านรูปไม่ได้")
+            ?: throw java.io.IOException(tr("อ่านรูปไม่ได้", "Cannot read the image"))
         val bitmap = decode(context, uri, original)
         val full = encode(bitmap)
         val longSide = maxOf(bitmap.width, bitmap.height)
@@ -71,7 +72,7 @@ object ImageAttach {
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
         } else {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw java.io.IOException("ไฟล์นี้ไม่ใช่รูป")
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw java.io.IOException(tr("ไฟล์นี้ไม่ใช่รูป", "This file is not an image"))
         }
 
     @Suppress("DEPRECATION")
