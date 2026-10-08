@@ -102,7 +102,7 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         when (mode) {
             Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
             Mode.MATRIX -> Matrix(state, narrowed, vm, onOpen)
-            Mode.GANTT -> Gantt(state, narrowed, onOpen)
+            Mode.GANTT -> GanttView(state, narrowed, vm, onOpen)
             Mode.CALENDAR -> CalendarViews(state, narrowed, vm, onOpen)
         }
     }
@@ -243,124 +243,6 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
                     val d = t.due ?: t.scheduled
                     if (d != null) Text(if (d == today) tr("วันนี้", "Today") else d.format(SHORT_DATE), color = if (d < today) C.red else C.muted, fontSize = TS.caption)
                 }
-            }
-        }
-    }
-}
-
-/** Bars from start (or scheduled) to due across the coming weeks, grouped by project. */
-private val HM = DateTimeFormatter.ofPattern("HH:mm")
-
-@Composable
-private fun Gantt(state: UiState, pool: List<Task>, onOpen: (Task) -> Unit) {
-    val first = state.today.minusDays(3)
-    val days = 21
-    val dayW = 30.dp
-    val nameW = 128.dp
-    val dated = pool.filter { t -> t.status != Status.CANCELLED && (t.due != null || t.scheduled != null || t.start != null) }
-        .filter { t -> t.isOpen || t.done?.let { it >= first } == true }
-    val noProject = tr("ไม่มีโปรเจกต์", "No project")
-    val rows = dated
-        .groupBy { Projects.projectOf(it) ?: noProject }
-        .toSortedMap(compareBy<String> { it == noProject }.thenBy { it })
-    val hScroll = rememberScrollState()
-    val context = LocalContext.current
-    var showEvents by rememberSaveable { mutableStateOf(true) }
-    val last = first.plusDays(days - 1L)
-    // Events overlapping the range, one row per title, so a recurring shift reads as a single row of bars.
-    fun lastDay(e: CalendarEvent) = maxOf(e.begin.toLocalDate(), e.end.minusNanos(1).toLocalDate())
-    val eventRows = if (!showEvents) emptyList() else state.events
-        .filter { it.begin.toLocalDate() <= last && lastDay(it) >= first }
-        .groupBy { it.title }
-        .toList()
-        .sortedBy { (_, list) -> list.minOf { it.begin } }
-    Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, bottom = NavClearance - 10.dp)) {
-        if (state.calendarAccess == true) {
-            Row(Modifier.padding(bottom = 8.dp)) {
-                Chip(tr("นัดจาก Google Calendar", "Google Calendar events"), showEvents, { showEvents = !showEvents }, dot = C.teal)
-            }
-        }
-        Card(Modifier.fillMaxSize()) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Row {
-                    Box(Modifier.width(nameW))
-                    Row(Modifier.horizontalScroll(hScroll).padding(vertical = 8.dp)) {
-                        for (i in 0 until days) {
-                            val d = first.plusDays(i.toLong())
-                            Column(Modifier.width(dayW), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(d.dayOfWeek.short(), color = C.faint, fontSize = TS.micro)
-                                Text(
-                                    "${d.dayOfMonth}",
-                                    Modifier.size(22.dp).clip(CircleShape).background(if (d == state.today) C.accent else Color.Transparent).padding(top = 2.dp),
-                                    color = if (d == state.today) C.onAccent else C.text2, fontSize = TS.micro,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                )
-                            }
-                        }
-                    }
-                }
-                if (eventRows.isNotEmpty()) {
-                    Text("Google Calendar", Modifier.fillMaxWidth().background(C.sunken).padding(horizontal = 12.dp, vertical = 6.dp), color = C.teal, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                }
-                eventRows.forEach { (title, list) ->
-                    val next = list.firstOrNull { lastDay(it) >= state.today } ?: list.first()
-                    Row(
-                        Modifier.height(42.dp).clickable {
-                            val uri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, next.id)
-                            runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
-                        },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.width(nameW).padding(horizontal = 12.dp)) {
-                            Text(title, color = Color(0xFFCFF4F0), fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                if (next.allDay) tr("ทั้งวัน", "All day") else next.begin.format(HM) + tr(" ถึง ", " to ") + next.end.format(HM),
-                                color = C.tealText, fontSize = TS.micro, maxLines = 1,
-                            )
-                        }
-                        Box(Modifier.horizontalScroll(hScroll).width(dayW * days).fillMaxHeight()) {
-                            Box(Modifier.offset(x = dayW * (ChronoUnit.DAYS.between(first, state.today).toInt()) + dayW / 2).width(1.dp).fillMaxHeight().background(C.accent.copy(alpha = 0.5f)))
-                            list.forEach { e ->
-                                val from = ChronoUnit.DAYS.between(first, e.begin.toLocalDate()).coerceIn(0, days.toLong() - 1)
-                                val to = ChronoUnit.DAYS.between(first, lastDay(e)).coerceIn(0, days.toLong() - 1)
-                                Box(
-                                    Modifier.align(Alignment.CenterStart).offset(x = dayW * from.toInt() + 3.dp)
-                                        .width(dayW * (to - from + 1).toInt() - 6.dp).height(12.dp)
-                                        .clip(RoundedCornerShape(6.dp)).background(C.teal.copy(alpha = if (lastDay(e) < state.today) 0.4f else 0.85f)),
-                                )
-                            }
-                        }
-                    }
-                }
-                rows.forEach { (project, tasks) ->
-                    Text(project, Modifier.fillMaxWidth().background(C.sunken).padding(horizontal = 12.dp, vertical = 6.dp), color = C.tealChip, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                    tasks.sortedBy { it.start ?: it.scheduled ?: it.due }.forEach { t ->
-                        val a = t.start ?: t.scheduled ?: t.due!!
-                        val b = maxOf(a, t.due ?: t.scheduled ?: a)
-                        val from = ChronoUnit.DAYS.between(first, a).coerceIn(0, days.toLong() - 1)
-                        val to = ChronoUnit.DAYS.between(first, b).coerceIn(0, days.toLong() - 1)
-                        val visible = !(b < first || a > first.plusDays(days.toLong() - 1))
-                        val color = when {
-                            !t.isOpen -> C.lime.copy(alpha = 0.55f)
-                            t.due?.let { it < state.today } == true -> C.red
-                            else -> t.priority.tint.takeIf { it != C.faint } ?: C.muted
-                        }
-                        Row(Modifier.height(42.dp).clickable { onOpen(t) }, verticalAlignment = Alignment.CenterVertically) {
-                            Text(t.title, Modifier.width(nameW).padding(horizontal = 12.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Box(Modifier.horizontalScroll(hScroll).width(dayW * days).fillMaxHeight()) {
-                                Box(Modifier.offset(x = dayW * (ChronoUnit.DAYS.between(first, state.today).toInt()) + dayW / 2).width(1.dp).fillMaxHeight().background(C.accent.copy(alpha = 0.5f)))
-                                if (visible) {
-                                    Box(
-                                        Modifier.align(Alignment.CenterStart).offset(x = dayW * from.toInt() + 3.dp)
-                                            .width(dayW * (to - from + 1).toInt() - 6.dp).height(12.dp)
-                                            .clip(RoundedCornerShape(6.dp)).background(color),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                if (rows.isEmpty() && eventRows.isEmpty()) Text(tr("ยังไม่มีงานที่มีวันที่", "No dated tasks yet"), Modifier.padding(16.dp), color = C.muted)
             }
         }
     }
