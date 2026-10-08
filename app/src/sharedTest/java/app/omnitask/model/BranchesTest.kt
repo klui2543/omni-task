@@ -49,4 +49,27 @@ class BranchesTest {
         assertEquals("- [ ] x #pedcalc 📅 2026-10-10", Branches.renameInLine("- [ ] x #peddose 📅 2026-10-10", "peddose", "pedcalc"))
         assertEquals("- [ ] x #peddoses", Branches.renameInLine("- [ ] x #peddoses", "peddose", "pedcalc"))
     }
+
+    @Test
+    fun mindMapBranchesLiveBeforeTheirTasks() {
+        val states = mapOf(("peddose" to "แอป/แท็บเล็ต") to Branches.State.TRYING, ("peddose" to "ทุน") to Branches.State.ACTIVE)
+        val root = Branches.tree("peddose", tasks, states)
+        assertEquals(listOf("research", "ทุน", "แอป"), root.children.map { it.name })
+        assertEquals(setOf("มือถือ", "เว็บ", "แท็บเล็ต"), root.children[2].children.map { it.name }.toSet())
+        assertTrue(root.children[2].children.any { it.name == "แท็บเล็ต" && it.all.isEmpty() })
+        assertEquals(states, Branches.parse(Branches.encode(states)))
+
+        val moved = Branches.movePaths(states + (("peddose" to "แอป") to Branches.State.ACTIVE), "peddose", "แอป", "app")
+        assertEquals(setOf("app/แท็บเล็ต", "ทุน", "app"), moved.keys.map { it.second }.toSet())
+        assertEquals(setOf("ทุน"), Branches.dropPaths(moved, "peddose", "app").keys.map { it.second }.toSet())
+        assertEquals("ระบบ-งาน", Branches.clean(" ระบบ งาน/#"))
+
+        // On the map every branch sits in its depth's column, centred on what it holds.
+        val (items, height) = app.omnitask.ui.mapLayout(root)
+        val branches = items.filterIsInstance<app.omnitask.ui.MapItem.BranchAt>()
+        assertEquals(root.flatten().size, branches.size)
+        val app = branches.first { it.node.path == "แอป" }
+        assertEquals(200f, app.x)
+        assertTrue(height > 0f && branches.all { it.y in 0f..height })
+    }
 }

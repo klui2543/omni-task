@@ -44,13 +44,17 @@ object Branches {
         (parts[0] to parts[1]) to state
     }.toMap()
 
+    /** Every saved state is kept, Active too, so a branch made in the mind map stays before it has tasks. */
     fun encode(states: Map<Pair<String, String>, State>): Set<String> =
-        states.filterValues { it != State.ACTIVE }.map { (k, v) -> "${k.first}\t${k.second}\t${v.name}" }.toSet()
+        states.map { (k, v) -> "${k.first}\t${k.second}\t${v.name}" }.toSet()
 
-    /** The tree of one project's tasks; every prefix of a used path is a branch, even without tasks of its own. */
+    /**
+     * The tree of one project's tasks; every prefix of a used path is a branch, even without tasks of its own,
+     * and so is every branch with a saved state (made in the mind map, no tasks yet).
+     */
     fun tree(project: String, tasks: List<Task>, states: Map<Pair<String, String>, State>): Node {
         val mine = tasks.filter { Projects.projectOf(it) == project && it.status != Status.CANCELLED }
-        val paths = mine.map { pathOf(it) }.filter { it.isNotEmpty() }
+        val paths = (mine.map { pathOf(it) } + states.keys.filter { it.first == project }.map { it.second }).filter { it.isNotEmpty() }
             .flatMap { p -> p.split('/').indices.map { i -> p.split('/').take(i + 1).joinToString("/") } }
             .toSortedSet()
         fun build(path: String): Node {
@@ -79,6 +83,24 @@ object Branches {
         siblings.filter { it.path != node.path && it.state == State.TRYING }.forEach { next[it.project to it.path] = State.PARKED }
         return next
     }
+
+    /** States after a branch is renamed: its own and every one under it move to the new path. */
+    fun movePaths(states: Map<Pair<String, String>, State>, project: String, old: String, new: String): Map<Pair<String, String>, State> =
+        states.mapKeys { (k, _) ->
+            when {
+                k.first != project -> k
+                k.second == old -> project to new
+                k.second.startsWith("$old/") -> project to new + k.second.removePrefix(old)
+                else -> k
+            }
+        }
+
+    /** States without a branch and everything under it. */
+    fun dropPaths(states: Map<Pair<String, String>, State>, project: String, path: String): Map<Pair<String, String>, State> =
+        states.filterKeys { k -> !(k.first == project && (k.second == path || k.second.startsWith("$path/"))) }
+
+    /** A branch name as it goes into a tag: no spaces, # or slashes. */
+    fun clean(name: String): String = name.trim().replace(Regex("""[\s#/]+"""), "-").trim('-')
 
     private val TAG = Regex("""(?<!\S)#([^\s#]+)""")
 

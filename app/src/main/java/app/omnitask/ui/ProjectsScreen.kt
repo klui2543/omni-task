@@ -72,8 +72,13 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     // Inside a project: the overview (null) or one of the views over just its tasks.
     var projectView by rememberSaveable { mutableStateOf<Mode?>(null) }
+    var mapping by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = open != null || openList != null) {
-        if (projectView != null) projectView = null else { openName = null; openListPath = null; listCategory = null }
+        when {
+            mapping -> mapping = false
+            projectView != null -> projectView = null
+            else -> { openName = null; openListPath = null; listCategory = null }
+        }
     }
     LaunchedEffect(Unit) { vm.ensureStarterLists() }
 
@@ -91,6 +96,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
     if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
 
+    if (open != null && mapping) {
+        MindMapScreen(Branches.tree(open.name, projectTasks, state.branchStates), vm, onOpen) { mapping = false }
+        return
+    }
     val view = projectView
     if (open != null && view != null) {
         // A view needs the whole screen (Kanban and Gantt scroll sideways), so it replaces the list.
@@ -118,7 +127,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (open != null || openList != null) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null; projectView = null })
+                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false })
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -213,7 +222,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     StatCard("${open.blocked.size}", tr("ติดรองานอื่น", "Blocked"), if (open.blocked.isNotEmpty()) C.amber else C.text, Modifier.weight(1f))
                 }
             }
-            item(key = "branches") { BranchSection(Branches.tree(open.name, projectTasks, state.branchStates), vm, onOpen) }
+            item(key = "branches") { BranchSection(Branches.tree(open.name, projectTasks, state.branchStates)) { mapping = true } }
             // Open work in the owner's order (1, 2, 3...), then what is done; parked branches stay out.
             val parked = state.parked.toSet()
             val openTasks = vm.orderedProjectTasks(open.name, open.tasks.filter { it.isOpen && it.parent == null && it !in parked })

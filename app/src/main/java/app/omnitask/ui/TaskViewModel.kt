@@ -1190,6 +1190,56 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A branch made in the mind map, before it has tasks: under the project it is worked on, deeper it is tried. */
+    fun addEmptyBranch(parent: Branches.Node, name: String) {
+        val clean = Branches.clean(name)
+        if (clean.isEmpty()) return
+        val path = if (parent.path.isEmpty()) clean else parent.path + "/" + clean
+        if (parent.children.any { it.path == path }) return
+        saveBranchStates(_state.value.branchStates + ((parent.project to path) to if (parent.path.isEmpty()) Branches.State.ACTIVE else Branches.State.TRYING))
+    }
+
+    /** A task in a branch: the title is read like quick add and gets the branch's tag. */
+    fun addBranchTask(node: Branches.Node, title: String) {
+        val vault = _state.value.vault ?: return
+        if (title.isBlank()) return
+        val today = LocalDate.now()
+        val line = TaskLine.addTag(QuickAdd.parse(title, today).line(today), node.tag)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เพิ่มงานไม่ได้: ", "Cannot add the task: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Renames a branch: every task line under it gets the new tag, and the states under it move along. */
+    fun renameBranch(node: Branches.Node, name: String) {
+        val clean = Branches.clean(name)
+        if (clean.isEmpty() || node.path.isEmpty() || clean == node.name) return
+        val newPath = if ('/' in node.path) node.parentPath + "/" + clean else clean
+        val oldTag = node.tag
+        val newTag = node.project + "/" + newPath
+        // Cancelled tasks are out of the tree but keep their tag, so they move too.
+        val files = (_state.value.allTasks + _state.value.parked)
+            .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
+            result.onSuccess { saveBranchStates(Branches.movePaths(_state.value.branchStates, node.project, node.path, newPath)) }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนชื่อไม่ได้: ", "Cannot rename: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Removes an empty branch (one with tasks keeps them safe: move or delete them first). */
+    fun deleteBranch(node: Branches.Node) {
+        if (node.path.isEmpty()) return
+        if (node.all.isNotEmpty()) {
+            _state.update { it.copy(message = tr("ยังมีงานในกิ่งนี้ ย้ายหรือลบงานก่อน", "This branch still has tasks; move or delete them first")) }
+            return
+        }
+        saveBranchStates(Branches.dropPaths(_state.value.branchStates, node.project, node.path))
+    }
+
     /** Lines that renaming [old] would change, for the preview: (files, lines). */
     fun renameCount(old: String): Pair<Int, Int> {
         val tasks = (_state.value.tasks + _state.value.parked + _state.value.listItems).filter { Projects.projectOf(it) == old }
