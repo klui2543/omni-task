@@ -138,8 +138,9 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
         val rowW = maxOf(maxWidth - 28.dp, 1.dp)
         val dayW = rowW / days
         val range = ganttRange(first, last, today)
+        val oneLineHeader = maxWidth >= 760.dp
         Column(Modifier.fillMaxSize()) {
-            if (maxWidth >= 760.dp) {
+            if (oneLineHeader) {
                 // Landscape and unfolded: the whole header fits on one line, leaving more height for the rows.
                 Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
