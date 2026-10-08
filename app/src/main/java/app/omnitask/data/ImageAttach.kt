@@ -8,8 +8,9 @@ import android.net.Uri
 import android.os.Build
 import app.omnitask.model.tr
 import java.io.ByteArrayOutputStream
-import java.time.LocalDateTime
+import kotlinx.datetime.LocalDateTime
 import java.time.format.DateTimeFormatter
+import app.omnitask.time.*
 
 /**
  * Turns a picked photo into WebP for the vault. Re-encoding from pixels also drops EXIF, so GPS and

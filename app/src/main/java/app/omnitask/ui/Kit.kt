@@ -46,15 +46,17 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Lang
+import app.omnitask.model.locale
 import app.omnitask.model.Recurrence
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.tr
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import app.omnitask.time.*
 
 /** The current UI locale for dates; follows the language switch. */
 val TH: Locale get() = Lang.locale
@@ -301,7 +303,7 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
     t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
-    if (t.recurrence != null) add(Meta(Recurrence.describe(t.recurrence), C.raised, C.text2, Ic.repeat))
+    t.recurrence?.let { add(Meta(Recurrence.describe(it), C.raised, C.text2, Ic.repeat)) }
     if (!compact) {
         val project = Projects.projectOf(t)
         t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->

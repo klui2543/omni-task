@@ -55,14 +55,13 @@ import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
-import java.time.DayOfWeek
-import java.time.Duration
-import java.time.LocalDate
-import java.time.LocalTime
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.TemporalAdjusters
 import kotlin.math.abs
 import kotlinx.coroutines.delay
+import app.omnitask.time.*
 
 /** The hour labels down the left edge; the day headers and the all-day strip leave the same gap. */
 private val LabelW = 40.dp
@@ -405,7 +404,7 @@ private fun packColumns(blocks: List<TimelineBlock>): List<TimelineBlock> {
 }
 
 /** All-day events, and timed ones a day or longer, go in the strip instead of filling whole columns. */
-private fun CalendarEvent.inStrip() = allDay || Duration.between(begin, end).toHours() >= 24
+private fun CalendarEvent.inStrip() = allDay || ChronoUnit.HOURS.between(begin, end) >= 24
 
 /** Whether the event covers any part of [d]; an event with no length counts on the day it starts. */
 private fun CalendarEvent.covers(d: LocalDate): Boolean {

@@ -69,11 +69,11 @@ import app.omnitask.model.label
 import app.omnitask.model.quadrant
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
-import java.time.DayOfWeek
-import java.time.LocalDate
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
+import app.omnitask.time.*
 
 enum class Mode(private val th: String, private val en: String) {
     KANBAN("Kanban", "Kanban"), MATRIX("Matrix", "Matrix"), GANTT("Gantt", "Gantt"), CALENDAR("ปฏิทิน", "Calendar");
@@ -241,7 +241,7 @@ private fun Matrix(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 listOf(a, b).forEach { q ->
                     QuadrantCard(
-                        q, byQuadrant[q].orEmpty().sortedBy { it.due ?: it.scheduled ?: LocalDate.MAX }, state.today, onOpen,
+                        q, byQuadrant[q].orEmpty().sortedBy { it.due ?: it.scheduled ?: LocalDate.LATEST }, state.today, onOpen,
                         onDrop = { key -> state.tasks.firstOrNull { it.key == key }?.let { vm.moveToQuadrant(it, q) } },
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
@@ -303,15 +303,15 @@ private fun CalendarViews(state: UiState, pool: List<Task>, vm: TaskViewModel, o
 private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var selected by rememberSaveable { mutableStateOf(state.today.toString()) }
     val sel = LocalDate.parse(selected)
-    var shown by rememberSaveable { mutableStateOf(YearMonth.from(state.today).toString()) }
+    var shown by rememberSaveable { mutableStateOf(state.today.yearMonth.toString()) }
     val month = YearMonth.parse(shown)
-    LaunchedEffect(month) { vm.loadMonth(month.atDay(1)) }
+    LaunchedEffect(month) { vm.loadMonth(month.firstDay()) }
     fun go(delta: Long) {
         val next = month.plusMonths(delta)
         shown = next.toString()
-        selected = (if (next == YearMonth.from(state.today)) state.today else next.atDay(1)).toString()
+        selected = (if (next == state.today.yearMonth) state.today else next.firstDay()).toString()
     }
-    val firstCell = month.atDay(1).let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
+    val firstCell = month.firstDay().let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
     fun tasksOn(d: LocalDate) = pool.filter { it.status != Status.CANCELLED && (it.due == d || it.scheduled == d) }
     fun eventsOn(d: LocalDate) = state.events.filter { it.begin.toLocalDate() <= d && (it.end.toLocalDate() > d || it.begin.toLocalDate() == d) }
 
@@ -324,8 +324,8 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
         item {
             Card {
                 Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
-                    TodayButton({ shown = YearMonth.from(state.today).toString(); selected = state.today.toString() }, Modifier.padding(end = 6.dp))
+                    Text(month.firstDay().format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
+                    TodayButton({ shown = state.today.yearMonth.toString(); selected = state.today.toString() }, Modifier.padding(end = 6.dp))
                     SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { go(-1) })
                     Box(Modifier.width(6.dp))
                     SquareButton(Ic.next, tr("เดือนถัดไป", "Next month"), { go(1) })

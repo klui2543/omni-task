@@ -2,7 +2,8 @@ package app.omnitask.ui
 
 import android.app.TimePickerDialog
 import android.content.Context
-import java.time.LocalTime
+import kotlinx.datetime.LocalTime
+import app.omnitask.time.*
 
 /**
  * The phone's own time picker (the clock dial on ColorOS), which the owner prefers to typing digits.

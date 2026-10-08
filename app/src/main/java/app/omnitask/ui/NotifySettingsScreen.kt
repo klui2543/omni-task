@@ -50,7 +50,8 @@ import app.omnitask.model.tr
 import app.omnitask.notify.AlarmReceiver
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
-import java.time.LocalTime
+import kotlinx.datetime.LocalTime
+import app.omnitask.time.*
 
 private class Perm(val label: String, val granted: Boolean, val fix: () -> Unit)
 

@@ -37,6 +37,7 @@ import app.omnitask.model.FontChoice
 import app.omnitask.model.PaletteChoice
 import app.omnitask.model.ThemeMode
 import app.omnitask.model.Lang
+import app.omnitask.model.set
 import app.omnitask.model.tr
 import kotlin.math.roundToInt
 
@@ -48,7 +49,7 @@ private const val SAMPLE = "ส่งรายงานเวร พรุ่ง
  * [onLanguageChange] lets the caller refresh text the view model has already built in the old language.
  */
 @Composable
-fun SettingsScreen(profile: app.omnitask.model.Profile? = null, onSleepTimes: (java.time.LocalTime, java.time.LocalTime) -> Unit = { _, _ -> }, onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
+fun SettingsScreen(profile: app.omnitask.model.Profile? = null, onSleepTimes: (kotlinx.datetime.LocalTime, kotlinx.datetime.LocalTime) -> Unit = { _, _ -> }, onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
     val context = LocalContext.current
     BackHandler(onBack = onBack)
 
@@ -132,7 +133,7 @@ fun SettingsScreen(profile: app.omnitask.model.Profile? = null, onSleepTimes: (j
 }
 
 @Composable
-private fun TimeRow(label: String, time: java.time.LocalTime, onClick: () -> Unit) {
+private fun TimeRow(label: String, time: kotlinx.datetime.LocalTime, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = C.text, fontSize = TS.body)
         Text("%02d:%02d".format(time.hour, time.minute), color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.Medium)

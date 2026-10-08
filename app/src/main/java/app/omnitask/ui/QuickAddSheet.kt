@@ -47,11 +47,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.Lang
+import app.omnitask.model.fetchTitle
 import app.omnitask.model.Priority
 import app.omnitask.model.Status
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.tr
 import kotlinx.coroutines.delay
+import app.omnitask.time.*
 
 /** Add a task in one line; day words, times, #tags and ! marks are read out of the sentence. */
 @OptIn(ExperimentalLayoutApi::class)

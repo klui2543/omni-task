@@ -22,11 +22,13 @@ import app.omnitask.model.Appearance
 import app.omnitask.model.Branches
 import app.omnitask.model.Projects
 import app.omnitask.model.Lang
+import app.omnitask.model.locale
+import app.omnitask.model.load
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.notify.Digest
-import java.time.LocalDateTime
+import kotlinx.datetime.LocalDateTime
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.OmniList
 import app.omnitask.model.Priority
@@ -45,7 +47,7 @@ import app.omnitask.model.tr
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
 import app.omnitask.widget.OmniWidgets
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -54,6 +56,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import app.omnitask.time.*
 
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
@@ -121,7 +124,7 @@ data class UiState(
     /** The task the Focus screen counts down to (by title), any task, not only today's. */
     val countdown: String? = null,
     /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
-    val tonightBed: Pair<LocalDate, java.time.LocalTime>? = null,
+    val tonightBed: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
@@ -239,7 +242,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         customKinds = CustomKind.parse(prefs.getStringSet(KEY_CUSTOM_KINDS, emptySet()).orEmpty()),
         hiddenKinds = prefs.getStringSet(KEY_HIDDEN_KINDS, emptySet()).orEmpty().mapNotNull { n -> TaskKind.entries.firstOrNull { it.name == n } }.toSet(),
         tonightBed = prefs.getString(KEY_TONIGHT_BED, null)?.let { v ->
-            runCatching { LocalDate.parse(v.substringBefore(' ')) to java.time.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
+            runCatching { LocalDate.parse(v.substringBefore(' ')) to kotlinx.datetime.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
         },
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
@@ -502,7 +505,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setRecurrence(task: Task, rule: String?) = edit(task) { TaskLine.setRecurrence(it, rule) }
 
-    fun setReminder(task: Task, time: java.time.LocalTime?, on: ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
+    fun setReminder(task: Task, time: kotlinx.datetime.LocalTime?, on: ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
 
     fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
 
@@ -706,7 +709,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun orderedProjectTasks(project: String, tasks: List<Task>): List<Task> {
         val rank = _state.value.projectTaskOrder[project].orEmpty().withIndex().associate { it.value to it.index }
-        return tasks.sortedWith(compareBy<Task>({ rank[it.title] ?: Int.MAX_VALUE }, { it.due ?: it.scheduled ?: LocalDate.MAX }))
+        return tasks.sortedWith(compareBy<Task>({ rank[it.title] ?: Int.MAX_VALUE }, { it.due ?: it.scheduled ?: LocalDate.LATEST }))
     }
 
     fun setProjectTaskOrder(project: String, ordered: List<Task>) {
@@ -996,7 +999,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             val s = _state.value
             val candidates = Focus.rank(s.tasks, today).map { it.first }.filter { t ->
-                (t.scheduled == null || t.scheduled < today) && (t.due == null || t.due >= from) && t.reminderTime == null
+                t.scheduled.let { it == null || it < today } && t.due.let { it == null || it >= from } && t.reminderTime == null
             }.take(12)
             val days = generateSequence(maxOf(from, today)) { it.plusDays(1) }.takeWhile { it <= to }.toList()
             val proposals = withContext(Dispatchers.Default) { Planner.planRange(candidates, days, s.tasks, events, s.profile, now) }
@@ -1045,7 +1048,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** "None of these": add the task as an all-day item on [day], or at a time the owner picks. */
-    fun confirmCustom(index: Int, title: String, day: LocalDate, time: java.time.LocalTime?, minutes: Int) {
+    fun confirmCustom(index: Int, title: String, day: LocalDate, time: kotlinx.datetime.LocalTime?, minutes: Int) {
         val vault = _state.value.vault ?: return
         val app = getApplication<Application>()
         viewModelScope.launch {
@@ -1290,13 +1293,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Tonight's bedtime; the usual one comes back tomorrow. [evening] is the date the night starts on. */
-    fun setTonightBedtime(evening: LocalDate, time: java.time.LocalTime) {
+    fun setTonightBedtime(evening: LocalDate, time: kotlinx.datetime.LocalTime) {
         prefs.edit().putString(KEY_TONIGHT_BED, "$evening ${"%02d:%02d".format(time.hour, time.minute)}").apply()
         _state.update { it.copy(tonightBed = evening to time) }
     }
 
     /** The usual bedtime and wake time, kept in the profile note the assistant also reads. */
-    fun setSleepTimes(sleep: java.time.LocalTime, wake: java.time.LocalTime) = saveProfile(_state.value.profile.copy(sleep = sleep, wake = wake))
+    fun setSleepTimes(sleep: kotlinx.datetime.LocalTime, wake: kotlinx.datetime.LocalTime) = saveProfile(_state.value.profile.copy(sleep = sleep, wake = wake))
 
     /** Writes the profile note; saving also counts as "still true", so the re-ask clock restarts. */
     fun saveProfile(profile: Profile) {

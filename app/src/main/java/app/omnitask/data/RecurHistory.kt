@@ -1,7 +1,8 @@
 package app.omnitask.data
 
 import android.content.Context
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
+import app.omnitask.time.*
 
 /**
  * When each repeating task was completed. A repeating line is moved on in place rather than copied,

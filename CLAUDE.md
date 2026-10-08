@@ -10,6 +10,7 @@ Native Android app (Kotlin, Jetpack Compose) that reads and writes the checkbox 
 ## Build
 
 - No Android SDK locally; build and test only through GitHub Actions (`.github/workflows/build.yml`).
+- Vault logic shared with the web app lives in `shared/` (Kotlin Multiplatform, JVM and JS). Keep it free of java.time and other JVM-only APIs; `gradle :shared:allTests` runs its tests on both and needs no Android SDK.
 - Release APKs are signed in CI from repository secrets (`OMNI_KEYSTORE_B64`, `OMNI_KEYSTORE_PASSWORD`, `OMNI_KEY_ALIAS`) and published as GitHub releases for Obtainium. Never commit a keystore.
 
 ## Vault facts

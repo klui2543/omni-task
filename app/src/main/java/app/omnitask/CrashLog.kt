@@ -2,7 +2,8 @@ package app.omnitask
 
 import android.content.Context
 import java.io.File
-import java.time.LocalDateTime
+import kotlinx.datetime.LocalDateTime
+import app.omnitask.time.*
 
 /**
  * Keeps the last crash on the phone, so the next launch can show it and the owner can pass it on.

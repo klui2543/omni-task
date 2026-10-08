@@ -5,6 +5,7 @@ import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
 import app.omnitask.model.Lang
+import app.omnitask.model.load
 import app.omnitask.model.Quadrant
 import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
@@ -13,10 +14,10 @@ import app.omnitask.notify.CalendarEvent
 import app.omnitask.notify.Scheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.temporal.ChronoUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import app.omnitask.time.*
 
 /** Everything the home-screen widgets show, read straight from the vault and the calendar. */
 class WidgetData(
