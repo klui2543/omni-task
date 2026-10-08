@@ -101,7 +101,10 @@ fun SettingsScreen(
                 SettingsGroup(tr("การนอน", "Sleep")) {
                     TimeRow(tr("เวลานอนประจำ", "Usual bedtime"), profile.sleep) { pickSystemTime(context, profile.sleep) { onSleepTimes(it, profile.wake) } }
                     TimeRow(tr("เวลาตื่นประจำ", "Usual wake time"), profile.wake) { pickSystemTime(context, profile.wake) { onSleepTimes(profile.sleep, it) } }
-                    Box(Modifier.padding(bottom = 6.dp))
+                    Text(
+                        tr("หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้", "After 6 pm Focus shows the time until bed and the hours of sleep. Tap that line to change tonight only."),
+                        Modifier.padding(top = 4.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                    )
                 }
             }
         }
@@ -115,7 +118,10 @@ fun SettingsScreen(
                         }
                     }
                     Text(
-                        tr("ไปที่ TaskForge Archive.md (ยกเว้นงานโปรเจกต์)", "To TaskForge Archive.md (not project tasks)"),
+                        tr(
+                            "ย้ายวันละครั้งไปที่ TaskForge Archive.md ข้างไฟล์ TaskForge งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม",
+                            "Once a day, to TaskForge Archive.md next to the TaskForge note. Project tasks stay ticked where they are.",
+                        ),
                         color = C.muted, fontSize = TS.caption,
                     )
                     Row(Modifier.fillMaxWidth().clickable { archive.onAsk(!archive.ask) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {

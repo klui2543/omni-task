@@ -132,7 +132,7 @@ fun Pill(text: String, bg: Color, fg: Color, icon: ImageVector? = null, modifier
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(12.dp))
-        if (text.isNotEmpty()) Text(text, color = fg, fontSize = TS.caption, lineHeight = 1.4.em, maxLines = 1)
+        Text(text, color = fg, fontSize = TS.caption, lineHeight = 1.4.em, maxLines = 1)
     }
 }
 
@@ -285,27 +285,26 @@ fun OnOff(checked: Boolean) {
 
 data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageVector? = null)
 
-/** The date a label shows: today, tomorrow and yesterday by name, otherwise "12 ต.ค.". */
-fun shortDay(d: LocalDate, today: LocalDate): String = when (d) {
-    today -> tr("วันนี้", "Today")
-    today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow")
-    today.minusDays(1) -> tr("เมื่อวาน", "Yesterday")
-    else -> d.format(SHORT_DATE)
-}
-
-/** The small labels under a task title: an icon says what a date or count is, so the words can go. */
+/** The small labels under a task title. */
 fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false, progress: Pair<Int, Int>? = null): List<Meta> = buildList {
     progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else C.raised, if (done == all) C.lime else C.text2, Ic.tasks)) }
     val open = t.isOpen
     if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
     t.due?.let { d ->
         val late = open && d < today
-        add(Meta(shortDay(d, today), if (late) C.redSoft else C.raised, if (late) C.red else C.text2, Ic.calendar))
+        val text = when {
+            d == today -> tr("ครบวันนี้", "Due today")
+            late -> tr("เลย ${d.format(SHORT_DATE)}", "Overdue ${d.format(SHORT_DATE)}")
+            else -> tr("ครบ ${d.format(SHORT_DATE)}", "Due ${d.format(SHORT_DATE)}")
+        }
+        add(Meta(text, if (late) C.redSoft else C.raised, if (late) C.red else C.text2))
     }
-    if (t.due == null || !compact) t.scheduled?.let { d -> add(Meta(shortDay(d, today), C.raised, C.text2, Ic.hourglass)) }
-    // In progress already shows as the half-filled check.
+    if (t.due == null || !compact) t.scheduled?.let { d ->
+        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), C.raised, C.text2))
+    }
+    if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
     t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
-    t.recurrence?.let { add(Meta("", C.raised, C.text2, Ic.repeat)) }
+    t.recurrence?.let { add(Meta(Recurrence.describe(it), C.raised, C.text2, Ic.repeat)) }
     if (!compact) {
         val project = Projects.projectOf(t)
         t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
