@@ -131,7 +131,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(open?.name ?: openList?.name ?: tr("โปรเจกต์", "Projects"), style = MaterialTheme.typography.headlineSmall, color = C.text)
+                    Text(open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"), style = MaterialTheme.typography.headlineSmall, color = C.text)
                     Text(
                         when {
                             open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")

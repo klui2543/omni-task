@@ -75,7 +75,7 @@ enum class Screen(private val th: String, private val en: String, val icon: Imag
     FOCUS("โฟกัส", "Focus", Ic.focus),
     TASKS("งาน", "Tasks", Ic.tasks),
     VIEWS("มุมมอง", "Views", Ic.views),
-    PROJECTS("โปรเจกต์", "Projects", Ic.folder),
+    PROJECTS("โปรเจกต์/ลิสต์", "Projects/Lists", Ic.folder),
     AI("ผู้ช่วย", "Assistant", Ic.spark),
     ;
 
@@ -290,7 +290,8 @@ private fun FloatingNav(selected: Screen, onSelect: (Screen) -> Unit, modifier: 
                 verticalArrangement = Arrangement.Center,
             ) {
                 Icon(s.icon, null, tint = if (on) C.onAccent else C.muted, modifier = Modifier.size(20.dp))
-                Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+                // One line even for the longest label; it may run a little past the pill rather than wrap.
+                Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1, softWrap = false)
             }
         }
     }
