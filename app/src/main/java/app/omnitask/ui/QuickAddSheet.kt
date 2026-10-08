@@ -56,8 +56,8 @@ import kotlinx.coroutines.delay
 /** Add a task in one line; day words, times, #tags and ! marks are read out of the sentence. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, onAskAssistant: (String) -> Unit, onDismiss: () -> Unit) {
-    var field by remember { mutableStateOf(TextFieldValue("")) }
+fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, initial: String = "", link: String? = null, onAskAssistant: (String) -> Unit, onDismiss: () -> Unit) {
+    var field by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     val text = field.text
     fun setText(value: String) { field = TextFieldValue(value, TextRange(value.length)) }
     val draft = QuickAdd.parse(text, state.today)
@@ -88,7 +88,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     fun add() {
         if (draft.title.isBlank()) return
         val t = target
-        if (t != null) vm.addListItem(t.list, draft.title, t.category) else vm.quickAdd(draft, status)
+        if (t != null) vm.addListItem(t.list, draft.title, t.category, link) else vm.quickAdd(draft, status, link)
         onDismiss()
     }
     // Focus (and the keyboard) only after the sheet has finished opening; asking earlier is the likeliest
@@ -163,6 +163,9 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 }
             }
         }
+
+        // A shared link rides along as the task's details.
+        link?.let { Text(tr("ลิงก์ในรายละเอียด: ", "Link in details: ") + it, Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
 
         // What the sentence was read as, so a wrong guess is visible before saving.
         val chips = if (target != null) emptyList() else buildList {

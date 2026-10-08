@@ -159,7 +159,14 @@ data class UiState(
 }
 
 /** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
-data class QuickAddRequest(val voice: Boolean = false, val assistant: Boolean = false, val status: Status = Status.TODO)
+data class QuickAddRequest(
+    val voice: Boolean = false,
+    val assistant: Boolean = false,
+    val status: Status = Status.TODO,
+    /** Text shared from another app, and its link, which goes into the task's details. */
+    val text: String = "",
+    val link: String? = null,
+)
 
 /** One entry in the assistant conversation. */
 sealed interface Chat {
@@ -782,14 +789,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addListItem(list: OmniList, title: String, category: String?) {
+    fun addListItem(list: OmniList, title: String, category: String?, link: String? = null) {
         val vault = _state.value.vault ?: return
         if (title.isBlank()) return
         var line = "- [ ] ${title.trim()}"
         if (category != null) line = TaskLine.addTag(line, category)
         line = TaskLine.setDate(line, DateField.CREATED, LocalDate.now())
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, list.path, line) } }
+            val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, list.path, line + (link?.let { "\n    - $it" } ?: "")) } }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เพิ่มไม่ได้: ", "Cannot add: ") + e.message) } }
             reload()
         }
@@ -798,12 +805,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
-    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO) {
+    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val today = LocalDate.now()
-                val line = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) }
+                val line = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) } +
+                    (link?.let { "\n    - $it" } ?: "")
                 runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) }
             }
             val text = result.fold(

@@ -58,4 +58,11 @@ class QuickAddTest {
         assertEquals(listOf(QuickAdd.HashPick.ToList(watch, "ซีรีส์")), QuickAdd.hashPicks("ซีรี", listOf(watch, bucket), emptyList()))
         assertEquals(2, QuickAdd.hashPicks("", listOf(watch, bucket), emptyList()).size)
     }
+
+    @Test
+    fun sharedTextKeepsTheLinkOutOfTheTitle() {
+        assertEquals(Shared.Item("ทำไม 28 Years Later", "https://youtu.be/kfZ12WcTpkM?si=Oo"), Shared.read("ทำไม 28 Years Later", "https://youtu.be/kfZ12WcTpkM?si=Oo"))
+        assertEquals(Shared.Item("อ่านบทความนี้", "https://example.com/a/12/10"), Shared.read(null, "อ่านบทความนี้ https://example.com/a/12/10"))
+        assertEquals(Shared.Item("แค่ข้อความ", null), Shared.read("", "แค่ข้อความ"))
+    }
 }

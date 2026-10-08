@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import app.omnitask.model.Appearance
 import app.omnitask.model.Lang
+import app.omnitask.model.Shared
 import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme
 import app.omnitask.ui.QuickAddRequest
@@ -55,6 +56,12 @@ class MainActivity : ComponentActivity() {
 
     /** Widgets open the app with an action: type a task, say it, or go straight to the assistant. */
     private fun handle(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+            val shared = Shared.read(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT))
+            viewModel.requestQuickAdd(QuickAddRequest(text = shared.title, link = shared.link))
+            intent.action = null
+            return
+        }
         when (intent?.getStringExtra(EXTRA_ACTION)) {
             ACTION_ADD -> viewModel.requestQuickAdd(QuickAddRequest())
             ACTION_VOICE -> viewModel.requestQuickAdd(QuickAddRequest(voice = true))
