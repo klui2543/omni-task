@@ -16,6 +16,21 @@ class OmniListTest {
     }
 
     @Test
+    fun listsGoByATag() {
+        assertEquals("watchlist", OmniList.tagFor("Watch list"))
+        assertEquals("หนังสือที่อยากอ่าน", OmniList.tagFor("หนังสือ ที่อยากอ่าน"))
+        // A note written before lists had tags still gets one from its name.
+        val old = "---\nomni-list: true\nicon: 🏔️\ncategories: เที่ยว\n---\n# Bucket list\n"
+        assertEquals("bucketlist", OmniList.parse("Omni/Bucket list.md", old)!!.tag)
+        val named = old.replace("categories: เที่ยว", "categories: เที่ยว\ntag: #ฝัน")
+        assertEquals("ฝัน", OmniList.parse("Omni/Bucket list.md", named)!!.tag)
+        // The list's tag never names a project.
+        val t = app.omnitask.data.TaskLine.parse("- [ ] ดู Shogun #watchlist")!!
+        Projects.listTags = setOf("watchlist")
+        try { assertNull(Projects.projectOf(t)) } finally { Projects.listTags = emptySet() }
+    }
+
+    @Test
     fun oldIconNamesBecomeEmoji() {
         assertEquals("🎬", app.omnitask.ui.ListEmoji.of("film"))
         assertEquals("🍿", app.omnitask.ui.ListEmoji.of("🍿"))

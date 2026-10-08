@@ -65,7 +65,7 @@ fun LazyListScope.listCards(state: UiState, onOpen: (OmniList) -> Unit, onCreate
         Text(tr("รายการ", "Lists"), Modifier.padding(start = 4.dp, top = 8.dp), color = C.muted, fontSize = TS.caption)
     }
     items(state.lists, key = { "list:" + it.path }) { l ->
-        val items = state.listItems.filter { it.list == l.name }
+        val items = state.itemsOf(l)
         val done = items.count { it.status == Status.DONE }
         Card(Modifier.clickable { onOpen(l) }) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -112,9 +112,17 @@ fun LazyListScope.listDetail(
             AddLine(
                 if (category != null) tr("เพิ่มใน $category", "Add to $category") else tr("เพิ่มใน ${list.name}", "Add to ${list.name}"),
             ) { vm.addListItem(list, it, category) }
+            var including by remember { mutableStateOf(false) }
+            Text(
+                tr("ดึงงานที่มีอยู่แล้วเข้ามา", "Add existing tasks"),
+                Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
+                    .clickable { including = true }.padding(vertical = 11.dp),
+                color = C.accentText, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            if (including) IncludeSheet(list, state, category, { picked, cat -> vm.includeInList(list, picked, cat); including = false }) { including = false }
         }
     }
-    val items = state.listItems.filter { it.list == list.name && (category == null || it.tags.any { t -> t == category }) }
+    val items = state.itemsOf(list).filter { category == null || it.tags.any { t -> t == category } }
         .sortedWith(compareBy({ it.status == Status.DONE || it.status == Status.CANCELLED }, { it.title.lowercase() }))
     if (items.isEmpty()) {
         item(key = "list-empty") { Text(tr("ยังว่างอยู่ เพิ่มสิ่งแรกได้เลย", "Empty for now. Add the first one."), Modifier.padding(8.dp), color = C.muted, fontSize = TS.body) }
@@ -137,15 +145,72 @@ fun LazyListScope.listDetail(
                     t.title, color = if (done) C.muted else C.text, fontSize = TS.body,
                     textDecoration = if (done) TextDecoration.LineThrough else null,
                 )
-                val cats = t.tags.filter { it in list.categories }
+                // Tasks pulled in from elsewhere say where they live.
+                val cats = t.tags.filter { it in list.categories } + listOfNotNull(t.filePath.takeIf { t.list == null }?.substringAfterLast('/')?.removeSuffix(".md"))
                 if (cats.isNotEmpty()) Text(cats.joinToString(", "), color = C.faint, fontSize = TS.caption)
             }
         }
     }
     item(key = "list-file") {
         Text(
-            tr("เก็บใน ${list.path} แตะเพื่อติ๊ก กดค้างเพื่อแก้", "Saved in ${list.path}. Tap to tick, long-press to edit"),
+            tr("เก็บใน ${list.path} และงานที่ติด #${list.tag} แตะเพื่อติ๊ก กดค้างเพื่อแก้", "Saved in ${list.path}, plus tasks tagged #${list.tag}. Tap to tick, long-press to edit"),
             Modifier.padding(start = 4.dp, top = 4.dp), color = C.faint, fontSize = TS.caption,
+        )
+    }
+}
+
+/** Pick any number of open tasks from the vault to tag into the list; they stay where they are. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IncludeSheet(list: OmniList, state: UiState, startCategory: String?, onAdd: (List<Task>, String?) -> Unit, onDismiss: () -> Unit) {
+    var search by remember { mutableStateOf("") }
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    var category by remember { mutableStateOf(startCategory) }
+    val already = state.itemsOf(list).map { it.key }.toSet()
+    val pool = state.tasks.filter { it.isOpen && it.key !in already }
+    val shown = pool.filter { search.isBlank() || it.title.contains(search.trim(), ignoreCase = true) || it.tags.any { t -> t.contains(search.trim().removePrefix("#"), ignoreCase = true) } }
+        .sortedBy { it.title.lowercase() }
+    SheetFrame(onDismiss) {
+        Text(tr("ดึงงานเข้า ${list.name}", "Add tasks to ${list.name}"), style = MaterialTheme.typography.titleMedium, color = C.text)
+        Text(
+            tr("งานยังอยู่ที่เดิม แค่ติด #${list.tag} เพิ่ม", "Tasks stay where they are and get #${list.tag}"),
+            Modifier.padding(top = 2.dp, bottom = 10.dp), color = C.faint, fontSize = TS.caption,
+        )
+        Field(search, tr("ค้นชื่องานหรือ #แท็ก", "Search a title or #tag")) { search = it }
+        if (list.categories.isNotEmpty()) {
+            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(tr("ไม่ใส่หมวด", "No category"), category == null, { category = null })
+                list.categories.forEach { c -> Chip(c, category == c, { category = if (category == c) null else c }) }
+            }
+        }
+        Column(Modifier.padding(top = 10.dp)) {
+            if (shown.isEmpty()) Text(tr("ไม่พบงาน", "No tasks found"), Modifier.padding(8.dp), color = C.muted, fontSize = TS.body)
+            shown.take(150).forEach { t ->
+                val on = t.key in picked
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (on) C.accentSoft else Color.Transparent)
+                        .clickable { picked = if (on) picked - t.key else picked + t.key }.padding(horizontal = 10.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(if (on) C.accent else Color.Transparent)
+                            .border(2.dp, if (on) C.accent else C.faint, RoundedCornerShape(6.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { if (on) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(12.dp)) }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(t.title, color = C.text, fontSize = TS.body)
+                        val sub = t.tags.filterNot { it.startsWith("remind-at-") }.joinToString(" ") { "#$it" }
+                        if (sub.isNotEmpty()) Text(sub, color = C.faint, fontSize = TS.caption, maxLines = 1)
+                    }
+                }
+            }
+        }
+        val n = picked.size
+        Text(
+            if (n == 0) tr("เลือกงานที่จะเพิ่ม", "Pick tasks to add") else tr("เพิ่ม $n งาน", "Add $n tasks"),
+            Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (n > 0) C.accent else C.raised)
+                .clickable(enabled = n > 0) { onAdd(pool.filter { it.key in picked }, category) }.padding(vertical = 13.dp),
+            color = if (n > 0) C.onAccent else C.faint, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 }

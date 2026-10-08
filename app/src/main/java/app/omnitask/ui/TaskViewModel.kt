@@ -137,6 +137,10 @@ data class UiState(
     /** Tasks and list items together, for the task list when a list is chosen in the filter. */
     val allTasks get() = tasks + listItems
 
+    /** A list's items: the lines in its note, and tasks anywhere else tagged with the list's tag. */
+    fun itemsOf(list: OmniList): List<Task> =
+        listItems.filter { it.list == list.name } + (tasks + parked).filter { t -> t.tags.any { it.equals(list.tag, ignoreCase = true) } }
+
     /** A task's direct subtasks, in file order (which is their 1, 2, 3 order). */
     fun subtasksOf(task: Task): List<Task> = allTasks.filter { it.parent == task.key }.sortedBy { it.lineIndex }
 
@@ -326,6 +330,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH)) }.getOrDefault(_state.value.profile) }
+            result.getOrNull()?.lists?.let { ls -> Projects.listTags = ls.flatMap { l -> listOf(l.tag) + l.categories }.toSet() }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -825,12 +830,31 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun addListItem(list: OmniList, title: String, category: String?, link: String? = null) {
         val vault = _state.value.vault ?: return
         if (title.isBlank()) return
-        var line = "- [ ] ${title.trim()}"
+        var line = TaskLine.addTag("- [ ] ${title.trim()}", list.tag)
         if (category != null) line = TaskLine.addTag(line, category)
         line = TaskLine.setDate(line, DateField.CREATED, LocalDate.now())
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, list.path, line + (link?.let { "\n    - $it" } ?: "")) } }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เพิ่มไม่ได้: ", "Cannot add: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Puts tasks from the vault in a list by tagging them where they are; they stay in their own file. */
+    fun includeInList(list: OmniList, picked: List<Task>, category: String?) {
+        if (picked.isEmpty()) return
+        viewModelScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                picked.count { t ->
+                    runCatching { repo.rewriteLine(t) { raw -> TaskLine.addTag(raw, list.tag).let { if (category != null) TaskLine.addTag(it, category) else it } } }.isSuccess
+                }
+            }
+            _state.update {
+                it.copy(
+                    message = if (done == picked.size) tr("เพิ่ม $done งานเข้า ${list.name} แล้ว", "Added $done tasks to ${list.name}")
+                    else tr("เพิ่มได้ $done จาก ${picked.size} งาน ไฟล์อาจถูกแก้จากที่อื่น", "Added $done of ${picked.size}; a file may have changed"),
+                )
+            }
             reload()
         }
     }

@@ -9,16 +9,21 @@ package app.omnitask.model
  * omni-list: true
  * icon: 🏔️
  * categories: เที่ยว, ประสบการณ์, เรียนรู้
+ * tag: bucketlist
  * ---
  * ```
+ *
+ * Every item carries the list's own [tag], and any task elsewhere in the vault with that tag shows in the
+ * list too, so a task can be added to a list without moving it out of TaskForge.
  */
-data class OmniList(val name: String, val path: String, val icon: String, val categories: List<String>) {
+data class OmniList(val name: String, val path: String, val icon: String, val categories: List<String>, val tag: String = tagFor(name)) {
 
     fun render(): String = buildString {
         appendLine("---")
         appendLine("omni-list: true")
         appendLine("icon: $icon")
         appendLine("categories: ${categories.joinToString(", ")}")
+        appendLine("tag: $tag")
         appendLine("---")
         appendLine("# $name")
         appendLine()
@@ -39,8 +44,12 @@ data class OmniList(val name: String, val path: String, val icon: String, val ca
                 path = path,
                 icon = value("icon") ?: "📋",
                 categories = value("categories")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+                tag = value("tag")?.removePrefix("#")?.takeIf { it.isNotBlank() } ?: tagFor(path.substringAfterLast('/').removeSuffix(".md")),
             )
         }
+
+        /** The tag a list goes by when its note does not name one: its name in lower case without spaces ("Watch list" is #watchlist). */
+        fun tagFor(name: String): String = name.lowercase().filter { !it.isWhitespace() && it !in "#,.;:!?()[]{}\"'" }
 
         /** The two lists every owner starts with. */
         fun starters(): List<OmniList> = listOf(
