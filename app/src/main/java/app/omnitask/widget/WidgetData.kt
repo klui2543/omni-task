@@ -27,6 +27,9 @@ class WidgetData(
 ) {
     val brief by lazy { Focus.build(tasks, today, futureCount = 1) }
 
+    /** Today's plan as on the Focus screen: late work, then the parts of the day, then work without a time. */
+    val plan by lazy { DayPlan.build(tasks, events, today) }
+
     /** Today's open work in the same order as the Focus timeline. */
     val todayTasks: List<Task> by lazy {
         DayPlan.build(tasks, events, today).flatMap { it.items }.filterIsInstance<DayPlan.Item.TaskItem>().map { it.task }
@@ -53,6 +56,7 @@ class WidgetData(
     companion object {
         suspend fun load(context: Context): WidgetData = withContext(Dispatchers.IO) {
             Lang.load(context)
+            app.omnitask.model.Appearance.load(context)
             val today = LocalDate.now()
             val rule = context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).getString("urgentRule", null)
                 ?.let { name -> UrgentRule.entries.firstOrNull { it.name == name } } ?: UrgentRule.THIS_WEEK
