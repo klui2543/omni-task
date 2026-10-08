@@ -701,11 +701,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     repo.setDescription(task, "")
                 }
             }
-            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Could not move: ") + e.message) } }
-            // The task line is unchanged by the description edit, so the link can go under it right after.
-            val fresh = _state.value.tasks.firstOrNull { it.key == task.key } ?: task
-            if (result.isSuccess) withContext(Dispatchers.IO) { runCatching { repo.addSubLine(fresh, "[[$name]]") } }
-            _state.update { it.copy(message = tr("ย้ายรายละเอียดไปที่ $path แล้ว", "Moved the description to $path")) }
+            val message = result.exceptionOrNull()?.let { e -> tr("ย้ายไม่ได้: ", "Could not move: ") + e.message } ?: run {
+                // The task line is unchanged by the description edit, so the link can go under it right after.
+                withContext(Dispatchers.IO) { runCatching { repo.addSubLine(task, "[[$name]]") } }
+                tr("ย้ายรายละเอียดไปที่ $path แล้ว", "Moved the description to $path")
+            }
+            _state.update { it.copy(message = message) }
             reload()
         }
     }

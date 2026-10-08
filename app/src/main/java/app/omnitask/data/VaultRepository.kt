@@ -247,7 +247,7 @@ class VaultRepository(private val context: Context) {
         /** The live TaskForge file, where new tasks are added. */
         const val TASK_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge.md"
 
-        private fun indentOf(line: String) = line.takeWhile { it == ' ' || it == '\t' }.sumOf { if (it == '\t') 4 else 1 }
+        private fun indentOf(line: String) = line.takeWhile { it == ' ' || it == '\t' }.fold(0) { n, c -> n + (if (c == '\t') 4 else 1) }
 
         /** Where the task's block ends: the first line after it that is not indented deeper (exclusive). */
         private fun blockEnd(lines: List<String>, index: Int): Int {

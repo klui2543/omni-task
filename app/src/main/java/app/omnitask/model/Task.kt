@@ -55,7 +55,7 @@ data class Task(
     val key get() = "$fileUri#$lineIndex"
 
     /** Leading spaces of the line (a tab counts as four), which decide which task a subtask belongs to. */
-    val indent: Int get() = raw.takeWhile { it == ' ' || it == '\t' }.sumOf { if (it == '\t') 4 else 1 }
+    val indent: Int get() = raw.takeWhile { it == ' ' || it == '\t' }.fold(0) { n, c -> n + (if (c == '\t') 4 else 1) }
 
     val isSubtask get() = parent != null
 
