@@ -25,7 +25,7 @@ class FocusTest {
     fun sectionsAreSeparateAndOrdered() {
         val b = Focus.build(all, today)
         assertEquals(listOf(overdue), b.must)
-        assertEquals(listOf(waitingOld, waitingThird), b.waiting)
+        assertEquals(listOf(waitingOld, waitingThird, waitingNew), b.waiting)
         assertEquals(listOf(futureOld), b.future)
     }
 

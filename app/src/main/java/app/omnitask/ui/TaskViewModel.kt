@@ -19,6 +19,8 @@ import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Insight
 import app.omnitask.model.Appearance
+import app.omnitask.model.Branches
+import app.omnitask.model.Projects
 import app.omnitask.model.Lang
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
@@ -102,6 +104,9 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** Branch states by (project, path), and the tasks hidden because their branch is parked. */
+    val branchStates: Map<Pair<String, String>, Branches.State> = emptyMap(),
+    val parked: List<Task> = emptyList(),
     /** Folded task groups ("groupBy:label") and folded Kanban columns (status names). */
     val foldedGroups: Set<String> = emptySet(),
     val foldedColumns: Set<String> = emptySet(),
@@ -210,6 +215,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         countdown = prefs.getString(KEY_COUNTDOWN, null),
         foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
+        branchStates = Branches.parse(prefs.getStringSet(KEY_BRANCHES, emptySet()).orEmpty()),
         foldedColumns = prefs.getStringSet(KEY_FOLDED_COLUMNS, emptySet()).orEmpty().toSet(),
         tonightBed = prefs.getString(KEY_TONIGHT_BED, null)?.let { v ->
             runCatching { LocalDate.parse(v.substringBefore(' ')) to java.time.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
@@ -291,7 +297,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
                     // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
-                    runCatching { Scheduler.reschedule(getApplication(), snap.tasks) }
+                    // Tasks in parked branches stay quiet.
+                    val states = _state.value.branchStates
+                    runCatching { Scheduler.reschedule(getApplication(), snap.tasks.filterNot { Branches.isParked(it, states) }) }
                 }
             }
             val app = getApplication<Application>()
@@ -315,7 +323,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     calendars = calendars,
                     loading = false,
                     today = LocalDate.now(),
-                    tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null } ?: it.tasks,
+                    tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null && !Branches.isParked(t, it.branchStates) } ?: it.tasks,
+                    parked = result.getOrNull()?.tasks?.filter { t -> t.list == null && Branches.isParked(t, it.branchStates) } ?: it.parked,
                     listItems = result.getOrNull()?.tasks?.filter { t -> t.list != null } ?: it.listItems,
                     lists = result.getOrNull()?.lists ?: it.lists,
                     notePaths = result.getOrNull()?.notePaths ?: it.notePaths,
@@ -1040,6 +1049,86 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(foldedColumns = next) }
     }
 
+    // ---- Branches and renaming projects ----
+
+    private fun saveBranchStates(next: Map<Pair<String, String>, Branches.State>) {
+        prefs.edit().putStringSet(KEY_BRANCHES, Branches.encode(next)).apply()
+        _state.update { it.copy(branchStates = next) }
+        // Parking hides or shows tasks everywhere, so the lists are split again.
+        reload()
+    }
+
+    fun setBranchState(node: Branches.Node, state: Branches.State) =
+        saveBranchStates(_state.value.branchStates + ((node.project to node.path) to state))
+
+    /** Picks one branch among its siblings; the others still being tried are parked. */
+    fun chooseBranch(node: Branches.Node, siblings: List<Branches.Node>) =
+        saveBranchStates(Branches.choose(node, siblings, _state.value.branchStates))
+
+    /**
+     * Starts a branch under [parent] with its first task: the task gets the nested tag, e.g.
+     * `#peddose/แอป/มือถือ`. Read like quick add, so dates and times work in [firstTask].
+     */
+    fun addBranch(parent: Branches.Node, name: String, firstTask: String) {
+        val vault = _state.value.vault ?: return
+        val clean = name.trim().replace(Regex("""[\s#]+"""), "-").trim('-', '/')
+        if (clean.isEmpty() || firstTask.isBlank()) return
+        val today = LocalDate.now()
+        val line = TaskLine.addTag(QuickAdd.parse(firstTask, today).line(today), parent.tag + "/" + clean)
+        val path = if (parent.path.isEmpty()) clean else parent.path + "/" + clean
+        val next = _state.value.branchStates + ((parent.project to path) to Branches.State.TRYING)
+        prefs.edit().putStringSet(KEY_BRANCHES, Branches.encode(next)).apply()
+        _state.update { it.copy(branchStates = next) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("สร้าง branch ไม่ได้: ", "Cannot add the branch: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Lines that renaming [old] would change, for the preview: (files, lines). */
+    fun renameCount(old: String): Pair<Int, Int> {
+        val tasks = (_state.value.tasks + _state.value.parked + _state.value.listItems).filter { Projects.projectOf(it) == old }
+        return tasks.map { it.fileUri }.distinct().size to tasks.size
+    }
+
+    /**
+     * Renames a project: every task line in the vault with `#old` or `#old/...` gets the new name, and the
+     * order, stars, task order, strict mode and branch states move with it.
+     */
+    fun renameProject(old: String, new: String) {
+        val name = new.trim().removePrefix("#").replace(Regex("""\s+"""), "-")
+        if (name.isEmpty() || name == old || '/' in name) return
+        val s0 = _state.value
+        val files = (s0.tasks + s0.parked + s0.listItems).filter { Projects.projectOf(it) == old }.map { it.fileUri }.distinct()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, name) } }
+            result.onSuccess { n ->
+                val s = _state.value
+                val order = s.projectOrder.map { if (it == old) name else it }
+                val starred = s.starred.map { if (it == old) name else it }.toSet()
+                val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) name else k }
+                val strict = s.strictProjects.map { if (it == old) name else it }.toSet()
+                val branches = s.branchStates.mapKeys { (k, _) -> if (k.first == old) name to k.second else k }
+                prefs.edit()
+                    .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
+                    .putStringSet(KEY_STARRED, starred)
+                    .putStringSet(KEY_PROJECT_TASKS, taskOrder.map { (k, v) -> k + "\t" + v.joinToString("\u001F") }.toSet())
+                    .putStringSet(KEY_STRICT, strict)
+                    .putStringSet(KEY_BRANCHES, Branches.encode(branches))
+                    .apply()
+                _state.update {
+                    it.copy(
+                        projectOrder = order, starred = starred, projectTaskOrder = taskOrder, strictProjects = strict, branchStates = branches,
+                        message = tr("เปลี่ยนชื่อเป็น #$name แล้ว ($n บรรทัด)", "Renamed to #$name ($n lines)"),
+                    )
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนชื่อไม่ได้: ", "Cannot rename: ") + e.message) } }
+            reload()
+        }
+    }
+
     /** Pins a task for the Focus countdown, or clears it. */
     fun setCountdown(task: Task?) {
         prefs.edit().apply { if (task == null) remove(KEY_COUNTDOWN) else putString(KEY_COUNTDOWN, task.title) }.apply()
@@ -1111,6 +1200,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_STRICT = "strictProjects"
         const val KEY_COUNTDOWN = "focus.countdown"
         const val KEY_FOLDED_GROUPS = "foldedGroups"
+        const val KEY_BRANCHES = "branchStates"
         const val KEY_FOLDED_COLUMNS = "foldedColumns"
         const val KEY_TONIGHT_BED = "sleep.tonight"
         const val KEY_SAVED_FILTERS = "savedFilters"

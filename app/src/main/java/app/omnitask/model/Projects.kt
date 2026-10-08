@@ -19,8 +19,12 @@ object Projects {
         val ratio get() = if (tasks.isEmpty()) 0f else done.toFloat() / tasks.size
     }
 
-    fun projectOf(t: Task): String? =
+    /** The task's project tag in full, branch included ("peddose/แอป/มือถือ"). */
+    fun tagOf(t: Task): String? =
         t.tags.firstOrNull { !it.startsWith("remind-at-") && it != Focus.WAITING_TAG && !it.startsWith("${Focus.WAITING_TAG}/") }
+
+    /** The project a task belongs to: its first tag up to the first slash, so branches stay in their project. */
+    fun projectOf(t: Task): String? = tagOf(t)?.substringBefore('/')
 
     /** A task is blocked while any task it waits for (by id) is still open. */
     fun blocked(tasks: List<Task>): Set<Task> {

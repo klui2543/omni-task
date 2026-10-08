@@ -64,7 +64,10 @@ object Scheduler {
     /** Reads the vault the app was pointed at; empty when no vault is set or it cannot be read. */
     fun loadVaultTasks(context: Context): List<Task> {
         val vault = prefs(context).getString(KEY_VAULT, null)?.let(Uri::parse) ?: return emptyList()
+        // Tasks in parked project branches stay quiet: no alarms, not in the widgets.
+        val parked = app.omnitask.model.Branches.parse(prefs(context).getStringSet("branchStates", emptySet()).orEmpty())
         return runCatching { VaultRepository(context).loadTasks(vault) }.getOrDefault(emptyList())
+            .filterNot { app.omnitask.model.Branches.isParked(it, parked) }
     }
 
     /** Replaces every planned alarm with a fresh plan. Safe to call often. */

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import app.omnitask.model.Branches
 import app.omnitask.model.OmniList
 import app.omnitask.model.Task
 import java.time.LocalDate
@@ -103,6 +104,23 @@ class VaultRepository(private val context: Context) {
             found >= 0 -> lines[found] = "$indent- $line"
             line != null -> lines.add(i, "$indent- $line")
         }
+    }
+
+    /**
+     * Renames a project in every task line of the given files: `#old` and `#old/branch` become `#new...`.
+     * Each file is read and written once. Returns how many lines changed.
+     */
+    fun renameProject(fileUris: List<String>, old: String, new: String): Int {
+        var changed = 0
+        fileUris.distinct().forEach { u ->
+            val uri = Uri.parse(u)
+            val text = readText(uri)
+            val separator = if (text.contains("\r\n")) "\r\n" else "\n"
+            val lines = text.split(separator)
+            val out = lines.map { l -> if (TaskLine.isTask(l)) Branches.renameInLine(l, old, new).also { if (it != l) changed++ } else l }
+            if (out != lines) context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(out.joinToString(separator).toByteArray()) }
+        }
+        return changed
     }
 
     private fun editLines(task: Task, edit: (MutableList<String>, Int) -> Unit) {

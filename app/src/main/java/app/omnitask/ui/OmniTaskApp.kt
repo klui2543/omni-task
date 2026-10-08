@@ -142,7 +142,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     val width = LocalConfiguration.current.screenWidthDp
     val wide = width >= WIDE_DP
     val twoPane = width >= TWO_PANE_DP
-    val editing = state.allTasks.firstOrNull { it.key == editingKey }
+    val editing = state.allTasks.firstOrNull { it.key == editingKey } ?: state.parked.firstOrNull { it.key == editingKey }
 
     val content: @Composable () -> Unit = {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -330,6 +330,9 @@ private fun Welcome(onPick: () -> Unit) {
 /** Space the floating nav covers, so the last row of every list can scroll above it. */
 val NavClearance: Dp
     @Composable get() = LocalNavClearance.current
+
+/** Extra room at the end of a screen so the last card can scroll clear of the round add button. */
+val FabClearance = 76.dp
 
 /** Bottom space the floating nav needs; on wide screens the nav sits at the side and only a margin is left. */
 val LocalNavClearance = staticCompositionLocalOf { 100.dp }

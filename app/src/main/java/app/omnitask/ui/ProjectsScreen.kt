@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import app.omnitask.model.Branches
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -56,7 +57,9 @@ private val RING get() = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red)
 fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     // Starred first, then the owner's own order; projects never placed keep the default order after them.
     val rank = state.projectOrder.withIndex().associate { it.value to it.index }
-    val projects = Projects.build(state.tasks, state.today)
+    // Parked branches still belong to their project, so the project (and the way back to it) never disappears.
+    val projectTasks = state.tasks + state.parked
+    val projects = Projects.build(projectTasks, state.today)
         .sortedWith(compareBy({ it.name !in state.starred }, { rank[it.name] ?: Int.MAX_VALUE }))
     var arranging by rememberSaveable { mutableStateOf(false) }
     var openName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -66,6 +69,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var listCategory by rememberSaveable { mutableStateOf<String?>(null) }
     var creatingList by remember { mutableStateOf(false) }
     var pickingIcon by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     BackHandler(enabled = open != null || openList != null) { openName = null; openListPath = null; listCategory = null }
     LaunchedEffect(Unit) { vm.ensureStarterLists() }
 
@@ -77,13 +81,16 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val gap = with(LocalDensity.current) { 12.dp.toPx() }
     val shown = if (dragging != null) dragOrder.mapNotNull { n -> projects.firstOrNull { it.name == n } } else projects
 
+    if (renaming && open != null) {
+        RenameProjectDialog(open.name, vm.renameCount(open.name), { new -> vm.renameProject(open.name, new); openName = new; renaming = false }) { renaming = false }
+    }
     if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
     if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
 
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -103,6 +110,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         color = C.muted, fontSize = TS.caption,
                     )
                 }
+                if (open != null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
                 if (open == null && openList == null && projects.size > 1) {
                     Text(
                         if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
@@ -182,8 +190,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     StatCard("${open.blocked.size}", tr("ติดรองานอื่น", "Blocked"), if (open.blocked.isNotEmpty()) C.amber else C.text, Modifier.weight(1f))
                 }
             }
-            // Open work in the owner's order (1, 2, 3...), then what is done.
-            val openTasks = vm.orderedProjectTasks(open.name, open.tasks.filter { it.isOpen && it.parent == null })
+            item(key = "branches") { BranchSection(Branches.tree(open.name, projectTasks, state.branchStates), vm, onOpen) }
+            // Open work in the owner's order (1, 2, 3...), then what is done; parked branches stay out.
+            val parked = state.parked.toSet()
+            val openTasks = vm.orderedProjectTasks(open.name, open.tasks.filter { it.isOpen && it.parent == null && it !in parked })
             val strict = open.name in state.strictProjects
             item(key = "strict") {
                 Row(

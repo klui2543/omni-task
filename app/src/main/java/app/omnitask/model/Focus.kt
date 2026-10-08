@@ -78,10 +78,10 @@ object Focus {
             .filter { t -> t.due?.let { it <= today } == true || t.scheduled == today }
             .sortedWith(compareBy<Task>({ it.due ?: it.scheduled }, { it.priority.ordinal }))
 
+        // Everyone waiting, due today or not: the card shows them all, longest wait first.
         val waiting = open
-            .filter { isWaiting(it) && !isSomeday(it) && it !in must }
+            .filter { isWaiting(it) && !isSomeday(it) }
             .sortedWith(compareByDescending<Task> { ageDays(it, today) ?: 0 }.thenBy { it.priority.ordinal })
-            .take(2)
 
         // Most-neglected first: in-progress work is already moving, so it goes last; then oldest first.
         val future = open
