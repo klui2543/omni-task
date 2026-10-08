@@ -102,6 +102,9 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** Folded task groups ("groupBy:label") and folded Kanban columns (status names). */
+    val foldedGroups: Set<String> = emptySet(),
+    val foldedColumns: Set<String> = emptySet(),
     /** The task the Focus screen counts down to (by title), any task, not only today's. */
     val countdown: String? = null,
     /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
@@ -151,7 +154,7 @@ data class UiState(
 }
 
 /** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
-data class QuickAddRequest(val voice: Boolean = false, val assistant: Boolean = false)
+data class QuickAddRequest(val voice: Boolean = false, val assistant: Boolean = false, val status: Status = Status.TODO)
 
 /** One entry in the assistant conversation. */
 sealed interface Chat {
@@ -206,6 +209,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         countdown = prefs.getString(KEY_COUNTDOWN, null),
+        foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
+        foldedColumns = prefs.getStringSet(KEY_FOLDED_COLUMNS, emptySet()).orEmpty().toSet(),
         tonightBed = prefs.getString(KEY_TONIGHT_BED, null)?.let { v ->
             runCatching { LocalDate.parse(v.substringBefore(' ')) to java.time.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
         },
@@ -784,11 +789,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
-    fun quickAdd(draft: QuickAdd.Draft) {
+    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, draft.line(LocalDate.now())) }
+                val today = LocalDate.now()
+                val line = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) }
+                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) }
             }
             val text = result.fold(
                 { tr("เพิ่มงานแล้ว: ${draft.title}", "Added: ${draft.title}") },
@@ -1020,6 +1027,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(insight = null) }
     }
 
+    /** Folds or unfolds a group in the task list; remembered, and synced like the other settings. */
+    fun toggleGroup(key: String) {
+        val next = _state.value.foldedGroups.let { if (key in it) it - key else it + key }
+        prefs.edit().putStringSet(KEY_FOLDED_GROUPS, next).apply()
+        _state.update { it.copy(foldedGroups = next) }
+    }
+
+    fun toggleColumn(status: Status) {
+        val next = _state.value.foldedColumns.let { if (status.name in it) it - status.name else it + status.name }
+        prefs.edit().putStringSet(KEY_FOLDED_COLUMNS, next).apply()
+        _state.update { it.copy(foldedColumns = next) }
+    }
+
     /** Pins a task for the Focus countdown, or clears it. */
     fun setCountdown(task: Task?) {
         prefs.edit().apply { if (task == null) remove(KEY_COUNTDOWN) else putString(KEY_COUNTDOWN, task.title) }.apply()
@@ -1090,6 +1110,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_COUNTDOWN = "focus.countdown"
+        const val KEY_FOLDED_GROUPS = "foldedGroups"
+        const val KEY_FOLDED_COLUMNS = "foldedColumns"
         const val KEY_TONIGHT_BED = "sleep.tonight"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"

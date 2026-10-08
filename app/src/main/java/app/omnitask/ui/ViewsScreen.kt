@@ -133,36 +133,46 @@ private fun Kanban(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
                 val cards = ordered.filter { t ->
                     t.status == status && (status != Status.DONE || t.done?.let { it > state.today.minusDays(7) } == true)
                 }
-                // With done work hidden, the Done column shrinks to a narrow strip that still takes drops.
-                val slim = status == Status.DONE && q.hideDone
+                // A folded column (tap its head) is a narrow strip, as in TaskForge, and still takes drops.
+                // With done work hidden, Done starts folded; opening it shows the last week's done work.
+                val hiddenDone = status == Status.DONE && q.hideDone
+                val folded = status.name in state.foldedColumns || hiddenDone
                 val (drop, hovering) = rememberTaskDrop { key ->
                     state.tasks.firstOrNull { it.key == key }?.let { if (it.status != status) vm.setStatus(it, status) }
                 }
-                if (slim) {
+                if (folded) {
                     Column(
-                        Modifier.width(64.dp).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                        Modifier.width(52.dp).fillMaxHeight().clip(RoundedCornerShape(C.radius))
                             .background(if (hovering.value) C.accentDeep else C.sunken)
-                            .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(18.dp))
-                            .then(drop).padding(vertical = 14.dp),
+                            .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(C.radius))
+                            .then(drop)
+                            .clickable { if (hiddenDone) vm.setQuery(q.copy(hideDone = false)) else vm.toggleColumn(status) }
+                            .padding(vertical = 14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(Ic.check, null, tint = dot, modifier = Modifier.size(18.dp))
-                        Text(status.label, Modifier.padding(top = 6.dp), color = C.text, fontSize = TS.caption)
-                        Text("${cards.size}", color = C.muted, fontSize = TS.caption)
-                        Text(tr("ลากมา\nเพื่อปิดงาน", "Drop\nto finish"), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.micro, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+                        if (status != Status.DONE) {
+                            Box(
+                                Modifier.padding(top = 12.dp).size(32.dp).clip(CircleShape).clickable { vm.requestQuickAdd(QuickAddRequest(status = status)) },
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(Ic.plus, tr("เพิ่มงาน", "Add task"), tint = C.muted, modifier = Modifier.size(16.dp)) }
+                        }
+                        Text("${cards.size}", Modifier.padding(top = 12.dp), color = C.text2, fontSize = TS.body)
+                        VerticalText(status.label, Modifier.padding(top = 10.dp), color = C.text, fontSize = TS.body)
                     }
                     return@items
                 }
                 Column(
-                    Modifier.width(colW).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                    Modifier.width(colW).fillMaxHeight().clip(RoundedCornerShape(C.radius))
                         .background(if (hovering.value) C.accentDeep else C.sunken)
-                        .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(18.dp))
+                        .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(C.radius))
                         .then(drop),
                 ) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { vm.toggleColumn(status) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
                         Text(status.label, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleSmall, color = C.text)
                         Text("${cards.size}", color = C.muted, fontSize = TS.caption)
+                        Icon(Ic.back, tr("พับ", "Fold"), tint = C.faint, modifier = Modifier.padding(start = 8.dp).size(14.dp))
                     }
                     LazyColumn(contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(cards, key = { it.key }) { t -> KanbanCard(t, state, vm, onOpen) }
@@ -183,20 +193,22 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
             .taskDragSource(t.key, t.priority.tint) { onOpen(t) }.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
-            Box(Modifier.padding(top = 2.dp).width(3.dp).height(18.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
-            Text(
-                t.title, Modifier.weight(1f).padding(start = 8.dp, end = 4.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.body,
-                maxLines = 3, overflow = TextOverflow.Ellipsis,
-            )
+            Box(Modifier.padding(top = 3.dp).width(3.dp).height(16.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
+            Column(Modifier.weight(1f).padding(start = 8.dp, end = 6.dp)) {
+                Text(t.title, color = if (t.isOpen) C.text else C.muted, fontSize = TS.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                // The details, one quiet line under the title.
+                t.descriptionPreview?.let { Text(it, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+        // Dates and counts on one line with the move arrows at its end, so the card stays short.
+        val meta = metaOf(t, state.today, compact = true, progress = state.progressOf(t))
+        Row(Modifier.padding(start = 11.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
+            }
             // Small arrows for one-tap moves; long-press and drag works too.
             if (i > 0) MoveButton(Ic.back, tr("ย้ายไป ", "Move to ") + order[i - 1].label) { vm.setStatus(t, order[i - 1]) }
             if (i in 0 until order.lastIndex) MoveButton(Ic.next, tr("ย้ายไป ", "Move to ") + order[i + 1].label) { vm.setStatus(t, order[i + 1]) }
-        }
-        val meta = metaOf(t, state.today, compact = true, progress = state.progressOf(t))
-        if (meta.isNotEmpty()) {
-            FlowRow(Modifier.padding(start = 11.dp, top = 6.dp, end = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
-            }
         }
     }
 }

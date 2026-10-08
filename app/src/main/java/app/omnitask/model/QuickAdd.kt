@@ -64,6 +64,33 @@ object QuickAdd {
         Regex("""(?i)(?<!\S)next week(?!\S)""") to { d -> d.with(TemporalAdjusters.next(DayOfWeek.MONDAY)) },
     )
 
+    /** What "#" can turn into while typing: a list note (or one of its categories), or a tag already in use. */
+    sealed interface HashPick {
+        data class ToList(val list: OmniList, val category: String? = null) : HashPick
+        data class ToTag(val tag: String) : HashPick
+    }
+
+    /** The "#word" being typed at the end of [text], without the #, or null when the last word is not a tag. */
+    fun hashToken(text: String): String? = text.substringAfterLast(' ').takeIf { it.startsWith("#") }?.removePrefix("#")
+
+    /**
+     * Choices for the typed [token]: lists whose name (or a category) contains it first, then up to six tags.
+     * A bare "#" offers every list.
+     */
+    fun hashPicks(token: String, lists: List<OmniList>, tags: List<String>): List<HashPick> {
+        val t = token.trim().lowercase()
+        val out = ArrayList<HashPick>()
+        lists.forEach { l ->
+            val named = l.name.lowercase().contains(t)
+            if (named) out += HashPick.ToList(l)
+            l.categories.filter { named && t.isNotEmpty() || (t.isNotEmpty() && it.lowercase().contains(t)) }.forEach { out += HashPick.ToList(l, it) }
+        }
+        val listNames = lists.map { it.name.lowercase() }.toSet()
+        tags.distinct().filter { it.lowercase().contains(t) && it.lowercase() !in listNames }
+            .sortedBy { !it.lowercase().startsWith(t) }.take(6).forEach { out += HashPick.ToTag(it) }
+        return out
+    }
+
     fun parse(text: String, today: LocalDate): Draft {
         var rest = " ${text.trim()} "
         fun cut(range: IntRange) { rest = rest.substring(0, range.first) + " " + rest.substring(range.last + 1) }

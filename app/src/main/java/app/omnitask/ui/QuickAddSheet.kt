@@ -8,6 +8,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -40,10 +42,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.Lang
 import app.omnitask.model.Priority
+import app.omnitask.model.Status
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.tr
 import kotlinx.coroutines.delay
@@ -51,13 +56,27 @@ import kotlinx.coroutines.delay
 /** Add a task in one line; day words, times, #tags and ! marks are read out of the sentence. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssistant: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf("") }
+fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, onAskAssistant: (String) -> Unit, onDismiss: () -> Unit) {
+    var field by remember { mutableStateOf(TextFieldValue("")) }
+    val text = field.text
+    fun setText(value: String) { field = TextFieldValue(value, TextRange(value.length)) }
     val draft = QuickAdd.parse(text, state.today)
+    // "#" can send the item to a list note (and one of its categories) instead of TaskForge.
+    var target by remember { mutableStateOf<QuickAdd.HashPick.ToList?>(null) }
+    val token = QuickAdd.hashToken(text)
+    val tags = remember(state.tasks) { state.tasks.flatMap { it.tags }.filter { !it.startsWith("remind-at-") }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
+    val picks = token?.let { QuickAdd.hashPicks(it, state.lists, tags) }.orEmpty()
+    fun pick(p: QuickAdd.HashPick) {
+        val before = text.dropLast(token!!.length + 1).trimEnd()
+        when (p) {
+            is QuickAdd.HashPick.ToList -> { target = p; setText(if (before.isEmpty()) "" else "$before ") }
+            is QuickAdd.HashPick.ToTag -> setText((if (before.isEmpty()) "" else "$before ") + "#${p.tag} ")
+        }
+    }
     val focus = remember { FocusRequester() }
     val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val heard = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-        if (r.resultCode == Activity.RESULT_OK && heard != null) text = (text.trim() + " " + heard).trim()
+        if (r.resultCode == Activity.RESULT_OK && heard != null) setText((text.trim() + " " + heard).trim())
     }
     fun startListening() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
@@ -68,7 +87,8 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
     }
     fun add() {
         if (draft.title.isBlank()) return
-        vm.quickAdd(draft)
+        val t = target
+        if (t != null) vm.addListItem(t.list, draft.title, t.category) else vm.quickAdd(draft, status)
         onDismiss()
     }
     // Focus (and the keyboard) only after the sheet has finished opening; asking earlier is the likeliest
@@ -85,8 +105,8 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
     SheetFrame(onDismiss) {
         Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
         BasicTextField(
-            value = text,
-            onValueChange = { text = it },
+            value = field,
+            onValueChange = { field = it },
             modifier = Modifier.padding(top = 12.dp).fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(14.dp))
                 .background(C.sunken).padding(14.dp).focusRequester(focus),
             textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
@@ -101,8 +121,51 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
             },
         )
 
+        // Lists, their categories and known tags for the "#word" being typed.
+        if (picks.isNotEmpty()) {
+            Row(Modifier.padding(top = 10.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                picks.forEach { p ->
+                    val label = when (p) {
+                        is QuickAdd.HashPick.ToList -> ListEmoji.of(p.list.icon) + " " + p.list.name + (p.category?.let { " / $it" } ?: "")
+                        is QuickAdd.HashPick.ToTag -> "#" + p.tag
+                    }
+                    Text(
+                        label,
+                        Modifier.clip(RoundedCornerShape(16.dp)).background(if (p is QuickAdd.HashPick.ToList) C.accentSoft else C.raised)
+                            .clickable { pick(p) }.padding(horizontal = 12.dp, vertical = 7.dp),
+                        color = if (p is QuickAdd.HashPick.ToList) C.accentText else C.text2, fontSize = TS.body, maxLines = 1,
+                    )
+                }
+            }
+        }
+        target?.let { t ->
+            Row(
+                Modifier.padding(top = 10.dp).clip(RoundedCornerShape(16.dp)).background(C.accentSoft).padding(start = 12.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    tr("เพิ่มลงใน ", "Add to ") + ListEmoji.of(t.list.icon) + " " + t.list.name + (t.category?.let { " / $it" } ?: ""),
+                    color = C.accentText, fontSize = TS.body,
+                )
+                Box(Modifier.size(32.dp).clip(CircleShape).clickable { target = null }, contentAlignment = Alignment.Center) {
+                    Icon(Ic.close, tr("ไม่ใส่ลง List", "Not to a list"), tint = C.accentText, modifier = Modifier.size(12.dp))
+                }
+            }
+            // A list item has no date; a category is picked from the chips.
+            if (t.category == null && t.list.categories.isNotEmpty()) {
+                Row(Modifier.padding(top = 8.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    t.list.categories.forEach { c ->
+                        Text(
+                            c, Modifier.clip(RoundedCornerShape(16.dp)).background(C.raised).clickable { target = t.copy(category = c) }.padding(horizontal = 12.dp, vertical = 7.dp),
+                            color = C.text2, fontSize = TS.body,
+                        )
+                    }
+                }
+            }
+        }
+
         // What the sentence was read as, so a wrong guess is visible before saving.
-        val chips = buildList {
+        val chips = if (target != null) emptyList() else buildList {
             draft.due?.let { add(if (it == state.today) tr("วันนี้", "Today") else it.format(SHORT_DATE)) }
             draft.time?.let { add(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute)) }
             draft.tags.forEach { add("#$it") }
@@ -114,7 +177,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
             }
         }
         Text(
-            tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag และ ! !! !!! สำหรับความสำคัญ", "today, tomorrow, monday, 25/10, 9:00, #tag, and ! !! !!! for priority"),
+            tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
             Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,
         )
 
@@ -124,7 +187,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, onAskAssist
                 if (text.isNotBlank()) { onAskAssistant(text.trim()); onDismiss() }
             }
             Box(Modifier.weight(1f))
-            PrimaryButton(tr("เพิ่มงาน", "Add task"), { add() })
+            PrimaryButton(if (target != null) tr("เพิ่มลง List", "Add to list") else tr("เพิ่มงาน", "Add task"), { add() })
         }
     }
 }

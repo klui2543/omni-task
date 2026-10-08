@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -149,6 +150,20 @@ fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp, touch: Dp = 44.
             contentAlignment = Alignment.Center,
         ) {
             if (done) Icon(Ic.check, tr("เสร็จแล้ว", "Done"), tint = C.onAccent, modifier = Modifier.size(size * 0.6f))
+        }
+    }
+}
+
+/** Text turned to read bottom to top, for folded Kanban columns; it takes the space it needs on its side. */
+@Composable
+fun VerticalText(text: String, modifier: Modifier = Modifier, color: Color = C.text, fontSize: TextUnit = TS.body) {
+    androidx.compose.ui.layout.Layout(
+        content = { Text(text, color = color, fontSize = fontSize, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium) },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val p = measurables.first().measure(androidx.compose.ui.unit.Constraints(maxWidth = constraints.maxHeight.coerceAtLeast(1)))
+        layout(p.height, p.width) {
+            p.placeWithLayer(-(p.width - p.height) / 2, (p.width - p.height) / 2) { rotationZ = -90f }
         }
     }
 }
@@ -318,6 +333,8 @@ fun TaskRow(
                 maxLines = if (compact) 2 else 4,
                 overflow = TextOverflow.Ellipsis,
             )
+            // The details, one quiet line; the full text is in the task sheet.
+            task.descriptionPreview?.let { Text(it, Modifier.padding(top = 1.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             val meta = metaOf(task, today, blockedBy, compact, progress)
             if (meta.isNotEmpty()) {
                 FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

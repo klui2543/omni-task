@@ -43,4 +43,19 @@ class QuickAddTest {
         assertNull(d.due)
         assertEquals("- [ ] อ่านหนังสือพระจันทร์เสี้ยว ➕ 2026-10-07", d.line(today))
     }
+
+    @Test
+    fun hashOffersListsTheirCategoriesAndTags() {
+        val watch = OmniList("Watch list", "Omni/Watch list.md", "🎬", listOf("หนัง", "ซีรีส์"))
+        val bucket = OmniList("Bucket list", "Omni/Bucket list.md", "🏔️", listOf("เที่ยว"))
+        assertEquals("wat", QuickAdd.hashToken("Shogun #wat"))
+        assertEquals(null, QuickAdd.hashToken("Shogun wat"))
+        val picks = QuickAdd.hashPicks("wat", listOf(watch, bucket), listOf("water", "peddose"))
+        assertEquals(
+            listOf(QuickAdd.HashPick.ToList(watch), QuickAdd.HashPick.ToList(watch, "หนัง"), QuickAdd.HashPick.ToList(watch, "ซีรีส์"), QuickAdd.HashPick.ToTag("water")),
+            picks,
+        )
+        assertEquals(listOf(QuickAdd.HashPick.ToList(watch, "ซีรีส์")), QuickAdd.hashPicks("ซีรี", listOf(watch, bucket), emptyList()))
+        assertEquals(2, QuickAdd.hashPicks("", listOf(watch, bucket), emptyList()).size)
+    }
 }

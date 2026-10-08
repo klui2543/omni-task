@@ -66,7 +66,7 @@ data class TaskQuery(
             (notes.isEmpty() || t.noteName in notes) &&
             (buckets.isEmpty() || t.bucket(today) in buckets) &&
             (withSubtasks || t.parent == null) &&
-            (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true)) &&
+            (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true) || t.description.contains(text.trim(), ignoreCase = true)) &&
             typeMatches(t)
 
     /**

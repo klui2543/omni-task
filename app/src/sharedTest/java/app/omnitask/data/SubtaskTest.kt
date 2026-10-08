@@ -26,6 +26,10 @@ class SubtaskTest {
         assertEquals(listOf("หาข้อมูลยา", "ทำโครงสไลด์", "ซ้อมพูด"), tasks.filter { it.parent == parent.key }.map { it.title })
         assertNull(tasks.first { it.title == "งานอื่น" }.parent)
         assertEquals("ประชุมทีมวันพฤหัส", parent.description)
+        assertEquals("ประชุมทีมวันพฤหัส", parent.descriptionPreview)
+        // Search finds a task by words in its details too.
+        val q = app.omnitask.model.TaskQuery(groupBy = app.omnitask.model.GroupBy.NONE, text = "พฤหัส")
+        assertEquals(listOf("เตรียมสไลด์"), q.run(tasks, java.time.LocalDate.parse("2026-10-08")).flatMap { it.tasks }.map { it.title })
     }
 
     @Test

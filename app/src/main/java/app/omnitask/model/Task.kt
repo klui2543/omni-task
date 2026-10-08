@@ -82,6 +82,9 @@ data class Task(
     /** The description as one text, a line per note. */
     val description: String get() = textNotes.joinToString("\n")
 
+    /** The description's first line, for a quiet hint under the title on cards. */
+    val descriptionPreview: String? get() = textNotes.firstOrNull { it.isNotBlank() }?.trim()
+
     companion object {
         const val FIRST_STEP = "ก้าวแรก:"
 

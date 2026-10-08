@@ -43,6 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -109,13 +113,26 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
         groups.forEach { g ->
             item(key = "g:" + g.label) {
+                // Tap a group's head to fold it to one line, as in TaskForge; folds are remembered per grouping.
+                val foldKey = q.groupBy.name + ":" + g.label
+                val folded = foldKey in state.foldedGroups
                 Card {
-                    Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(g.tone.color))
-                        Text(g.label, Modifier.weight(1f).padding(start = 8.dp), color = g.tone.color, style = MaterialTheme.typography.titleSmall)
-                        Text("${g.tasks.size}", color = C.muted, fontSize = TS.caption)
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.toggleGroup(foldKey) }
+                            .padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = if (folded) 10.dp else 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Ic.next, if (folded) tr("เปิด", "Open") else tr("พับ", "Fold"), tint = C.muted,
+                            modifier = Modifier.size(22.dp).padding(5.dp).rotate(if (folded) 0f else 90f),
+                        )
+                        Text(g.label, Modifier.weight(1f).padding(start = 6.dp), color = g.tone.color, style = MaterialTheme.typography.titleSmall)
+                        Box(
+                            Modifier.heightIn(min = 24.dp).widthIn(min = 28.dp).clip(RoundedCornerShape(12.dp)).background(C.raised).padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { Text("${g.tasks.size}", color = C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium) }
                     }
-                    g.tasks.forEachIndexed { i, t ->
+                    if (!folded) g.tasks.forEachIndexed { i, t ->
                         if (i > 0) Divider(start = 48.dp)
                         TaskRow(
                             t, state.today, { vm.toggleDone(t) }, { onOpen(t) },
