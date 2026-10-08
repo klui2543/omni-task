@@ -65,4 +65,11 @@ class QuickAddTest {
         assertEquals(Shared.Item("อ่านบทความนี้", "https://example.com/a/12/10"), Shared.read(null, "อ่านบทความนี้ https://example.com/a/12/10"))
         assertEquals(Shared.Item("แค่ข้อความ", null), Shared.read("", "แค่ข้อความ"))
     }
+
+    @Test
+    fun pageTitles() {
+        assertEquals("Tom &amp; Jerry".replace("&amp;", "&"), Shared.titleFromHtml("<html><head><title>\n Tom &amp; Jerry </title></head>"))
+        assertEquals("ทำไม 28 Years Later", Shared.titleFromHtml("<meta property=\"og:title\" content=\"ทำไม 28 Years Later\"><title>x - YouTube</title>"))
+        assertNull(Shared.titleFromHtml("<html><body>no title</body></html>"))
+    }
 }

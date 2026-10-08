@@ -93,6 +93,13 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     }
     // Focus (and the keyboard) only after the sheet has finished opening; asking earlier is the likeliest
     // cause of the crash on the owner's phone.
+    // A shared link without a title: read the page's title, unless something was typed meanwhile.
+    LaunchedEffect(link) {
+        if (link != null && initial.isBlank()) {
+            val title = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.omnitask.model.Shared.fetchTitle(link) }
+            if (title != null && field.text.isBlank()) setText(title)
+        }
+    }
     LaunchedEffect(Unit) {
         if (voice) {
             startListening()

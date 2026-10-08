@@ -15,6 +15,9 @@
         <package android:name="com.oplus.safecenter" />
     </queries>
 
+    <!-- Only to read the title of a page shared into the app. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
