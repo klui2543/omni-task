@@ -142,6 +142,13 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     color = C.faint, fontSize = TS.caption,
                 )
             }
+            // A finished task (project work too) can be moved to the archive note by hand.
+            if (!task.isOpen && task.parent == null && task.list == null) {
+                Box(
+                    Modifier.padding(start = 6.dp, top = 2.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { vm.archiveTask(task); onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Ic.archive, tr("เก็บเข้าคลัง", "Archive"), tint = C.faint, modifier = Modifier.size(19.dp)) }
+            }
             Box(
                 Modifier.padding(start = 6.dp, top = 2.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { deleting = true },
                 contentAlignment = Alignment.Center,

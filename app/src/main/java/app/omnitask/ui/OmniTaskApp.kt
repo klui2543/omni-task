@@ -66,6 +66,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.omnitask.model.Lang
 import app.omnitask.model.UrgentRule
@@ -124,6 +126,14 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
 
+    LaunchedEffect(state.archived) {
+        state.archived?.let { d ->
+            vm.clearArchived()
+            val r = snackbar.showSnackbar(tr("ย้าย \"${d.title}\" เข้าคลังแล้ว", "Archived \"${d.title}\""), actionLabel = tr("เลิกทำ", "Undo"), duration = SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) vm.undoArchive(d)
+        }
+    }
+
     if (notifyOpen) {
         NotifySettingsScreen(state.notify, vm::setNotify, vm::calendarChanged) { notifyOpen = false }
         return
@@ -131,7 +141,10 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     if (settingsOpen) {
         // Reload after a language switch, so text the view model keeps (like the assistant's insight card) follows it.
-        SettingsScreen(profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload) { settingsOpen = false }
+        SettingsScreen(
+            profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
+            archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
+        ) { settingsOpen = false }
         return
     }
 
@@ -195,6 +208,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
                         Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                     }
+                    state.finished?.let { t -> FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
                 }
                 if (twoPane && editing != null) {
                     Box(Modifier.width(400.dp).fillMaxHeight().background(C.card).statusBarsPadding()) {
@@ -212,6 +226,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
             addButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 92.dp))
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp)) {
                 Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
+            }
+            state.finished?.let { t ->
+                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp))
             }
         }
     }
@@ -239,6 +256,35 @@ fun OmniTaskApp(vm: TaskViewModel) {
     }
     adding?.let { r ->
         QuickAddSheet(state, vm, r.voice, r.status, r.text, r.link, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
+    }
+}
+
+/**
+ * Asked once a task is ticked done: move it to the archive note, delete it, or leave it ticked. It goes
+ * away on its own after a while, which leaves the task as it is (the daily sweep archives it later).
+ */
+@Composable
+private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: TaskViewModel, modifier: Modifier = Modifier) {
+    LaunchedEffect(task.raw) {
+        delay(10_000)
+        vm.clearFinished()
+    }
+    Column(
+        modifier.padding(horizontal = 12.dp).widthIn(max = 520.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp))
+            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
+    ) {
+        Text(tr("เสร็จแล้ว: ${task.title}", "Done: ${task.title}"), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            if (archiveDays > 0) tr("ถ้าไม่เลือก จะย้ายเข้าคลังเองหลัง $archiveDays วัน", "If left, it moves to the archive after $archiveDays days")
+            else tr("เก็บเข้าคลัง หรือลบออกจากโน้ตเลยไหม", "Archive it, or delete it from the note?"),
+            Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = vm::clearFinished) { Text(tr("ไว้ก่อน", "Keep"), color = C.text2) }
+            TextButton(onClick = { vm.resolveFinished(archive = false) }) { Text(tr("ลบ", "Delete"), color = C.red) }
+            TextButton(onClick = { vm.resolveFinished(archive = true) }) { Text(tr("เก็บเข้าคลัง", "Archive"), color = C.accent) }
+        }
     }
 }
 

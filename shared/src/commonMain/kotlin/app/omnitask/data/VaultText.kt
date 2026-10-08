@@ -1,7 +1,9 @@
 package app.omnitask.data
 
 import app.omnitask.model.Branches
+import app.omnitask.model.Status
 import app.omnitask.model.Task
+import kotlinx.datetime.LocalDate
 
 /**
  * The text side of reading and writing vault notes: how a note's lines become tasks and how each edit changes
@@ -93,7 +95,7 @@ object VaultText {
     private fun indentOf(line: String) = line.takeWhile { it == ' ' || it == '\t' }.fold(0) { n, c -> n + (if (c == '\t') 4 else 1) }
 
     /** Where the task's block ends: the first line after it that is not indented deeper (exclusive). */
-    private fun blockEnd(lines: List<String>, index: Int): Int {
+    fun blockEnd(lines: List<String>, index: Int): Int {
         val base = indentOf(lines[index])
         var end = index + 1
         while (end < lines.size && lines[end].isNotBlank() && indentOf(lines[end]) > base) end++
@@ -106,6 +108,19 @@ object VaultText {
         val removed = block.toList()
         block.clear()
         return removed
+    }
+
+    /**
+     * Moves the repeating task at [index] on to its next occurrence and unticks the subtasks under it, so the
+     * new round starts with its checklist open. False (and nothing changed) when the rule cannot be read.
+     */
+    fun advanceRecurring(lines: MutableList<String>, index: Int, today: LocalDate): Boolean {
+        val next = TaskLine.advanceRecurring(lines[index], today) ?: return false
+        lines[index] = next
+        for (i in index + 1 until blockEnd(lines, index)) {
+            if (TaskLine.parse(lines[i])?.status == Status.DONE) lines[i] = TaskLine.setDone(lines[i], false, today)
+        }
+        return true
     }
 
     fun insertSubtask(lines: MutableList<String>, index: Int, taskLine: String) {

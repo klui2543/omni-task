@@ -78,7 +78,9 @@ object WebCore {
     fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean = false): String {
         val day = LocalDate.parse(today)
         val task = find(text, raw, lineIndex) ?: return fail("conflict")
-        val children = if (withSubtasks && task.isOpen) {
+        val repeats = task.recurrence != null && task.isOpen
+        // A repeating task moves on with its checklist opened again, so its subtasks are never ticked here.
+        val children = if (withSubtasks && task.isOpen && !repeats) {
             VaultText.parseFile("", "", text).filter { it.parent == task.key && it.isOpen }
         } else {
             emptyList()
@@ -86,8 +88,8 @@ object WebCore {
         val edited = VaultText.edit(text, task) { lines, i ->
             // Ticking changes no line count, so the subtasks are still where they were parsed.
             children.forEach { lines[it.lineIndex] = TaskLine.setDone(it.raw, true, day) }
-            if (task.recurrence != null && task.isOpen) {
-                lines[i] = TaskLine.advanceRecurring(task.raw, day) ?: throw RuleUnreadable()
+            if (repeats) {
+                if (!VaultText.advanceRecurring(lines, i, day)) throw RuleUnreadable()
             } else {
                 lines[i] = TaskLine.setDone(task.raw, task.isOpen, day)
             }
