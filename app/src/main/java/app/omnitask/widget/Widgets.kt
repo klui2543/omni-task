@@ -2,13 +2,8 @@ package app.omnitask.widget
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.graphics.Paint
-import android.graphics.RectF
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,13 +94,6 @@ private fun cp(pick: (Palette) -> Color): ColorProvider = when {
     else -> ColorProvider(day = pick(Palettes.linearLight), night = pick(Palettes.linearDark))
 }
 
-/** Whether the widget draws dark right now, for the few colours drawn into a bitmap. */
-private fun drawsDark(context: Context) = when {
-    Appearance.palette == PaletteChoice.MIDNIGHT || Appearance.themeMode == ThemeMode.DARK -> true
-    Appearance.themeMode == ThemeMode.LIGHT -> false
-    else -> (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-}
-
 @Composable
 private fun Label(text: String, color: ColorProvider = cp { it.muted }, size: TextUnit = 12.sp, bold: Boolean = false, maxLines: Int = 1, modifier: GlanceModifier = GlanceModifier) {
     Text(
@@ -179,18 +167,16 @@ class TickAction : ActionCallback {
 }
 
 /**
- * Today as a timeline, as on the Focus screen: one header line (what is left, a ring, add), then events and
+ * Today as a timeline, as on the Focus screen: one header line (what is left, add), then events and
  * timed tasks in time order with a line at the current time, then the tasks without a time. It scrolls
  * when the day is longer than the widget; tap a ring to tick a task.
  */
 class TodayWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
-        val dark = drawsDark(context)
         provideContent {
             val now = LocalDateTime.now()
             val left = data.todayTasks.size
-            val total = left + data.doneToday
             Column(
                 GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 6.dp),
             ) {
@@ -203,8 +189,6 @@ class TodayWidget : GlanceAppWidget() {
                             cp { it.muted }, 12.sp,
                         )
                     }
-                    Image(ImageProvider(ring(context, data.doneToday, total, dark)), "${data.doneToday}/$total", GlanceModifier.size(30.dp))
-                    Spacer(GlanceModifier.width(10.dp))
                     Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 34)
                 }
                 Spacer(GlanceModifier.height(6.dp))
@@ -306,25 +290,6 @@ private fun TodoLine(context: Context, r: Line.Todo, today: LocalDate) {
             if (sub.isNotEmpty()) Label(sub, if (late) cp { it.red } else cp { it.muted }, 11.5.sp)
         }
     }
-}
-
-/** The done/total ring, drawn into a bitmap since widgets have no arcs. */
-private fun ring(context: Context, done: Int, total: Int, dark: Boolean): Bitmap {
-    val d = context.resources.displayMetrics.density
-    val size = (30 * d).toInt().coerceAtLeast(1)
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bmp)
-    val w = 3.5f * d
-    val rect = RectF(w / 2, w / 2, size - w / 2, size - w / 2)
-    val pal = if (Appearance.palette == PaletteChoice.MIDNIGHT) Palettes.midnight else if (dark) Palettes.linearDark else Palettes.linearLight
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = w; strokeCap = Paint.Cap.ROUND }
-    paint.color = pal.raised.toArgb()
-    canvas.drawArc(rect, 0f, 360f, false, paint)
-    if (total > 0 && done > 0) {
-        paint.color = pal.accent.toArgb()
-        canvas.drawArc(rect, -90f, 360f * done / total, false, paint)
-    }
-    return bmp
 }
 
 class TodayWidgetReceiver : GlanceAppWidgetReceiver() {
