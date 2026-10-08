@@ -1,0 +1,24 @@
+@file:OptIn(ExperimentalJsExport::class)
+
+package app.omnitask.web
+
+import app.omnitask.model.Lang
+
+/** The entry points the browser calls; see [WebCore]. */
+@JsExport
+object WebApi {
+    fun setEnglish(english: Boolean) {
+        Lang.english = english
+    }
+
+    fun loadTasks(fileKey: String, path: String, text: String, today: String): String = WebCore.loadTasks(fileKey, path, text, today)
+
+    fun toggle(text: String, raw: String, lineIndex: Int, today: String): String = WebCore.guarded { WebCore.toggle(text, raw, lineIndex, today) }
+
+    fun setStatus(text: String, raw: String, lineIndex: Int, status: String, today: String): String = WebCore.setStatus(text, raw, lineIndex, status, today)
+
+    fun addTask(text: String, sentence: String, today: String): String = WebCore.addTask(text, sentence, today)
+
+    /** The vault path of the live task file. */
+    fun taskFile(): String = app.omnitask.data.VaultText.TASK_FILE
+}

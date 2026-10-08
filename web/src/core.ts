@@ -1,0 +1,18 @@
+// The vault logic shared with the Android app, compiled from Kotlin (see ../scripts/sync-core.mjs).
+import { WebApi } from './kotlin/OmniTask-shared.mjs'
+import type { EditResult, Task } from './types'
+
+const api = WebApi.getInstance()
+
+/** Today as YYYY-MM-DD in the device's own time zone. */
+export const today = () => new Date().toLocaleDateString('en-CA')
+
+export const taskFilePath: string = api.taskFile()
+
+export const loadTasks = (fileKey: string, path: string, text: string): Task[] =>
+  JSON.parse(api.loadTasks(fileKey, path, text, today()))
+
+const result = (json: string): EditResult => JSON.parse(json)
+
+export const toggle = (text: string, t: Task) => result(api.toggle(text, t.raw, t.lineIndex, today()))
+export const addTask = (text: string, sentence: string) => result(api.addTask(text, sentence, today()))

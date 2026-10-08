@@ -15,6 +15,7 @@ Every push to `main` builds a debug APK with GitHub Actions; download it from th
   - `data/VaultText.kt` turns a note into tasks and makes each edit to its lines
   - `model/` holds the task model, queries, projects, planners and recurrence
   - `time/JavaTime.kt` gives kotlinx-datetime the java.time names the code calls
+- `web/` is the iPad web app (Preact + TypeScript) on top of `shared/`; see `web/README.md`
 - `app/src/main/java/app/omnitask/data/VaultRepository.kt` reads and writes vault files through the folder picker
 - `app/src/main/java/app/omnitask/ui/` holds the screens
 

@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 // The vault logic both apps share: the task line format, the model and the planners. The Android app uses the
@@ -12,12 +13,16 @@ kotlin {
     }
     js {
         nodejs()
+        // The web app imports this as an ES module (see web/).
+        useEsModules()
+        generateTypeScriptDefinitions()
         binaries.library()
     }
 
     sourceSets {
         commonMain.dependencies {
             api("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
