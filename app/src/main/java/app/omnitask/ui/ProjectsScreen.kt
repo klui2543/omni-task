@@ -70,7 +70,11 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var creatingList by remember { mutableStateOf(false) }
     var pickingIcon by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
-    BackHandler(enabled = open != null || openList != null) { openName = null; openListPath = null; listCategory = null }
+    // Inside a project: the overview (null) or one of the views over just its tasks.
+    var projectView by rememberSaveable { mutableStateOf<Mode?>(null) }
+    BackHandler(enabled = open != null || openList != null) {
+        if (projectView != null) projectView = null else { openName = null; openListPath = null; listCategory = null }
+    }
     LaunchedEffect(Unit) { vm.ensureStarterLists() }
 
     // Drag to arrange: the order being dragged, the dragged project and how far it has moved.
@@ -87,6 +91,24 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
     if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
 
+    val view = projectView
+    if (open != null && view != null) {
+        // A view needs the whole screen (Kanban and Gantt scroll sideways), so it replaces the list.
+        val parked = state.parked.toSet()
+        val mine = open.tasks.filter { it !in parked }
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SquareButton(Ic.back, tr("กลับ", "Back"), { projectView = null })
+                    Text(open.name, Modifier.padding(start = 14.dp), style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1)
+                }
+                ProjectViewSwitch(view, Modifier.padding(top = 12.dp)) { projectView = it }
+            }
+            Box(Modifier.weight(1f)) { ViewBody(view, state, mine, mine.filter { !state.query.hideDone || it.isOpen }, vm, onOpen, scoped = true) }
+        }
+        return
+    }
+
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
@@ -96,7 +118,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (open != null || openList != null) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null })
+                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null; projectView = null })
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -183,6 +205,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             }
             if (!arranging) listCards(state, { openListPath = it.path }) { creatingList = true }
         } else {
+            item(key = "views") { ProjectViewSwitch(null) { projectView = it } }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatCard("${(open.ratio * 100).toInt()}%", tr("เสร็จแล้ว", "Done"), C.lime, Modifier.weight(1f))
@@ -281,4 +304,10 @@ private fun IconTap(icon: androidx.compose.ui.graphics.vector.ImageVector, descr
     Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(icon, description, tint = tint, modifier = Modifier.size(20.dp))
     }
+}
+
+/** Overview, or one of the views over just this project's tasks. */
+@Composable
+private fun ProjectViewSwitch(selected: Mode?, modifier: Modifier = Modifier, onSelect: (Mode?) -> Unit) {
+    Segmented(listOf<Pair<Mode?, String>>(null to tr("ภาพรวม", "Overview")) + Mode.entries.map { it to it.label }, selected, onSelect, modifier.fillMaxWidth())
 }

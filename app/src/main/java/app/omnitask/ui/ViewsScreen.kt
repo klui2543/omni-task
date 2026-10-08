@@ -75,7 +75,7 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-private enum class Mode(private val th: String, private val en: String) {
+enum class Mode(private val th: String, private val en: String) {
     KANBAN("Kanban", "Kanban"), MATRIX("Matrix", "Matrix"), GANTT("Gantt", "Gantt"), CALENDAR("ปฏิทิน", "Calendar");
 
     val label get() = tr(th, en)
@@ -99,20 +99,32 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             Segmented(Mode.entries.map { it to it.label }, mode, { mode = it }, Modifier.fillMaxWidth())
             FilterBar(state, vm, onFilter = { filtering = true }, showSort = mode == Mode.KANBAN, modifier = Modifier.padding(top = 8.dp), onSort = { sorting = true })
         }
-        when (mode) {
-            Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
-            Mode.MATRIX -> Matrix(state, narrowed, vm, onOpen)
-            Mode.GANTT -> GanttView(state, narrowed, vm, onOpen)
-            // Subtasks live inside their parent, but a dated one still belongs on the calendar.
-            Mode.CALENDAR -> CalendarViews(
-                state,
-                narrowed + state.tasks.filter { it.isSubtask && (it.due != null || it.scheduled != null) && (!q.hideDone || it.isOpen) },
-                vm, onOpen,
-            )
-        }
+        ViewBody(mode, state, pool, narrowed, vm, onOpen)
     }
     if (filtering) FilterSheet(state, vm) { filtering = false }
     if (sorting) SortSheet(state.query, vm::setQuery) { sorting = false }
+}
+
+/**
+ * One view over [pool] (every status, for Kanban's columns) or [narrowed] (what the other views show).
+ * The Views tab passes the filtered vault; a project passes its own tasks ([scoped]: only its subtasks join the calendar).
+ */
+@Composable
+fun ViewBody(mode: Mode, state: UiState, pool: List<Task>, narrowed: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit, scoped: Boolean = false) {
+    val q = state.query
+    when (mode) {
+        Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
+        Mode.MATRIX -> Matrix(state, narrowed, vm, onOpen)
+        Mode.GANTT -> GanttView(state, narrowed, vm, onOpen)
+        // Subtasks live inside their parent, but a dated one still belongs on the calendar.
+        Mode.CALENDAR -> CalendarViews(
+            state,
+            narrowed + state.tasks.filter { s ->
+                s.isSubtask && s !in narrowed && (s.due != null || s.scheduled != null) && (!q.hideDone || s.isOpen) && (!scoped || pool.any { it.key == s.parent })
+            },
+            vm, onOpen,
+        )
+    }
 }
 
 @Composable
