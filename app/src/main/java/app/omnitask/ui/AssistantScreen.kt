@@ -75,13 +75,14 @@ import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.Task
 import app.omnitask.model.tr
-import java.time.DayOfWeek
+import kotlinx.datetime.DayOfWeek
 import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalTime
+import kotlinx.datetime.toKotlinLocalDate
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.time.temporal.TemporalAdjusters
+import app.omnitask.time.*
 
 private val EXAMPLES: List<String>
     get() = listOf(
@@ -466,7 +467,7 @@ private fun RankedCard(item: Chat.Ranked, onOpen: (Task) -> Unit) {
 private fun CustomTimeDialog(c: CustomRequest, onDismiss: () -> Unit, onSet: (LocalDate, LocalTime?) -> Unit) {
     val context = LocalContext.current
     val date = rememberDatePickerState(initialSelectedDateMillis = c.day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-    fun day() = date.selectedDateMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() } ?: c.day
+    fun day() = date.selectedDateMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toKotlinLocalDate() } ?: c.day
     DatePickerDialog(
         onDismissRequest = onDismiss,
         colors = DatePickerDefaults.colors(containerColor = C.raised),
@@ -493,7 +494,7 @@ private fun CustomTimeDialog(c: CustomRequest, onDismiss: () -> Unit, onSet: (Lo
 @Composable
 private fun RangeDialog(onDismiss: () -> Unit, onAgenda: (LocalDate, LocalDate) -> Unit, onPlan: (LocalDate, LocalDate) -> Unit) {
     val range = rememberDateRangePickerState()
-    fun d(ms: Long?) = ms?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
+    fun d(ms: Long?) = ms?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toKotlinLocalDate() }
     val from = d(range.selectedStartDateMillis)
     val to = d(range.selectedEndDateMillis) ?: from
     DatePickerDialog(

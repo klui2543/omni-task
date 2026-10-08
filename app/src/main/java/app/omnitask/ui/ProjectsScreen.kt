@@ -49,6 +49,7 @@ import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.label
 import app.omnitask.model.tr
+import app.omnitask.time.*
 
 private val RING get() = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red)
 

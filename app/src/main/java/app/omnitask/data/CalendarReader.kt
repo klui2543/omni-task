@@ -9,10 +9,11 @@ import android.provider.CalendarContract
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import app.omnitask.time.*
 
 /** Reads events from every calendar on the phone; Google Calendar syncs into these. */
 object CalendarReader {

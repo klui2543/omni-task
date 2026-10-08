@@ -46,10 +46,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import app.omnitask.model.Countdown
-import java.time.LocalDateTime
-import java.time.LocalTime
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
+import app.omnitask.time.*
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)

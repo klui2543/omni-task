@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import app.omnitask.model.Appearance
 import app.omnitask.model.Lang
+import app.omnitask.model.load
 import app.omnitask.model.Shared
 import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme

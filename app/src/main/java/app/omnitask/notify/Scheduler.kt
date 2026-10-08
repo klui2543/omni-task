@@ -10,9 +10,10 @@ import android.os.Build
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.Task
-import java.time.LocalDateTime
-import java.time.LocalTime
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import java.time.ZoneId
+import app.omnitask.time.*
 
 /** Sets and cancels the alarms [AlarmPlan] asks for, and stores the notification settings. */
 object Scheduler {

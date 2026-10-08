@@ -26,8 +26,9 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      # The app's tests, and the shared module's tests on the JVM and on JS (what the web app runs).
       - name: Unit tests
-        run: gradle testDebugUnitTest --no-daemon --stacktrace
+        run: gradle testDebugUnitTest :shared:allTests --no-daemon --stacktrace
 
       # The same tests again on an Android emulator, so a crash only Android's runtime hits stops the release.
       # What runs there is in ci/device-tests.sh.

@@ -54,9 +54,11 @@ android {
 
     // The tests in sharedTest run twice in CI: on the JVM (Robolectric for the screens) and on an Android
     // emulator, which catches what only Android's runtime trips on. Tests that read the sources stay JVM only.
+    // The shared module's tests run on the emulator too, since Android reads regexes its own way (ICU).
     sourceSets {
         getByName("test").java.srcDir("src/sharedTest/java")
         getByName("androidTest").java.srcDir("src/sharedTest/java")
+        getByName("androidTest").java.srcDir("../shared/src/commonTest/kotlin")
     }
 
     // A crash prints in full in the build log.
@@ -73,6 +75,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
@@ -92,6 +95,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

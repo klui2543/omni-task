@@ -94,9 +94,11 @@ import app.omnitask.model.CustomKind
 import app.omnitask.model.label
 import app.omnitask.model.tr
 import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalTime
+import kotlinx.datetime.toKotlinLocalDate
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import java.time.ZoneOffset
+import app.omnitask.time.*
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -185,7 +187,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                                 tr("วันนี้", "Today") to today,
                                 tr("พรุ่งนี้", "Tomorrow") to today.plusDays(1),
                                 tr("เสาร์นี้", "Saturday") to Focus.softDate(today),
-                                tr("สัปดาห์หน้า", "Next week") to today.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY)),
+                                tr("สัปดาห์หน้า", "Next week") to today.with(app.omnitask.time.TemporalAdjusters.next(kotlinx.datetime.DayOfWeek.MONDAY)),
                             ).map { (label, d) -> Choice(label, d == current) { vm.setDate(task, field, d); open = null } } +
                                 Choice(tr("เลือกวัน", "Pick a day"), false) { picking = field } +
                                 listOfNotNull(current?.let { Choice(tr("ไม่มี", "None"), false, danger = true) { vm.setDate(task, field, null); open = null } }),
@@ -587,7 +589,7 @@ private fun DateDialog(task: Task, field: DateField, onSet: (LocalDate?) -> Unit
         colors = DatePickerDefaults.colors(containerColor = C.raised),
         confirmButton = {
             TextButton(onClick = {
-                ps.selectedDateMillis?.let { onSet(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
+                ps.selectedDateMillis?.let { onSet(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toKotlinLocalDate()) }
                 onDismiss()
             }) { Text(tr("ตกลง", "OK"), color = C.accent) }
         },

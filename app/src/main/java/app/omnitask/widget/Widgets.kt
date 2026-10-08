@@ -49,6 +49,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Quadrant
 import app.omnitask.model.Task
 import app.omnitask.model.tr
+import app.omnitask.model.load
 import app.omnitask.notify.Scheduler
 import app.omnitask.model.Appearance
 import app.omnitask.model.DayPlan
@@ -60,9 +61,10 @@ import app.omnitask.ui.Palettes
 import app.omnitask.ui.accent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import app.omnitask.time.*
 
 /** Redraws every Omni Task widget; called after the app or a widget changes the vault. */
 object OmniWidgets {

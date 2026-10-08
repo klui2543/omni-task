@@ -54,12 +54,12 @@ import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
-import java.time.DayOfWeek
-import java.time.LocalDate
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import kotlin.math.abs
+import app.omnitask.time.*
 
 /** How many days share the width. Thirty days label every other day so the header does not crowd. */
 private enum class GanttZoom(val days: Int, val labelStep: Int, private val th: String, private val en: String) {
@@ -103,7 +103,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
     }
     // Keeps the events of the shown range, also when it runs into the next month.
     LaunchedEffect(first, days) {
-        if (YearMonth.from(last) != YearMonth.from(first)) vm.loadMonth(last)
+        if (last.yearMonth != first.yearMonth) vm.loadMonth(last)
         vm.loadMonth(first)
     }
 
