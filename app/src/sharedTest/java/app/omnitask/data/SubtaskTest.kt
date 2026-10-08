@@ -54,4 +54,22 @@ class SubtaskTest {
         VaultRepository.describe(lines, 1, "ประชุมวันพฤหัส 10:00\nห้องประชุม 3")
         assertEquals(listOf("    - ประชุมวันพฤหัส 10:00", "    - ห้องประชุม 3", "    - [[ประชุมทีม]]"), lines.subList(2, 5))
     }
+
+    @Test
+    fun deleteTakesTheWholeBlock() {
+        val lines = mutableListOf(
+            "- [ ] ก่อน",
+            "- [ ] ลบอันนี้ #งาน",
+            "    - รายละเอียด",
+            "    - [ ] งานย่อย",
+            "        - [ ] ย่อยอีกชั้น",
+            "- [ ] หลัง",
+        )
+        val removed = VaultRepository.cutBlock(lines, 1)
+        assertEquals(4, removed.size)
+        assertEquals(listOf("- [ ] ก่อน", "- [ ] หลัง"), lines)
+        lines.addAll(1, removed)
+        assertEquals("- [ ] ลบอันนี้ #งาน", lines[1])
+        assertEquals(6, lines.size)
+    }
 }

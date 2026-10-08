@@ -62,6 +62,8 @@ data class Filters(
     val showDone: Boolean = false,
 )
 
+data class Deleted(val title: String, val cut: VaultRepository.Cut)
+
 data class UiState(
     val vault: Uri? = null,
     val loading: Boolean = false,
@@ -70,6 +72,8 @@ data class UiState(
     val urgentRule: UrgentRule = UrgentRule.THIS_WEEK,
     val today: LocalDate = LocalDate.now(),
     val message: String? = null,
+    /** A task just deleted, offered for undo once (its title and the removed lines). */
+    val deleted: Deleted? = null,
     val futureCount: Int = 1,
     val skippedToday: Set<String> = emptySet(),
     val dismissed: Set<String> = emptySet(),
@@ -585,6 +589,35 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeLink(task: Task, name: String) = sub(task) { repo.removeSubLine(task, "[[$name") }
+
+    /** Deletes the task's line from its file, with its description and subtasks; the snackbar offers undo. */
+    fun deleteTask(task: Task) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.deleteTask(task) } }
+            result.fold(
+                { cut -> _state.update { it.copy(deleted = Deleted(task.title, cut)) } },
+                { e ->
+                    val text = if (e is VaultRepository.ConflictException) {
+                        tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+                    } else {
+                        tr("ลบไม่ได้: ${e.message}", "Cannot delete: ${e.message}")
+                    }
+                    _state.update { it.copy(message = text) }
+                },
+            )
+            reload()
+        }
+    }
+
+    fun clearDeleted() = _state.update { it.copy(deleted = null) }
+
+    fun undoDelete(d: Deleted) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.restore(d.cut) } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เอากลับไม่ได้: ${e.message}", "Cannot undo: ${e.message}")) } }
+            reload()
+        }
+    }
 
     private fun sub(task: Task, write: () -> Unit) {
         viewModelScope.launch {

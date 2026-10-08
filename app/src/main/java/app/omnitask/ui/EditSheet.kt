@@ -106,6 +106,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     var linking by remember { mutableStateOf(false) }
     var repeating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.attachImage(task, uri)
@@ -138,6 +139,10 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     color = C.faint, fontSize = TS.caption,
                 )
             }
+            Box(
+                Modifier.padding(start = 6.dp, top = 2.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { deleting = true },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.trash, tr("ลบงาน", "Delete task"), tint = C.faint, modifier = Modifier.size(19.dp)) }
         }
 
         DescriptionBlock(task, vm)
@@ -308,6 +313,24 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     if (linking) {
         NotePicker(state.notePaths.filterNot { NoteLinks.linkText(it, state.notePaths) in task.links }, { vm.addLink(task, it); linking = false }) { linking = false }
     }
+    if (deleting) {
+        val subs = state.subtasksOf(task).size
+        AlertDialog(
+            onDismissRequest = { deleting = false },
+            containerColor = C.raised,
+            title = { Text(tr("ลบงานนี้?", "Delete this task?")) },
+            text = {
+                Text(
+                    tr("ลบบรรทัดนี้ออกจาก ${task.filePath.substringAfterLast('/')} พร้อมรายละเอียด", "Removes the line from ${task.filePath.substringAfterLast('/')} with its details") +
+                        (if (subs > 0) tr(" และงานย่อย $subs งาน", " and $subs subtasks") else ""),
+                    color = C.text2,
+                )
+            },
+            confirmButton = { TextButton(onClick = { deleting = false; vm.deleteTask(task); onDismiss() }) { Text(tr("ลบ", "Delete"), color = C.red) } },
+            dismissButton = { TextButton(onClick = { deleting = false }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+        )
+    }
+
     confirmDelete?.let { name ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },

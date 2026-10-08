@@ -106,6 +106,28 @@ class VaultRepository(private val context: Context) {
         }
     }
 
+    /** Lines taken out of a file, and where they were, so they can be put back. */
+    class Cut(val fileUri: String, val index: Int, val lines: List<String>)
+
+    /** Removes the task's line and everything indented under it (description, links, subtasks). */
+    fun deleteTask(task: Task): Cut {
+        var cut: Cut? = null
+        editLines(task) { lines, index -> cut = Cut(task.fileUri, index, cutBlock(lines, index)) }
+        return cut!!
+    }
+
+    /** Puts lines removed by [deleteTask] back where they were (or at the end when the file got shorter). */
+    fun restore(cut: Cut) {
+        val (index, block) = cut.index to cut.lines
+        val uri = Uri.parse(cut.fileUri)
+        val text = readText(uri)
+        val separator = if (text.contains("\r\n")) "\r\n" else "\n"
+        val lines = text.split(separator).toMutableList()
+        lines.addAll(index.coerceIn(0, lines.size), block)
+        context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(lines.joinToString(separator).toByteArray()) }
+            ?: throw java.io.IOException("Cannot write")
+    }
+
     /**
      * Renames a project in every task line of the given files: `#old` and `#old/branch` become `#new...`.
      * Each file is read and written once. Returns how many lines changed.
@@ -273,6 +295,14 @@ class VaultRepository(private val context: Context) {
             var end = index + 1
             while (end < lines.size && lines[end].isNotBlank() && indentOf(lines[end]) > base) end++
             return end
+        }
+
+        /** Removes the task at [index] with its whole block and returns the removed lines. */
+        fun cutBlock(lines: MutableList<String>, index: Int): List<String> {
+            val block = lines.subList(index, blockEnd(lines, index))
+            val removed = block.toList()
+            block.clear()
+            return removed
         }
 
         fun insertSubtask(lines: MutableList<String>, index: Int, taskLine: String) {
