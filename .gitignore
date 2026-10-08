@@ -4,3 +4,7 @@ local.properties
 .idea/
 *.iml
 .kotlin/
+node_modules/
+web/src/kotlin/
+web/dist/
+web/test-results/
