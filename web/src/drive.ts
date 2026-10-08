@@ -23,11 +23,11 @@ export interface DriveFile {
 const quote = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
 export class Drive {
-  /** [token] returns a valid access token, asking Google again if needed. */
-  constructor(private token: () => Promise<string>) {}
+  /** [token] returns a valid access token, or throws [AuthExpired] when the owner must sign in again. */
+  constructor(private token: () => string) {}
 
   private async call(url: string, init: RequestInit = {}): Promise<Response> {
-    const res = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${await this.token()}` } })
+    const res = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${this.token()}` } })
     if (res.status === 401) throw new AuthExpired()
     if (!res.ok) throw new DriveError(res.status, `Drive ${res.status}: ${(await res.text()).slice(0, 200)}`)
     return res

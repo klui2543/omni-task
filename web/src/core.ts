@@ -14,5 +14,6 @@ export const loadTasks = (fileKey: string, path: string, text: string): Task[] =
 
 const result = (json: string): EditResult => JSON.parse(json)
 
-export const toggle = (text: string, t: Task) => result(api.toggle(text, t.raw, t.lineIndex, today()))
+export const toggle = (text: string, t: Task, withSubtasks: boolean) =>
+  result(api.toggle(text, t.raw, t.lineIndex, today(), withSubtasks))
 export const addTask = (text: string, sentence: string) => result(api.addTask(text, sentence, today()))

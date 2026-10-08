@@ -13,7 +13,8 @@ object WebApi {
 
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String = WebCore.loadTasks(fileKey, path, text, today)
 
-    fun toggle(text: String, raw: String, lineIndex: Int, today: String): String = WebCore.guarded { WebCore.toggle(text, raw, lineIndex, today) }
+    fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean): String =
+        WebCore.guarded { WebCore.toggle(text, raw, lineIndex, today, withSubtasks) }
 
     fun setStatus(text: String, raw: String, lineIndex: Int, status: String, today: String): String = WebCore.setStatus(text, raw, lineIndex, status, today)
 
