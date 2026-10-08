@@ -149,7 +149,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     // The pinned countdown: any task, counted to its date (and time on the day).
                     FooterRow(Ic.hourglass, onClick = { pickingCountdown = true }) {
                         if (countdown == null) {
-                            Text(tr("นับถอยหลัง", "Countdown"), color = C.faint, fontSize = TS.caption)
+                            Text(tr("ตั้งนับถอยหลังถึงงานสำคัญ", "Count down to an important task"), color = C.faint, fontSize = TS.caption)
                         } else {
                             Text(countdown.title, Modifier.weight(1f, fill = false), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
@@ -228,7 +228,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Column(Modifier.fillMaxHeight().padding(14.dp)) {
                         CardHead(Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), "${brief.waiting.size}")
                         if (brief.waiting.isEmpty()) {
-                            Text("#รอ/" + tr("ชื่อ", "name"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+                            Text(tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
                         }
                         brief.waiting.forEach { t ->
                             val age = Focus.ageDays(t, today)
@@ -247,14 +247,14 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Column(Modifier.fillMaxHeight().padding(14.dp)) {
                         CardHead(Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), null)
                         if (brief.future.isEmpty()) {
-                            Text(tr("ยังไม่ได้เลือก", "None picked"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+                            Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
                         }
                         brief.future.forEach { t ->
                             Column(Modifier.padding(top = 10.dp)) {
                                 Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = TS.body, maxLines = 3)
-                                val sub = listOfNotNull(Focus.ageDays(t, today)?.let { tr("$it วัน", "$it days") })
+                                val sub = listOfNotNull(Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") })
                                 if (sub.isNotEmpty()) Text(sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 2)
-                                SmallButton(tr("ข้าม", "Skip"), filled = false, modifier = Modifier.padding(top = 8.dp)) { vm.skipFuture(t) }
+                                SmallButton(tr("ข้ามวันนี้", "Skip today"), filled = false, modifier = Modifier.padding(top = 8.dp)) { vm.skipFuture(t) }
                             }
                         }
                         Spacer(Modifier.weight(1f))
@@ -391,15 +391,17 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
             Text(t.title, color = if (isBlocked) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
             val lead = when {
                 late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
-                else -> null
+                t.due == today -> tr("ครบวันนี้", "Due today")
+                else -> tr("นัดวันนี้", "Scheduled today")
             }
             val sub = listOfNotNull(
+                if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
                 Projects.projectOf(t),
-                state.progressOf(t)?.let { (d, n) -> "$d/$n" },
+                state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
             )
             Row(Modifier.padding(top = 1.dp)) {
                 if (lead != null) Text(lead, color = if (late) C.red else C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                if (sub.isNotEmpty()) Text((if (lead != null) ", " else "") + sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (sub.isNotEmpty()) Text(", " + sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

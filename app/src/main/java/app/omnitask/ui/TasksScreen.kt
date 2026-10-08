@@ -300,6 +300,7 @@ fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text(tr("ซ่อนงานที่เสร็จและยกเลิก", "Hide done and cancelled"), color = C.text, fontSize = TS.body)
+                Text(tr("ในมุมมอง Kanban, Matrix, Gantt และปฏิทิน", "In Kanban, Matrix, Gantt and calendar"), color = C.muted, fontSize = TS.caption)
             }
             OnOff(q.hideDone)
         }
@@ -377,6 +378,7 @@ fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, onDismiss: () -> Unit
                 GhostButton(tr("+ เรียงต่อด้วย", "+ Then by"), { set(levels + (next to true)) }, Modifier.padding(top = 12.dp).fillMaxWidth())
             }
         }
+        Text(tr("ถ้ายังเท่ากัน เรียงตามความสำคัญ แล้วชื่องาน", "Ties fall back to priority, then title"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
     }
 }
 
