@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -198,13 +200,18 @@ fun SheetFrame(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 10.dp), horizontalArrangement = Arrangement.End) {
                 SquareButton(Ic.close, tr("ปิด", "Close"), onDismiss)
             }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
+            Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
                 CompositionLocalProvider(LocalPane provides false) { content() }
             }
         }
         return
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.card, contentColor = C.text, scrimColor = Color(0x99000000)) {
+    // No half-open stop: the sheet snaps back to it whenever its height changes (the keyboard opening, a
+    // subtask added), which made it jump and hid the field being typed in.
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = C.card, contentColor = C.text, scrimColor = Color(0x99000000),
+    ) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
             content()
         }

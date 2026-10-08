@@ -301,14 +301,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
             Card {
                 Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
-                    if (month != YearMonth.from(state.today)) {
-                        Text(
-                            tr("วันนี้", "Today"),
-                            Modifier.padding(end = 6.dp).clip(RoundedCornerShape(10.dp)).clickable { go(YearMonth.from(state.today).let { java.time.temporal.ChronoUnit.MONTHS.between(month, it) }) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            color = C.accentText, fontSize = TS.caption,
-                        )
-                    }
+                    TodayButton({ shown = YearMonth.from(state.today).toString(); selected = state.today.toString() }, Modifier.padding(end = 6.dp))
                     SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { go(-1) })
                     Box(Modifier.width(6.dp))
                     SquareButton(Ic.next, tr("เดือนถัดไป", "Next month"), { go(1) })

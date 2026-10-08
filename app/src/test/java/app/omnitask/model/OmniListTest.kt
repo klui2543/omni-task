@@ -8,11 +8,19 @@ class OmniListTest {
 
     @Test
     fun readsAndWritesTheHeader() {
-        val list = OmniList("Watch list", "Omni/Watch list.md", "film", listOf("หนัง", "ซีรีส์"))
+        val list = OmniList("Watch list", "Omni/Watch list.md", "🎬", listOf("หนัง", "ซีรีส์"))
         val text = list.render() + "- [ ] Shogun #ซีรีส์\n"
         assertEquals(list, OmniList.parse("Omni/Watch list.md", text))
         assertNull(OmniList.parse("Notes/x.md", "# just a note\n- [ ] task"))
         assertNull(OmniList.parse("Notes/y.md", "---\ntags: [a]\n---\n- [ ] task"))
+    }
+
+    @Test
+    fun oldIconNamesBecomeEmoji() {
+        assertEquals("🎬", app.omnitask.ui.ListEmoji.of("film"))
+        assertEquals("🍿", app.omnitask.ui.ListEmoji.of("🍿"))
+        assertEquals(app.omnitask.ui.ListEmoji.DEFAULT, app.omnitask.ui.ListEmoji.of("unknown"))
+        assertEquals(app.omnitask.ui.ListEmoji.DEFAULT, app.omnitask.ui.ListEmoji.of(""))
     }
 
     @Test

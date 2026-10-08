@@ -222,6 +222,19 @@ fun SquareButton(icon: ImageVector, description: String, onClick: () -> Unit, fi
     }
 }
 
+/** Back to today in the calendar views. Always shown, as in Google Calendar, so it is there when needed. */
+@Composable
+fun TodayButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.height(42.dp).clip(RoundedCornerShape(14.dp)).background(C.raised)
+            .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Ic.calendar, null, tint = C.accentText, modifier = Modifier.size(16.dp))
+        Text(tr("วันนี้", "Today"), Modifier.padding(start = 6.dp), color = C.accentText, fontSize = TS.body, maxLines = 1)
+    }
+}
+
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = C.accent) {
     Box(

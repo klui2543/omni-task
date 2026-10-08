@@ -108,6 +108,8 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
     }
     val hourH = if (days == 1) 56.dp else 48.dp
     var unfolded by rememberSaveable { mutableStateOf(false) }
+    // Counts taps on Today, so each one also scrolls the hour grid back to now.
+    var toNow by remember { mutableStateOf(0) }
     var now by remember { mutableStateOf(LocalTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -149,14 +151,7 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                 rangeLabel(start, end, state.today), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            if (!showsToday) {
-                Text(
-                    tr("วันนี้", "Today"),
-                    Modifier.padding(end = 6.dp).clip(RoundedCornerShape(10.dp)).clickable { anchorText = state.today.toString() }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = C.accentText, fontSize = TS.caption,
-                )
-            }
+            TodayButton({ anchorText = state.today.toString(); toNow++ }, Modifier.padding(end = 6.dp))
             val (prev, next) = when (days) {
                 1 -> tr("วันก่อน", "Previous day") to tr("วันถัดไป", "Next day")
                 7 -> tr("สัปดาห์ก่อน", "Previous week") to tr("สัปดาห์ถัดไป", "Next week")
@@ -242,6 +237,9 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                     scroll.scrollTo(with(density) { (hourH * hour).roundToPx() })
                     scrolledFor = days
                 }
+            }
+            LaunchedEffect(toNow) {
+                if (toNow > 0) scroll.animateScrollTo(with(density) { (hourH * (LocalTime.now().hour - 1).coerceAtLeast(0)).roundToPx() })
             }
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(top = 8.dp, bottom = NavClearance)) {
                 Row(

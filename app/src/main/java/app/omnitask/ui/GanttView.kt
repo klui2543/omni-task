@@ -95,7 +95,6 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
     val days = zoom.days
     val first = LocalDate.parse(startText)
     val last = first.plusDays(days - 1L)
-    val showsToday = today >= first && today <= last
     fun shift(steps: Int) {
         startText = LocalDate.parse(startText).plusDays(steps.toLong() * days).toString()
     }
@@ -151,7 +150,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                         Chip(tr("นัดจาก Google Calendar", "Google Calendar events"), showEvents, { showEvents = !showEvents }, dot = C.teal, modifier = Modifier.padding(end = 10.dp))
                     }
                     GanttZoomSwitch(zoom, { zoom = it }, Modifier.padding(end = 10.dp))
-                    GanttPaging(days, showsToday, { backToToday() }) { shift(it) }
+                    GanttPaging(days, { backToToday() }) { shift(it) }
                 }
             } else {
                 Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -165,10 +164,10 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                     // The chip gives way when the Today button needs the room.
                     Box(Modifier.weight(1f)) {
                         if (state.calendarAccess == true) {
-                            Chip(tr("นัดจาก Google Calendar", "Google Calendar events"), showEvents, { showEvents = !showEvents }, dot = C.teal)
+                            Chip(tr("นัดหมาย", "Events"), showEvents, { showEvents = !showEvents }, dot = C.teal)
                         }
                     }
-                    GanttPaging(days, showsToday, { backToToday() }) { shift(it) }
+                    GanttPaging(days, { backToToday() }) { shift(it) }
                 }
             }
 
@@ -316,15 +315,9 @@ private fun GanttZoomSwitch(zoom: GanttZoom, onSelect: (GanttZoom) -> Unit, modi
 
 /** Today (only while today is out of view), then the arrows that page by the zoom size. */
 @Composable
-private fun GanttPaging(days: Int, showsToday: Boolean, onToday: () -> Unit, onShift: (Int) -> Unit) {
+private fun GanttPaging(days: Int, onToday: () -> Unit, onShift: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (!showsToday) {
-            Text(
-                tr("วันนี้", "Today"),
-                Modifier.padding(end = 6.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onToday).padding(horizontal = 10.dp, vertical = 6.dp),
-                color = C.accentText, fontSize = TS.caption, maxLines = 1,
-            )
-        }
+        TodayButton(onToday, Modifier.padding(end = 6.dp))
         SquareButton(Ic.back, tr("ย้อน $days วัน", "Previous $days days"), { onShift(-1) })
         Box(Modifier.width(6.dp))
         SquareButton(Ic.next, tr("ถัดไป $days วัน", "Next $days days"), { onShift(1) })

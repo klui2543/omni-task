@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -41,27 +43,20 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.omnitask.model.OmniList
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 
-/** Soft tile colours for list icons, picked by the list's name so each list keeps its colour. */
-private val TILES = listOf(
-    Color(0xFF2B3A1A) to C.lime, Color(0xFF2A2550) to C.accentText, Color(0xFF16302D) to C.tealChip,
-    Color(0xFF33281A) to C.amber, Color(0xFF1C2638) to C.blue,
-)
-
-private fun tileOf(name: String) = TILES[(name.hashCode() and 0x7fffffff) % TILES.size]
-
+/** A list's emoji on a quiet tile. */
 @Composable
 fun ListIconTile(list: OmniList, size: Int = 44, onClick: (() -> Unit)? = null) {
-    val (bg, fg) = tileOf(list.name)
     Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size / 3.6).dp)).background(bg)
+        Modifier.size(size.dp).clip(RoundedCornerShape((size / 3.6).dp)).background(C.raised)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
-    ) { Icon(ListIcons.of(list.icon), null, tint = fg, modifier = Modifier.size((size * 0.48).dp)) }
+    ) { Text(ListEmoji.of(list.icon), fontSize = (size * 0.5).sp, lineHeight = (size * 0.6).sp) }
 }
 
 /** The "รายการ" section under the projects: one card per list note, and a way to make a new one. */
@@ -191,20 +186,43 @@ private fun AddLine(hint: String, onAdd: (String) -> Unit) {
     }
 }
 
-/** A grid of the list icons; the chosen one is outlined. */
+/** The emoji to choose from, by theme, and a box to type any other; the chosen one is outlined. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun IconGrid(selected: String, onPick: (String) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ListIcons.all.forEach { (key, icon) ->
-            val on = key == selected
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.accentSoft else C.sunken)
-                    .border(1.dp, if (on) C.accent else Color.Transparent, RoundedCornerShape(12.dp)).clickable { onPick(key) },
-                contentAlignment = Alignment.Center,
-            ) { Icon(icon, key, tint = if (on) C.accentText else C.text2, modifier = Modifier.size(21.dp)) }
+    val current = ListEmoji.of(selected)
+    Column {
+        ListEmoji.groups.forEach { (label, emoji) ->
+            Text(tr(label.first, label.second), Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.faint, fontSize = TS.caption)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                emoji.forEach { e ->
+                    val on = e == current
+                    Box(
+                        Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.accentSoft else C.sunken)
+                            .border(1.dp, if (on) C.accent else Color.Transparent, RoundedCornerShape(12.dp)).clickable { onPick(e) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(e, fontSize = 21.sp, lineHeight = 26.sp) }
+                }
+            }
+        }
+        var typed by remember { mutableStateOf("") }
+        Text(tr("หรือพิมพ์ emoji เอง", "Or type any emoji"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.faint, fontSize = TS.caption)
+        Field(typed, tr("แตะแล้วเลือกจากแป้นพิมพ์", "Tap and pick from the keyboard")) { text ->
+            val first = firstGlyph(text)
+            typed = first
+            if (first.isNotEmpty() && first.any { it.code > 0x7F }) onPick(first)
         }
     }
+}
+
+/** The first character as people see it, so a flag or a family emoji stays whole. */
+private fun firstGlyph(text: String): String {
+    val t = text.trim()
+    if (t.isEmpty()) return ""
+    val chars = android.icu.text.BreakIterator.getCharacterInstance()
+    chars.setText(t)
+    val end = chars.next()
+    return if (end > 0) t.substring(0, end) else t
 }
 
 @Composable
@@ -213,7 +231,7 @@ fun IconPickerDialog(selected: String, onPick: (String) -> Unit, onDismiss: () -
         onDismissRequest = onDismiss,
         containerColor = C.raised,
         title = { Text(tr("เลือกไอคอน", "Pick an icon")) },
-        text = { Column(Modifier.heightIn(max = 420.dp)) { IconGrid(selected) { onPick(it) } } },
+        text = { Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) { IconGrid(selected) { onPick(it) } } },
         confirmButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
     )
 }
@@ -222,16 +240,16 @@ fun IconPickerDialog(selected: String, onPick: (String) -> Unit, onDismiss: () -
 @Composable
 fun CreateListDialog(onCreate: (name: String, icon: String, categories: List<String>) -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
-    var icon by remember { mutableStateOf("list") }
+    var icon by remember { mutableStateOf(ListEmoji.DEFAULT) }
     var cats by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
         title = { Text(tr("สร้างรายการใหม่", "New list")) },
         text = {
-            Column(Modifier.heightIn(max = 520.dp)) {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                 Field(name, tr("ชื่อ เช่น หนังสือที่อยากอ่าน", "Name, e.g. Books to read")) { name = it }
-                Text(tr("ไอคอน", "Icon"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.muted, fontSize = TS.caption)
+                Text(tr("ไอคอน", "Icon"), Modifier.padding(top = 14.dp), color = C.muted, fontSize = TS.caption)
                 IconGrid(icon) { icon = it }
                 Text(tr("หมวดย่อย คั่นด้วยจุลภาค (ไม่ใส่ก็ได้)", "Categories, comma separated (optional)"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.muted, fontSize = TS.caption)
                 Field(cats, tr("เช่น นิยาย, ธุรกิจ, สุขภาพ", "e.g. Fiction, Business, Health")) { cats = it }

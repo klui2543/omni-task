@@ -7,7 +7,7 @@ package app.omnitask.model
  * ```
  * ---
  * omni-list: true
- * icon: mountain
+ * icon: 🏔️
  * categories: เที่ยว, ประสบการณ์, เรียนรู้
  * ---
  * ```
@@ -37,15 +37,15 @@ data class OmniList(val name: String, val path: String, val icon: String, val ca
             return OmniList(
                 name = path.substringAfterLast('/').removeSuffix(".md"),
                 path = path,
-                icon = value("icon") ?: "list",
+                icon = value("icon") ?: "📋",
                 categories = value("categories")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
             )
         }
 
         /** The two lists every owner starts with. */
         fun starters(): List<OmniList> = listOf(
-            OmniList("Bucket list", "$FOLDER/Bucket list.md", "mountain", listOf("เที่ยว", "ประสบการณ์", "เรียนรู้")),
-            OmniList("Watch list", "$FOLDER/Watch list.md", "film", listOf("หนัง", "ซีรีส์", "หนังสือ")),
+            OmniList("Bucket list", "$FOLDER/Bucket list.md", "🏔️", listOf("เที่ยว", "ประสบการณ์", "เรียนรู้")),
+            OmniList("Watch list", "$FOLDER/Watch list.md", "🎬", listOf("หนัง", "ซีรีส์", "หนังสือ")),
         )
     }
 }
