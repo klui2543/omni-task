@@ -269,7 +269,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         Row(
             Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp)
                 .then(if (ime) Modifier.imePadding() else Modifier)
-                .fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.card).border(1.dp, Color(0xFF262B3A), RoundedCornerShape(24.dp))
+                .fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(24.dp))
                 .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -528,7 +528,7 @@ private fun sources(state: UiState): String {
 
 @Composable
 private fun AskCard(title: String, badge: String, body: String, noLabel: String, onNo: () -> Unit, yesLabel: String, onYes: () -> Unit) {
-    Card(color = C.accentDeep, border = Color(0xFF2D2852)) {
+    Card(color = C.accentDeep, border = C.accentLine) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
@@ -538,7 +538,7 @@ private fun AskCard(title: String, badge: String, body: String, noLabel: String,
             Text(body, Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body, lineHeight = 1.4.em)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(
-                    Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(10.dp)).clickable(onClick = onNo),
+                    Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, C.accentLine, RoundedCornerShape(10.dp)).clickable(onClick = onNo),
                     contentAlignment = Alignment.Center,
                 ) { Text(noLabel, color = C.accentText, fontSize = TS.caption) }
                 Box(
@@ -559,7 +559,7 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
     val others = remember { mutableStateMapOf<String, String>() }
     fun other(key: String) = others[key]
     fun setOther(key: String, v: String?) { if (v == null) others.remove(key) else others[key] = v }
-    Card(color = C.accentDeep, border = Color(0xFF2D2852)) {
+    Card(color = C.accentDeep, border = C.accentLine) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
@@ -706,8 +706,8 @@ private fun SlotsCard(
                     val index = first + i
                     val on = item.picked == index
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (on) Color(0xFF1E1B33) else C.sunken)
-                            .border(1.dp, if (on) C.accent else Color(0xFF242938), RoundedCornerShape(14.dp))
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (on) C.accentSoft else C.sunken)
+                            .border(1.dp, if (on) C.accent else C.cardBorder, RoundedCornerShape(14.dp))
                             .clickable { onPick(index) }.padding(12.dp),
                     ) {
                         Column(Modifier.width(56.dp)) {
@@ -720,7 +720,7 @@ private fun SlotsCard(
                                 if (index == 0) {
                                     Text(
                                         tr("แนะนำ", "Best"),
-                                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF2B3A1A)).padding(horizontal = 7.dp, vertical = 1.dp),
+                                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(9.dp)).background(C.limeSoft).padding(horizontal = 7.dp, vertical = 1.dp),
                                         color = C.lime, fontSize = TS.caption,
                                     )
                                 }

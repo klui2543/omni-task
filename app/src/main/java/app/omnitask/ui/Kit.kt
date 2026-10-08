@@ -91,6 +91,8 @@ object Ic {
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
     val flag = icon("flag", "M5 21V4h11l-2 4 2 4H5")
     val calendar = icon("calendar", "M3.5 5h17v15h-17Z", "M3.5 10h17M8 3v4M16 3v4")
+    val moon = icon("moon", "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z")
+    val clock = icon("clock", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 7.5V12l3 2")
     val hourglass = icon("hourglass", "M7 3.5h10M7 20.5h10", "M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5", "M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5")
     val repeat = icon("repeat", "M4 11V9a3 3 0 0 1 3-3h12l-3-3", "M20 13v2a3 3 0 0 1-3 3H5l3 3")
     val hash = icon("hash", "M9 4l-2 16M17 4l-2 16M4.5 9h15M3.5 15h15")
@@ -110,7 +112,7 @@ object Ic {
 @Composable
 fun Card(modifier: Modifier = Modifier, color: Color = C.card, border: Color = C.cardBorder, content: @Composable ColumnScope.() -> Unit) {
     // Cards always span the space they are given; a card hugging its text looks unfinished next to full-width ones.
-    Surface(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = color, border = BorderStroke(1.dp, border)) {
+    Surface(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(C.radius), color = color, border = BorderStroke(1.dp, border)) {
         Column(content = content)
     }
 }
@@ -129,7 +131,7 @@ fun Pill(text: String, bg: Color, fg: Color, icon: ImageVector? = null, modifier
 
 /** The round check: priority colour while open, filled lime when done, half-filled while in progress. */
 @Composable
-fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp) {
+fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp, touch: Dp = 44.dp) {
     val done = task.status == Status.DONE
     val ring = when {
         done -> C.lime
@@ -137,7 +139,7 @@ fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp) {
         else -> task.priority.tint
     }
     Box(
-        Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick),
+        Modifier.size(touch).clip(CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(

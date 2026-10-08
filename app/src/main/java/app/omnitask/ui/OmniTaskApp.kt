@@ -121,7 +121,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     if (settingsOpen) {
         // Reload after a language switch, so text the view model keeps (like the assistant's insight card) follows it.
-        SettingsScreen(onLanguageChange = vm::reload) { settingsOpen = false }
+        SettingsScreen(profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload) { settingsOpen = false }
         return
     }
 
@@ -243,7 +243,7 @@ private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
         verticalArrangement = Arrangement.Center,
     ) {
         Column(
-            Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xF0171A23))
+            Modifier.clip(RoundedCornerShape(20.dp)).background(C.navBg)
                 .border(1.dp, C.cardBorder, RoundedCornerShape(20.dp)).padding(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -268,7 +268,7 @@ private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
 private fun FloatingNav(selected: Screen, onSelect: (Screen) -> Unit, modifier: Modifier) {
     Row(
         modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 12.dp).fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp)).background(Color(0xF0171A23))
+            .clip(RoundedCornerShape(20.dp)).background(C.navBg)
             .border(1.dp, C.cardBorder, RoundedCornerShape(20.dp)).padding(6.dp),
     ) {
         Screen.entries.forEach { s ->

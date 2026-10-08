@@ -67,7 +67,7 @@ import kotlinx.coroutines.delay
 /** The hour labels down the left edge; the day headers and the all-day strip leave the same gap. */
 private val LabelW = 40.dp
 private val CLOCK = DateTimeFormatter.ofPattern("HH:mm")
-private val EventText = Color(0xFFCFF4F0)
+private val EventText get() = C.eventText
 private const val DAY_MIN = 24 * 60
 
 /** The shortest block drawn, in minutes, so a quick event still has room for its title. */

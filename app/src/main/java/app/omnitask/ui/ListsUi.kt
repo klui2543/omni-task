@@ -81,7 +81,7 @@ fun LazyListScope.listCards(state: UiState, onOpen: (OmniList) -> Unit, onCreate
     item(key = "lists-new") {
         Text(
             tr("+ สร้างรายการใหม่", "+ New list"),
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(14.dp))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
                 .clickable(onClick = onCreate).padding(vertical = 12.dp),
             color = C.accentText, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
@@ -160,7 +160,7 @@ private fun AddLine(hint: String, onAdd: (String) -> Unit) {
     }
     Row(
         Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.card)
-            .border(1.dp, Color(0xFF262B3A), RoundedCornerShape(16.dp)).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            .border(1.dp, C.cardBorder, RoundedCornerShape(16.dp)).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BasicTextField(

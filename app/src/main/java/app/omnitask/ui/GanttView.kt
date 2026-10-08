@@ -79,7 +79,7 @@ private val GanttBarShape = RoundedCornerShape(10.dp)
 private val GanttInsideMin = 90.dp
 private val GanttGap = 6.dp
 private val GanttClock = DateTimeFormatter.ofPattern("HH:mm")
-private val GanttEventColors = GanttColors(C.teal, C.teal.copy(alpha = 0.16f), Color(0xFFCFF4F0), C.tealText)
+private val GanttEventColors get() = GanttColors(C.teal, C.teal.copy(alpha = 0.16f), C.eventText, C.tealText)
 
 /**
  * Tasks and Google Calendar events as bars over 7, 14 or 30 days that share the full width, so the view fits

@@ -3,6 +3,7 @@ package app.omnitask.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.Appearance
 import app.omnitask.model.FontChoice
+import app.omnitask.model.PaletteChoice
+import app.omnitask.model.ThemeMode
 import app.omnitask.model.Lang
 import app.omnitask.model.tr
 import kotlin.math.roundToInt
@@ -45,7 +48,7 @@ private const val SAMPLE = "ส่งรายงานเวร พรุ่ง
  * [onLanguageChange] lets the caller refresh text the view model has already built in the old language.
  */
 @Composable
-fun SettingsScreen(onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
+fun SettingsScreen(profile: app.omnitask.model.Profile? = null, onSleepTimes: (java.time.LocalTime, java.time.LocalTime) -> Unit = { _, _ -> }, onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
     val context = LocalContext.current
     BackHandler(onBack = onBack)
 
@@ -76,6 +79,35 @@ fun SettingsScreen(onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
                 )
             }
         }
+        if (profile != null) {
+            item {
+                // The usual night; tonight alone can be moved from the Focus screen.
+                SettingsGroup(tr("การนอน", "Sleep")) {
+                    TimeRow(tr("เวลานอนประจำ", "Usual bedtime"), profile.sleep) { pickSystemTime(context, profile.sleep) { onSleepTimes(it, profile.wake) } }
+                    TimeRow(tr("เวลาตื่นประจำ", "Usual wake time"), profile.wake) { pickSystemTime(context, profile.wake) { onSleepTimes(profile.sleep, it) } }
+                    Text(
+                        tr("หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้", "After 6 pm Focus shows the time until bed and the hours of sleep. Tap that line to change tonight only."),
+                        Modifier.padding(top = 4.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                    )
+                }
+            }
+        }
+        item {
+            SettingsGroup(tr("ธีม", "Theme")) {
+                Segmented(
+                    ThemeMode.entries.map { it to it.label },
+                    Appearance.themeMode,
+                    { Appearance.setThemeMode(context, it) },
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Segmented(
+                    PaletteChoice.entries.map { it to it.label },
+                    Appearance.palette,
+                    { Appearance.setPalette(context, it) },
+                    Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                )
+            }
+        }
         item {
             SettingsGroup(tr("ฟอนต์", "Font")) {
                 Column(Modifier.selectableGroup().padding(top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -96,6 +128,14 @@ fun SettingsScreen(onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
                 SizePreview(Modifier.padding(top = 10.dp, bottom = 12.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun TimeRow(label: String, time: java.time.LocalTime, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), color = C.text, fontSize = TS.body)
+        Text("%02d:%02d".format(time.hour, time.minute), color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.Medium)
     }
 }
 

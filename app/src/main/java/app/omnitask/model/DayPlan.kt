@@ -113,6 +113,31 @@ object DayPlan {
         return SleepLeft(minutes, wakeAt, first.takeIf { byEvent != null && byEvent < byProfile })
     }
 
+    /** Tonight with a planned bedtime: how long until bed, and how long sleep can last after it. */
+    data class Night(val toBed: Long, val sleep: Long, val bedAt: LocalDateTime, val wakeAt: LocalDateTime, val because: CalendarEvent?)
+
+    /**
+     * From 18:00 until the morning wake time: bed is at [bedtime] (tonight's, after midnight when it is before
+     * noon, or now if it has passed), and sleep ends as in [sleepLeft]. Null during the day.
+     */
+    fun night(events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, bedtime: LocalTime): Night? {
+        val t = now.toLocalTime()
+        val evening = t >= LocalTime.of(18, 0)
+        if (!evening && t >= profile.wake) return null
+        // The evening this night belongs to.
+        val eve = if (evening) now.toLocalDate() else now.toLocalDate().minusDays(1)
+        val planned = if (bedtime >= LocalTime.NOON) eve.atTime(bedtime) else eve.plusDays(1).atTime(bedtime)
+        val bedAt = if (planned < now) now else planned
+        val left = sleepLeft(events, profile, bedAt.coerceAtMostMorning(eve, profile)) ?: return null
+        return Night(ChronoUnit.MINUTES.between(now, bedAt).coerceAtLeast(0), left.minutes, bedAt, left.wakeAt, left.because)
+    }
+
+    // A bedtime later than the wake time would read as daytime; keep it inside the night.
+    private fun LocalDateTime.coerceAtMostMorning(eve: LocalDate, profile: Profile): LocalDateTime {
+        val wake = eve.plusDays(1).atTime(profile.wake).minusMinutes(1)
+        return if (this > wake) wake else this
+    }
+
     private fun overlaps(e: CalendarEvent, day: LocalDate): Boolean =
         e.begin < day.plusDays(1).atStartOfDay() && e.end > day.atStartOfDay()
 

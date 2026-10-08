@@ -18,6 +18,7 @@ import app.omnitask.data.VaultRepository
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Insight
+import app.omnitask.model.Appearance
 import app.omnitask.model.Lang
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
@@ -101,6 +102,10 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** The task the Focus screen counts down to (by title), any task, not only today's. */
+    val countdown: String? = null,
+    /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
+    val tonightBed: Pair<LocalDate, java.time.LocalTime>? = null,
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
@@ -200,6 +205,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         notify = Scheduler.loadSettings(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        countdown = prefs.getString(KEY_COUNTDOWN, null),
+        tonightBed = prefs.getString(KEY_TONIGHT_BED, null)?.let { v ->
+            runCatching { LocalDate.parse(v.substringBefore(' ')) to java.time.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
+        },
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
@@ -271,6 +280,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (imported) {
                 Lang.load(getApplication())
+                Appearance.load(getApplication())
                 _state.update { fromPrefs(it) }
             }
             val result = withContext(Dispatchers.IO) {
@@ -1010,6 +1020,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(insight = null) }
     }
 
+    /** Pins a task for the Focus countdown, or clears it. */
+    fun setCountdown(task: Task?) {
+        prefs.edit().apply { if (task == null) remove(KEY_COUNTDOWN) else putString(KEY_COUNTDOWN, task.title) }.apply()
+        _state.update { it.copy(countdown = task?.title) }
+    }
+
+    /** Tonight's bedtime; the usual one comes back tomorrow. [evening] is the date the night starts on. */
+    fun setTonightBedtime(evening: LocalDate, time: java.time.LocalTime) {
+        prefs.edit().putString(KEY_TONIGHT_BED, "$evening ${"%02d:%02d".format(time.hour, time.minute)}").apply()
+        _state.update { it.copy(tonightBed = evening to time) }
+    }
+
+    /** The usual bedtime and wake time, kept in the profile note the assistant also reads. */
+    fun setSleepTimes(sleep: java.time.LocalTime, wake: java.time.LocalTime) = saveProfile(_state.value.profile.copy(sleep = sleep, wake = wake))
+
     /** Writes the profile note; saving also counts as "still true", so the re-ask clock restarts. */
     fun saveProfile(profile: Profile) {
         val vault = _state.value.vault ?: return
@@ -1064,6 +1089,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_STARRED = "starredProjects"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
+        const val KEY_COUNTDOWN = "focus.countdown"
+        const val KEY_TONIGHT_BED = "sleep.tonight"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
 

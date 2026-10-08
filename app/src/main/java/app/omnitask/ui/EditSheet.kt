@@ -331,7 +331,7 @@ private fun DescriptionBlock(task: Task, vm: TaskViewModel) {
     val long = text.length > 280 || text.lines().size > 6
     Column(
         Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
-            .border(1.dp, if (editing) Color(0xFF3A3466) else C.cardBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, if (editing) C.accentLine else C.cardBorder, RoundedCornerShape(14.dp))
             .clickable(enabled = !editing) { editing = true }.padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -449,7 +449,7 @@ private fun PropChip(icon: ImageVector, value: String?, name: String, open: Bool
     Row(
         Modifier.height(36.dp).clip(RoundedCornerShape(12.dp))
             .background(if (open) C.accentSoft else if (set) C.accentDeep else Color.Transparent)
-            .border(1.dp, if (open) C.accent else if (set) Color(0xFF3A3466) else C.control, RoundedCornerShape(12.dp))
+            .border(1.dp, if (open) C.accent else if (set) C.accentLine else C.control, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick).padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),

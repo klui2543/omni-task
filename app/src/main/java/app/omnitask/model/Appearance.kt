@@ -22,13 +22,44 @@ enum class FontChoice(private val th: String, private val en: String, val sizeFa
     val label get() = tr(th, en)
 }
 
+/** Light, dark, or whatever the phone is set to. */
+enum class ThemeMode(private val th: String, private val en: String) {
+    SYSTEM("ตามระบบ", "System"), LIGHT("สว่าง", "Light"), DARK("มืด", "Dark");
+
+    val label get() = tr(th, en)
+}
+
+/** The colour set: the Linear look (light and dark), or the first violet one (dark only). */
+enum class PaletteChoice(private val th: String, private val en: String) {
+    LINEAR("Linear", "Linear"), MIDNIGHT("สีเดิม (มืดเท่านั้น)", "Original (dark only)");
+
+    val label get() = tr(th, en)
+}
+
 /**
- * The app's font and text size. Both are Compose state, so changing them redraws every screen; the
+ * The app's font, text size and theme. Both are Compose state, so changing them redraws every screen; the
  * values live in the "omnitask" preferences, which the view model also mirrors to the vault.
  */
 object Appearance {
     var font by mutableStateOf(FontChoice.SARABUN)
         private set
+
+    var themeMode by mutableStateOf(ThemeMode.SYSTEM)
+        private set
+
+    var palette by mutableStateOf(PaletteChoice.LINEAR)
+        private set
+
+    /** Whether the phone is in dark mode; the activity keeps it current. */
+    var systemDark by mutableStateOf(true)
+
+    /** Whether the app draws dark now. */
+    val dark: Boolean
+        get() = palette == PaletteChoice.MIDNIGHT || when (themeMode) {
+            ThemeMode.SYSTEM -> systemDark
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+        }
 
     /** The owner's text size, 1 = the design size. */
     var scale by mutableFloatStateOf(1f)
@@ -43,6 +74,8 @@ object Appearance {
     private const val PREFS = "omnitask"
     private const val KEY_FONT = "appearance.font"
     private const val KEY_SCALE = "appearance.scale"
+    private const val KEY_THEME = "appearance.theme"
+    private const val KEY_PALETTE = "appearance.palette"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -58,6 +91,18 @@ object Appearance {
             is String -> v.toFloatOrNull()
             else -> null
         }?.takeIf { it in 0.5f..2f } ?: 1f
+        themeMode = (all[KEY_THEME] as? String)?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.SYSTEM
+        palette = (all[KEY_PALETTE] as? String)?.let { name -> PaletteChoice.entries.firstOrNull { it.name == name } } ?: PaletteChoice.LINEAR
+    }
+
+    fun setThemeMode(context: Context, value: ThemeMode) {
+        themeMode = value
+        prefs(context).edit().putString(KEY_THEME, value.name).apply()
+    }
+
+    fun setPalette(context: Context, value: PaletteChoice) {
+        palette = value
+        prefs(context).edit().putString(KEY_PALETTE, value.name).apply()
     }
 
     fun setFont(context: Context, value: FontChoice) {

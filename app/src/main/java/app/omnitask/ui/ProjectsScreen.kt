@@ -49,7 +49,7 @@ import app.omnitask.model.Task
 import app.omnitask.model.label
 import app.omnitask.model.tr
 
-private val RING = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red)
+private val RING get() = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

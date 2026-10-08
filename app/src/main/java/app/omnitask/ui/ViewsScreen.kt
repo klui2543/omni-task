@@ -179,7 +179,7 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
     val order = listOf(Status.TODO, Status.IN_PROGRESS, Status.DONE)
     val i = order.indexOf(t.status)
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, Color(0xFF2A2F3E), RoundedCornerShape(14.dp))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp))
             .taskDragSource(t.key, t.priority.tint) { onOpen(t) }.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {

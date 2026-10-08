@@ -1,6 +1,7 @@
 package app.omnitask
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.graphics.Color
 import androidx.activity.ComponentActivity
@@ -8,6 +9,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import app.omnitask.model.Appearance
 import app.omnitask.model.Lang
 import app.omnitask.ui.OmniTaskApp
@@ -24,14 +28,25 @@ class MainActivity : ComponentActivity() {
         CrashLog.install(this)
         Lang.load(this)
         Appearance.load(this)
-        // The app is always dark, so the system bars use light icons on a transparent bar.
-        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
+        Appearance.systemDark = systemDark()
         setContent {
+            // Follows the phone's dark mode while the app is open, and keeps the bar icons readable.
+            val phoneDark = isSystemInDarkTheme()
+            SideEffect { Appearance.systemDark = phoneDark }
+            val dark = Appearance.dark
+            DisposableEffect(dark) {
+                val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                enableEdgeToEdge(style, style)
+                onDispose { }
+            }
             OmniTheme { OmniTaskApp(viewModel) }
         }
         handle(intent)
         CrashLog.read(this)?.let { viewModel.showCrash(it) }
     }
+
+    private fun systemDark() =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

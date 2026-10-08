@@ -181,7 +181,7 @@ fun FilterBar(
 private fun ToolButton(label: String, active: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
     Row(
         Modifier.height(34.dp).clip(RoundedCornerShape(10.dp)).background(if (active) C.accentDeep else C.card)
-            .border(1.dp, if (active) Color(0xFF2D2852) else C.cardBorder, RoundedCornerShape(10.dp))
+            .border(1.dp, if (active) C.accentLine else C.cardBorder, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -240,7 +240,7 @@ fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.savedFilters.keys.sorted().forEach { name ->
                     Row(
-                        Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).border(1.dp, Color(0xFF3A3466), RoundedCornerShape(17.dp))
+                        Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).border(1.dp, C.accentLine, RoundedCornerShape(17.dp))
                             .combinedClickable(onClick = { vm.applyFilter(name) }, onLongClick = { vm.deleteFilter(name) }).padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
