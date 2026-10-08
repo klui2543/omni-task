@@ -13,15 +13,11 @@ async function setup(page: Page, text = TASKS) {
 
 async function signInAndPick(page: Page) {
   await page.goto('/')
-  await page.getByLabel('Client ID').fill('test.apps.googleusercontent.com')
-  await page.getByRole('button', { name: 'บันทึก' }).click()
   await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
-  await page.getByLabel('ชื่อโฟลเดอร์ vault').fill('ObsidianVault')
-  await page.getByRole('button', { name: 'ค้นหา' }).click()
   await page.getByRole('button', { name: /ObsidianVault/ }).click()
 }
 
-test('signs in, finds the vault and shows tasks by when they are due', async ({ page }) => {
+test('signs in, finds the vault by its TaskForge note and shows tasks by when they are due', async ({ page }) => {
   await setup(page)
   await signInAndPick(page)
 
@@ -97,7 +93,12 @@ test('says so when the vault has no TaskForge note', async ({ page }) => {
   drive.add('ObsidianVault', 'root')
   await page.clock.setFixedTime(TODAY)
   await drive.install(page)
-  await signInAndPick(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
+  await expect(page.getByText('ไม่พบ TaskForge.md ใน Drive')).toBeVisible()
+  await page.getByRole('button', { name: 'เลือกโฟลเดอร์ vault เอง' }).click()
+  await page.getByRole('button', { name: '📁 ObsidianVault' }).click()
+  await page.getByRole('button', { name: 'ใช้โฟลเดอร์ "ObsidianVault" เป็น vault' }).click()
   await expect(page.getByRole('alert')).toContainText('ไม่พบ')
 })
 
@@ -147,4 +148,39 @@ test('a parent with open subtasks asks before ticking', async ({ page }) => {
   await expect.poll(() => file.text).toBe(
     '- [x] เตรียมสไลด์ 📅 2026-10-08 ✅ 2026-10-08\n    - [x] ทำโครง ✅ 2026-10-08\n    - [x] หาข้อมูล ✅ 2026-10-07\n',
   )
+})
+
+test('finds the note when Drive stores the folder emoji another way', async ({ page }) => {
+  const drive = new FakeDrive()
+  // The same 📁 with the invisible "show as emoji" mark some sync apps add.
+  drive.vault(TASKS, 'ObsidianVault', '📁\uFE0F Folder')
+  await page.clock.setFixedTime(TODAY)
+  await drive.install(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
+  await expect(page.getByText('ObsidianVault / 📁\uFE0F Folder / หลังบ้าน / TaskForge')).toBeVisible()
+  await page.getByRole('button', { name: /ObsidianVault/ }).click()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+
+  // Picked by browsing instead of the search, the path is still followed.
+  await page.evaluate(() => localStorage.removeItem('omni.taskFileId'))
+  await page.reload()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+})
+
+test('the vault folder can be picked by opening folders', async ({ page }) => {
+  const drive = new FakeDrive()
+  const { root } = drive.vault(TASKS)
+  const elsewhere = drive.add('งานอื่น', 'root')
+  drive.add('Vault2', elsewhere.id)
+  await page.clock.setFixedTime(TODAY)
+  await drive.install(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
+  await page.getByRole('button', { name: 'เลือกโฟลเดอร์ vault เอง' }).click()
+  await page.getByRole('button', { name: '📁 ObsidianVault' }).click()
+  await expect(page.getByRole('button', { name: 'My Drive' })).toBeVisible()
+  await page.getByRole('button', { name: 'ใช้โฟลเดอร์ "ObsidianVault" เป็น vault' }).click()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+  expect(root.name).toBe('ObsidianVault')
 })

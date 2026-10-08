@@ -4,7 +4,7 @@ import { config } from './config'
 import { today } from './core'
 import { AuthExpired, Drive, DriveFile } from './drive'
 import type { Bucket, Task } from './types'
-import { Vault, VaultError } from './vault'
+import { FoundVault, Vault, VaultError, findVaults } from './vault'
 
 type Stage = 'setup' | 'signin' | 'vault' | 'ready'
 
@@ -80,14 +80,19 @@ export function App({ authError }: { authError: string | null }) {
       />
     )
   if (stage === 'vault')
-    return <PickVault drive={drive!} onPick={(id) => { config.vaultId = id; setVaultId(id) }} />
+    return (
+      <PickVault
+        drive={drive!}
+        onPick={(rootId, fileId) => { config.taskFileId = fileId; config.vaultId = rootId; setVaultId(rootId) }}
+      />
+    )
   return (
     <Main
       drive={drive!}
       vaultId={vaultId!}
       onSignIn={signIn}
       onSignOut={() => { auth!.signOut(); setSignedIn(false); location.reload() }}
-      onChangeVault={() => { config.vaultId = null; setVaultId(null) }}
+      onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
     />
   )
 }
@@ -121,53 +126,79 @@ function SignIn({ error, onSignIn, onReset }: { error: string | null; onSignIn: 
   )
 }
 
-function PickVault({ drive, onPick }: { drive: Drive; onPick: (id: string) => void }) {
-  const [name, setName] = useState('')
-  const [found, setFound] = useState<{ file: DriveFile; where: string }[] | null>(null)
+function PickVault({ drive, onPick }: { drive: Drive; onPick: (rootId: string, fileId: string | null) => void }) {
+  const [found, setFound] = useState<FoundVault[] | null>(null)
+  const [browsing, setBrowsing] = useState(false)
   const [error, setError] = useState('')
 
-  const search = async () => {
-    setError('')
-    try {
-      const folders = await drive.findFolders(name.trim())
-      const withPlace = await Promise.all(
-        folders.map(async (file) => {
-          const parent = file.parents?.[0] ? await drive.get(file.parents[0], 'name').catch(() => null) : null
-          return { file, where: parent?.name ?? 'My Drive' }
-        }),
-      )
-      setFound(withPlace)
-    } catch (e) {
-      setError(String((e as Error).message))
-    }
-  }
+  useEffect(() => {
+    findVaults(drive).then(setFound, (e) => { setError(String((e as Error).message)); setFound([]) })
+  }, [drive])
+
+  if (browsing) return <BrowseFolders drive={drive} onPick={(id) => onPick(id, null)} onBack={() => setBrowsing(false)} />
 
   return (
     <main class="card center">
       <h1>เลือก vault</h1>
-      <p>พิมพ์ชื่อโฟลเดอร์ของ Obsidian vault ใน Google Drive</p>
-      <form onSubmit={(e) => { e.preventDefault(); search() }}>
-        <input aria-label="ชื่อโฟลเดอร์ vault" value={name} onInput={(e) => setName(e.currentTarget.value)} />
-        <button class="primary" disabled={!name.trim()}>ค้นหา</button>
-      </form>
+      {found === null && <p class="muted">กำลังหา TaskForge.md ใน Google Drive...</p>}
       {error && <p class="error" role="alert">{error}</p>}
-      {found?.length === 0 && <p>ไม่พบโฟลเดอร์ชื่อนี้</p>}
+      {found?.length === 0 && !error && <p>ไม่พบ TaskForge.md ใน Drive ลองเลือกโฟลเดอร์ vault เอง</p>}
+      {found && found.length > 0 && <p>พบ TaskForge.md ใน Drive แตะเพื่อเลือก</p>}
       <ul class="plain">
-        {found?.map(({ file, where }) => (
-          <li key={file.id}>
-            <button class="row" onClick={() => onPick(file.id)}>
-              <strong>{file.name}</strong>
-              <span class="muted">อยู่ใน {where}</span>
+        {found?.map((v) => (
+          <li key={v.fileId}>
+            <button class="row" onClick={() => onPick(v.rootId, v.fileId)}>
+              <strong>{v.rootName}</strong>
+              <span class="muted">{v.path}</span>
             </button>
           </li>
         ))}
       </ul>
+      {found !== null && <button class="link" onClick={() => setBrowsing(true)}>เลือกโฟลเดอร์ vault เอง</button>}
+    </main>
+  )
+}
+
+/** Opens folders one by one from My Drive, for when the search does not find the vault. */
+function BrowseFolders({ drive, onPick, onBack }: { drive: Drive; onPick: (id: string) => void; onBack: () => void }) {
+  const [trail, setTrail] = useState<{ id: string; name: string }[]>([{ id: 'root', name: 'My Drive' }])
+  const [folders, setFolders] = useState<DriveFile[] | null>(null)
+  const [error, setError] = useState('')
+  const here = trail[trail.length - 1]
+
+  useEffect(() => {
+    setFolders(null)
+    drive.folders(here.id).then(setFolders, (e) => setError(String((e as Error).message)))
+  }, [here.id])
+
+  return (
+    <main class="card">
+      <h1>เลือกโฟลเดอร์ vault</h1>
+      <nav class="trail" aria-label="ตำแหน่ง">
+        {trail.map((f, i) => (
+          <button key={f.id} class="link" disabled={i === trail.length - 1} onClick={() => setTrail(trail.slice(0, i + 1))}>{f.name}</button>
+        ))}
+      </nav>
+      {here.id !== 'root' && (
+        <button class="primary" onClick={() => onPick(here.id)}>ใช้โฟลเดอร์ "{here.name}" เป็น vault</button>
+      )}
+      {error && <p class="error" role="alert">{error}</p>}
+      {folders === null && !error && <p class="muted">กำลังโหลด...</p>}
+      {folders?.length === 0 && <p class="muted">ไม่มีโฟลเดอร์ย่อย</p>}
+      <ul class="plain">
+        {folders?.map((f) => (
+          <li key={f.id}>
+            <button class="row folder" onClick={() => setTrail([...trail, { id: f.id, name: f.name }])}>📁 {f.name}</button>
+          </li>
+        ))}
+      </ul>
+      <button class="link" onClick={onBack}>กลับไปหน้าค้นหา</button>
     </main>
   )
 }
 
 function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onSignOut: () => void; onChangeVault: () => void }) {
-  const vault = useMemo(() => new Vault(p.drive, p.vaultId), [p.drive, p.vaultId])
+  const vault = useMemo(() => new Vault(p.drive, p.vaultId, config.taskFileId), [p.drive, p.vaultId])
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [showDone, setShowDone] = useState(false)
   const [busy, setBusy] = useState(false)
