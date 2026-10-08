@@ -97,6 +97,7 @@ object Ic {
     val pen = icon("pen", "M4 20l1-4 11-11 3 3-11 11Z", "M14 7l3 3")
     val moon = icon("moon", "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z")
     val branch = icon("branch", "M6 3.5v12", "M6 15.5a2.5 2.5 0 1 0 0.01 0Z", "M18 3.5a2.5 2.5 0 1 0 0.01 0Z", "M18 8.5c0 4.5-12 2.5-12 7")
+    val archive = icon("archive", "M3.5 4.5h17v4h-17Z", "M5 8.5v11h14v-11", "M10 12.5h4")
     val trash = icon("trash", "M4 7h16", "M9.5 7V4.5h5V7", "M6.5 7l1 13h9l1-13", "M10 11v5.5M14 11v5.5")
     val clock = icon("clock", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 7.5V12l3 2")
     val hourglass = icon("hourglass", "M7 3.5h10M7 20.5h10", "M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5", "M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5")
@@ -131,7 +132,7 @@ fun Pill(text: String, bg: Color, fg: Color, icon: ImageVector? = null, modifier
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(12.dp))
-        Text(text, color = fg, fontSize = TS.caption, lineHeight = 1.4.em, maxLines = 1)
+        if (text.isNotEmpty()) Text(text, color = fg, fontSize = TS.caption, lineHeight = 1.4.em, maxLines = 1)
     }
 }
 
@@ -284,26 +285,27 @@ fun OnOff(checked: Boolean) {
 
 data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageVector? = null)
 
-/** The small labels under a task title. */
+/** The date a label shows: today, tomorrow and yesterday by name, otherwise "12 ต.ค.". */
+fun shortDay(d: LocalDate, today: LocalDate): String = when (d) {
+    today -> tr("วันนี้", "Today")
+    today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow")
+    today.minusDays(1) -> tr("เมื่อวาน", "Yesterday")
+    else -> d.format(SHORT_DATE)
+}
+
+/** The small labels under a task title: an icon says what a date or count is, so the words can go. */
 fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false, progress: Pair<Int, Int>? = null): List<Meta> = buildList {
     progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else C.raised, if (done == all) C.lime else C.text2, Ic.tasks)) }
     val open = t.isOpen
     if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
     t.due?.let { d ->
         val late = open && d < today
-        val text = when {
-            d == today -> tr("ครบวันนี้", "Due today")
-            late -> tr("เลย ${d.format(SHORT_DATE)}", "Overdue ${d.format(SHORT_DATE)}")
-            else -> tr("ครบ ${d.format(SHORT_DATE)}", "Due ${d.format(SHORT_DATE)}")
-        }
-        add(Meta(text, if (late) C.redSoft else C.raised, if (late) C.red else C.text2))
+        add(Meta(shortDay(d, today), if (late) C.redSoft else C.raised, if (late) C.red else C.text2, Ic.calendar))
     }
-    if (t.due == null || !compact) t.scheduled?.let { d ->
-        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), C.raised, C.text2))
-    }
-    if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
+    if (t.due == null || !compact) t.scheduled?.let { d -> add(Meta(shortDay(d, today), C.raised, C.text2, Ic.hourglass)) }
+    // In progress already shows as the half-filled check.
     t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
-    t.recurrence?.let { add(Meta(Recurrence.describe(it), C.raised, C.text2, Ic.repeat)) }
+    t.recurrence?.let { add(Meta("", C.raised, C.text2, Ic.repeat)) }
     if (!compact) {
         val project = Projects.projectOf(t)
         t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->

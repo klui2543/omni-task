@@ -135,12 +135,13 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         }
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.padding(top = 0.dp)) { TaskCheck(task, { vm.toggleDone(task) }, size = 22.dp) }
-            Column(Modifier.weight(1f).padding(top = 8.dp)) {
-                Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
-                Text(
-                    tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"),
-                    color = C.faint, fontSize = TS.caption,
-                )
+            Text(task.title, Modifier.weight(1f).padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, color = C.text)
+            // A finished task (project work too) can be moved to the archive note by hand.
+            if (!task.isOpen && task.parent == null && task.list == null) {
+                Box(
+                    Modifier.padding(start = 6.dp, top = 2.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { vm.archiveTask(task); onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Ic.archive, tr("เก็บเข้าคลัง", "Archive"), tint = C.faint, modifier = Modifier.size(19.dp)) }
             }
             Box(
                 Modifier.padding(start = 6.dp, top = 2.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { deleting = true },
@@ -243,7 +244,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = true) {
+            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) "" else "${task.links.size}", fold == "links", first = true) {
                 fold = if (fold == "links") null else "links"
             }
             if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {
@@ -270,7 +271,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 )
             }
 
-            FoldRow(Ic.image, tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) tr("ไม่มี", "None") else tr("${task.attachments.size} รูป", "${task.attachments.size}"), fold == "images") {
+            FoldRow(Ic.image, tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) "" else "${task.attachments.size}", fold == "images") {
                 fold = if (fold == "images") null else "images"
             }
             if (fold == "images") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 12.dp)) {
@@ -288,10 +289,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                         Text(tr("แนบรูป", "Add image"), color = C.text2, fontSize = TS.caption)
                     }
                 }
-                Text(tr("บันทึกเป็น WebP แตะเพื่อดู กดค้างเพื่อลบ", "Saved as WebP. Tap to view, long-press to delete"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
             }
 
-            FoldRow(Ic.more, tr("รายละเอียดอื่น", "More details"), task.created?.let { tr("สร้าง ", "Created ") + it.format(SHORT_DATE) } ?: "", fold == "more") {
+            FoldRow(Ic.more, tr("รายละเอียดอื่น", "More details"), "", fold == "more") {
                 fold = if (fold == "more") null else "more"
             }
             if (fold == "more") Column(Modifier.padding(bottom = 4.dp)) {
@@ -299,6 +299,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 FieldRow(tr("วันที่สร้าง", "Created"), task.created?.format(SHORT_DATE), null)
                 FieldRow(tr("โปรเจกต์", "Project"), Projects.projectOf(task), null)
                 FieldRow(tr("ต้องรอ", "Waits on"), Projects.waitingOn(task, state.tasks), null)
+                FieldRow(tr("ไฟล์", "File"), tr("${task.noteName} บรรทัด ${task.lineIndex + 1}", "${task.noteName} line ${task.lineIndex + 1}"), null)
             }
         }
     }

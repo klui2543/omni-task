@@ -58,6 +58,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.omnitask.time.*
 
+const val DEFAULT_ARCHIVE_DAYS = 7
+
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
     val bucket: DateBucket? = null,
@@ -78,6 +80,14 @@ data class UiState(
     val message: String? = null,
     /** A task just deleted, offered for undo once (its title and the removed lines). */
     val deleted: Deleted? = null,
+    /** A task just moved to the archive note, offered for undo once. */
+    val archived: Deleted? = null,
+    /** A task just ticked done: ask whether to archive it, delete it or leave it. */
+    val finished: Task? = null,
+    /** Finished tasks move to the archive note after this many days; 0 leaves them in place. */
+    val archiveDays: Int = DEFAULT_ARCHIVE_DAYS,
+    /** Whether ticking a task done asks to archive or delete it. */
+    val askOnDone: Boolean = true,
     val futureCount: Int = 1,
     val skippedToday: Set<String> = emptySet(),
     val dismissed: Set<String> = emptySet(),
@@ -224,6 +234,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             ?.let { name -> UrgentRule.entries.firstOrNull { it.name == name } }
             ?: UrgentRule.THIS_WEEK,
         futureCount = prefs.getInt(KEY_FUTURE_COUNT, 1),
+        archiveDays = prefs.getInt(KEY_ARCHIVE_DAYS, DEFAULT_ARCHIVE_DAYS),
+        askOnDone = prefs.getBoolean(KEY_ASK_ON_DONE, true),
         skippedToday = prefs.getStringSet(KEY_SKIPPED, emptySet()).orEmpty()
             .filter { it.startsWith("${LocalDate.now()}|") }
             .map { it.substringAfter('|') }
@@ -318,6 +330,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 Appearance.load(getApplication())
                 _state.update { fromPrefs(it) }
             }
+            val swept = withContext(Dispatchers.IO) { runCatching { sweepIfDue(vault) }.getOrDefault(emptyList()) }
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
                     // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
@@ -356,20 +369,102 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     vaultName = vaultName,
                     profile = profile,
                     insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined()),
-                    message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") } ?: it.message,
+                    message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") }
+                        ?: swept.takeIf { s -> s.isNotEmpty() }?.let { s -> tr("ย้ายงานที่เสร็จ ${s.size} งานเข้าคลังแล้ว", "Moved ${s.size} finished tasks to the archive") }
+                        ?: it.message,
                 )
             }
         }
     }
 
     fun toggleDone(task: Task) {
+        // A repeating task moves on with its subtasks opened again, so there is nothing to ask about them.
+        if (task.recurrence != null && task.isOpen) return completeRecurring(task)
         if (task.isOpen && _state.value.subtasksOf(task).any { it.isOpen }) {
             _state.update { it.copy(closingParent = task) }
             return
         }
-        if (task.recurrence != null && task.isOpen) return completeRecurring(task)
         if (task.isOpen) logDone(task)
-        edit(task) { TaskLine.setDone(it, task.isOpen, LocalDate.now()) }
+        val next = TaskLine.setDone(task.raw, task.isOpen, LocalDate.now())
+        edit(task, onSaved = { if (task.isOpen) offerFinish(task, next) }) { next }
+    }
+
+    private fun descendants(task: Task): List<Task> = _state.value.subtasksOf(task).flatMap { listOf(it) + descendants(it) }
+
+    /**
+     * After a task is ticked done, asks whether to archive or delete it. Project work stays done in place, and
+     * so do subtasks, list items, repeating tasks and anything with work still open under it.
+     * [ticked] are the subtasks closed in the same step.
+     */
+    private fun offerFinish(task: Task, raw: String, ticked: Set<String> = emptySet()) {
+        if (!_state.value.askOnDone || task.parent != null || task.list != null || task.recurrence != null || Projects.projectOf(task) != null) return
+        if (descendants(task).any { it.isOpen && it.key !in ticked }) return
+        _state.update { it.copy(finished = task.copy(raw = raw, status = Status.DONE)) }
+    }
+
+    fun clearFinished() = _state.update { it.copy(finished = null) }
+
+    /** Answers the "archive or delete?" question for the task just finished. */
+    fun resolveFinished(archive: Boolean) {
+        val task = _state.value.finished ?: return
+        _state.update { it.copy(finished = null) }
+        if (archive) archiveTask(task) else deleteTask(task)
+    }
+
+    /** Moves a finished task with its whole block to the archive note; the snackbar offers undo. */
+    fun archiveTask(task: Task) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.archiveTask(vault, task, LocalDate.now()) } }
+            result.fold(
+                { cut -> _state.update { it.copy(archived = Deleted(task.title, cut)) } },
+                { e ->
+                    val text = if (e is VaultRepository.ConflictException) {
+                        tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+                    } else {
+                        tr("ย้ายเข้าคลังไม่ได้: ${e.message}", "Cannot archive: ${e.message}")
+                    }
+                    _state.update { it.copy(message = text) }
+                },
+            )
+            reload()
+        }
+    }
+
+    fun clearArchived() = _state.update { it.copy(archived = null) }
+
+    fun undoArchive(d: Deleted) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.unarchive(vault, d.cut) } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เอากลับไม่ได้: ${e.message}", "Cannot undo: ${e.message}")) } }
+            reload()
+        }
+    }
+
+    /** How many days finished tasks wait before moving to the archive; 0 turns it off. The next load sweeps. */
+    fun setArchiveDays(days: Int) {
+        prefs.edit().putInt(KEY_ARCHIVE_DAYS, days).remove(KEY_ARCHIVE_SWEPT).apply()
+        _state.update { it.copy(archiveDays = days) }
+        reload()
+    }
+
+    fun setAskOnDone(ask: Boolean) {
+        prefs.edit().putBoolean(KEY_ASK_ON_DONE, ask).apply()
+        _state.update { it.copy(askOnDone = ask) }
+    }
+
+    /**
+     * Once a day, moves finished tasks closed at least [UiState.archiveDays] days ago from the TaskForge note
+     * to the archive note. Project work stays. Returns the titles moved.
+     */
+    private fun sweepIfDue(vault: Uri): List<String> {
+        val days = prefs.getInt(KEY_ARCHIVE_DAYS, DEFAULT_ARCHIVE_DAYS)
+        val today = LocalDate.now()
+        if (days <= 0 || prefs.getString(KEY_ARCHIVE_SWEPT, null) == today.toString()) return emptyList()
+        val moved = repo.sweepDone(vault, today.minusDays(days.toLong()), today) { Projects.projectOf(it) != null }
+        prefs.edit().putString(KEY_ARCHIVE_SWEPT, today.toString()).apply()
+        return moved
     }
 
     /** Completes a repeating task by moving its line on to the next occurrence; no copy is added. */
@@ -405,7 +500,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setStatus(task: Task, status: Status) {
         if (status == Status.DONE && task.recurrence != null) return toggleDone(task)
         if (status == Status.DONE && task.isOpen) logDone(task)
-        edit(task) { TaskLine.setStatus(it, status, LocalDate.now()) }
+        val next = TaskLine.setStatus(task.raw, status, LocalDate.now())
+        edit(task, onSaved = { if (status == Status.DONE && task.isOpen) offerFinish(task, next) }) { next }
     }
 
     fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query) }
@@ -781,6 +877,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             logDone(parent)
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ", "Could not save: ") + e.message) } }
+            if (result.isSuccess) offerFinish(parent, TaskLine.setDone(parent.raw, true, LocalDate.now()), open.map { it.key }.toSet())
             reload()
         }
     }
@@ -1327,9 +1424,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putStringSet(KEY_DONE_LOG, (kept + entry).toSet()).apply()
     }
 
-    private fun edit(task: Task, transform: (String) -> String) {
+    private fun edit(task: Task, onSaved: (() -> Unit)? = null, transform: (String) -> String) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } }
+            if (result.isSuccess) onSaved?.invoke()
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
                     tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
@@ -1364,8 +1462,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_TONIGHT_BED = "sleep.tonight"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
+        const val KEY_ARCHIVE_DAYS = "archive.days"
+        const val KEY_ARCHIVE_SWEPT = "archive.sweptOn"
+        const val KEY_ASK_ON_DONE = "archive.askOnDone"
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
-        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT)
+        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT)
     }
 }

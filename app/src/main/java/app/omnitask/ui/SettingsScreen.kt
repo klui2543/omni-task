@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,12 +46,25 @@ import kotlin.math.roundToInt
 /** The sample every font is shown with: Thai with tone marks, a date word and a time, like a real task. */
 private const val SAMPLE = "ส่งรายงานเวร พรุ่งนี้ 09:00"
 
+/** What happens to finished tasks: how many days before they move to the archive note (0 is off), and whether ticking asks. */
+class ArchiveSettings(val days: Int, val ask: Boolean, val onDays: (Int) -> Unit, val onAsk: (Boolean) -> Unit)
+
+/** The choices for [ArchiveSettings.days]. */
+private val ARCHIVE_DAYS = listOf(0, 1, 3, 7, 14, 30)
+
 /**
  * Language, font and text size. Each change applies at once, because all three are Compose state.
  * [onLanguageChange] lets the caller refresh text the view model has already built in the old language.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(profile: app.omnitask.model.Profile? = null, onSleepTimes: (kotlinx.datetime.LocalTime, kotlinx.datetime.LocalTime) -> Unit = { _, _ -> }, onLanguageChange: () -> Unit = {}, onBack: () -> Unit) {
+fun SettingsScreen(
+    profile: app.omnitask.model.Profile? = null,
+    onSleepTimes: (kotlinx.datetime.LocalTime, kotlinx.datetime.LocalTime) -> Unit = { _, _ -> },
+    onLanguageChange: () -> Unit = {},
+    archive: ArchiveSettings? = null,
+    onBack: () -> Unit,
+) {
     val context = LocalContext.current
     BackHandler(onBack = onBack)
 
@@ -86,10 +101,30 @@ fun SettingsScreen(profile: app.omnitask.model.Profile? = null, onSleepTimes: (k
                 SettingsGroup(tr("การนอน", "Sleep")) {
                     TimeRow(tr("เวลานอนประจำ", "Usual bedtime"), profile.sleep) { pickSystemTime(context, profile.sleep) { onSleepTimes(it, profile.wake) } }
                     TimeRow(tr("เวลาตื่นประจำ", "Usual wake time"), profile.wake) { pickSystemTime(context, profile.wake) { onSleepTimes(profile.sleep, it) } }
+                    Box(Modifier.padding(bottom = 6.dp))
+                }
+            }
+        }
+        if (archive != null) {
+            item {
+                SettingsGroup(tr("งานที่เสร็จแล้ว", "Finished tasks")) {
+                    Text(tr("ย้ายเข้าคลังอัตโนมัติหลัง", "Move to the archive after"), Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body)
+                    FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ARCHIVE_DAYS.forEach { d ->
+                            Chip(if (d == 0) tr("ไม่ย้าย", "Never") else tr("$d วัน", if (d == 1) "1 day" else "$d days"), archive.days == d, { archive.onDays(d) })
+                        }
+                    }
                     Text(
-                        tr("หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้", "After 6 pm Focus shows the time until bed and the hours of sleep. Tap that line to change tonight only."),
-                        Modifier.padding(top = 4.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                        tr("ไปที่ TaskForge Archive.md (ยกเว้นงานโปรเจกต์)", "To TaskForge Archive.md (not project tasks)"),
+                        color = C.muted, fontSize = TS.caption,
                     )
+                    Row(Modifier.fillMaxWidth().clickable { archive.onAsk(!archive.ask) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(tr("ถามเมื่อติ๊กเสร็จ", "Ask when a task is done"), color = C.text, fontSize = TS.body)
+                            Text(tr("เก็บเข้าคลัง ลบ หรือไว้ก่อน", "Archive, delete or keep it"), color = C.muted, fontSize = TS.caption)
+                        }
+                        OnOff(archive.ask)
+                    }
                 }
             }
         }

@@ -210,9 +210,12 @@ function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onSignOu
   const [closing, setClosing] = useState<Task | null>(null)
   const input = useRef<HTMLInputElement>(null)
 
-  /** Ticks a task; a parent with open subtasks first asks whether to tick them too, as on Android. */
+  /**
+   * Ticks a task; a parent with open subtasks first asks whether to tick them too, as on Android.
+   * A repeating task never asks: it moves on to its next date with its subtasks opened again.
+   */
   const tick = (t: Task) => {
-    if (t.open && tasks?.some((c) => c.parent === t.key && c.open)) setClosing(t)
+    if (t.open && !t.recurrence && tasks?.some((c) => c.parent === t.key && c.open)) setClosing(t)
     else run(() => vault.toggle(t))
   }
 

@@ -133,14 +133,6 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
                     Text(open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                    Text(
-                        when {
-                            open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
-                            openList != null -> tr("แตะเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap to tick what you've done or watched")
-                            else -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
-                        },
-                        color = C.muted, fontSize = TS.caption,
-                    )
                 }
                 if (open != null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
                 if (open == null && openList == null && projects.size > 1) {
@@ -199,15 +191,15 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                 ProgressRing(p.ratio, 52.dp, 5.dp, RING[i % RING.size], "${(p.ratio * 100).toInt()}%", 12)
                                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
-                                    Text(tr("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", "${p.done} of ${p.tasks.size} done"), color = C.muted, fontSize = TS.caption)
+                                    Text("${p.done}/${p.tasks.size}", color = C.muted, fontSize = TS.caption)
                                 }
                                 val on = p.name in state.starred
                                 IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
                             }
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                p.next?.let { Pill(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), C.raised, C.text2) }
-                                if (p.overdue > 0) Pill(tr("เลยกำหนด ${p.overdue}", "Overdue ${p.overdue}"), C.redSoft, C.red)
-                                if (p.blocked.isNotEmpty()) Pill(tr("ติดรองานอื่น ${p.blocked.size}", "Blocked ${p.blocked.size}"), C.amberSoft, C.amber, Ic.lock)
+                                p.next?.let { Pill(it.title, C.raised, C.text2, Ic.next) }
+                                if (p.overdue > 0) Pill("${p.overdue}", C.redSoft, C.red, Ic.clock)
+                                if (p.blocked.isNotEmpty()) Pill("${p.blocked.size}", C.amberSoft, C.amber, Ic.lock)
                             }
                         }
                     }
@@ -236,11 +228,6 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(tr("ต้องทำตามลำดับ", "Do in order"), color = C.text, fontSize = TS.body)
-                        Text(
-                            if (strict) tr("งานถัดไปรองานก่อนหน้า (เขียนรหัสงานลงไฟล์ให้ปลั๊กอิน Tasks เห็นด้วย)", "Each task waits for the one before (written as task ids for the Tasks plugin)")
-                            else tr("ปิดอยู่: ลำดับเป็นแค่คำแนะนำ ทำข้ามได้", "Off: the order is a suggestion, skip ahead freely"),
-                            color = C.muted, fontSize = TS.caption,
-                        )
                     }
                     OnOff(strict)
                 }
@@ -263,7 +250,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                     else -> listOfNotNull(
                                         if (pos == 0) tr("ทำถัดไป", "Next") else null,
                                         (t.due ?: t.scheduled)?.format(SHORT_DATE),
-                                        state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
+                                        state.progressOf(t)?.let { (d, n) -> "$d/$n" },
                                     ).joinToString(", ")
                                 }
                             },
@@ -285,15 +272,6 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         Box(Modifier.height(4.dp))
                     }
                 }
-            }
-            item {
-                Text(
-                    tr(
-                        "Milestone จะมาพร้อมรูปแบบไฟล์ dotpm ส่วนงานที่ต้องรองานอื่นใช้รหัสงานแบบปลั๊กอิน Tasks",
-                        "Milestones will come with the dotpm file format. Dependencies use task ids like the Tasks plugin.",
-                    ),
-                    Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = TS.caption,
-                )
             }
         }
     }

@@ -178,20 +178,16 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
 
         // What the sentence was read as, so a wrong guess is visible before saving.
         val chips = if (target != null) emptyList() else buildList {
-            draft.due?.let { add(if (it == state.today) tr("วันนี้", "Today") else it.format(SHORT_DATE)) }
-            draft.time?.let { add(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute)) }
-            draft.tags.forEach { add("#$it") }
-            if (draft.priority != Priority.NONE) add(draft.priority.label)
+            draft.due?.let { add(Ic.calendar to shortDay(it, state.today)) }
+            draft.time?.let { add(Ic.bell to "%02d:%02d".format(it.hour, it.minute)) }
+            draft.tags.forEach { add(Ic.hash to it) }
+            if (draft.priority != Priority.NONE) add(Ic.flag to draft.priority.label)
         }
         if (chips.isNotEmpty()) {
             FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                chips.forEach { Pill(it, C.accentSoft, C.accentText) }
+                chips.forEach { (icon, value) -> Pill(value, C.accentSoft, C.accentText, icon) }
             }
         }
-        Text(
-            tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
-            Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,
-        )
 
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIcon(Ic.mic, tr("พูด", "Speak"), C.raised, C.text2) { startListening() }

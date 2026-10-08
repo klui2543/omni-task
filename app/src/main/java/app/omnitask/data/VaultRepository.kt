@@ -27,6 +27,8 @@ class VaultRepository(private val context: Context) {
         val files = listMarkdown(treeUri)
         val lists = ArrayList<OmniList>()
         val tasks = files.flatMap { file ->
+            // The archive keeps finished work for Obsidian; the app leaves it unread so Done stays short.
+            if (file.path == Archive.FILE) return@flatMap emptyList<Task>()
             val text = readText(file.uri)
             // Lines in a list note (Bucket list, Watch list...) are marked with the list's name.
             val list = OmniList.parse(file.path, text)?.also { lists += it }
@@ -53,8 +55,9 @@ class VaultRepository(private val context: Context) {
      * and notes the completion in the app's history. Returns false (and writes nothing) when the rule cannot be read.
      */
     fun completeRecurring(task: Task, today: LocalDate): Boolean {
-        val next = TaskLine.advanceRecurring(task.raw, today) ?: return false
-        rewriteLine(task) { next }
+        if (TaskLine.advanceRecurring(task.raw, today) == null) return false
+        // Its subtasks are unticked in the same write, so the next round starts with the checklist open.
+        editLines(task) { lines, index -> VaultText.advanceRecurring(lines, index, today) }
         RecurHistory.add(context, task.title, today)
         return true
     }
@@ -93,6 +96,45 @@ class VaultRepository(private val context: Context) {
     fun restore(cut: Cut) {
         val uri = Uri.parse(cut.fileUri)
         writeText(uri, VaultText.restore(readText(uri), cut.index, cut.lines)) ?: throw java.io.IOException("Cannot write")
+    }
+
+    /**
+     * Moves the task with its whole block to the end of the archive note and returns what was cut, for undo.
+     * If the archive cannot be written, the task is put back.
+     */
+    fun archiveTask(treeUri: Uri, task: Task, today: LocalDate): Cut {
+        val cut = deleteTask(task)
+        try {
+            writePath(treeUri, Archive.FILE, Archive.append(readPath(treeUri, Archive.FILE), listOf(cut.lines), today))
+        } catch (e: Exception) {
+            restore(cut)
+            throw e
+        }
+        return cut
+    }
+
+    /** Puts an archived task back where it was and takes it out of the archive note. */
+    fun unarchive(treeUri: Uri, cut: Cut) {
+        restore(cut)
+        readPath(treeUri, Archive.FILE)?.let { text -> Archive.remove(text, cut.lines)?.let { writePath(treeUri, Archive.FILE, it) } }
+    }
+
+    /**
+     * Moves finished tasks closed on or before [cutoff] from the live TaskForge note to the archive; see
+     * [Archive.sweep]. The archive is written first and the live note is read again before it is replaced,
+     * so an edit made meanwhile is never lost (the archive is put back and nothing moves). Returns the titles moved.
+     */
+    fun sweepDone(treeUri: Uri, cutoff: LocalDate, today: LocalDate, keep: (Task) -> Boolean): List<String> {
+        val text = readPath(treeUri, TASK_FILE) ?: return emptyList()
+        val sweep = Archive.sweep(text, cutoff, keep) ?: return emptyList()
+        val before = readPath(treeUri, Archive.FILE)
+        writePath(treeUri, Archive.FILE, Archive.append(before, sweep.blocks, today))
+        if (readPath(treeUri, TASK_FILE) != text) {
+            writePath(treeUri, Archive.FILE, before ?: "")
+            return emptyList()
+        }
+        writePath(treeUri, TASK_FILE, sweep.text)
+        return sweep.titles
     }
 
     /**
