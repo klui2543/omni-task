@@ -71,11 +71,21 @@ object WebCore {
         return VaultText.parseFile("", "", text).firstOrNull { it.lineIndex == index }
     }
 
-    /** Ticks or unticks a task; a repeating task moves on to its next date instead of being ticked. */
-    fun toggle(text: String, raw: String, lineIndex: Int, today: String): String {
+    /**
+     * Ticks or unticks a task; a repeating task moves on to its next date instead of being ticked. With
+     * [withSubtasks], the task's open direct subtasks are ticked in the same write, as the Android app offers.
+     */
+    fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean = false): String {
         val day = LocalDate.parse(today)
         val task = find(text, raw, lineIndex) ?: return fail("conflict")
+        val children = if (withSubtasks && task.isOpen) {
+            VaultText.parseFile("", "", text).filter { it.parent == task.key && it.isOpen }
+        } else {
+            emptyList()
+        }
         val edited = VaultText.edit(text, task) { lines, i ->
+            // Ticking changes no line count, so the subtasks are still where they were parsed.
+            children.forEach { lines[it.lineIndex] = TaskLine.setDone(it.raw, true, day) }
             if (task.recurrence != null && task.isOpen) {
                 lines[i] = TaskLine.advanceRecurring(task.raw, day) ?: throw RuleUnreadable()
             } else {

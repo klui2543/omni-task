@@ -1,78 +1,107 @@
-// Google sign-in with the token flow of Google Identity Services: the browser gets a short-lived access token
-// for the owner's Drive and the app talks to Drive directly. Nothing passes through a server of ours.
+// Google sign-in by redirect (OAuth 2.0 for browser apps): the page goes to Google and comes back with a
+// short-lived access token in the address. A redirect, not a popup, because popups are often blocked in an app
+// added to the iPad home screen. The token is kept on this device until it runs out (an hour), so opening the
+// app again does not ask again; after that one quiet round trip to Google renews it.
 
-const SCRIPT = 'https://accounts.google.com/gsi/client'
+const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
+const REVOKE = 'https://oauth2.googleapis.com/revoke'
 export const SCOPE = 'https://www.googleapis.com/auth/drive'
 
-interface TokenResponse {
-  access_token?: string
-  expires_in?: number
-  error?: string
+const TOKEN_KEY = 'omni.token'
+const STATE_KEY = 'omni.oauthState'
+const SILENT_KEY = 'omni.silentTried'
+const SIGNED_IN_BEFORE = 'omni.signedInBefore'
+
+interface Stored {
+  token: string
+  expiresAt: number
 }
 
-declare const google: {
-  accounts: {
-    oauth2: {
-      initTokenClient(c: {
-        client_id: string
-        scope: string
-        callback: (r: TokenResponse) => void
-        error_callback?: (e: { type: string }) => void
-      }): { requestAccessToken(o?: { prompt?: string }): void }
-      revoke(token: string, done?: () => void): void
+const store = {
+  get: (s: Storage, k: string) => {
+    try {
+      return s.getItem(k)
+    } catch {
+      return null
     }
-  }
+  },
+  set: (s: Storage, k: string, v: string | null) => {
+    try {
+      if (v === null) s.removeItem(k)
+      else s.setItem(k, v)
+    } catch {
+      /* not remembered; the next launch signs in again */
+    }
+  },
 }
 
-let loading: Promise<void> | null = null
-function loadScript(): Promise<void> {
-  loading ??= new Promise((resolve, reject) => {
-    const s = document.createElement('script')
-    s.src = SCRIPT
-    s.async = true
-    s.onload = () => resolve()
-    s.onerror = () => reject(new Error('โหลดตัวล็อกอินของ Google ไม่ได้ ตรวจสอบอินเทอร์เน็ต'))
-    document.head.appendChild(s)
-  })
-  return loading
-}
+/** The address Google sends the owner back to; it must be listed as an authorized redirect URI. */
+export const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '')
 
 export class Auth {
-  private token: string | null = null
-  private expiresAt = 0
-
   constructor(private clientId: string) {}
 
-  get signedIn() {
-    return this.token !== null && Date.now() < this.expiresAt - 30_000
+  /**
+   * Picks up what Google just sent back in the address, if anything, and clears it from the address bar.
+   * Returns Google's error when sign-in did not happen.
+   */
+  static consumeRedirect(): string | null {
+    if (!location.hash.includes('state=')) return null
+    const p = new URLSearchParams(location.hash.slice(1))
+    history.replaceState(null, '', location.pathname + location.search)
+    const expected = store.get(sessionStorage, STATE_KEY)
+    store.set(sessionStorage, STATE_KEY, null)
+    if (!expected || p.get('state') !== expected) return 'state_mismatch'
+    const token = p.get('access_token')
+    if (!token) return p.get('error') ?? 'no_token'
+    const stored: Stored = { token, expiresAt: Date.now() + Number(p.get('expires_in') ?? 3600) * 1000 }
+    store.set(localStorage, TOKEN_KEY, JSON.stringify(stored))
+    store.set(localStorage, SIGNED_IN_BEFORE, '1')
+    store.set(sessionStorage, SILENT_KEY, null)
+    return null
   }
 
-  /** The access token; asks Google again when it has run out. [prompt] '' signs in without a dialog when allowed. */
-  async getToken(prompt: '' | 'consent' | 'select_account' = ''): Promise<string> {
-    if (this.signedIn) return this.token!
-    await loadScript()
-    return new Promise((resolve, reject) => {
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: this.clientId,
-        scope: SCOPE,
-        callback: (r) => {
-          if (r.access_token) {
-            this.token = r.access_token
-            this.expiresAt = Date.now() + (r.expires_in ?? 3600) * 1000
-            resolve(r.access_token)
-          } else {
-            reject(new Error(r.error ?? 'sign-in failed'))
-          }
-        },
-        error_callback: (e) => reject(new Error(e.type)),
-      })
-      client.requestAccessToken({ prompt })
+  /** The access token while it is still good for a minute or more, else null. */
+  get token(): string | null {
+    const raw = store.get(localStorage, TOKEN_KEY)
+    if (!raw) return null
+    try {
+      const s: Stored = JSON.parse(raw)
+      return Date.now() < s.expiresAt - 60_000 ? s.token : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Whether to renew quietly now: signed in on this device before, the token has run out, and no quiet try has
+   * failed in this visit (Google answers a quiet try it cannot serve with an error, which must not loop).
+   */
+  get shouldRenewSilently() {
+    return this.token === null && store.get(localStorage, SIGNED_IN_BEFORE) === '1' && store.get(sessionStorage, SILENT_KEY) !== '1'
+  }
+
+  /** Leaves the page for Google. [prompt] 'none' renews without showing anything when Google allows it. */
+  signIn(prompt: 'none' | 'select_account' = 'select_account') {
+    const state = crypto.randomUUID()
+    store.set(sessionStorage, STATE_KEY, state)
+    if (prompt === 'none') store.set(sessionStorage, SILENT_KEY, '1')
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      redirect_uri: redirectUri(),
+      response_type: 'token',
+      scope: SCOPE,
+      include_granted_scopes: 'true',
+      state,
+      prompt,
     })
+    location.assign(`${AUTHORIZE}?${params}`)
   }
 
   signOut() {
-    if (this.token) google.accounts.oauth2.revoke(this.token)
-    this.token = null
-    this.expiresAt = 0
+    const token = this.token
+    if (token) fetch(`${REVOKE}?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
+    store.set(localStorage, TOKEN_KEY, null)
+    store.set(localStorage, SIGNED_IN_BEFORE, null)
   }
 }

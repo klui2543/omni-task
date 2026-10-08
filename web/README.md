@@ -17,11 +17,21 @@ npm test         # browser tests against a fake Google Drive
 
 1. In Google Cloud Console, create a project and enable the Google Drive API.
 2. OAuth consent screen: user type External, publishing status Testing, add your own Google account as a test user.
-3. Credentials > Create credentials > OAuth client ID > Web application. Under Authorized JavaScript origins add the
-   address the app is served from (for example `https://<user>.github.io`; `http://localhost:5173` for `npm run dev`).
+3. Credentials > Create credentials > OAuth client ID > Web application.
+   - Authorized JavaScript origins: where the app is served from, e.g. `https://<user>.github.io`
+     (and `http://localhost:5173` for `npm run dev`).
+   - Authorized redirect URIs: the app's exact address, e.g. `https://<user>.github.io/omni-task/`
+     (and `http://localhost:5173/`).
 4. Open the app and paste the client ID when asked. It is kept on that device only.
 
-The app asks for the `drive` scope, which lets it find the vault folder by name. Nothing passes through a server of ours.
+The app asks for the `drive` scope, which lets it find the vault folder by name. Sign-in is a redirect to Google and
+back, not a popup, since popups are often blocked in an app added to the iPad home screen. The access token is kept
+on the device for its hour; after that one quiet round trip to Google renews it. Nothing passes through a server of ours.
+
+## On a computer
+
+The same address works in any desktop browser. Chrome and Edge can also install it as an app (the install icon in
+the address bar).
 
 ## Add to the iPad home screen
 

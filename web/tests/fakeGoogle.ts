@@ -14,6 +14,10 @@ export class FakeDrive {
   nodes: Node[] = []
   private next = 1
   requests: string[] = []
+  /** The prompt of each trip to Google's sign-in page. */
+  signIns: string[] = []
+  /** Makes Google refuse quiet renewals, as when the owner has signed out of Google meanwhile. */
+  refuseQuiet = false
   /** Runs once, right after the app's next read of a file, to play someone else editing it. */
   afterNextRead: ((n: Node) => void) | null = null
 
@@ -41,14 +45,20 @@ export class FakeDrive {
   }
 
   async install(page: Page) {
-    await page.route('https://accounts.google.com/gsi/client', (route) =>
-      route.fulfill({
-        contentType: 'text/javascript',
-        body: `window.google = { accounts: { oauth2: {
-          initTokenClient: (c) => ({ requestAccessToken: () => setTimeout(() => c.callback({ access_token: 'fake-token', expires_in: 3600 }), 10) }),
-          revoke: () => {} } } }`,
-      }),
-    )
+    // Google's sign-in page: sends the browser straight back with a token (or, for a quiet try it is told to
+    // refuse, with Google's error), as the real one does once the owner has agreed.
+    await page.route('https://accounts.google.com/o/oauth2/v2/auth**', (route) => {
+      const q = new URL(route.request().url()).searchParams
+      this.signIns.push(q.get('prompt') ?? '')
+      const back = new URLSearchParams({ state: q.get('state') ?? '' })
+      if (q.get('prompt') === 'none' && this.refuseQuiet) back.set('error', 'interaction_required')
+      else {
+        back.set('access_token', 'fake-token')
+        back.set('token_type', 'Bearer')
+        back.set('expires_in', '3600')
+      }
+      return route.fulfill({ status: 302, headers: { location: `${q.get('redirect_uri')}#${back}` } })
+    })
     await page.route('https://www.googleapis.com/**', async (route) => {
       const req = route.request()
       const url = new URL(req.url())

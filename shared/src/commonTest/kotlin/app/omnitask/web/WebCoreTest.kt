@@ -39,4 +39,13 @@ class WebCoreTest {
         assertTrue(r.contains("\"title\":\"ส่งรายงาน\""), r)
         assertTrue(r.contains("\"bucket\":\"TODAY\""), r)
     }
+
+    @Test
+    fun parentCanCloseItsOpenSubtasksInOneWrite() {
+        val text = "- [ ] เตรียมสไลด์\n    - [ ] ทำโครง\n    - [x] หาข้อมูล ✅ 2026-10-07\n- [ ] งานอื่น"
+        val both = WebCore.toggle(text, "- [ ] เตรียมสไลด์", 0, "2026-10-08", withSubtasks = true)
+        assertTrue(both.contains("- [x] เตรียมสไลด์ ✅ 2026-10-08\\n    - [x] ทำโครง ✅ 2026-10-08\\n    - [x] หาข้อมูล ✅ 2026-10-07\\n- [ ] งานอื่น"), both)
+        val onlyParent = WebCore.toggle(text, "- [ ] เตรียมสไลด์", 0, "2026-10-08")
+        assertTrue(onlyParent.contains("    - [ ] ทำโครง"), onlyParent)
+    }
 }

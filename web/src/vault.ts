@@ -45,8 +45,8 @@ export class Vault {
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
   }
 
-  toggle(task: Task) {
-    return this.edit((text) => toggle(text, task))
+  toggle(task: Task, withSubtasks = false) {
+    return this.edit((text) => toggle(text, task, withSubtasks))
   }
 
   add(sentence: string) {

@@ -8,6 +8,23 @@ import { Vault, VaultError } from './vault'
 
 type Stage = 'setup' | 'signin' | 'vault' | 'ready'
 
+const DRAFT_KEY = 'omni.draft'
+const sessionStorageGet = (k: string) => {
+  try {
+    return sessionStorage.getItem(k) ?? ''
+  } catch {
+    return ''
+  }
+}
+const sessionStorageSet = (k: string, v: string) => {
+  try {
+    if (v) sessionStorage.setItem(k, v)
+    else sessionStorage.removeItem(k)
+  } catch {
+    /* the draft is just not kept */
+  }
+}
+
 const BUCKETS: [Bucket, string][] = [
   ['OVERDUE', 'เลยกำหนด'],
   ['TODAY', 'วันนี้'],
@@ -22,22 +39,46 @@ const PRIORITY: Record<string, string> = { HIGHEST: '🔺', HIGH: '⏫', MEDIUM:
 const shortDate = (iso: string) =>
   new Date(iso + 'T00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 
-export function App() {
+/** Google's answers to a quiet sign-in it cannot serve; they only mean the owner has to tap the button. */
+const QUIET_ERRORS = ['interaction_required', 'login_required', 'consent_required']
+
+export function App({ authError }: { authError: string | null }) {
   const [clientId, setClientId] = useState(config.clientId)
   const [vaultId, setVaultId] = useState(config.vaultId)
   const [signedIn, setSignedIn] = useState(false)
   const auth = useMemo(() => (clientId ? new Auth(clientId) : null), [clientId])
-  const drive = useMemo(() => (auth ? new Drive(() => auth.getToken()) : null), [auth])
+  const drive = useMemo(
+    () =>
+      auth
+        ? new Drive(() => {
+            const token = auth.token
+            if (!token) throw new AuthExpired()
+            return token
+          })
+        : null,
+    [auth],
+  )
+  const hasToken = signedIn || auth?.token != null
+  const renewing = auth != null && !hasToken && auth.shouldRenewSilently
 
-  const stage: Stage = !clientId ? 'setup' : !signedIn ? 'signin' : !vaultId ? 'vault' : 'ready'
+  // The token ran out since last time: renew it with a quiet trip to Google instead of asking.
+  useEffect(() => {
+    if (renewing) auth!.signIn('none')
+  }, [renewing])
 
-  const signIn = async () => {
-    await auth!.getToken('select_account')
-    setSignedIn(true)
-  }
+  const stage: Stage = !clientId ? 'setup' : !hasToken ? 'signin' : !vaultId ? 'vault' : 'ready'
+  const signIn = () => auth!.signIn(auth!.shouldRenewSilently ? 'none' : 'select_account')
 
   if (stage === 'setup') return <Setup onSave={(id) => { config.clientId = id; setClientId(id) }} />
-  if (stage === 'signin') return <SignIn onSignIn={signIn} onReset={() => { config.clientId = null; setClientId(null) }} />
+  if (renewing) return <main class="card center"><p class="muted">กำลังเข้าสู่ระบบ...</p></main>
+  if (stage === 'signin')
+    return (
+      <SignIn
+        error={authError && !QUIET_ERRORS.includes(authError) ? authError : null}
+        onSignIn={() => auth!.signIn('select_account')}
+        onReset={() => { config.clientId = null; setClientId(null) }}
+      />
+    )
   if (stage === 'vault')
     return <PickVault drive={drive!} onPick={(id) => { config.vaultId = id; setVaultId(id) }} />
   return (
@@ -45,7 +86,7 @@ export function App() {
       drive={drive!}
       vaultId={vaultId!}
       onSignIn={signIn}
-      onSignOut={() => { auth!.signOut(); setSignedIn(false) }}
+      onSignOut={() => { auth!.signOut(); setSignedIn(false); location.reload() }}
       onChangeVault={() => { config.vaultId = null; setVaultId(null) }}
     />
   )
@@ -68,15 +109,12 @@ function Setup({ onSave }: { onSave: (id: string) => void }) {
   )
 }
 
-function SignIn({ onSignIn, onReset }: { onSignIn: () => Promise<void>; onReset: () => void }) {
-  const [error, setError] = useState('')
+function SignIn({ error, onSignIn, onReset }: { error: string | null; onSignIn: () => void; onReset: () => void }) {
   return (
     <main class="card center">
       <h1>Omni Task</h1>
       <p>อ่านและเขียนงานใน Obsidian vault ของคุณบน Google Drive โดยตรง</p>
-      <button class="primary" onClick={() => onSignIn().catch((e) => setError(String(e.message ?? e)))}>
-        เข้าสู่ระบบด้วย Google
-      </button>
+      <button class="primary" onClick={onSignIn}>เข้าสู่ระบบด้วย Google</button>
       {error && <p class="error" role="alert">เข้าสู่ระบบไม่สำเร็จ ({error})</p>}
       <button class="link" onClick={onReset}>เปลี่ยน Client ID</button>
     </main>
@@ -128,15 +166,24 @@ function PickVault({ drive, onPick }: { drive: Drive; onPick: (id: string) => vo
   )
 }
 
-function Main(p: { drive: Drive; vaultId: string; onSignIn: () => Promise<void>; onSignOut: () => void; onChangeVault: () => void }) {
+function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onSignOut: () => void; onChangeVault: () => void }) {
   const vault = useMemo(() => new Vault(p.drive, p.vaultId), [p.drive, p.vaultId])
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [showDone, setShowDone] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [needSignIn, setNeedSignIn] = useState(false)
-  const [sentence, setSentence] = useState('')
+  // The draft survives the trip to Google when the sign-in runs out while typing.
+  const [sentence, setSentenceState] = useState(() => sessionStorageGet(DRAFT_KEY))
+  const setSentence = (v: string) => { setSentenceState(v); sessionStorageSet(DRAFT_KEY, v) }
+  const [closing, setClosing] = useState<Task | null>(null)
   const input = useRef<HTMLInputElement>(null)
+
+  /** Ticks a task; a parent with open subtasks first asks whether to tick them too, as on Android. */
+  const tick = (t: Task) => {
+    if (t.open && tasks?.some((c) => c.parent === t.key && c.open)) setClosing(t)
+    else run(() => vault.toggle(t))
+  }
 
   /** Runs one action against the vault and turns each way it can fail into a plain message. */
   const run = async (action: () => Promise<unknown>) => {
@@ -212,7 +259,7 @@ function Main(p: { drive: Drive; vaultId: string; onSignIn: () => Promise<void>;
 
       {needSignIn && (
         <div class="banner" role="alert">
-          หมดเวลาเข้าสู่ระบบ <button onClick={() => p.onSignIn().then(() => run(async () => undefined))}>เข้าสู่ระบบอีกครั้ง</button>
+          หมดเวลาเข้าสู่ระบบ <button onClick={p.onSignIn}>เข้าสู่ระบบอีกครั้ง</button>
         </div>
       )}
       {message && <div class="banner" role="alert">{message}</div>}
@@ -227,7 +274,7 @@ function Main(p: { drive: Drive; vaultId: string; onSignIn: () => Promise<void>;
             return (
               <section key={bucket}>
                 <h2>{label} <span class="count">{list.length}</span></h2>
-                <ul class="plain">{list.map((t) => <TaskRow key={t.key} task={t} busy={busy} onToggle={() => run(() => vault.toggle(t))} />)}</ul>
+                <ul class="plain">{list.map((t) => <TaskRow key={t.key} task={t} busy={busy} onToggle={() => tick(t)} />)}</ul>
               </section>
             )
           })}
@@ -235,8 +282,19 @@ function Main(p: { drive: Drive; vaultId: string; onSignIn: () => Promise<void>;
           <button class="link" onClick={() => setShowDone(!showDone)}>
             {showDone ? 'ซ่อน' : 'ดู'}งานที่เสร็จวันนี้ ({doneToday.length})
           </button>
-          {showDone && <ul class="plain">{doneToday.map((t) => <TaskRow key={t.key} task={t} busy={busy} onToggle={() => run(() => vault.toggle(t))} />)}</ul>}
+          {showDone && <ul class="plain">{doneToday.map((t) => <TaskRow key={t.key} task={t} busy={busy} onToggle={() => tick(t)} />)}</ul>}
         </>
+      )}
+
+      {closing && (
+        <div class="scrim" onClick={() => setClosing(null)}>
+          <div class="dialog" role="dialog" aria-modal="true" aria-label="งานย่อยยังค้าง" onClick={(e) => e.stopPropagation()}>
+            <h2>งานย่อยของ "{closing.title}" ยังค้างอยู่</h2>
+            <button class="primary" onClick={() => { const t = closing; setClosing(null); run(() => vault.toggle(t, true)) }}>ติ๊กงานย่อยด้วย</button>
+            <button onClick={() => { const t = closing; setClosing(null); run(() => vault.toggle(t)) }}>ติ๊กแค่งานนี้</button>
+            <button class="link" onClick={() => setClosing(null)}>ยกเลิก</button>
+          </div>
+        </div>
       )}
     </main>
   )

@@ -100,3 +100,51 @@ test('says so when the vault has no TaskForge note', async ({ page }) => {
   await signInAndPick(page)
   await expect(page.getByRole('alert')).toContainText('ไม่พบ')
 })
+
+test('opening the app again stays signed in, and a run-out token renews quietly', async ({ page }) => {
+  const { drive } = await setup(page)
+  await signInAndPick(page)
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+  expect(drive.signIns).toEqual(['select_account'])
+
+  // An hour later the token has run out: one quiet trip to Google, no sign-in screen.
+  await page.evaluate(() => {
+    const t = JSON.parse(localStorage.getItem('omni.token')!)
+    localStorage.setItem('omni.token', JSON.stringify({ ...t, expiresAt: Date.now() - 1 }))
+  })
+  await page.reload()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+  expect(drive.signIns).toEqual(['select_account', 'none'])
+})
+
+test('when Google refuses a quiet renewal the sign-in button shows, without a loop', async ({ page }) => {
+  const { drive } = await setup(page)
+  await signInAndPick(page)
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+
+  drive.refuseQuiet = true
+  await page.evaluate(() => {
+    const t = JSON.parse(localStorage.getItem('omni.token')!)
+    localStorage.setItem('omni.token', JSON.stringify({ ...t, expiresAt: Date.now() - 1 }))
+  })
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(drive.signIns).toEqual(['select_account', 'none'])
+})
+
+test('a parent with open subtasks asks before ticking', async ({ page }) => {
+  const text = '- [ ] เตรียมสไลด์ 📅 2026-10-08\n    - [ ] ทำโครง\n    - [x] หาข้อมูล ✅ 2026-10-07\n'
+  const { file } = await setup(page, text)
+  await signInAndPick(page)
+
+  await page.getByRole('checkbox', { name: /ติ๊กเสร็จ เตรียมสไลด์/ }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('button', { name: 'ติ๊กงานย่อยด้วย' }).click()
+  await expect.poll(() => file.text).toBe(
+    '- [x] เตรียมสไลด์ 📅 2026-10-08 ✅ 2026-10-08\n    - [x] ทำโครง ✅ 2026-10-08\n    - [x] หาข้อมูล ✅ 2026-10-07\n',
+  )
+})

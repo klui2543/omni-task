@@ -8,11 +8,13 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     baseURL: 'http://localhost:4173',
-    // An iPad in portrait.
-    viewport: { width: 820, height: 1180 },
-    hasTouch: true,
     launchOptions: executablePath ? { executablePath, args: ['--no-sandbox'] } : {},
   },
+  // Every test runs on an iPad in portrait and in a desktop browser window.
+  projects: [
+    { name: 'ipad', use: { viewport: { width: 820, height: 1180 }, hasTouch: true } },
+    { name: 'desktop', use: { viewport: { width: 1440, height: 900 } } },
+  ],
   webServer: {
     command: 'npm run build && npx vite preview --port 4173 --strictPort',
     url: 'http://localhost:4173',
