@@ -25,6 +25,7 @@ import app.omnitask.model.QuickAdd
 import app.omnitask.notify.Digest
 import java.time.LocalDateTime
 import app.omnitask.model.NoteLinks
+import app.omnitask.model.OmniList
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
@@ -71,7 +72,11 @@ data class UiState(
     val dismissed: Set<String> = emptySet(),
     val notify: NotifySettings = NotifySettings(),
     val query: TaskQuery = TaskQuery(),
-    val savedView: Int = 0,
+    /** Named filters the owner saved, as name to encoded filter. */
+    val savedFilters: Map<String, String> = emptyMap(),
+    /** List notes and their items, kept apart from the tasks so they never crowd the task views. */
+    val lists: List<OmniList> = emptyList(),
+    val listItems: List<Task> = emptyList(),
     /** Calendar events around the shown month; empty until calendar access is granted. */
     val events: List<CalendarEvent> = emptyList(),
     /** Null until the first load; then whether the app may read the phone's calendars. */
@@ -102,7 +107,13 @@ data class UiState(
     /** The focus page reads every task in the vault, regardless of the list filters. */
     val brief get() = Focus.build(tasks, today, futureCount, skippedToday, dismissed)
 
-    val tags get() = tasks.flatMap { it.tags }.distinct().sorted()
+    val tags get() = tasks.filter { it.list == null }.flatMap { it.tags }.distinct().sorted()
+
+    /** Names of the list notes (Bucket list, Watch list...). */
+    val listNames get() = lists.map { it.name }
+
+    /** Tasks and list items together, for the task list when a list is chosen in the filter. */
+    val allTasks get() = tasks + listItems
     val notes get() = tasks.map { it.noteName }.distinct().sorted()
 
     /** Everything but the date filter, so the date tabs can show a count each. */
@@ -171,6 +182,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         notify = Scheduler.loadSettings(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        savedFilters = prefs.getStringSet(KEY_SAVED_FILTERS, emptySet()).orEmpty()
+            .associate { it.substringBefore('\t') to it.substringAfter('\t', "") },
     )
 
     // Any settings change is copied to the vault file a moment later, batching quick taps into one write.
@@ -265,7 +278,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     calendars = calendars,
                     loading = false,
                     today = LocalDate.now(),
-                    tasks = result.getOrNull()?.tasks ?: it.tasks,
+                    tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null } ?: it.tasks,
+                    listItems = result.getOrNull()?.tasks?.filter { t -> t.list != null } ?: it.listItems,
+                    lists = result.getOrNull()?.lists ?: it.lists,
                     notePaths = result.getOrNull()?.notePaths ?: it.notePaths,
                     vaultName = vaultName,
                     profile = profile,
@@ -282,17 +297,22 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         edit(task) { TaskLine.setDone(it, task.isOpen, LocalDate.now()) }
     }
 
-    /** Ticks a repeating task and adds its next occurrence above it, as the Tasks plugin does. */
+    /** Completes a repeating task by moving its line on to the next occurrence; no copy is added. */
     private fun completeRecurring(task: Task) {
         logDone(task)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } }
             val text = result.fold(
                 { made ->
-                    if (made) null else tr(
-                        "อ่านรอบวนซ้ำ \"${task.recurrence}\" ไม่ได้ จึงยังไม่ได้ติ๊ก ลองติ๊กใน TaskForge",
-                        "Could not read the repeat rule \"${task.recurrence}\", so the task was not ticked. Try TaskForge.",
-                    )
+                    if (made) {
+                        val next = TaskLine.parse(TaskLine.advanceRecurring(task.raw, LocalDate.now()) ?: "")?.let { it.due ?: it.scheduled ?: it.start }
+                        tr("เสร็จแล้ว รอบถัดไป ", "Done. Next: ") + (next?.format(SHORT_DATE) ?: "")
+                    } else {
+                        tr(
+                            "อ่านรอบวนซ้ำ \"${task.recurrence}\" ไม่ได้ จึงยังไม่ได้ติ๊ก ลองติ๊กใน TaskForge",
+                            "Could not read the repeat rule \"${task.recurrence}\", so the task was not ticked. Try TaskForge.",
+                        )
+                    }
                 },
                 { e ->
                     if (e is VaultRepository.ConflictException) {
@@ -313,10 +333,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         edit(task) { TaskLine.setStatus(it, status, LocalDate.now()) }
     }
 
-    fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query, savedView = -1) }
+    fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query) }
 
-    fun pickSavedView(index: Int) = _state.update {
-        it.copy(query = TaskQuery.SAVED[index].second(it.query), savedView = index)
+    fun saveFilter(name: String) {
+        val next = _state.value.savedFilters + (name.trim() to _state.value.query.encode())
+        prefs.edit().putStringSet(KEY_SAVED_FILTERS, next.map { (k, v) -> "$k\t$v" }.toSet()).apply()
+        _state.update { it.copy(savedFilters = next) }
+    }
+
+    fun deleteFilter(name: String) {
+        val next = _state.value.savedFilters - name
+        prefs.edit().putStringSet(KEY_SAVED_FILTERS, next.map { (k, v) -> "$k\t$v" }.toSet()).apply()
+        _state.update { it.copy(savedFilters = next) }
+    }
+
+    fun applyFilter(name: String) {
+        val line = _state.value.savedFilters[name] ?: return
+        _state.update { it.copy(query = TaskQuery.decode(line, it.query)) }
     }
 
     /** Reads and encodes the photo off the main thread; small photos are saved straight away. */
@@ -533,6 +566,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(starred = next) }
     }
 
+    /** Saves the order the owner dragged the projects into. */
+    fun setProjectOrder(order: List<String>) {
+        prefs.edit().putString(KEY_PROJECT_ORDER, order.joinToString("\n")).apply()
+        _state.update { it.copy(projectOrder = order) }
+    }
+
     /** Moves a project one place up or down within the list as currently shown. */
     fun moveProject(shown: List<String>, project: String, delta: Int) {
         val list = shown.toMutableList()
@@ -542,6 +581,66 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         list[i] = list[j].also { list[j] = list[i] }
         prefs.edit().putString(KEY_PROJECT_ORDER, list.joinToString("\n")).apply()
         _state.update { it.copy(projectOrder = list) }
+    }
+
+    // ---- Lists ----
+
+    /** Writes the starter lists (Bucket list, Watch list) the first time the owner opens the lists. */
+    fun ensureStarterLists() {
+        val vault = _state.value.vault ?: return
+        if (_state.value.lists.isNotEmpty() || prefs.getBoolean(KEY_LISTS_SEEDED, false)) return
+        prefs.edit().putBoolean(KEY_LISTS_SEEDED, true).apply()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                OmniList.starters().forEach { l -> runCatching { if (repo.readPath(vault, l.path) == null) repo.writePath(vault, l.path, l.render()) } }
+            }
+            reload()
+        }
+    }
+
+    fun createList(name: String, icon: String, categories: List<String>) {
+        val vault = _state.value.vault ?: return
+        val clean = name.trim().replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").trim()
+        if (clean.isEmpty()) return
+        val list = OmniList(clean, "${OmniList.FOLDER}/$clean.md", icon, categories)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { if (repo.readPath(vault, list.path) == null) repo.writePath(vault, list.path, list.render()) else error(tr("มีรายการชื่อนี้แล้ว", "A list with this name exists")) }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = e.message) } }
+            reload()
+        }
+    }
+
+    /** Changes a list's icon or categories by rewriting its header; the items stay as they are. */
+    fun updateList(list: OmniList, icon: String = list.icon, categories: List<String> = list.categories) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val text = repo.readPath(vault, list.path) ?: return@runCatching
+                    val end = text.indexOf("\n---", 3)
+                    if (!text.startsWith("---") || end < 0) return@runCatching
+                    val body = text.substring(end + 4).trimStart('\r', '\n')
+                    val head = list.copy(icon = icon, categories = categories).render().substringBefore("# ")
+                    repo.writePath(vault, list.path, head + body)
+                }
+            }
+            reload()
+        }
+    }
+
+    fun addListItem(list: OmniList, title: String, category: String?) {
+        val vault = _state.value.vault ?: return
+        if (title.isBlank()) return
+        var line = "- [ ] ${title.trim()}"
+        if (category != null) line = TaskLine.addTag(line, category)
+        line = TaskLine.setDate(line, DateField.CREATED, LocalDate.now())
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, list.path, line) } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เพิ่มไม่ได้: ", "Cannot add: ") + e.message) } }
+            reload()
+        }
     }
 
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
@@ -835,6 +934,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+        const val KEY_SAVED_FILTERS = "savedFilters"
+        const val KEY_LISTS_SEEDED = "lists.seeded"
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
         val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT)

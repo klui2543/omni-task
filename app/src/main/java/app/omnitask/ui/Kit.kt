@@ -41,9 +41,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Lang
+import app.omnitask.model.Recurrence
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -89,6 +91,13 @@ object Ic {
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
     val flag = icon("flag", "M5 21V4h11l-2 4 2 4H5")
     val calendar = icon("calendar", "M3.5 5h17v15h-17Z", "M3.5 10h17M8 3v4M16 3v4")
+    val hourglass = icon("hourglass", "M7 3.5h10M7 20.5h10", "M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5", "M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5")
+    val repeat = icon("repeat", "M4 11V9a3 3 0 0 1 3-3h12l-3-3", "M20 13v2a3 3 0 0 1-3 3H5l3 3")
+    val hash = icon("hash", "M9 4l-2 16M17 4l-2 16M4.5 9h15M3.5 15h15")
+    val target = icon("target", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z")
+    val footsteps = icon("footsteps", "M5 16l5-5 3 3 6-6", "M14 8h5v5")
+    val grip = icon("grip", "M9 6h0.01M9 12h0.01M9 18h0.01M15 6h0.01M15 12h0.01M15 18h0.01", width = 3f)
+    val more = icon("more", "M5 12h0.01M12 12h0.01M19 12h0.01", width = 3f)
     val star = icon("star", "M12 3.5l2.6 5.4 5.9 0.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-0.8Z")
     val up = icon("up", "M6 15l6-6 6 6", width = 2f)
     val down = icon("down", "M6 9l6 6 6-6", width = 2f)
@@ -114,7 +123,7 @@ fun Pill(text: String, bg: Color, fg: Color, icon: ImageVector? = null, modifier
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(12.dp))
-        Text(text, color = fg, fontSize = TS.caption, lineHeight = 16.sp, maxLines = 1)
+        Text(text, color = fg, fontSize = TS.caption, lineHeight = 1.4.em, maxLines = 1)
     }
 }
 
@@ -153,7 +162,7 @@ fun ProgressRing(ratio: Float, size: Dp, stroke: Dp, color: Color = C.lime, labe
             drawArc(C.control, 0f, 360f, false, tl, arc, style = Stroke(w))
             if (ratio > 0f) drawArc(color, -90f, 360f * ratio.coerceIn(0f, 1f), false, tl, arc, style = Stroke(w, cap = StrokeCap.Round))
         }
-        if (label != null) Text(label, fontSize = labelSize.sp, fontWeight = FontWeight.Medium, color = C.text)
+        if (label != null) Text(label, fontSize = (labelSize * TS.body.value / 14f).sp, fontWeight = FontWeight.Medium, color = C.text)
     }
 }
 
@@ -258,7 +267,7 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
     t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
-    if (t.recurrence != null) add(Meta("↻ ${t.recurrence}", C.raised, C.text2))
+    if (t.recurrence != null) add(Meta(Recurrence.describe(t.recurrence), C.raised, C.text2, Ic.repeat))
     if (!compact) {
         val project = Projects.projectOf(t)
         t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->

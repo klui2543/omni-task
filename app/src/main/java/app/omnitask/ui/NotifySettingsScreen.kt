@@ -150,7 +150,7 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
             Group(tr("งาน", "Tasks")) {
                 SwitchRow(
                     tr("เตือนตามเวลาในงาน", "Task reminders"),
-                    tr("อ่าน ⏰ และ 🎯 จาก TaskForge กดเสร็จหรือเลื่อนได้จากแจ้งเตือน", "Reads ⏰ and 🎯 from TaskForge. Mark done or snooze from the notification."),
+                    tr("อ่านเวลาเตือนจาก TaskForge กดเสร็จหรือเลื่อนได้จากแจ้งเตือน", "Reads reminder times from TaskForge. Mark done or snooze from the notification."),
                     settings.taskReminders,
                 ) {
                     onChange(settings.copy(taskReminders = it))
@@ -161,13 +161,19 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
             Group(tr("สรุปงาน", "Summaries")) {
                 Text(tr("เวลาสรุป เลือกได้หลายรอบต่อวัน", "Summary times, pick as many as you like"), Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body)
                 FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    NotifySettings.DIGEST_PRESETS.forEach { time ->
+                    // The presets plus any time the owner added; tapping a chip turns it on or off.
+                    (NotifySettings.DIGEST_PRESETS + settings.digestTimes).distinct().sorted().forEach { time ->
                         val on = time in settings.digestTimes
                         Chip(hhmm(time), on, {
                             val next = if (on) settings.digestTimes - time else settings.digestTimes + time
                             onChange(settings.copy(digestTimes = next.sorted()))
                         })
                     }
+                    Chip(tr("+ เพิ่มเวลา", "+ Add time"), false, {
+                        pickSystemTime(context, LocalTime.of(8, 0)) { t ->
+                            if (t !in settings.digestTimes) onChange(settings.copy(digestTimes = (settings.digestTimes + t).sorted()))
+                        }
+                    })
                 }
                 SwitchRow(tr("งานเลยกำหนด", "Overdue tasks"), null, settings.digestOverdue) { onChange(settings.copy(digestOverdue = it)) }
                 SwitchRow(tr("งานครบวันนี้", "Due today"), null, settings.digestDueToday) { onChange(settings.copy(digestDueToday = it)) }

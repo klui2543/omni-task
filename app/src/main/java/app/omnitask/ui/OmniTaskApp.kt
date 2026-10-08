@@ -94,6 +94,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     var screen by rememberSaveable { mutableStateOf(Screen.FOCUS) }
     var notifyOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
@@ -118,6 +119,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
         return
     }
 
+    if (settingsOpen) {
+        // Reload after a language switch, so text the view model keeps (like the assistant's insight card) follows it.
+        SettingsScreen(onLanguageChange = vm::reload) { settingsOpen = false }
+        return
+    }
+
     BackHandler(enabled = screen != Screen.FOCUS) { screen = Screen.FOCUS }
 
     val open: (app.omnitask.model.Task) -> Unit = { editingKey = it.key }
@@ -126,6 +133,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             urgentRule = state.urgentRule,
             onUrgent = vm::setUrgentRule,
             onNotify = { notifyOpen = true },
+            onSettings = { settingsOpen = true },
             onReload = vm::reload,
             onVault = { pickVault.launch(state.vault) },
         )
@@ -134,7 +142,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     val width = LocalConfiguration.current.screenWidthDp
     val wide = width >= WIDE_DP
     val twoPane = width >= TWO_PANE_DP
-    val editing = state.tasks.firstOrNull { it.key == editingKey }
+    val editing = state.allTasks.firstOrNull { it.key == editingKey }
 
     val content: @Composable () -> Unit = {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -263,7 +271,7 @@ private fun FloatingNav(selected: Screen, onSelect: (Screen) -> Unit, modifier: 
 }
 
 @Composable
-private fun AppMenu(urgentRule: UrgentRule, onUrgent: (UrgentRule) -> Unit, onNotify: () -> Unit, onReload: () -> Unit, onVault: () -> Unit) {
+private fun AppMenu(urgentRule: UrgentRule, onUrgent: (UrgentRule) -> Unit, onNotify: () -> Unit, onSettings: () -> Unit, onReload: () -> Unit, onVault: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         SquareButton(Icons.Default.MoreVert, tr("เมนู", "Menu"), { open = true })
@@ -277,12 +285,8 @@ private fun AppMenu(urgentRule: UrgentRule, onUrgent: (UrgentRule) -> Unit, onNo
                 )
             }
             DropdownMenuItem(text = { Text(tr("เปลี่ยนโฟลเดอร์ตู้โน้ต", "Change vault folder")) }, onClick = { open = false; onVault() })
-            val context = LocalContext.current
-            DropdownMenuItem(
-                text = { Text(if (Lang.english) "ภาษาไทย" else "English") },
-                // Reload too, so text the view model keeps (like the assistant's insight card) follows the new language.
-                onClick = { open = false; Lang.set(context, !Lang.english); onReload() },
-            )
+            // Language, font and text size live on the settings page.
+            DropdownMenuItem(text = { Text(tr("ตั้งค่า", "Settings")) }, onClick = { open = false; onSettings() })
         }
     }
 }

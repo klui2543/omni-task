@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import app.omnitask.model.OmniList
 import app.omnitask.model.Task
 import java.time.LocalDate
 import app.omnitask.model.tr
@@ -15,14 +16,22 @@ class VaultRepository(private val context: Context) {
 
     class ConflictException : Exception()
 
-    fun loadTasks(treeUri: Uri): List<Task> = load(treeUri).tasks
+    /** Tasks only, without the items of list notes (reminders, widgets and the views never want those). */
+    fun loadTasks(treeUri: Uri): List<Task> = load(treeUri).tasks.filter { it.list == null }
 
     /** Tasks plus the path of every note in the vault (for linking notes to tasks). */
-    class Snapshot(val tasks: List<Task>, val notePaths: List<String>)
+    class Snapshot(val tasks: List<Task>, val notePaths: List<String>, val lists: List<OmniList> = emptyList())
 
     fun load(treeUri: Uri): Snapshot {
         val files = listMarkdown(treeUri)
-        return Snapshot(files.flatMap { file -> parseFile(file.uri.toString(), file.path, readText(file.uri)) }, files.map { it.path })
+        val lists = ArrayList<OmniList>()
+        val tasks = files.flatMap { file ->
+            val text = readText(file.uri)
+            // Lines in a list note (Bucket list, Watch list...) are marked with the list's name.
+            val list = OmniList.parse(file.path, text)?.also { lists += it }
+            parseFile(file.uri.toString(), file.path, text).let { found -> if (list == null) found else found.map { it.copy(list = list.name) } }
+        }
+        return Snapshot(tasks, files.map { it.path }, lists.sortedBy { it.name.lowercase() })
     }
 
     /** The vault's folder name, which is also its name in Obsidian. */
@@ -39,15 +48,13 @@ class VaultRepository(private val context: Context) {
     }
 
     /**
-     * Ticks a repeating task and writes its next occurrence on a new line above it, the way the Tasks
-     * plugin does. Returns false (and writes nothing) when the rule cannot be read.
+     * Completes a repeating task by moving the same line on to its next occurrence (no copy is added),
+     * and notes the completion in the app's history. Returns false (and writes nothing) when the rule cannot be read.
      */
     fun completeRecurring(task: Task, today: LocalDate): Boolean {
-        val next = TaskLine.nextOccurrence(task.raw, today) ?: return false
-        editLines(task) { lines, index ->
-            lines[index] = TaskLine.setDone(task.raw, true, today)
-            lines.add(index, next)
-        }
+        val next = TaskLine.advanceRecurring(task.raw, today) ?: return false
+        rewriteLine(task) { next }
+        RecurHistory.add(context, task.title, today)
         return true
     }
 

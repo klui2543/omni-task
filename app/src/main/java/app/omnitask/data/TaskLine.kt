@@ -186,7 +186,15 @@ object TaskLine {
      * the rule (from the old due, scheduled or start date, or from today for "when done"), and a fresh ➕.
      * Null when the rule cannot be read or the task has no date to repeat from.
      */
-    fun nextOccurrence(raw: String, today: LocalDate): String? {
+    fun nextOccurrence(raw: String, today: LocalDate): String? = advance(raw, today, freshCreated = true)
+
+    /**
+     * The same line moved on to its next occurrence: still unticked, every date shifted by the rule, ➕ kept.
+     * This is how the app completes a repeating task, so no copy of the line piles up in the file.
+     */
+    fun advanceRecurring(raw: String, today: LocalDate): String? = advance(raw, today, freshCreated = false)
+
+    private fun advance(raw: String, today: LocalDate, freshCreated: Boolean): String? {
         val t = parse(raw) ?: return null
         val rule = Recurrence.parse(t.recurrence) ?: return null
         val ref = t.due ?: t.scheduled ?: t.start ?: return null
@@ -195,7 +203,7 @@ object TaskLine {
         listOf(DateField.START to t.start, DateField.SCHEDULED to t.scheduled, DateField.DUE to t.due).forEach { (field, date) ->
             if (date != null) line = setDate(line, field, date.plusDays(shift))
         }
-        if (t.created != null) line = setDate(line, DateField.CREATED, today)
+        if (freshCreated && t.created != null) line = setDate(line, DateField.CREATED, today)
         return line
     }
 

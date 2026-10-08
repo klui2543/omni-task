@@ -8,6 +8,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import app.omnitask.model.Appearance
 import app.omnitask.model.Lang
 import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme
@@ -22,6 +23,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
         Lang.load(this)
+        Appearance.load(this)
         // The app is always dark, so the system bars use light icons on a transparent bar.
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContent {

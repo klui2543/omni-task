@@ -9,12 +9,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -43,10 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,11 +57,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -71,13 +70,15 @@ import androidx.compose.ui.window.DialogProperties
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
+import app.omnitask.model.Focus
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
+import app.omnitask.model.Projects
 import app.omnitask.model.Recurrence
 import app.omnitask.model.ReminderOn
-import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
+import app.omnitask.model.TaskKind
 import app.omnitask.model.label
 import app.omnitask.model.tr
 import java.time.Instant
@@ -94,129 +95,187 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     var linking by remember { mutableStateOf(false) }
     var repeating by remember { mutableStateOf(false) }
-    var reminding by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.attachImage(task, uri)
     }
 
+    // Which chip's choices are open under the chip row, and which folded row is expanded.
+    var open by remember { mutableStateOf<Prop?>(null) }
+    var fold by remember { mutableStateOf<String?>(null) }
+    fun toggle(p: Prop) { open = if (open == p) null else p }
+    val today = state.today
+
     SheetFrame(onDismiss) {
-        Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
-        Text(tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"), color = C.faint, fontSize = TS.caption)
-        task.textNotes.forEach { Text(it, Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body) }
+        Row(verticalAlignment = Alignment.Top) {
+            Box(Modifier.padding(top = 0.dp)) { TaskCheck(task, { vm.toggleDone(task) }, size = 22.dp) }
+            Column(Modifier.weight(1f).padding(top = 8.dp)) {
+                Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
+                Text(
+                    tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"),
+                    color = C.faint, fontSize = TS.caption,
+                )
+                task.textNotes.forEach { Text(it, Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption) }
+            }
+        }
 
         Segmented(
             Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
-            Modifier.padding(top = 14.dp).fillMaxWidth(),
+            Modifier.padding(top = 10.dp).fillMaxWidth(),
         )
 
-        Label(tr("ความสำคัญ", "Priority"))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Priority.entries.forEach { p -> Chip(p.label, task.priority == p, { vm.setPriority(task, p) }, dot = p.tint) }
+        // Every property in one block of chips; a chip shows its value, or its name when empty.
+        FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            PropChip(Ic.calendar, task.due?.let { dayText(it, today) }, tr("ครบกำหนด", "Due"), open == Prop.DUE, late = task.isLate(today)) { toggle(Prop.DUE) }
+            PropChip(Ic.hourglass, task.scheduled?.let { dayText(it, today) }, tr("นัดทำ", "Scheduled"), open == Prop.SCHEDULED) { toggle(Prop.SCHEDULED) }
+            PropChip(
+                Ic.bell,
+                task.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) },
+                tr("เตือน", "Remind"), open == Prop.REMIND,
+            ) { toggle(Prop.REMIND) }
+            PropChip(Ic.repeat, task.recurrence?.let { Recurrence.describe(it) }, tr("วนซ้ำ", "Repeat"), open == Prop.REPEAT) { toggle(Prop.REPEAT) }
+            PropChip(Ic.flag, task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }
+            PropChip(Ic.target, TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
+            val tags = task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }
+            PropChip(Ic.hash, tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, "Tag", open == Prop.TAG) { toggle(Prop.TAG) }
         }
 
-        Label("Tag")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            task.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
-                Row(
-                    Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(C.accentSoft)
-                        .clickable { vm.removeTag(task, tag) }.padding(start = 12.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text("#$tag", color = C.accentText, fontSize = TS.body)
-                    Icon(Ic.close, tr("ลบ #$tag", "Remove #$tag"), tint = C.muted, modifier = Modifier.size(13.dp))
-                }
-            }
-            Row(
-                Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).border(1.dp, C.control, RoundedCornerShape(17.dp))
-                    .clickable { addingTag = true }.padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+        // The open chip's choices, right under the chips.
+        open?.let { p ->
+            Column(
+                Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
+                    .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(12.dp),
             ) {
-                Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(13.dp))
-                Text(tr("เพิ่ม", "Add"), color = C.text2, fontSize = TS.body)
-            }
-        }
-
-        Label(tr("ประเภทงาน", "Task type"))
-        KindField(task, state, vm)
-
-        Label(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"))
-        Column(Modifier.clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            task.links.forEach { link ->
-                val path = NoteLinks.resolve(link, state.notePaths)
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openNote(context, state.vaultName, path ?: "$link.md") }
-                        .padding(start = 14.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Ic.link, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text(link.substringAfterLast('/'), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            path?.substringBeforeLast('/', "")?.ifEmpty { tr("ราก Vault", "Vault root") } ?: tr("ยังไม่มีโน้ตนี้", "Note does not exist yet"),
-                            color = if (path == null) C.amber else C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                when (p) {
+                    Prop.DUE, Prop.SCHEDULED -> {
+                        val field = if (p == Prop.DUE) DateField.DUE else DateField.SCHEDULED
+                        val current = if (p == Prop.DUE) task.due else task.scheduled
+                        ChoiceRow(
+                            listOf(
+                                tr("วันนี้", "Today") to today,
+                                tr("พรุ่งนี้", "Tomorrow") to today.plusDays(1),
+                                tr("เสาร์นี้", "Saturday") to Focus.softDate(today),
+                                tr("สัปดาห์หน้า", "Next week") to today.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY)),
+                            ).map { (label, d) -> Choice(label, d == current) { vm.setDate(task, field, d); open = null } } +
+                                Choice(tr("เลือกวัน", "Pick a day"), false) { picking = field } +
+                                listOfNotNull(current?.let { Choice(tr("ไม่มี", "None"), false, danger = true) { vm.setDate(task, field, null); open = null } }),
                         )
                     }
-                    if (link in task.linkLines) SquareButton(Ic.close, tr("เอาลิงก์ออก", "Remove link"), { vm.removeLink(task, link) })
+                    Prop.REMIND -> {
+                        var on by remember(task.key) {
+                            mutableStateOf(task.reminderOn ?: if (task.due == null && task.scheduled != null) ReminderOn.SCHEDULED else ReminderOn.DUE)
+                        }
+                        Segmented(
+                            listOf(ReminderOn.DUE to tr("วันครบกำหนด", "Due day"), ReminderOn.SCHEDULED to tr("วันนัดทำ", "Scheduled day")),
+                            on, { on = it }, Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        )
+                        ChoiceRow(
+                            listOf(LocalTime.of(8, 0), LocalTime.of(12, 0), LocalTime.of(17, 30), LocalTime.of(20, 0)).map { t ->
+                                Choice("%02d:%02d".format(t.hour, t.minute), t == task.reminderTime && on == task.reminderOn) { vm.setReminder(task, t, on); open = null }
+                            } + Choice(tr("เลือกเวลา", "Pick a time"), false) {
+                                pickSystemTime(context, task.reminderTime ?: LocalTime.of(9, 0)) { t -> vm.setReminder(task, t, on); open = null }
+                            } + listOfNotNull(task.reminderTime?.let { Choice(tr("ไม่เตือน", "No reminder"), false, danger = true) { vm.setReminder(task, null, on); open = null } }),
+                        )
+                        if ((if (on == ReminderOn.SCHEDULED) task.scheduled ?: task.due else task.due ?: task.scheduled) == null) {
+                            Text(tr("งานนี้ยังไม่มีวันที่ ตั้งวันก่อนแล้วการเตือนจะทำงาน", "Set a date first, then the reminder will fire"), Modifier.padding(top = 6.dp), color = C.amber, fontSize = TS.caption)
+                        }
+                    }
+                    Prop.REPEAT -> ChoiceRow(
+                        Recurrence.PRESETS.map { r -> Choice(Recurrence.describe(r), task.recurrence?.trim() == r) { vm.setRecurrence(task, r); open = null } } +
+                            Choice(tr("แบบอื่น", "Custom"), false) { repeating = true } +
+                            listOfNotNull(task.recurrence?.let { Choice(tr("ไม่วนซ้ำ", "Don't repeat"), false, danger = true) { vm.setRecurrence(task, null); open = null } }),
+                    )
+                    Prop.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Priority.entries.forEach { pr -> Chip(pr.label, task.priority == pr, { vm.setPriority(task, pr); open = null }, dot = pr.tint) }
+                    }
+                    Prop.KIND -> KindField(task, state, vm, withStep = false)
+                    Prop.TAG -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }.forEach { tag ->
+                            Row(
+                                Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(C.accentSoft)
+                                    .clickable { vm.removeTag(task, tag) }.padding(start = 12.dp, end = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text("#$tag", color = C.accentText, fontSize = TS.body)
+                                Icon(Ic.close, tr("ลบ #$tag", "Remove #$tag"), tint = C.muted, modifier = Modifier.size(13.dp))
+                            }
+                        }
+                        Chip(tr("+ เพิ่ม Tag", "+ Add tag"), false, { addingTag = true })
+                    }
                 }
-                Divider(start = 40.dp)
             }
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { linking = true }.padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Ic.plus, null, tint = C.text2, modifier = Modifier.size(16.dp))
-                Text(tr("ลิงก์โน้ต", "Link a note"), Modifier.padding(start = 10.dp), color = C.text2, fontSize = TS.body)
-            }
-        }
-        if (task.links.isNotEmpty()) Text(tr("แตะเพื่อเปิดใน Obsidian", "Tap to open in Obsidian"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
-
-        Row(Modifier.padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("รูปแนบ (${task.attachments.size})", "Images (${task.attachments.size})"), Modifier.weight(1f), color = C.muted, fontSize = TS.body)
-            Text(tr("บันทึกเป็น WebP เสมอ", "Always saved as WebP"), color = C.faint, fontSize = TS.caption)
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            task.attachments.forEach { name ->
-                Thumb(name, vm, Modifier.combinedClickable(onClick = { viewing = name }, onLongClick = { confirmDelete = name }))
-            }
-            Column(
-                Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, C.control, RoundedCornerShape(12.dp))
-                    .clickable { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(Ic.camera, null, tint = C.text2, modifier = Modifier.size(22.dp))
-                Text(tr("แนบรูป", "Add image"), color = C.text2, fontSize = TS.caption)
-            }
-        }
-        if (task.attachments.isNotEmpty()) {
-            Text(tr("แตะเพื่อดูเต็มจอ กดค้างเพื่อลบ", "Tap to view full screen, long-press to delete"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
         }
 
-        Label(tr("วันที่และรายละเอียด", "Dates and details"))
-        Column(Modifier.clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FieldRow(tr("วันครบกำหนด", "Due"), task.due?.format(SHORT_DATE)) { picking = DateField.DUE }
-            FieldRow(tr("วันนัดทำ", "Scheduled"), task.scheduled?.format(SHORT_DATE)) { picking = DateField.SCHEDULED }
-            FieldRow(tr("วันเริ่ม", "Start"), task.start?.format(SHORT_DATE)) { picking = DateField.START }
-            FieldRow(tr("วันที่สร้าง", "Created"), task.created?.format(SHORT_DATE), null)
-            FieldRow(tr("วนซ้ำ", "Repeats"), task.recurrence?.let { Recurrence.describe(it) }) { repeating = true }
-            FieldRow(
-                tr("เวลาเตือน", "Reminder"),
-                task.reminderTime?.let {
-                    "%02d:%02d".format(it.hour, it.minute) +
-                        if (task.reminderOn == ReminderOn.SCHEDULED) tr(" วันนัดทำ", ", scheduled day") else tr(" วันครบกำหนด", ", due day")
-                },
-            ) { reminding = true }
-            FieldRow(tr("โปรเจกต์", "Project"), Projects.projectOf(task), null)
-            FieldRow(tr("ต้องรอ", "Waits on"), Projects.waitingOn(task, state.tasks), null)
+        // The rarely used parts, one line each until opened.
+        Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
+            FoldRow(Ic.footsteps, tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"), task.firstStep ?: tr("ยังไม่มี", "None yet"), fold == "step", first = true) {
+                fold = if (fold == "step") null else "step"
+            }
+            if (fold == "step") Box(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 10.dp)) { FirstStepEditor(task, vm) }
+
+            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links") {
+                fold = if (fold == "links") null else "links"
+            }
+            if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {
+                task.links.forEach { link ->
+                    val path = NoteLinks.resolve(link, state.notePaths)
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { openNote(context, state.vaultName, path ?: "$link.md") }.padding(start = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(link.substringAfterLast('/'), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                path?.substringBeforeLast('/', "")?.ifEmpty { tr("ราก Vault", "Vault root") } ?: tr("ยังไม่มีโน้ตนี้", "Note does not exist yet"),
+                                color = if (path == null) C.amber else C.faint, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (link in task.linkLines) SquareButton(Ic.close, tr("เอาลิงก์ออก", "Remove link"), { vm.removeLink(task, link) })
+                    }
+                }
+                Text(
+                    tr("+ ลิงก์โน้ต", "+ Link a note"),
+                    Modifier.padding(start = 14.dp, top = 4.dp).clip(RoundedCornerShape(10.dp)).clickable { linking = true }.padding(vertical = 8.dp),
+                    color = C.accentText, fontSize = TS.body,
+                )
+            }
+
+            FoldRow(Ic.image, tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) tr("ไม่มี", "None") else tr("${task.attachments.size} รูป", "${task.attachments.size}"), fold == "images") {
+                fold = if (fold == "images") null else "images"
+            }
+            if (fold == "images") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 12.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    task.attachments.forEach { name ->
+                        Thumb(name, vm, Modifier.combinedClickable(onClick = { viewing = name }, onLongClick = { confirmDelete = name }))
+                    }
+                    Column(
+                        Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, C.control, RoundedCornerShape(12.dp))
+                            .clickable { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(Ic.camera, null, tint = C.text2, modifier = Modifier.size(22.dp))
+                        Text(tr("แนบรูป", "Add image"), color = C.text2, fontSize = TS.caption)
+                    }
+                }
+                Text(tr("บันทึกเป็น WebP แตะเพื่อดู กดค้างเพื่อลบ", "Saved as WebP. Tap to view, long-press to delete"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
+            }
+
+            FoldRow(Ic.more, tr("รายละเอียดอื่น", "More details"), task.created?.let { tr("สร้าง ", "Created ") + it.format(SHORT_DATE) } ?: "", fold == "more") {
+                fold = if (fold == "more") null else "more"
+            }
+            if (fold == "more") Column(Modifier.padding(bottom = 4.dp)) {
+                FieldRow(tr("วันเริ่ม", "Start"), task.start?.format(SHORT_DATE)) { picking = DateField.START }
+                FieldRow(tr("วันที่สร้าง", "Created"), task.created?.format(SHORT_DATE), null)
+                FieldRow(tr("โปรเจกต์", "Project"), Projects.projectOf(task), null)
+                FieldRow(tr("ต้องรอ", "Waits on"), Projects.waitingOn(task, state.tasks), null)
+            }
         }
     }
 
     picking?.let { field -> DateDialog(task, field, { vm.setDate(task, field, it) }) { picking = null } }
     if (repeating) RepeatDialog(task, { vm.setRecurrence(task, it) }) { repeating = false }
-    if (reminding) ReminderDialog(task, { time, on -> vm.setReminder(task, time, on) }) { reminding = false }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }
     }
@@ -236,6 +295,64 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             confirmButton = { TextButton(onClick = { vm.removeImage(task, name); confirmDelete = null }) { Text(tr("ลบ", "Delete"), color = C.red) } },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
         )
+    }
+}
+
+private enum class Prop { DUE, SCHEDULED, REMIND, REPEAT, PRIORITY, KIND, TAG }
+
+private class Choice(val label: String, val selected: Boolean, val danger: Boolean = false, val onClick: () -> Unit)
+
+private fun dayText(d: LocalDate, today: LocalDate) = when (d) {
+    today -> tr("วันนี้", "Today")
+    today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow")
+    else -> d.format(SHORT_DATE)
+}
+
+/** A property as a chip: its icon and value when set, its name in a quieter colour when not. */
+@Composable
+private fun PropChip(icon: ImageVector, value: String?, name: String, open: Boolean, late: Boolean = false, tint: Color? = null, onClick: () -> Unit) {
+    val set = value != null
+    Row(
+        Modifier.height(36.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (open) C.accentSoft else if (set) C.accentDeep else Color.Transparent)
+            .border(1.dp, if (open) C.accent else if (set) Color(0xFF3A3466) else C.control, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick).padding(horizontal = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, null, tint = when { late -> C.red; tint != null && set -> tint; set -> C.accentText; else -> C.faint }, modifier = Modifier.size(15.dp))
+        Text(value ?: name, color = if (late) C.red else if (set) C.text else C.muted, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChoiceRow(choices: List<Choice>) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        choices.forEach { c ->
+            Text(
+                c.label,
+                Modifier.height(34.dp).clip(RoundedCornerShape(17.dp))
+                    .background(if (c.selected) C.accentSoft else Color.Transparent)
+                    .border(1.dp, if (c.selected) C.accent else C.control, RoundedCornerShape(17.dp))
+                    .clickable(onClick = c.onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+                color = if (c.danger) C.red else if (c.selected) C.text else C.text2, fontSize = TS.body, maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FoldRow(icon: ImageVector, label: String, summary: String, open: Boolean, first: Boolean = false, onClick: () -> Unit) {
+    if (!first) Divider()
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(onClick = onClick).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = C.accentText, modifier = Modifier.size(16.dp))
+        Text(label, Modifier.padding(start = 14.dp).weight(1f), color = C.text, fontSize = TS.body, maxLines = 1)
+        Text(summary, Modifier.padding(start = 8.dp).widthIn(max = 150.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(if (open) Ic.up else Ic.down, null, tint = C.faint, modifier = Modifier.padding(start = 6.dp).size(14.dp))
     }
 }
 
@@ -387,47 +504,6 @@ private fun RepeatDialog(task: Task, onSet: (String?) -> Unit, onDismiss: () -> 
         dismissButton = {
             Row {
                 if (task.recurrence != null) TextButton(onClick = { onSet(null); onDismiss() }) { Text(tr("ไม่วนซ้ำ", "Stop repeating"), color = C.red) }
-                TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
-            }
-        },
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ReminderDialog(task: Task, onSet: (LocalTime?, ReminderOn) -> Unit, onDismiss: () -> Unit) {
-    val start = task.reminderTime ?: LocalTime.of(9, 0)
-    val time = rememberTimePickerState(start.hour, start.minute, is24Hour = true)
-    var on by remember { mutableStateOf(task.reminderOn ?: if (task.due == null && task.scheduled != null) ReminderOn.SCHEDULED else ReminderOn.DUE) }
-    val day = if (on == ReminderOn.SCHEDULED) task.scheduled ?: task.due else task.due ?: task.scheduled
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = C.raised,
-        title = { Text(tr("เวลาเตือน", "Reminder")) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Segmented(
-                    listOf(ReminderOn.DUE to tr("วันครบกำหนด", "Due day"), ReminderOn.SCHEDULED to tr("วันนัดทำ", "Scheduled day")),
-                    on, { on = it }, Modifier.fillMaxWidth().padding(bottom = 14.dp),
-                )
-                TimeInput(
-                    state = time,
-                    colors = TimePickerDefaults.colors(
-                        timeSelectorSelectedContainerColor = C.accentSoft, timeSelectorSelectedContentColor = C.accentText,
-                        timeSelectorUnselectedContainerColor = C.sunken, timeSelectorUnselectedContentColor = C.text,
-                    ),
-                )
-                Text(
-                    if (day == null) tr("งานนี้ยังไม่มีวันที่ ตั้งวันก่อนแล้วการเตือนจะทำงาน", "Set a date first, then the reminder will fire")
-                    else tr("จะเตือน ", "Fires ") + day.format(SHORT_DATE),
-                    color = if (day == null) C.amber else C.muted, fontSize = TS.caption,
-                )
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSet(LocalTime.of(time.hour, time.minute), on); onDismiss() }) { Text(tr("บันทึก", "Save"), color = C.accent) } },
-        dismissButton = {
-            Row {
-                if (task.reminderTime != null) TextButton(onClick = { onSet(null, on); onDismiss() }) { Text(tr("ไม่เตือน", "Remove"), color = C.red) }
                 TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
             }
         },

@@ -43,7 +43,7 @@ import app.omnitask.model.tr
 /** The "ประเภทงาน" field in the edit sheet: a choice, stored as a tag behind the scenes. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
+fun KindField(task: Task, state: UiState, vm: TaskViewModel, withStep: Boolean = true) {
     var askingWho by remember { mutableStateOf(false) }
     var editingStep by remember { mutableStateOf(false) }
     val kind = TaskKind.of(task)
@@ -66,7 +66,7 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
     }
     hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption) }
 
-    Row(
+    if (withStep) Row(
         Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
             .clickable { editingStep = true }.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -99,6 +99,28 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
             confirm = tr("บันทึก", "Save"),
             onConfirm = { vm.setFirstStep(task, it); editingStep = false },
             onDismiss = { editingStep = false },
+        )
+    }
+}
+
+/** The first step on its own, for the folded row of the compact edit sheet. */
+@Composable
+fun FirstStepEditor(task: Task, vm: TaskViewModel) {
+    var editing by remember { mutableStateOf(false) }
+    Text(
+        task.firstStep ?: tr("งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", "Big tasks are hard to start. Write something you can do in 10 minutes"),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { editing = true }.padding(vertical = 6.dp),
+        color = if (task.firstStep != null) C.text else C.faint, fontSize = TS.body,
+    )
+    if (editing) {
+        TextDialog(
+            title = tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"),
+            initial = task.firstStep ?: "",
+            placeholder = tr("เช่น เปิดไฟล์แล้วเขียนหัวข้อ 3 ข้อ", "e.g. open the file and write 3 headings"),
+            suggestions = emptyList(),
+            confirm = tr("บันทึก", "Save"),
+            onConfirm = { vm.setFirstStep(task, it); editing = false },
+            onDismiss = { editing = false },
         )
     }
 }

@@ -4,15 +4,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontLoadingStrategy
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.omnitask.R
+import app.omnitask.model.Appearance
+import app.omnitask.model.FontChoice
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.Tone
@@ -53,12 +61,54 @@ object C {
     val tealChip = Color(0xFF7EDCD1)
 }
 
-/** IBM Plex Sans Thai Looped: Thai with loops (ตัวมีหัว), which the owner finds easier to read, and matching Latin. */
-val AppFont = FontFamily(
+/** Sarabun: the open redesign of TH Sarabun New, the face the owner reads every day. */
+private val Sarabun = FontFamily(
+    Font(R.font.sarabun_regular, FontWeight.Normal),
+    Font(R.font.sarabun_medium, FontWeight.Medium),
+    Font(R.font.sarabun_semibold, FontWeight.SemiBold),
+)
+
+/** IBM Plex Sans Thai Looped: Thai with loops (ตัวมีหัว) and matching Latin. */
+private val PlexLooped = FontFamily(
     Font(R.font.plex_thai_looped_regular, FontWeight.Normal),
     Font(R.font.plex_thai_looped_medium, FontWeight.Medium),
     Font(R.font.plex_thai_looped_semibold, FontWeight.SemiBold),
 )
+
+/** Google ships Noto Sans Thai Looped only as a variable font, so one file serves every weight through its wght axis. */
+@OptIn(ExperimentalTextApi::class)
+private fun notoLooped(weight: FontWeight): Font = Font(
+    R.font.noto_sans_thai_looped,
+    weight,
+    FontStyle.Normal,
+    FontLoadingStrategy.Blocking,
+    FontVariation.Settings(FontVariation.weight(weight.weight)),
+)
+
+private val NotoLooped = FontFamily(
+    notoLooped(FontWeight.Normal),
+    notoLooped(FontWeight.Medium),
+    notoLooped(FontWeight.SemiBold),
+)
+
+/** Prompt: loopless Thai (ไม่มีหัว), the app's first font. */
+private val Prompt = FontFamily(
+    Font(R.font.prompt_regular, FontWeight.Normal),
+    Font(R.font.prompt_medium, FontWeight.Medium),
+    Font(R.font.prompt_semibold, FontWeight.SemiBold),
+)
+
+val FontChoice.family: FontFamily
+    get() = when (this) {
+        FontChoice.SARABUN -> Sarabun
+        FontChoice.PLEX_LOOPED -> PlexLooped
+        FontChoice.NOTO_LOOPED -> NotoLooped
+        FontChoice.PROMPT -> Prompt
+        FontChoice.SYSTEM -> FontFamily.Default
+    }
+
+/** The font picked in settings. Reading it is a state read, so text that uses it follows a change at once. */
+val AppFont: FontFamily get() = Appearance.font.family
 
 private val Scheme = darkColorScheme(
     primary = C.accent,
@@ -87,43 +137,52 @@ private val Scheme = darkColorScheme(
     onError = C.onAccent,
 )
 
-/** The only text sizes in the app, so every screen reads the same. */
+/**
+ * The only text sizes in the app, so every screen reads the same. Each is the design size times the
+ * text size chosen in settings; reading one is a state read, so screens redraw when it changes.
+ */
 object TS {
     /** Dense grids only: the nav bar, Gantt and month cells. */
-    val micro = 12.sp
+    val micro: TextUnit get() = scaled(12f)
     /** Dates, counts, hints and every secondary line. */
-    val caption = 12.5.sp
+    val caption: TextUnit get() = scaled(12.5f)
     /** All primary text: task titles, buttons, fields. */
-    val body = 14.sp
-    val title = 16.sp
+    val body: TextUnit get() = scaled(14f)
+    val title: TextUnit get() = scaled(16f)
     /** Big numbers in stat tiles. */
-    val stat = 20.sp
+    val stat: TextUnit get() = scaled(20f)
 }
 
+private fun scaled(size: Float): TextUnit = (size * Appearance.factor).sp
+
 // Line height is relative to the size, so a Text that only changes fontSize keeps room for Thai marks above and below.
-private fun style(size: Number, weight: FontWeight = FontWeight.Normal) = TextStyle(
-    fontFamily = AppFont, fontSize = size.toFloat().sp, lineHeight = 1.45.em, fontWeight = weight,
+private fun style(font: FontFamily, size: Float, weight: FontWeight = FontWeight.Normal) = TextStyle(
+    fontFamily = font, fontSize = size.sp, lineHeight = 1.45.em, fontWeight = weight,
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
 )
 
-private val AppTypography = Typography(
-    displaySmall = style(32, FontWeight.Medium),
-    headlineMedium = style(26, FontWeight.Medium),
-    headlineSmall = style(23, FontWeight.Medium),
-    titleLarge = style(20, FontWeight.Medium),
-    titleMedium = style(16, FontWeight.Medium),
-    titleSmall = style(14, FontWeight.Medium),
-    bodyLarge = style(14),
-    bodyMedium = style(14),
-    bodySmall = style(12.5f),
-    labelLarge = style(14, FontWeight.Medium),
-    labelMedium = style(12.5f),
-    labelSmall = style(12.5f),
+/** Material's text styles in the chosen font, every size multiplied by [factor]. */
+private fun appTypography(font: FontFamily, factor: Float) = Typography(
+    displaySmall = style(font, 32f * factor, FontWeight.Medium),
+    headlineMedium = style(font, 26f * factor, FontWeight.Medium),
+    headlineSmall = style(font, 23f * factor, FontWeight.Medium),
+    titleLarge = style(font, 20f * factor, FontWeight.Medium),
+    titleMedium = style(font, 16f * factor, FontWeight.Medium),
+    titleSmall = style(font, 14f * factor, FontWeight.Medium),
+    bodyLarge = style(font, 14f * factor),
+    bodyMedium = style(font, 14f * factor),
+    bodySmall = style(font, 12.5f * factor),
+    labelLarge = style(font, 14f * factor, FontWeight.Medium),
+    labelMedium = style(font, 12.5f * factor),
+    labelSmall = style(font, 12.5f * factor),
 )
 
 @Composable
 fun OmniTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Scheme, typography = AppTypography, content = content)
+    val font = Appearance.font
+    val factor = Appearance.factor
+    val typography = remember(font, factor) { appTypography(font.family, factor) }
+    MaterialTheme(colorScheme = Scheme, typography = typography, content = content)
 }
 
 val Priority.tint: Color

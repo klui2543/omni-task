@@ -73,4 +73,14 @@ class RecurrenceTest {
             TaskLine.setReminder("- [ ] โทรหาแม่ 📅 2026-10-07", java.time.LocalTime.of(20, 0), ReminderOn.DUE),
         )
     }
+
+    @Test
+    fun advanceKeepsOneLine() {
+        val raw = "- [ ] กินยา #remind-at-due ⏰ 08:00 🔁 every day ➕ 2026-09-01 📅 2026-10-07"
+        assertEquals(
+            "- [ ] กินยา #remind-at-due ⏰ 08:00 🔁 every day ➕ 2026-09-01 📅 2026-10-08",
+            TaskLine.advanceRecurring(raw, d("2026-10-07")),
+        )
+    }
 }
+

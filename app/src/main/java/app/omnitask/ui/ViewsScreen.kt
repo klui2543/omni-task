@@ -90,7 +90,9 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     // Every view honours the same filters as the task list. Kanban shows all statuses as its columns,
     // so the status filter only narrows the other views, and only when it differs from the default.
     val pool = state.tasks.filter { q.copy(statuses = emptySet()).matches(it, state.today) }
-    val narrowed = if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses }
+    // "Hide done" (on by default) keeps finished and cancelled work out of every view.
+    val narrowed = (if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses })
+        .filter { !q.hideDone || it.isOpen }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
             Text(tr("มุมมอง", "Views"), Modifier.padding(start = 4.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineSmall, color = C.text)
@@ -126,8 +128,25 @@ private fun Kanban(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: 
                 val cards = ordered.filter { t ->
                     t.status == status && (status != Status.DONE || t.done?.let { it > state.today.minusDays(7) } == true)
                 }
+                // With done work hidden, the Done column shrinks to a narrow strip that still takes drops.
+                val slim = status == Status.DONE && q.hideDone
                 val (drop, hovering) = rememberTaskDrop { key ->
                     state.tasks.firstOrNull { it.key == key }?.let { if (it.status != status) vm.setStatus(it, status) }
+                }
+                if (slim) {
+                    Column(
+                        Modifier.width(64.dp).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                            .background(if (hovering.value) C.accentDeep else C.sunken)
+                            .border(1.dp, if (hovering.value) dot else C.divider, RoundedCornerShape(18.dp))
+                            .then(drop).padding(vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(Ic.check, null, tint = dot, modifier = Modifier.size(18.dp))
+                        Text(status.label, Modifier.padding(top = 6.dp), color = C.text, fontSize = TS.caption)
+                        Text("${cards.size}", color = C.muted, fontSize = TS.caption)
+                        Text(tr("ลากมา\nเพื่อปิดงาน", "Drop\nto finish"), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.micro, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                    return@items
                 }
                 Column(
                     Modifier.width(colW).fillMaxHeight().clip(RoundedCornerShape(18.dp))

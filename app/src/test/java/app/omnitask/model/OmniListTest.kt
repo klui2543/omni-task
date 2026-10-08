@@ -1,0 +1,29 @@
+package app.omnitask.model
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class OmniListTest {
+
+    @Test
+    fun readsAndWritesTheHeader() {
+        val list = OmniList("Watch list", "Omni/Watch list.md", "film", listOf("หนัง", "ซีรีส์"))
+        val text = list.render() + "- [ ] Shogun #ซีรีส์\n"
+        assertEquals(list, OmniList.parse("Omni/Watch list.md", text))
+        assertNull(OmniList.parse("Notes/x.md", "# just a note\n- [ ] task"))
+        assertNull(OmniList.parse("Notes/y.md", "---\ntags: [a]\n---\n- [ ] task"))
+    }
+
+    @Test
+    fun listItemsStayOutOfTheTaskViewsUnlessChosen() {
+        val today = java.time.LocalDate.parse("2026-10-08")
+        val item = app.omnitask.data.TaskLine.parse("- [ ] Shogun #ซีรีส์")!!.copy(list = "Watch list")
+        val task = app.omnitask.data.TaskLine.parse("- [ ] ส่งรายงาน")!!
+        val q = TaskQuery(groupBy = GroupBy.NONE)
+        assertEquals(listOf(task), q.run(listOf(item, task), today).single().tasks)
+        assertEquals(listOf(item), q.copy(lists = setOf("Watch list")).run(listOf(item, task), today).single().tasks)
+        val saved = q.copy(kinds = setOf(TaskKind.WAITING), buckets = setOf(DateBucket.TODAY), tags = setOf("a b"))
+        assertEquals(saved, TaskQuery.decode(saved.encode(), q))
+    }
+}

@@ -121,11 +121,11 @@ object Focus {
 
     private fun suggestions(open: List<Task>, today: LocalDate): List<Suggestion> = buildList {
         open.filter { isWaiting(it) && !it.isImportant && (ageDays(it, today) ?: 0) >= 7 }.forEach {
-            add(Suggestion(it, Kind.RAISE_PRIORITY, tr("มีคนรอมา ${ageDays(it, today)} วันแล้ว ยกเป็นสำคัญ (⏫)?", "Waiting for ${ageDays(it, today)} days. Mark as important (⏫)?")))
+            add(Suggestion(it, Kind.RAISE_PRIORITY, tr("มีคนรอมา ${ageDays(it, today)} วันแล้ว ยกเป็นสำคัญ?", "Waiting for ${ageDays(it, today)} days. Mark as important?")))
         }
         open.filter { isFutureWork(it) && it.scheduled == null && it.status != Status.IN_PROGRESS && (ageDays(it, today) ?: 0) >= 30 }
             .forEach {
-                add(Suggestion(it, Kind.SOFT_DATE, tr("ค้างมา ${ageDays(it, today)} วัน นัดทำ (⏳) เสาร์นี้?", "Open for ${ageDays(it, today)} days. Schedule (⏳) this Saturday?")))
+                add(Suggestion(it, Kind.SOFT_DATE, tr("ค้างมา ${ageDays(it, today)} วัน นัดทำเสาร์นี้?", "Open for ${ageDays(it, today)} days. Schedule it this Saturday?")))
             }
         // Important work with no deadline that nobody waits on is what "ลงทุนอนาคต" is for; offer it, never assume it.
         open.filter { it.isImportant && it.due == null && !isWaiting(it) && !isFutureWork(it) && !isSomeday(it) && (ageDays(it, today) ?: 0) >= 14 }

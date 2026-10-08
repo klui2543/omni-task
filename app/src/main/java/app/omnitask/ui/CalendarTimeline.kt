@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -258,7 +259,7 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                             Text(
                                 "%02d".format(h),
                                 Modifier.fillMaxWidth().offset(y = hourH * h - 7.dp).padding(end = 10.dp),
-                                color = C.faint, fontSize = TS.micro, lineHeight = 14.sp, textAlign = TextAlign.End,
+                                color = C.faint, fontSize = TS.micro, lineHeight = 1.4.em, textAlign = TextAlign.End,
                             )
                         }
                     }

@@ -45,6 +45,8 @@ data class Task(
     val filePath: String = "",
     val fileUri: String = "",
     val lineIndex: Int = -1,
+    /** Set when the line lives in a list note (Bucket list, Watch list...), which keeps it out of the task views. */
+    val list: String? = null,
 ) {
     val isOpen get() = status == Status.TODO || status == Status.IN_PROGRESS
     val noteName get() = filePath.substringAfterLast('/').removeSuffix(".md")

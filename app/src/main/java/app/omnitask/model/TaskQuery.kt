@@ -38,7 +38,13 @@ data class TaskQuery(
     val priorities: Set<Priority> = emptySet(),
     val tags: Set<String> = emptySet(),
     val notes: Set<String> = emptySet(),
-    val bucket: DateBucket? = null,
+    val buckets: Set<DateBucket> = emptySet(),
+    /** Task types (ปกติ, มีคนรอ, ลงทุนอนาคต, พักไว้ก่อน); empty means every type except parked work. */
+    val kinds: Set<TaskKind> = emptySet(),
+    /** List notes to show (Bucket list, Watch list...); their items stay out of the views otherwise. */
+    val lists: Set<String> = emptySet(),
+    /** The views (Kanban, Matrix, Gantt, calendar) leave done and cancelled work out. */
+    val hideDone: Boolean = true,
     val text: String = "",
     val groupBy: GroupBy = GroupBy.DATE,
     val sortBy: SortBy = SortBy.DUE,
@@ -48,9 +54,7 @@ data class TaskQuery(
 ) {
     /** How many filters are narrowing the list, for the badge on the filter button. */
     val activeFilters: Int
-        get() = listOf(
-            statuses != DEFAULT.statuses, priorities.isNotEmpty(), tags.isNotEmpty(), notes.isNotEmpty(), bucket != null,
-        ).count { it }
+        get() = (if (statuses != DEFAULT.statuses) 1 else 0) + priorities.size + tags.size + notes.size + buckets.size + kinds.size + lists.size
 
     fun matches(t: Task, today: LocalDate): Boolean =
         (statuses.isEmpty() || t.status in statuses) &&
@@ -58,10 +62,40 @@ data class TaskQuery(
             // A filter tag also matches its nested tags: #รอ covers #รอ/พี่เอ.
             (tags.isEmpty() || t.tags.any { tag -> tags.any { tag == it || tag.startsWith("$it/") } }) &&
             (notes.isEmpty() || t.noteName in notes) &&
-            (bucket == null || t.bucket(today) == bucket) &&
+            (buckets.isEmpty() || t.bucket(today) in buckets) &&
             (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true)) &&
-            // Parked work stays out of the way unless asked for by its tag.
-            (!Focus.isSomeday(t) || tags.any { it == Focus.SOMEDAY_TAG })
+            typeMatches(t)
+
+    /**
+     * Types and lists together: with neither chosen, every ordinary task shows (parked work and list items
+     * stay out of the way); otherwise a task shows when its type or its list is chosen.
+     */
+    private fun typeMatches(t: Task): Boolean {
+        if (t.list != null) return t.list in lists
+        val kind = TaskKind.of(t)
+        if (kinds.isEmpty() && lists.isEmpty()) return kind != TaskKind.SOMEDAY || tags.any { it == Focus.SOMEDAY_TAG }
+        return kind in kinds
+    }
+
+    /** Each active filter as a label and the query without it, for the removable chips under the header. */
+    fun activeChips(): List<Pair<String, TaskQuery>> = buildList {
+        if (statuses != DEFAULT.statuses) add(statuses.joinToString(", ") { it.label } to copy(statuses = DEFAULT.statuses))
+        kinds.forEach { add(it.label to copy(kinds = kinds - it)) }
+        lists.forEach { add(it to copy(lists = lists - it)) }
+        buckets.forEach { add(it.label to copy(buckets = buckets - it)) }
+        priorities.forEach { add(it.label to copy(priorities = priorities - it)) }
+        tags.forEach { add("#$it" to copy(tags = tags - it)) }
+        notes.forEach { add(it to copy(notes = notes - it)) }
+    }
+
+    /** The same filters with nothing chosen, keeping grouping, sorting and the done switch. */
+    fun cleared() = copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), buckets = emptySet(), kinds = emptySet(), lists = emptySet(), text = "")
+
+    /** Only the filter part, as one line for saving a named filter. */
+    fun encode(): String = listOf(
+        statuses.joinToString(US) { it.name }, priorities.joinToString(US) { it.name }, tags.joinToString(US), notes.joinToString(US),
+        buckets.joinToString(US) { it.name }, kinds.joinToString(US) { it.name }, lists.joinToString(US),
+    ).joinToString(RS)
 
     fun run(tasks: List<Task>, today: LocalDate): List<TaskGroup> {
         val sorted = tasks.filter { matches(it, today) }.sortedWith(comparator())
@@ -120,6 +154,23 @@ data class TaskQuery(
 
     companion object {
         val DEFAULT = TaskQuery()
+        private const val RS = "\u001E"
+        private const val US = "\u001F"
+
+        /** Lays a saved filter line over [base], keeping its grouping and sorting. */
+        fun decode(line: String, base: TaskQuery): TaskQuery {
+            val f = line.split(RS) + List(7) { "" }
+            fun parts(i: Int) = f[i].split(US).filter { it.isNotEmpty() }
+            return base.copy(
+                statuses = parts(0).mapNotNull { n -> Status.entries.firstOrNull { it.name == n } }.toSet(),
+                priorities = parts(1).mapNotNull { n -> Priority.entries.firstOrNull { it.name == n } }.toSet(),
+                tags = parts(2).toSet(),
+                notes = parts(3).toSet(),
+                buckets = parts(4).mapNotNull { n -> DateBucket.entries.firstOrNull { it.name == n } }.toSet(),
+                kinds = parts(5).mapNotNull { n -> TaskKind.entries.firstOrNull { it.name == n } }.toSet(),
+                lists = parts(6).toSet(),
+            )
+        }
         private val STATUS_ORDER = listOf(Status.IN_PROGRESS, Status.TODO, Status.DONE, Status.CANCELLED)
         private val DATE_ORDER = listOf(
             DateBucket.OVERDUE, DateBucket.TODAY, DateBucket.THIS_WEEK, DateBucket.NEXT_WEEK, DateBucket.FUTURE, DateBucket.NO_DATE,
@@ -130,15 +181,5 @@ data class TaskQuery(
             DateBucket.NO_DATE -> Tone.MUTED
             else -> Tone.PLAIN
         }
-
-        /** The quick views above the list. Each one replaces the filters but keeps grouping and sort. */
-        val SAVED: List<Pair<String, (TaskQuery) -> TaskQuery>> get() = listOf(
-            tr("ทั้งหมด", "All") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = null) },
-            tr("วันนี้", "Today") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), bucket = DateBucket.TODAY) },
-            tr("มีคนรอ", "Waiting") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.WAITING_TAG), notes = emptySet(), bucket = null) },
-            tr("สำคัญ", "Important") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = setOf(Priority.HIGHEST, Priority.HIGH), tags = emptySet(), notes = emptySet(), bucket = null) },
-            tr("ลงทุนอนาคต", "Future") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.FUTURE_TAG), notes = emptySet(), bucket = null) },
-            tr("พักไว้", "Someday") to { q -> q.copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = setOf(Focus.SOMEDAY_TAG), notes = emptySet(), bucket = null) },
-        )
     }
 }

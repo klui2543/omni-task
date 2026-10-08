@@ -3,6 +3,7 @@ package app.omnitask.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,22 +17,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -50,31 +59,49 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var arranging by rememberSaveable { mutableStateOf(false) }
     var openName by rememberSaveable { mutableStateOf<String?>(null) }
     val open = projects.firstOrNull { it.name == openName }
-    BackHandler(enabled = open != null) { openName = null }
+    var openListPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val openList = state.lists.firstOrNull { it.path == openListPath }
+    var listCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    var creatingList by remember { mutableStateOf(false) }
+    var pickingIcon by remember { mutableStateOf(false) }
+    BackHandler(enabled = open != null || openList != null) { openName = null; openListPath = null; listCategory = null }
+    LaunchedEffect(Unit) { vm.ensureStarterLists() }
+
+    // Drag to arrange: the order being dragged, the dragged project and how far it has moved.
+    val listState = rememberLazyListState()
+    var dragOrder by remember { mutableStateOf<List<String>>(emptyList()) }
+    var dragging by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val gap = with(LocalDensity.current) { 12.dp.toPx() }
+    val shown = if (dragging != null) dragOrder.mapNotNull { n -> projects.firstOrNull { it.name == n } } else projects
+
+    if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
+    if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
 
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (open != null) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null })
+                if (open != null || openList != null) {
+                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null })
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(open?.name ?: tr("โปรเจกต์", "Projects"), style = MaterialTheme.typography.headlineSmall, color = C.text)
+                    Text(open?.name ?: openList?.name ?: tr("โปรเจกต์", "Projects"), style = MaterialTheme.typography.headlineSmall, color = C.text)
                     Text(
-                        if (open != null) {
-                            tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
-                        } else {
-                            tr("โปรเจกต์มาจาก Tag แรกของงาน", "Projects come from each task's first tag")
+                        when {
+                            open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
+                            openList != null -> tr("แตะเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap to tick what you've done or watched")
+                            else -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
                         },
                         color = C.muted, fontSize = TS.caption,
                     )
                 }
-                if (open == null && projects.size > 1) {
+                if (open == null && openList == null && projects.size > 1) {
                     Text(
                         if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
                         Modifier.clip(RoundedCornerShape(12.dp)).background(if (arranging) C.accent else C.card)
@@ -85,22 +112,52 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             }
         }
 
-        if (open == null) {
+        if (openList != null) {
+            listDetail(openList, state, vm, listCategory, { listCategory = it }, onOpen) { pickingIcon = true }
+        } else if (open == null) {
             if (projects.isEmpty()) item { Card { Text(tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet"), Modifier.padding(16.dp), color = C.muted) } }
-            projects.forEachIndexed { i, p ->
+            shown.forEachIndexed { i, p ->
                 item(key = p.name) {
-                    Card(Modifier.clickable { openName = p.name }) {
+                    val lifted = dragging == p.name
+                    Card(
+                        Modifier.zIndex(if (lifted) 1f else 0f)
+                            .graphicsLayer { translationY = if (lifted) dragOffset else 0f; shadowElevation = if (lifted) 16f else 0f }
+                            .clickable(enabled = !arranging) { openName = p.name },
+                    ) {
                         Column(Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (arranging) {
+                                    // The handle: drag it up or down; neighbours swap once the card passes their middle.
+                                    Box(
+                                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).pointerInput(p.name) {
+                                            detectDragGestures(
+                                                onDragStart = { dragOrder = projects.map { it.name }; dragging = p.name; dragOffset = 0f },
+                                                onDragEnd = { vm.setProjectOrder(dragOrder); dragging = null; dragOffset = 0f },
+                                                onDragCancel = { dragging = null; dragOffset = 0f },
+                                            ) { change, amount ->
+                                                change.consume()
+                                                dragOffset += amount.y
+                                                val items = listState.layoutInfo.visibleItemsInfo
+                                                val at = dragOrder.indexOf(p.name)
+                                                val next = dragOrder.getOrNull(at + 1)?.let { n -> items.firstOrNull { it.key == n } }
+                                                val prev = dragOrder.getOrNull(at - 1)?.let { n -> items.firstOrNull { it.key == n } }
+                                                if (dragOffset > 0 && next != null && dragOffset > next.size / 2f) {
+                                                    dragOrder = dragOrder.toMutableList().also { it[at] = it[at + 1]; it[at + 1] = p.name }
+                                                    dragOffset -= next.size + gap
+                                                } else if (dragOffset < 0 && prev != null && -dragOffset > prev.size / 2f) {
+                                                    dragOrder = dragOrder.toMutableList().also { it[at] = it[at - 1]; it[at - 1] = p.name }
+                                                    dragOffset += prev.size + gap
+                                                }
+                                            }
+                                        },
+                                        contentAlignment = Alignment.Center,
+                                    ) { Icon(Ic.grip, tr("ลากเพื่อย้าย", "Drag to move"), tint = C.text2, modifier = Modifier.size(20.dp)) }
+                                    Box(Modifier.width(6.dp))
+                                }
                                 ProgressRing(p.ratio, 52.dp, 5.dp, RING[i % RING.size], "${(p.ratio * 100).toInt()}%", 12)
                                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
                                     Text(tr("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", "${p.done} of ${p.tasks.size} done"), color = C.muted, fontSize = TS.caption)
-                                }
-                                val names = projects.map { it.name }
-                                if (arranging) {
-                                    IconTap(Ic.up, tr("เลื่อนขึ้น", "Move up"), C.text2) { vm.moveProject(names, p.name, -1) }
-                                    IconTap(Ic.down, tr("เลื่อนลง", "Move down"), C.text2) { vm.moveProject(names, p.name, 1) }
                                 }
                                 val on = p.name in state.starred
                                 IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
@@ -114,6 +171,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     }
                 }
             }
+            if (!arranging) listCards(state, { openListPath = it.path }) { creatingList = true }
         } else {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,8 +201,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             item {
                 Text(
                     tr(
-                        "Milestone จะมาพร้อมรูปแบบไฟล์ dotpm ส่วนงานที่ต้องรองานอื่นใช้ 🆔 และ ⛔ แบบปลั๊กอิน Tasks",
-                        "Milestones will come with the dotpm file format. Dependencies use 🆔 and ⛔ like the Tasks plugin.",
+                        "Milestone จะมาพร้อมรูปแบบไฟล์ dotpm ส่วนงานที่ต้องรองานอื่นใช้รหัสงานแบบปลั๊กอิน Tasks",
+                        "Milestones will come with the dotpm file format. Dependencies use task ids like the Tasks plugin.",
                     ),
                     Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = TS.caption,
                 )
