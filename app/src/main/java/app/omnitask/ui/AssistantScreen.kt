@@ -658,7 +658,7 @@ private fun OtherField(value: String, hint: String, onChange: (String) -> Unit) 
     )
 }
 
-private val TIME_TEXT = Regex("""(\d{1,2})[:.](\d{2})""")
+private val TIME_TEXT = Regex("""(\d{1,2})[.:](\d{2})""")
 
 private fun parseTime(text: String): LocalTime? = TIME_TEXT.find(text)?.let {
     val h = it.groupValues[1].toInt()

@@ -55,7 +55,7 @@ data class Profile(
 
         fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
 
-        private val TIME = Regex("""(\d{1,2})[:.](\d{2})""")
+        private val TIME = Regex("""(\d{1,2})[.:](\d{2})""")
         private fun time(s: String): LocalTime? = TIME.find(s)?.let {
             val h = it.groupValues[1].toInt()
             val m = it.groupValues[2].toInt()

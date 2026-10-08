@@ -33,7 +33,7 @@ object QuickAdd {
     }
 
     private val TAG = Regex("""(?<!\S)#[^\s#]+""")
-    private val TIME = Regex("""(?<![\d:])([01]?\d|2[0-3])[:.]([0-5]\d)(?![\d:])(?:\s*น\.)?""")
+    private val TIME = Regex("""(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])(?:\s*น\.)?""")
     private val BANG = Regex("""(?<!\S)(!{1,3})(?!\S)""")
     private val SLASH_DATE = Regex("""(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?![\d/])""")
 
