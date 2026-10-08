@@ -206,18 +206,11 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.padding(top = 3.dp).width(3.dp).height(16.dp).clip(RoundedCornerShape(2.dp)).background(if (t.status == Status.DONE) C.lime else t.priority.tint))
-            Column(Modifier.weight(1f).padding(start = 8.dp, end = 6.dp)) {
-                Text(t.title, color = if (t.isOpen) C.text else C.muted, fontSize = TS.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                // The details, one quiet line under the title.
-                t.descriptionPreview?.let { Text(it, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
+            Text(t.title, Modifier.weight(1f).padding(start = 8.dp, end = 6.dp), color = if (t.isOpen) C.text else C.muted, fontSize = TS.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
-        // Dates and counts on one line with the move arrows at its end, so the card stays short.
-        val meta = metaOf(t, state.today, compact = true, progress = state.progressOf(t))
+        // Icons and the date on one line with the move arrows at its end, so the card stays short.
         Row(Modifier.padding(start = 11.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
-            }
+            TaskMeta(t, state.today, progress = state.progressOf(t), showProject = false, modifier = Modifier.weight(1f))
             // Small arrows for one-tap moves; long-press and drag works too.
             if (i > 0) MoveButton(Ic.back, tr("ย้ายไป ", "Move to ") + order[i - 1].label) { vm.setStatus(t, order[i - 1]) }
             if (i in 0 until order.lastIndex) MoveButton(Ic.next, tr("ย้ายไป ", "Move to ") + order[i + 1].label) { vm.setStatus(t, order[i + 1]) }

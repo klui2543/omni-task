@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -40,11 +41,12 @@ class SmokeTest {
         rule.setContent { OmniTheme { OmniTaskApp(vm) } }
         rule.onNodeWithContentDescription("เพิ่มงาน").performClick()
         rule.waitForIdle()
-        rule.onAllNodesWithText("เพิ่มงาน").fetchSemanticsNodes().isNotEmpty().let { check(it) }
+        // The sheet's toolbar is open: its date button is there.
+        check(rule.onAllNodesWithContentDescription("วันที่").fetchSemanticsNodes().isNotEmpty()) { "quick add did not open" }
         // The sentence is read as it is typed: the time shows as a chip.
         rule.onAllNodes(hasSetTextAction()).onLast().performTextInput("ส่งรายงาน พรุ่งนี้ 9:00 #งาน !!")
         rule.waitForIdle()
-        check(rule.onAllNodesWithText("เตือน 09:00").fetchSemanticsNodes().isNotEmpty()) { "the time was not read" }
+        check(rule.onAllNodesWithText("09:00").fetchSemanticsNodes().isNotEmpty()) { "the time was not read" }
     }
 
     @Test

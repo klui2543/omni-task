@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +43,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -111,12 +114,16 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         }
     }
 
+    val context = LocalContext.current
+    var flagging by remember { mutableStateOf(false) }
+    /** Adds a word the sentence reader understands ("25/10", "9:00", "!!", "#"), as if typed. */
+    fun append(word: String) = setText(field.text.trimEnd().let { if (it.isEmpty()) word else "$it $word" })
+
     SheetFrame(onDismiss) {
-        Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
         BasicTextField(
             value = field,
             onValueChange = { field = it },
-            modifier = Modifier.padding(top = 12.dp).fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(14.dp))
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(14.dp))
                 .background(C.sunken).padding(14.dp).focusRequester(focus),
             textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
             cursorBrush = SolidColor(C.accent),
@@ -124,7 +131,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             keyboardActions = KeyboardActions(onDone = { add() }),
             decorationBox = { inner ->
                 Box {
-                    if (text.isEmpty()) Text(tr("เช่น ส่งรายงาน พรุ่งนี้ 9:00 #รอ/พี่เอ", "e.g. Send report tomorrow 9:00 #waiting/Ann"), color = C.faint, fontSize = TS.body)
+                    if (text.isEmpty()) Text(tr("ส่งรายงาน พรุ่งนี้ 9:00", "Send report tomorrow 9:00"), color = C.faint, fontSize = TS.body)
                     inner()
                 }
             },
@@ -176,37 +183,65 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         // A shared link rides along as the task's details.
         link?.let { Text(tr("ลิงก์ในรายละเอียด: ", "Link in details: ") + it, Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
 
-        // What the sentence was read as, so a wrong guess is visible before saving.
-        val chips = if (target != null) emptyList() else buildList {
-            draft.due?.let { add(if (it == state.today) tr("วันนี้", "Today") else it.format(SHORT_DATE)) }
-            draft.time?.let { add(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute)) }
-            draft.tags.forEach { add("#$it") }
-            if (draft.priority != Priority.NONE) add(draft.priority.label)
-        }
-        if (chips.isNotEmpty()) {
-            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                chips.forEach { Pill(it, C.accentSoft, C.accentText) }
+        // What the sentence was read as, so a wrong guess is visible before saving: icons and values, no words.
+        if (target == null) {
+            val chips = buildList {
+                draft.due?.let { add(Ic.calendar to shortDay(it, state.today)) }
+                draft.time?.let { add(Ic.bell to "%02d:%02d".format(it.hour, it.minute)) }
+                if (draft.priority != Priority.NONE) add(Ic.flag to draft.priority.label)
+                draft.tags.forEach { add(Ic.hash to it) }
+            }
+            if (chips.isNotEmpty()) {
+                FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    chips.forEach { (icon, value) -> Pill(value, C.accentSoft, C.accentText, icon) }
+                }
             }
         }
-        Text(
-            tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
-            Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,
-        )
 
-        Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundIcon(Ic.mic, tr("พูด", "Speak"), C.raised, C.text2) { startListening() }
-            RoundIcon(Ic.spark, tr("ถามผู้ช่วยว่าควรทำตอนไหน", "Ask the assistant when to do it"), C.accentSoft, C.accentText) {
+        // The toolbar: each button writes the words the sentence reader understands, so typing and tapping mix.
+        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (target == null) {
+                ToolIcon(Ic.calendar, tr("วันที่", "Date")) {
+                    pickSystemDate(context, draft.due ?: state.today) { d ->
+                        append("${d.dayOfMonth}/${d.monthNumber}")
+                    }
+                }
+                ToolIcon(Ic.bell, tr("เวลาเตือน", "Reminder time")) {
+                    pickSystemTime(context, draft.time ?: kotlinx.datetime.LocalTime(9, 0)) { t -> append("%d:%02d".format(t.hour, t.minute)) }
+                }
+                Box {
+                    ToolIcon(Ic.flag, tr("ความสำคัญ", "Priority"), tint = draft.priority.takeIf { it != Priority.NONE }?.tint) { flagging = true }
+                    DropdownMenu(flagging, { flagging = false }, containerColor = C.raised) {
+                        listOf(Priority.HIGHEST to "!!!", Priority.HIGH to "!!", Priority.MEDIUM to "!").forEach { (p, bang) ->
+                            DropdownMenuItem(
+                                text = { Text(p.label, color = C.text) },
+                                leadingIcon = { Icon(Ic.flag, null, tint = p.tint, modifier = Modifier.size(16.dp)) },
+                                onClick = { flagging = false; append(bang) },
+                            )
+                        }
+                    }
+                }
+            }
+            ToolIcon(Ic.hash, tr("แท็กหรือ List", "Tag or list")) { append("#") }
+            ToolIcon(Ic.mic, tr("พูด", "Speak")) { startListening() }
+            ToolIcon(Ic.spark, tr("ถามผู้ช่วยว่าควรทำตอนไหน", "Ask the assistant when to do it"), tint = C.accentText) {
                 if (text.isNotBlank()) { onAskAssistant(text.trim()); onDismiss() }
             }
             Box(Modifier.weight(1f))
-            PrimaryButton(if (target != null) tr("เพิ่มลง List", "Add to list") else tr("เพิ่มงาน", "Add task"), { add() })
+            val ready = draft.title.isNotBlank()
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(if (ready) C.accent else C.raised).clickable(enabled = ready) { add() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Ic.send, if (target != null) tr("เพิ่มลง List", "Add to list") else tr("เพิ่มงาน", "Add task"), tint = if (ready) C.onAccent else C.faint, modifier = Modifier.size(19.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun RoundIcon(icon: ImageVector, description: String, bg: Color, fg: Color, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, description, tint = fg, modifier = Modifier.size(19.dp))
+private fun ToolIcon(icon: ImageVector, description: String, tint: Color? = null, onClick: () -> Unit) {
+    Box(Modifier.size(42.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, description, tint = tint ?: C.muted, modifier = Modifier.size(20.dp))
     }
 }

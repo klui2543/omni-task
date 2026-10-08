@@ -135,13 +135,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         }
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.padding(top = 0.dp)) { TaskCheck(task, { vm.toggleDone(task) }, size = 22.dp) }
-            Column(Modifier.weight(1f).padding(top = 8.dp)) {
-                Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
-                Text(
-                    tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"),
-                    color = C.faint, fontSize = TS.caption,
-                )
-            }
+            Text(task.title, Modifier.weight(1f).padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, color = C.text)
             // A finished task (project work too) can be moved to the archive note by hand.
             if (!task.isOpen && task.parent == null && task.list == null) {
                 Box(
@@ -157,13 +151,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         DescriptionBlock(task, vm)
 
-        Segmented(
-            Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
-            Modifier.padding(top = 10.dp).fillMaxWidth(),
-        )
-
         // Every property in one block of chips; a chip shows its value, or its name when empty.
         FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            PropChip(Ic.views, task.status.takeIf { it != Status.TODO }?.label, tr("สถานะ", "Status"), open == Prop.STATUS) { toggle(Prop.STATUS) }
             PropChip(Ic.calendar, task.due?.let { dayText(it, today) }, tr("ครบกำหนด", "Due"), open == Prop.DUE, late = task.isLate(today)) { toggle(Prop.DUE) }
             PropChip(Ic.hourglass, task.scheduled?.let { dayText(it, today) }, tr("นัดทำ", "Scheduled"), open == Prop.SCHEDULED) { toggle(Prop.SCHEDULED) }
             PropChip(
@@ -224,6 +214,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                             Choice(tr("แบบอื่น", "Custom"), false) { repeating = true } +
                             listOfNotNull(task.recurrence?.let { Choice(tr("ไม่วนซ้ำ", "Don't repeat"), false, danger = true) { vm.setRecurrence(task, null); open = null } }),
                     )
+                    Prop.STATUS -> ChoiceRow(Status.entries.map { st -> Choice(st.label, task.status == st) { vm.setStatus(task, st); open = null } })
                     Prop.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Priority.entries.forEach { pr -> Chip(pr.label, task.priority == pr, { vm.setPriority(task, pr); open = null }, dot = pr.tint) }
                     }
@@ -250,7 +241,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = true) {
+            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) "" else "${task.links.size}", fold == "links", first = true) {
                 fold = if (fold == "links") null else "links"
             }
             if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {
@@ -277,7 +268,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 )
             }
 
-            FoldRow(Ic.image, tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) tr("ไม่มี", "None") else tr("${task.attachments.size} รูป", "${task.attachments.size}"), fold == "images") {
+            FoldRow(Ic.image, tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) "" else "${task.attachments.size}", fold == "images") {
                 fold = if (fold == "images") null else "images"
             }
             if (fold == "images") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 12.dp)) {
@@ -295,10 +286,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                         Text(tr("แนบรูป", "Add image"), color = C.text2, fontSize = TS.caption)
                     }
                 }
-                Text(tr("บันทึกเป็น WebP แตะเพื่อดู กดค้างเพื่อลบ", "Saved as WebP. Tap to view, long-press to delete"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
             }
 
-            FoldRow(Ic.more, tr("รายละเอียดอื่น", "More details"), task.created?.let { tr("สร้าง ", "Created ") + it.format(SHORT_DATE) } ?: "", fold == "more") {
+            FoldRow(Ic.more, tr("รายละเอียดอื่น", "More details"), "", fold == "more") {
                 fold = if (fold == "more") null else "more"
             }
             if (fold == "more") Column(Modifier.padding(bottom = 4.dp)) {
@@ -306,6 +296,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 FieldRow(tr("วันที่สร้าง", "Created"), task.created?.format(SHORT_DATE), null)
                 FieldRow(tr("โปรเจกต์", "Project"), Projects.projectOf(task), null)
                 FieldRow(tr("ต้องรอ", "Waits on"), Projects.waitingOn(task, state.tasks), null)
+                FieldRow(tr("ไฟล์", "File"), tr("${task.noteName} บรรทัด ${task.lineIndex + 1}", "${task.noteName} line ${task.lineIndex + 1}"), null)
             }
         }
     }
@@ -461,7 +452,7 @@ private fun SubtaskBlock(task: Task, state: UiState, vm: TaskViewModel, onOpen: 
     }
 }
 
-private enum class Prop { DUE, SCHEDULED, REMIND, REPEAT, PRIORITY, KIND, TAG }
+private enum class Prop { STATUS, DUE, SCHEDULED, REMIND, REPEAT, PRIORITY, KIND, TAG }
 
 private class Choice(val label: String, val selected: Boolean, val danger: Boolean = false, val onClick: () -> Unit)
 
@@ -476,15 +467,15 @@ private fun dayText(d: LocalDate, today: LocalDate) = when (d) {
 private fun PropChip(icon: ImageVector, value: String?, name: String, open: Boolean, late: Boolean = false, tint: Color? = null, onClick: () -> Unit) {
     val set = value != null
     Row(
-        Modifier.height(36.dp).clip(RoundedCornerShape(12.dp))
+        Modifier.height(36.dp).widthIn(min = 36.dp).clip(RoundedCornerShape(12.dp))
             .background(if (open) C.accentSoft else if (set) C.accentDeep else Color.Transparent)
             .border(1.dp, if (open) C.accent else if (set) C.accentLine else C.control, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick).padding(horizontal = 11.dp),
+            .clickable(onClick = onClick).padding(horizontal = if (set) 11.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, null, tint = when { late -> C.red; tint != null && set -> tint; set -> C.accentText; else -> C.faint }, modifier = Modifier.size(15.dp))
-        Text(value ?: name, color = if (late) C.red else if (set) C.text else C.muted, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(icon, if (set) null else name, tint = when { late -> C.red; tint != null && set -> tint; set -> C.accentText; else -> C.muted }, modifier = Modifier.size(16.dp))
+        if (set) Text(value!!, color = if (late) C.red else C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

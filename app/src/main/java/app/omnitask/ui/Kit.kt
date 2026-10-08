@@ -9,12 +9,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -283,39 +283,66 @@ fun OnOff(checked: Boolean) {
     ) { Box(Modifier.size(20.dp).clip(CircleShape).background(if (checked) C.onAccent else C.muted)) }
 }
 
-data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageVector? = null)
-
-/** The small labels under a task title. */
-fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false, progress: Pair<Int, Int>? = null): List<Meta> = buildList {
-    progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else C.raised, if (done == all) C.lime else C.text2, Ic.tasks)) }
-    val open = t.isOpen
-    if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
-    t.due?.let { d ->
-        val late = open && d < today
-        val text = when {
-            d == today -> tr("ครบวันนี้", "Due today")
-            late -> tr("เลย ${d.format(SHORT_DATE)}", "Overdue ${d.format(SHORT_DATE)}")
-            else -> tr("ครบ ${d.format(SHORT_DATE)}", "Due ${d.format(SHORT_DATE)}")
-        }
-        add(Meta(text, if (late) C.redSoft else C.raised, if (late) C.red else C.text2))
-    }
-    if (t.due == null || !compact) t.scheduled?.let { d ->
-        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), C.raised, C.text2))
-    }
-    if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
-    t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
-    t.recurrence?.let { add(Meta(Recurrence.describe(it), C.raised, C.text2, Ic.repeat)) }
-    if (!compact) {
-        val project = Projects.projectOf(t)
-        t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
-            if (tag == project) add(Meta(tag, C.tealSoft, C.tealChip)) else add(Meta("#$tag", C.accentSoft, C.accentText))
-        }
-    }
-    if (t.attachments.isNotEmpty()) add(Meta(t.attachments.size.toString(), C.raised, C.text2, Ic.image))
-    if (t.links.isNotEmpty()) add(Meta(t.links.size.toString(), C.raised, C.text2, Ic.link))
+/** A steady colour per project, so its dot looks the same in every list. */
+fun projectTint(name: String): Color {
+    val ring = listOf(C.accent, C.amber, C.tealChip, C.blue, C.red, C.lime)
+    return ring[Math.floorMod(name.hashCode(), ring.size)]
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** The date a row shows: today, tomorrow and yesterday by name, otherwise "12 ต.ค.". */
+fun shortDay(d: LocalDate, today: LocalDate): String = when (d) {
+    today -> tr("วันนี้", "Today")
+    today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow")
+    today.minusDays(1) -> tr("เมื่อวาน", "Yesterday")
+    else -> d.format(SHORT_DATE)
+}
+
+/**
+ * What sits at the right of a task, the TickTick way: small icons with no words (waiting, repeat, reminder,
+ * images, links), the subtask count, the project as a coloured dot, and the date in colour (red when late,
+ * accent for today). The full details are one tap away in the task sheet.
+ */
+@Composable
+fun TaskMeta(
+    task: Task,
+    today: LocalDate,
+    blockedBy: String? = null,
+    progress: Pair<Int, Int>? = null,
+    showProject: Boolean = true,
+    /** False on screens that are all about today, where "today" says nothing new. */
+    showToday: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val open = task.isOpen
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (blockedBy != null) MetaGlyph(Ic.lock, tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amber)
+        task.recurrence?.let { MetaGlyph(Ic.repeat, Recurrence.describe(it)) }
+        if (task.reminderTime != null) MetaGlyph(Ic.bell, tr("มีเตือน", "Reminder"))
+        if (task.attachments.isNotEmpty()) MetaGlyph(Ic.image, tr("มีรูป", "Images"))
+        if (task.links.isNotEmpty()) MetaGlyph(Ic.link, tr("มีโน้ต", "Linked notes"))
+        progress?.let { (done, all) -> Text("$done/$all", color = if (done == all) C.lime else C.faint, fontSize = TS.caption, maxLines = 1) }
+        if (showProject) Projects.projectOf(task)?.let { project ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(projectTint(project)))
+                Text(project, Modifier.widthIn(max = 84.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        (task.due ?: task.scheduled)?.takeIf { showToday || it != today }?.let { d ->
+            val late = open && d < today
+            val time = task.reminderTime?.takeIf { d == today && open }?.let { "%02d:%02d".format(it.hour, it.minute) }
+            Text(
+                time ?: shortDay(d, today),
+                color = when { late -> C.red; d == today && open -> C.accentText; else -> C.muted },
+                fontSize = TS.caption, fontWeight = if (late || d == today) FontWeight.Medium else FontWeight.Normal, maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetaGlyph(icon: ImageVector, description: String, tint: Color = C.faint) = Icon(icon, description, tint = tint, modifier = Modifier.size(13.dp))
+
+/** One task line: the check, the title, and its [TaskMeta] on the right. */
 @Composable
 fun TaskRow(
     task: Task,
@@ -328,27 +355,21 @@ fun TaskRow(
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val done = !task.isOpen
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         TaskCheck(task, onToggle)
-        Column(Modifier.weight(1f).clickable(onClick = onOpen).padding(top = 11.dp, bottom = 10.dp)) {
+        Row(Modifier.weight(1f).clickable(onClick = onOpen).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 task.title,
+                Modifier.weight(1f).padding(end = 8.dp),
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (done || blockedBy != null) C.muted else C.text,
                 textDecoration = if (done) TextDecoration.LineThrough else null,
-                maxLines = if (compact) 2 else 4,
+                maxLines = if (compact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            // The details, one quiet line; the full text is in the task sheet.
-            task.descriptionPreview?.let { Text(it, Modifier.padding(top = 1.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            val meta = metaOf(task, today, blockedBy, compact, progress)
-            if (meta.isNotEmpty()) {
-                FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
-                }
-            }
+            TaskMeta(task, today, blockedBy, progress, showProject = !compact)
         }
-        if (trailing != null) Row(Modifier.padding(top = 4.dp), content = trailing)
+        if (trailing != null) Row(content = trailing)
     }
 }
 

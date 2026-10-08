@@ -38,7 +38,6 @@ import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
 import app.omnitask.model.Projects
-import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import androidx.compose.foundation.layout.heightIn
@@ -149,7 +148,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     // The pinned countdown: any task, counted to its date (and time on the day).
                     FooterRow(Ic.hourglass, onClick = { pickingCountdown = true }) {
                         if (countdown == null) {
-                            Text(tr("ตั้งนับถอยหลังถึงงานสำคัญ", "Count down to an important task"), color = C.faint, fontSize = TS.caption)
+                            Text(tr("นับถอยหลัง", "Countdown"), color = C.faint, fontSize = TS.caption)
                         } else {
                             Text(countdown.title, Modifier.weight(1f, fill = false), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
@@ -208,9 +207,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                             Text(s.task.title, Modifier.clickable { onOpen(s.task) }, color = C.text, fontSize = TS.body)
                             Text(s.text, color = C.muted, fontSize = TS.caption)
-                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                                SmallButton(tr("ไม่เอา", "Dismiss"), filled = false) { vm.dismissSuggestion(s) }
-                                SmallButton(tr("ตกลง", "Accept"), filled = true) { vm.acceptSuggestion(s) }
+                            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                                SquareButton(Ic.close, tr("ไม่เอา", "Dismiss"), { vm.dismissSuggestion(s) })
+                                SquareButton(Ic.check, tr("ตกลง", "Accept"), { vm.acceptSuggestion(s) }, filled = true)
                             }
                         }
                     }
@@ -228,7 +227,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Column(Modifier.fillMaxHeight().padding(14.dp)) {
                         CardHead(Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), "${brief.waiting.size}")
                         if (brief.waiting.isEmpty()) {
-                            Text(tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+                            Text("#รอ/" + tr("ชื่อ", "name"), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
                         }
                         brief.waiting.forEach { t ->
                             val age = Focus.ageDays(t, today)
@@ -247,14 +246,15 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Column(Modifier.fillMaxHeight().padding(14.dp)) {
                         CardHead(Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), null)
                         if (brief.future.isEmpty()) {
-                            Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+                            Text(tr("ยังไม่ได้เลือก", "None picked"), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
                         }
                         brief.future.forEach { t ->
                             Column(Modifier.padding(top = 10.dp)) {
                                 Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = TS.body, maxLines = 3)
-                                val sub = listOfNotNull(Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") })
-                                if (sub.isNotEmpty()) Text(sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 2)
-                                SmallButton(tr("ข้ามวันนี้", "Skip today"), filled = false, modifier = Modifier.padding(top = 8.dp)) { vm.skipFuture(t) }
+                                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(Focus.ageDays(t, today)?.let { tr("$it วัน", "$it days") } ?: "", Modifier.weight(1f), color = C.muted, fontSize = TS.caption, maxLines = 1)
+                                    SmallButton(tr("ข้าม", "Skip"), filled = false) { vm.skipFuture(t) }
+                                }
                             }
                         }
                         Spacer(Modifier.weight(1f))
@@ -383,27 +383,15 @@ private val TIME_W = 46.dp
 private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, isBlocked: Boolean) {
     val t = item.task
     val today = state.today
-    val late = t.isLate(today)
     Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Top) {
         Text(item.time?.format(HM) ?: "", Modifier.width(TIME_W).padding(top = 3.dp), color = C.muted, fontSize = TS.caption)
         TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 26.dp)
-        Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(t.title, color = if (isBlocked) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
-            val lead = when {
-                late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
-                t.due == today -> tr("ครบวันนี้", "Due today")
-                else -> tr("นัดวันนี้", "Scheduled today")
-            }
-            val sub = listOfNotNull(
-                if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
-                Projects.projectOf(t),
-                state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
-            )
-            Row(Modifier.padding(top = 1.dp)) {
-                if (lead != null) Text(lead, color = if (late) C.red else C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                if (sub.isNotEmpty()) Text(", " + sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
+        // Everything here is for today, so only a late date shows; the rest is icons, as in the task list.
+        Text(
+            t.title, Modifier.weight(1f).padding(start = 10.dp, end = 8.dp),
+            color = if (isBlocked) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+        TaskMeta(t, today, progress = state.progressOf(t), showToday = false, modifier = Modifier.padding(top = 3.dp))
     }
 }
 

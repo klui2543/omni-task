@@ -19,3 +19,15 @@ fun pickSystemTime(context: Context, initial: LocalTime, onPick: (LocalTime) -> 
         true,
     ).show()
 }
+
+/** The phone's own date picker, starting on [initial]. */
+fun pickSystemDate(context: Context, initial: kotlinx.datetime.LocalDate, onPick: (kotlinx.datetime.LocalDate) -> Unit) {
+    android.app.DatePickerDialog(
+        context,
+        android.R.style.Theme_DeviceDefault_Dialog,
+        { _, year, month, day -> onPick(kotlinx.datetime.LocalDate(year, month + 1, day)) },
+        initial.year,
+        initial.monthNumber - 1,
+        initial.dayOfMonth,
+    ).show()
+}
