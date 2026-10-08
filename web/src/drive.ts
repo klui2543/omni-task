@@ -20,6 +20,15 @@ export interface DriveFile {
   modifiedTime?: string
 }
 
+/**
+ * Whether two file names are the same to a person. Sync apps and systems store an emoji like 📁 in different ways
+ * (with or without an invisible "show as emoji" mark, composed or not), so those differences are ignored.
+ */
+export const sameName = (a: string, b: string) => {
+  const norm = (s: string) => s.normalize('NFC').replace(/[\uFE0E\uFE0F\u200B-\u200D]/g, '').trim()
+  return norm(a) === norm(b)
+}
+
 const quote = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
 export class Drive {
@@ -33,9 +42,29 @@ export class Drive {
     return res
   }
 
+  /** Every match, following Drive's pages (a folder like Attachments can hold hundreds of files). */
   private async list(q: string, fields = 'files(id,name,mimeType,parents)'): Promise<DriveFile[]> {
-    const params = new URLSearchParams({ q, fields, pageSize: '100', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' })
-    return (await (await this.call(`${API}/files?${params}`)).json()).files ?? []
+    const out: DriveFile[] = []
+    let pageToken = ''
+    do {
+      const params = new URLSearchParams({ q, fields: `nextPageToken,${fields}`, pageSize: '1000', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' })
+      if (pageToken) params.set('pageToken', pageToken)
+      const page = await (await this.call(`${API}/files?${params}`)).json()
+      out.push(...(page.files ?? []))
+      pageToken = page.nextPageToken ?? ''
+    } while (pageToken)
+    return out
+  }
+
+  /** Files with this exact name anywhere in the owner's Drive. */
+  findFiles(name: string): Promise<DriveFile[]> {
+    return this.list(`name = ${quote(name)} and trashed = false`)
+  }
+
+  /** The folders directly inside [parentId] ('root' is My Drive), by name. */
+  async folders(parentId: string): Promise<DriveFile[]> {
+    const found = await this.list(`${quote(parentId)} in parents and mimeType = '${FOLDER}' and trashed = false`)
+    return found.sort((a, b) => a.name.localeCompare(b.name, 'th'))
   }
 
   /** Folders with this name anywhere in the owner's Drive. */
@@ -48,9 +77,13 @@ export class Drive {
     return (await this.call(`${API}/files/${id}?fields=${fields}&supportsAllDrives=true`)).json()
   }
 
+  /**
+   * The item called [name] directly inside [parentId]. Names are compared loosely (see [sameName]) on the folder's
+   * listing rather than with Drive's exact name search, which misses a name whose emoji was written differently.
+   */
   async child(parentId: string, name: string): Promise<DriveFile | null> {
-    const found = await this.list(`${quote(parentId)} in parents and name = ${quote(name)} and trashed = false`)
-    return found[0] ?? null
+    const found = await this.list(`${quote(parentId)} in parents and trashed = false`)
+    return found.find((f) => sameName(f.name, name)) ?? null
   }
 
   /** Follows a path of folders and a file name down from [rootId]; null when any step is missing. */

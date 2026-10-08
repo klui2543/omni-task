@@ -19,6 +19,8 @@ export default defineConfig({
     command: 'npm run build && npx vite preview --port 4173 --strictPort',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
+    // The client ID is built in for the real site (.env.production); the tests use their own.
+    env: { VITE_GOOGLE_CLIENT_ID: 'test.apps.googleusercontent.com' },
     timeout: 120_000,
   },
 })

@@ -28,9 +28,9 @@ export class FakeDrive {
   }
 
   /** Builds a vault folder with the TaskForge note where the app looks for it. */
-  vault(taskText: string, vaultName = 'ObsidianVault') {
+  vault(taskText: string, vaultName = 'ObsidianVault', folderName = '📁 Folder') {
     const root = this.add(vaultName, 'root')
-    const a = this.add('📁 Folder', root.id)
+    const a = this.add(folderName, root.id)
     const b = this.add('หลังบ้าน', a.id)
     const c = this.add('TaskForge', b.id)
     const file = this.add('TaskForge.md', c.id, taskText)

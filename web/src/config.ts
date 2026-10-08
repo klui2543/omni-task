@@ -17,10 +17,18 @@ const set = (k: string, v: string | null) => {
 
 export const config = {
   get clientId() {
-    return get('omni.clientId') ?? (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? null
+    // Built in (web/.env.production); one pasted on this device wins, for trying another client.
+    return get('omni.clientId') ?? ((import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || null)
   },
   set clientId(v: string | null) {
     set('omni.clientId', v)
+  },
+  /** The TaskForge note itself, when the vault was picked from a search for it. */
+  get taskFileId() {
+    return get('omni.taskFileId')
+  },
+  set taskFileId(v: string | null) {
+    set('omni.taskFileId', v)
   },
   get vaultId() {
     return get('omni.vaultId')
