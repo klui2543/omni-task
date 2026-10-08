@@ -51,7 +51,7 @@ class SmokeTest {
     fun everyScreenRenders() {
         val vm = vm()
         rule.setContent { OmniTheme { OmniTaskApp(vm) } }
-        listOf("งาน", "มุมมอง", "โปรเจกต์", "ผู้ช่วย", "โฟกัส").forEach { label ->
+        listOf("งาน", "มุมมอง", "โปรเจกต์/ลิสต์", "ผู้ช่วย", "โฟกัส").forEach { label ->
             rule.onAllNodesWithText(label).fetchSemanticsNodes().let { check(it.isNotEmpty()) { "no $label" } }
             rule.onAllNodesWithText(label)[0].performClick()
             rule.waitForIdle()
