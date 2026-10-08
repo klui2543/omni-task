@@ -169,10 +169,10 @@ fun FilterBar(
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
             ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter, onFilter)
-            if (onGroup != null) ToolButton(q.groupBy.label, false, Ic.views, onGroup)
+            if (onGroup != null) ToolButton(tr("กลุ่ม: ", "Group: ") + q.groupBy.label, false, onClick = onGroup)
             if (showSort) {
                 val extra = if (q.sorts.size > 1) " +${q.sorts.size - 1}" else ""
-                ToolButton("${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}$extra", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
+                ToolButton(tr("เรียง: ", "Sort: ") + "${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}$extra", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
             }
         }
         val chips = q.activeChips()

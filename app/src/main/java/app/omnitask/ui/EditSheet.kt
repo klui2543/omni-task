@@ -151,9 +151,13 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         DescriptionBlock(task, vm)
 
+        Segmented(
+            Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
+            Modifier.padding(top = 10.dp).fillMaxWidth(),
+        )
+
         // Every property in one block of chips; a chip shows its value, or its name when empty.
         FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            PropChip(Ic.views, task.status.takeIf { it != Status.TODO }?.label, tr("สถานะ", "Status"), open == Prop.STATUS) { toggle(Prop.STATUS) }
             PropChip(Ic.calendar, task.due?.let { dayText(it, today) }, tr("ครบกำหนด", "Due"), open == Prop.DUE, late = task.isLate(today)) { toggle(Prop.DUE) }
             PropChip(Ic.hourglass, task.scheduled?.let { dayText(it, today) }, tr("นัดทำ", "Scheduled"), open == Prop.SCHEDULED) { toggle(Prop.SCHEDULED) }
             PropChip(
@@ -214,7 +218,6 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                             Choice(tr("แบบอื่น", "Custom"), false) { repeating = true } +
                             listOfNotNull(task.recurrence?.let { Choice(tr("ไม่วนซ้ำ", "Don't repeat"), false, danger = true) { vm.setRecurrence(task, null); open = null } }),
                     )
-                    Prop.STATUS -> ChoiceRow(Status.entries.map { st -> Choice(st.label, task.status == st) { vm.setStatus(task, st); open = null } })
                     Prop.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Priority.entries.forEach { pr -> Chip(pr.label, task.priority == pr, { vm.setPriority(task, pr); open = null }, dot = pr.tint) }
                     }
@@ -452,7 +455,7 @@ private fun SubtaskBlock(task: Task, state: UiState, vm: TaskViewModel, onOpen: 
     }
 }
 
-private enum class Prop { STATUS, DUE, SCHEDULED, REMIND, REPEAT, PRIORITY, KIND, TAG }
+private enum class Prop { DUE, SCHEDULED, REMIND, REPEAT, PRIORITY, KIND, TAG }
 
 private class Choice(val label: String, val selected: Boolean, val danger: Boolean = false, val onClick: () -> Unit)
 
@@ -467,15 +470,15 @@ private fun dayText(d: LocalDate, today: LocalDate) = when (d) {
 private fun PropChip(icon: ImageVector, value: String?, name: String, open: Boolean, late: Boolean = false, tint: Color? = null, onClick: () -> Unit) {
     val set = value != null
     Row(
-        Modifier.height(36.dp).widthIn(min = 36.dp).clip(RoundedCornerShape(12.dp))
+        Modifier.height(36.dp).clip(RoundedCornerShape(12.dp))
             .background(if (open) C.accentSoft else if (set) C.accentDeep else Color.Transparent)
             .border(1.dp, if (open) C.accent else if (set) C.accentLine else C.control, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick).padding(horizontal = if (set) 11.dp else 10.dp),
+            .clickable(onClick = onClick).padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, if (set) null else name, tint = when { late -> C.red; tint != null && set -> tint; set -> C.accentText; else -> C.muted }, modifier = Modifier.size(16.dp))
-        if (set) Text(value!!, color = if (late) C.red else C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(icon, null, tint = when { late -> C.red; tint != null && set -> tint; set -> C.accentText; else -> C.faint }, modifier = Modifier.size(15.dp))
+        Text(value ?: name, color = if (late) C.red else if (set) C.text else C.muted, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

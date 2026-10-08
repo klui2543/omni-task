@@ -40,7 +40,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -132,10 +131,9 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false })
                     Box(Modifier.width(10.dp))
                 }
-                Text(
-                    open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"), Modifier.weight(1f).padding(start = 4.dp),
-                    style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+                Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                    Text(open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"), style = MaterialTheme.typography.headlineSmall, color = C.text)
+                }
                 if (open != null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
                 if (open == null && openList == null && projects.size > 1) {
                     Text(
