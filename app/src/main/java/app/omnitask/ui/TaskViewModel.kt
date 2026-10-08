@@ -34,6 +34,7 @@ import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.TaskKind
+import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
 import app.omnitask.notify.CalendarEvent
 import app.omnitask.model.Task
@@ -111,6 +112,9 @@ data class UiState(
     /** Branch states by (project, path), and the tasks hidden because their branch is parked. */
     val branchStates: Map<Pair<String, String>, Branches.State> = emptyMap(),
     val parked: List<Task> = emptyList(),
+    /** Kinds the owner made, and the built-in ones they hid. */
+    val customKinds: List<CustomKind> = emptyList(),
+    val hiddenKinds: Set<TaskKind> = emptySet(),
     /** Folded task groups ("groupBy:label") and folded Kanban columns (status names). */
     val foldedGroups: Set<String> = emptySet(),
     val foldedColumns: Set<String> = emptySet(),
@@ -232,6 +236,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
         branchStates = Branches.parse(prefs.getStringSet(KEY_BRANCHES, emptySet()).orEmpty()),
         foldedColumns = prefs.getStringSet(KEY_FOLDED_COLUMNS, emptySet()).orEmpty().toSet(),
+        customKinds = CustomKind.parse(prefs.getStringSet(KEY_CUSTOM_KINDS, emptySet()).orEmpty()),
+        hiddenKinds = prefs.getStringSet(KEY_HIDDEN_KINDS, emptySet()).orEmpty().mapNotNull { n -> TaskKind.entries.firstOrNull { it.name == n } }.toSet(),
         tonightBed = prefs.getString(KEY_TONIGHT_BED, null)?.let { v ->
             runCatching { LocalDate.parse(v.substringBefore(' ')) to java.time.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
         },
@@ -330,7 +336,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH)) }.getOrDefault(_state.value.profile) }
-            result.getOrNull()?.lists?.let { ls -> Projects.listTags = ls.flatMap { l -> listOf(l.tag) + l.categories }.toSet() }
+            result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -555,14 +561,47 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setKind(task: Task, kind: TaskKind, who: String? = null) {
         markReviewed(task)
         edit(task) { raw ->
-            var line = TaskKind.kindTags(task).fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
+            var line = clearKinds(task, raw)
             kind.tag?.let { tag -> line = TaskLine.addTag(line, if (kind == TaskKind.WAITING && !who.isNullOrBlank()) "$tag/${who.trim()}" else tag) }
             line
         }
     }
 
-    fun setFirstStep(task: Task, step: String?) =
-        sub(task) { repo.setSubLine(task, Task.FIRST_STEP, step?.trim()?.ifEmpty { null }?.let { "${Task.FIRST_STEP} $it" }) }
+    /** Gives the task one of the owner's own kinds, in place of any other kind. */
+    fun setCustomKind(task: Task, kind: CustomKind) = edit(task) { raw -> TaskLine.addTag(clearKinds(task, raw), kind.tag) }
+
+    private fun clearKinds(task: Task, raw: String): String {
+        val custom = _state.value.customKinds.map { it.tag.lowercase() }
+        val tags = TaskKind.kindTags(task) + task.tags.filter { it.lowercase() in custom }
+        return tags.fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
+    }
+
+    fun addCustomKind(name: String, emoji: String) {
+        val tag = CustomKind.tagFor(name)
+        if (tag.isEmpty() || _state.value.customKinds.any { it.tag.equals(tag, ignoreCase = true) }) return
+        saveKinds(_state.value.customKinds + CustomKind(name.trim(), emoji, tag))
+    }
+
+    /** Forgets a kind; the tags already on tasks stay in the vault as ordinary tags. */
+    fun removeCustomKind(kind: CustomKind) = saveKinds(_state.value.customKinds - kind)
+
+    private fun saveKinds(kinds: List<CustomKind>) {
+        prefs.edit().putStringSet(KEY_CUSTOM_KINDS, CustomKind.encode(kinds)).apply()
+        val sorted = kinds.sortedBy { it.name.lowercase() }
+        _state.update { it.copy(customKinds = sorted) }
+        ignoreTags(_state.value.lists, sorted)
+    }
+
+    /** Hides a built-in kind from the choices (and its card on Focus), or brings it back. */
+    fun toggleHiddenKind(kind: TaskKind) {
+        val next = _state.value.hiddenKinds.let { if (kind in it) it - kind else it + kind }
+        prefs.edit().putStringSet(KEY_HIDDEN_KINDS, next.map { it.name }.toSet()).apply()
+        _state.update { it.copy(hiddenKinds = next) }
+    }
+
+    private fun ignoreTags(lists: List<OmniList>, kinds: List<CustomKind>) {
+        Projects.ignoredTags = (lists.flatMap { l -> listOf(l.tag) + l.categories } + kinds.map { it.tag }).toSet()
+    }
 
     /** Restarts the review clock for a task without a deadline. */
     fun markReviewed(task: Task) {
@@ -1267,6 +1306,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_FOLDED_GROUPS = "foldedGroups"
         const val KEY_BRANCHES = "branchStates"
         const val KEY_FOLDED_COLUMNS = "foldedColumns"
+        const val KEY_CUSTOM_KINDS = "customKinds"
+        const val KEY_HIDDEN_KINDS = "hiddenKinds"
         const val KEY_TONIGHT_BED = "sleep.tonight"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"

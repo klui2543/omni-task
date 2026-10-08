@@ -395,7 +395,7 @@ class WaitingWidget : GlanceAppWidget() {
                     Column(GlanceModifier.defaultWeight()) {
                         Label(tr("ลงทุนอนาคต", "Future"), cp { it.accentText }, 12.sp)
                         Label(f?.title ?: tr("ยังไม่ได้เลือกงาน", "None picked yet"), cp { it.text }, 13.sp)
-                        f?.let { Label(it.firstStep?.let { s -> tr("ก้าวแรก: ", "First step: ") + s } ?: Focus.ageDays(it, data.today)?.let { a -> tr("ค้าง $a วัน", "$a days old") } ?: "", cp { it.muted }, 12.sp) }
+                        f?.let { Label(Focus.ageDays(it, data.today)?.let { a -> tr("ค้าง $a วัน", "$a days old") } ?: "", cp { it.muted }, 12.sp) }
                     }
                 }
             }

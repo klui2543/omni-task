@@ -1,6 +1,10 @@
 package app.omnitask.ui
 
 import androidx.compose.foundation.background
+import app.omnitask.model.CustomKind
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,12 +47,13 @@ import app.omnitask.model.tr
 /** The "ประเภทงาน" field in the edit sheet: a choice, stored as a tag behind the scenes. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun KindField(task: Task, state: UiState, vm: TaskViewModel, withStep: Boolean = true) {
+fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
     var askingWho by remember { mutableStateOf(false) }
-    var editingStep by remember { mutableStateOf(false) }
-    val kind = TaskKind.of(task)
+    var managing by remember { mutableStateOf(false) }
+    val custom = CustomKind.of(task, state.customKinds)
+    val kind = if (custom != null) null else TaskKind.of(task)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        TaskKind.entries.forEach { k ->
+        TaskKind.entries.filter { it == TaskKind.NORMAL || it == kind || it !in state.hiddenKinds }.forEach { k ->
             Chip(k.label, k == kind, {
                 when {
                     k == TaskKind.WAITING -> askingWho = true
@@ -56,8 +61,11 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel, withStep: Boolean =
                 }
             })
         }
+        state.customKinds.forEach { c -> Chip(c.label, c == custom, { if (c != custom) vm.setCustomKind(task, c) }) }
+        Chip(tr("จัดการประเภท", "Manage kinds"), false, { managing = true })
     }
     val hint = when (kind) {
+        null -> null
         TaskKind.NORMAL -> null
         TaskKind.WAITING -> (Focus.waitingFor(task)?.let { tr("$it รออยู่", "$it is waiting.") } ?: tr("มีคนรออยู่", "Someone is waiting.")) +
             tr(" ขึ้นในการ์ด \"คนรออยู่\" ตามที่รอนานสุด", " Shows in the \"Waiting\" card, longest wait first")
@@ -65,18 +73,6 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel, withStep: Boolean =
         TaskKind.SOMEDAY -> tr("ไม่ขึ้นในรายการหลัก แต่จะกลับมาให้ทบทวนทุก 30 วัน ไม่หายไปไหน", "Hidden from the main lists, but comes back for review every 30 days")
     }
     hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption) }
-
-    if (withStep) Row(
-        Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
-            .clickable { editingStep = true }.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"), color = C.muted, fontSize = TS.caption)
-            Text(task.firstStep ?: tr("งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", "Big tasks are hard to start. Write something you can do in 10 minutes"), color = if (task.firstStep != null) C.text else C.faint, fontSize = TS.body)
-        }
-        Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
-    }
 
     if (askingWho) {
         val names = state.tasks.mapNotNull { Focus.waitingFor(it) }.distinct().sorted()
@@ -90,39 +86,82 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel, withStep: Boolean =
             onDismiss = { askingWho = false },
         )
     }
-    if (editingStep) {
-        TextDialog(
-            title = tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"),
-            initial = task.firstStep ?: "",
-            placeholder = tr("เช่น เปิดไฟล์แล้วเขียนหัวข้อ 3 ข้อ", "e.g. open the file and write 3 headings"),
-            suggestions = emptyList(),
-            confirm = tr("บันทึก", "Save"),
-            onConfirm = { vm.setFirstStep(task, it); editingStep = false },
-            onDismiss = { editingStep = false },
-        )
-    }
+    if (managing) KindManager(state, vm) { managing = false }
 }
 
-/** The first step on its own, for the folded row of the compact edit sheet. */
+/** Make new kinds, forget them, and hide the built-in ones that are not used. */
 @Composable
-fun FirstStepEditor(task: Task, vm: TaskViewModel) {
-    var editing by remember { mutableStateOf(false) }
-    Text(
-        task.firstStep ?: tr("งานใหญ่เริ่มยาก เขียนสิ่งที่ทำได้ใน 10 นาที", "Big tasks are hard to start. Write something you can do in 10 minutes"),
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { editing = true }.padding(vertical = 6.dp),
-        color = if (task.firstStep != null) C.text else C.faint, fontSize = TS.body,
+private fun KindManager(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var emoji by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("ประเภทงาน", "Task kinds")) },
+        text = {
+            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                Text(tr("ประเภทที่มากับแอป", "Built in"), color = C.muted, fontSize = TS.caption)
+                TaskKind.entries.filter { it != TaskKind.NORMAL }.forEach { k ->
+                    val hidden = k in state.hiddenKinds
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(k.label, Modifier.weight(1f), color = if (hidden) C.faint else C.text, fontSize = TS.body)
+                        Text(
+                            if (hidden) tr("แสดง", "Show") else tr("ซ่อน", "Hide"),
+                            Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.toggleHiddenKind(k) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                            color = C.accentText, fontSize = TS.body,
+                        )
+                    }
+                }
+                Text(
+                    tr("ซ่อนแล้วการ์ดของประเภทนั้นในหน้าโฟกัสจะหายไปด้วย", "Hiding one also hides its card on Focus"),
+                    color = C.faint, fontSize = TS.caption,
+                )
+                Text(tr("ประเภทของคุณ", "Yours"), Modifier.padding(top = 14.dp), color = C.muted, fontSize = TS.caption)
+                if (state.customKinds.isEmpty()) Text(tr("ยังไม่มี", "None yet"), Modifier.padding(vertical = 8.dp), color = C.faint, fontSize = TS.body)
+                state.customKinds.forEach { c ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(c.label, color = C.text, fontSize = TS.body)
+                            Text("#${c.tag}", color = C.faint, fontSize = TS.caption)
+                        }
+                        Text(
+                            tr("ลบ", "Remove"),
+                            Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.removeCustomKind(c) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                            color = C.red, fontSize = TS.body,
+                        )
+                    }
+                }
+                Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SmallField(emoji, "🏷️", Modifier.width(56.dp)) { emoji = firstGlyph(it) }
+                    SmallField(name, tr("ชื่อประเภทใหม่", "New kind"), Modifier.padding(start = 8.dp).weight(1f)) { name = it }
+                }
+                if (name.isNotBlank()) Text(tr("จะติดแท็ก #${CustomKind.tagFor(name)}", "Tags tasks #${CustomKind.tagFor(name)}"), Modifier.padding(top = 4.dp), color = C.faint, fontSize = TS.caption)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (name.isNotBlank()) { vm.addCustomKind(name, emoji); name = ""; emoji = "" } else onDismiss() }) {
+                Text(if (name.isNotBlank()) tr("เพิ่ม", "Add") else tr("เสร็จ", "Done"), color = C.accent)
+            }
+        },
     )
-    if (editing) {
-        TextDialog(
-            title = tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"),
-            initial = task.firstStep ?: "",
-            placeholder = tr("เช่น เปิดไฟล์แล้วเขียนหัวข้อ 3 ข้อ", "e.g. open the file and write 3 headings"),
-            suggestions = emptyList(),
-            confirm = tr("บันทึก", "Save"),
-            onConfirm = { vm.setFirstStep(task, it); editing = false },
-            onDismiss = { editing = false },
-        )
-    }
+}
+
+@Composable
+private fun SmallField(value: String, hint: String, modifier: Modifier, onChange: (String) -> Unit) {
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
+        cursorBrush = SolidColor(C.accent),
+        modifier = modifier.clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(12.dp),
+        decorationBox = { inner ->
+            Box {
+                if (value.isEmpty()) Text(hint, color = C.faint, fontSize = TS.body)
+                inner()
+            }
+        },
+    )
 }
 
 @Composable
@@ -274,7 +313,6 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                         ).joinToString(", "),
                         Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
                     )
-                    t.firstStep?.let { Text(tr("ก้าวแรก: $it", "First step: $it"), Modifier.padding(top = 6.dp), color = C.accentText, fontSize = TS.body) }
                     Text(tr("ยังอยากทำไหม", "Still want to do it?"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = TS.body)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         fun act(a: TaskViewModel.ReviewAction) { vm.review(t, a); handled++ }

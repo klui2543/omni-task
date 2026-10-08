@@ -281,7 +281,7 @@ fun IconGrid(selected: String, onPick: (String) -> Unit) {
 }
 
 /** The first character as people see it, so a flag or a family emoji stays whole. */
-private fun firstGlyph(text: String): String {
+internal fun firstGlyph(text: String): String {
     val t = text.trim()
     if (t.isEmpty()) return ""
     val chars = android.icu.text.BreakIterator.getCharacterInstance()

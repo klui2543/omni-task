@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
+import app.omnitask.model.TaskKind
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -122,13 +123,27 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         night.sleep < 7 * 60 -> C.amber
                         else -> C.lime
                     }
+                    // Times on top with the hours of sleep in a pill; why the alarm is early on a quiet line under them.
                     FooterRow(Ic.moon, onClick = { pickSystemTime(context, bedtime) { vm.setTonightBedtime(eve, it) } }) {
-                        Text(
-                            tr("นอน ${night.bedAt.format(HM)} ตื่น ${night.wakeAt.format(HM)} ", "Bed ${night.bedAt.format(HM)}, up ${night.wakeAt.format(HM)}, ") +
-                                (night.because?.let { tr("(ก่อน ${it.title} 1 ชม.) ", "(an hour before ${it.title}) ") } ?: ""),
-                            color = C.muted, fontSize = TS.caption, maxLines = 2, modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Text(tr("ได้นอน ${hm(night.sleep)}", "${hm(night.sleep)} of sleep"), color = color, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1)
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    tr("นอน ${night.bedAt.format(HM)}   ตื่น ${night.wakeAt.format(HM)}", "Bed ${night.bedAt.format(HM)}   Up ${night.wakeAt.format(HM)}"),
+                                    Modifier.weight(1f), color = C.text, fontSize = TS.caption, maxLines = 1,
+                                )
+                                Text(
+                                    tr("ได้นอน ${hm(night.sleep)}", "${hm(night.sleep)} of sleep"),
+                                    Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 2.dp),
+                                    color = color, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1,
+                                )
+                            }
+                            night.because?.let {
+                                Text(
+                                    tr("ตื่นก่อน ${it.title} 1 ชม.", "An hour before ${it.title}"),
+                                    Modifier.padding(top = 3.dp), color = C.faint, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 } else {
                     // The pinned countdown: any task, counted to its date (and time on the day).
@@ -204,9 +219,12 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
-        item {
+        // Either card goes when its kind is hidden; the other then takes the row.
+        val showWaiting = TaskKind.WAITING !in state.hiddenKinds
+        val showFuture = TaskKind.FUTURE !in state.hiddenKinds
+        if (showWaiting || showFuture) item {
             Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Card(Modifier.weight(1f).fillMaxHeight()) {
+                if (showWaiting) Card(Modifier.weight(1f).fillMaxHeight()) {
                     Column(Modifier.fillMaxHeight().padding(14.dp)) {
                         CardHead(Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), "${brief.waiting.size}")
                         if (brief.waiting.isEmpty()) {
@@ -216,7 +234,6 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             val age = Focus.ageDays(t, today)
                             Column(Modifier.padding(top = 10.dp).clickable { onOpen(t) }) {
                                 Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2)
-                                t.firstStep?.let { Text(tr("ก้าวแรก: $it", "First step: $it"), color = C.accentText, fontSize = TS.caption, maxLines = 2) }
                                 Pill(
                                     (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { tr("รอ $it วัน", "waiting $it days") } ?: tr("รออยู่", "waiting")),
                                     if ((age ?: 0) >= 7) C.redSoft else C.amberSoft, if ((age ?: 0) >= 7) C.red else C.amber,
@@ -226,7 +243,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                     }
                 }
-                Card(Modifier.weight(1f).fillMaxHeight()) {
+                if (showFuture) Card(Modifier.weight(1f).fillMaxHeight()) {
                     Column(Modifier.fillMaxHeight().padding(14.dp)) {
                         CardHead(Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), null)
                         if (brief.future.isEmpty()) {
@@ -235,7 +252,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         brief.future.forEach { t ->
                             Column(Modifier.padding(top = 10.dp)) {
                                 Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = TS.body, maxLines = 3)
-                                val sub = listOfNotNull(t.firstStep?.let { tr("ก้าวแรก: $it", "First step: $it") }, Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") })
+                                val sub = listOfNotNull(Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") })
                                 if (sub.isNotEmpty()) Text(sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 2)
                                 SmallButton(tr("ข้ามวันนี้", "Skip today"), filled = false, modifier = Modifier.padding(top = 8.dp)) { vm.skipFuture(t) }
                             }

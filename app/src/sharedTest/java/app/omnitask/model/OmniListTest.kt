@@ -26,8 +26,8 @@ class OmniListTest {
         assertEquals("ฝัน", OmniList.parse("Omni/Bucket list.md", named)!!.tag)
         // The list's tag never names a project.
         val t = app.omnitask.data.TaskLine.parse("- [ ] ดู Shogun #watchlist")!!
-        Projects.listTags = setOf("watchlist")
-        try { assertNull(Projects.projectOf(t)) } finally { Projects.listTags = emptySet() }
+        Projects.ignoredTags = setOf("watchlist")
+        try { assertNull(Projects.projectOf(t)) } finally { Projects.ignoredTags = emptySet() }
     }
 
     @Test

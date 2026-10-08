@@ -90,6 +90,7 @@ import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
+import app.omnitask.model.CustomKind
 import app.omnitask.model.label
 import app.omnitask.model.tr
 import java.time.Instant
@@ -163,8 +164,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             ) { toggle(Prop.REMIND) }
             PropChip(Ic.repeat, task.recurrence?.let { Recurrence.describe(it) }, tr("วนซ้ำ", "Repeat"), open == Prop.REPEAT) { toggle(Prop.REPEAT) }
             PropChip(Ic.flag, task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }
-            PropChip(Ic.target, TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
-            val tags = task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }
+            val custom = CustomKind.of(task, state.customKinds)
+            PropChip(Ic.target, custom?.label ?: TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
+            val tags = task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) || custom?.tag.equals(it, ignoreCase = true) }
             PropChip(Ic.hash, tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, "Tag", open == Prop.TAG) { toggle(Prop.TAG) }
         }
 
@@ -216,7 +218,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     Prop.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Priority.entries.forEach { pr -> Chip(pr.label, task.priority == pr, { vm.setPriority(task, pr); open = null }, dot = pr.tint) }
                     }
-                    Prop.KIND -> KindField(task, state, vm, withStep = false)
+                    Prop.KIND -> KindField(task, state, vm)
                     Prop.TAG -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }.forEach { tag ->
                             Row(
@@ -239,12 +241,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FoldRow(Ic.footsteps, tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"), task.firstStep ?: tr("ยังไม่มี", "None yet"), fold == "step", first = true) {
-                fold = if (fold == "step") null else "step"
-            }
-            if (fold == "step") Box(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 10.dp)) { FirstStepEditor(task, vm) }
-
-            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links") {
+            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = true) {
                 fold = if (fold == "links") null else "links"
             }
             if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {

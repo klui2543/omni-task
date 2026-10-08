@@ -19,12 +19,12 @@ object Projects {
         val ratio get() = if (tasks.isEmpty()) 0f else done.toFloat() / tasks.size
     }
 
-    /** Tags that put a task in a list (and the lists' categories), which never name a project; set on each load. */
-    @Volatile var listTags: Set<String> = emptySet()
+    /** Tags that never name a project: lists, their categories, and the owner's own kinds. Set on each load. */
+    @Volatile var ignoredTags: Set<String> = emptySet()
 
     /** The task's project tag in full, branch included ("peddose/แอป/มือถือ"). */
     fun tagOf(t: Task): String? =
-        t.tags.firstOrNull { !it.startsWith("remind-at-") && it != Focus.WAITING_TAG && !it.startsWith("${Focus.WAITING_TAG}/") && it !in listTags }
+        t.tags.firstOrNull { !it.startsWith("remind-at-") && it != Focus.WAITING_TAG && !it.startsWith("${Focus.WAITING_TAG}/") && it !in ignoredTags }
 
     /** The project a task belongs to: its first tag up to the first slash, so branches stay in their project. */
     fun projectOf(t: Task): String? = tagOf(t)?.substringBefore('/')
