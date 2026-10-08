@@ -50,6 +50,7 @@ object C {
     val onAccent = Color(0xFF0D0F14)
 
     val lime = Color(0xFFB9F26B)
+    val limeSoft = Color(0xFF2B3A1A)
     val red = Color(0xFFFF8A80)
     val redSoft = Color(0xFF3A1F22)
     val amber = Color(0xFFFFC266)

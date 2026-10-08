@@ -118,6 +118,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         TaskRow(
                             t, state.today, { vm.toggleDone(t) }, { onOpen(t) },
                             blockedBy = if (t in blocked) Projects.waitingOn(t, state.tasks) else null,
+                            progress = state.progressOf(t),
                         )
                     }
                 }

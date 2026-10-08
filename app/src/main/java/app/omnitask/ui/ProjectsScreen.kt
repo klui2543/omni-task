@@ -2,6 +2,7 @@ package app.omnitask.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -180,21 +182,64 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     StatCard("${open.blocked.size}", tr("ติดรองานอื่น", "Blocked"), if (open.blocked.isNotEmpty()) C.amber else C.text, Modifier.weight(1f))
                 }
             }
-            listOf(Status.IN_PROGRESS, Status.TODO, Status.DONE).forEach { status ->
-                val list = open.tasks.filter { it.status == status }.sortedBy { it.due ?: it.scheduled ?: java.time.LocalDate.MAX }
-                if (list.isNotEmpty()) {
-                    item(key = "s:" + status.name) {
-                        Card {
-                            SectionHead(status.label, if (status == Status.IN_PROGRESS) C.accentText else C.text2, "${list.size}")
-                            list.forEachIndexed { i, t ->
-                                if (i > 0) Divider(start = 48.dp)
-                                TaskRow(
-                                    t, state.today, { vm.toggleDone(t) }, { onOpen(t) },
-                                    blockedBy = if (t in open.blocked) Projects.waitingOn(t, state.tasks) else null,
-                                )
-                            }
-                            Box(Modifier.height(4.dp))
+            // Open work in the owner's order (1, 2, 3...), then what is done.
+            val openTasks = vm.orderedProjectTasks(open.name, open.tasks.filter { it.isOpen && it.parent == null })
+            val strict = open.name in state.strictProjects
+            item(key = "strict") {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(16.dp))
+                        .clickable { vm.setStrict(open.name, !strict, openTasks) }.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("ต้องทำตามลำดับ", "Do in order"), color = C.text, fontSize = TS.body)
+                        Text(
+                            if (strict) tr("งานถัดไปรองานก่อนหน้า (เขียนรหัสงานลงไฟล์ให้ปลั๊กอิน Tasks เห็นด้วย)", "Each task waits for the one before (written as task ids for the Tasks plugin)")
+                            else tr("ปิดอยู่: ลำดับเป็นแค่คำแนะนำ ทำข้ามได้", "Off: the order is a suggestion, skip ahead freely"),
+                            color = C.muted, fontSize = TS.caption,
+                        )
+                    }
+                    OnOff(strict)
+                }
+            }
+            if (openTasks.isNotEmpty()) {
+                item(key = "ordered") {
+                    Card {
+                        SectionHead(tr("ลำดับงาน", "Order"), C.accentText, "${openTasks.size}")
+                        OrderedTaskList(
+                            openTasks,
+                            onToggle = { vm.toggleDone(it) },
+                            onOpen = onOpen,
+                            onReorder = { vm.setProjectTaskOrder(open.name, it) },
+                            meta = { t ->
+                                val pos = openTasks.indexOf(t)
+                                val waiting = t in open.blocked
+                                when {
+                                    waiting && strict && pos > 0 -> tr("รองานข้อ $pos ก่อน", "Waits for task $pos")
+                                    waiting -> tr("รอ ", "Waiting on ") + (Projects.waitingOn(t, state.tasks) ?: "")
+                                    else -> listOfNotNull(
+                                        if (pos == 0) tr("ทำถัดไป", "Next") else null,
+                                        (t.due ?: t.scheduled)?.format(SHORT_DATE),
+                                        state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
+                                    ).joinToString(", ")
+                                }
+                            },
+                            locked = { it in open.blocked },
+                        )
+                        Box(Modifier.height(4.dp))
+                    }
+                }
+            }
+            val finished = open.tasks.filter { !it.isOpen && it.parent == null }.sortedByDescending { it.done }
+            if (finished.isNotEmpty()) {
+                item(key = "finished") {
+                    Card {
+                        SectionHead(tr("เสร็จแล้ว", "Done"), C.text2, "${finished.size}")
+                        finished.forEachIndexed { i, t ->
+                            if (i > 0) Divider(start = 48.dp)
+                            TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) })
                         }
+                        Box(Modifier.height(4.dp))
                     }
                 }
             }

@@ -189,7 +189,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 if (twoPane && editing != null) {
                     Box(Modifier.width(400.dp).fillMaxHeight().background(C.card).statusBarsPadding()) {
                         CompositionLocalProvider(LocalPane provides true) {
-                            EditSheet(editing, state, vm, onDismiss = { editingKey = null })
+                            EditSheet(editing, state, vm, onDismiss = { editingKey = null }, onOpen = open)
                         }
                     }
                 }
@@ -207,10 +207,26 @@ fun OmniTaskApp(vm: TaskViewModel) {
     }
 
     if (editing != null && !(wide && twoPane)) {
-        EditSheet(editing, state, vm, onDismiss = { editingKey = null })
+        EditSheet(editing, state, vm, onDismiss = { editingKey = null }, onOpen = open)
     }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
     state.crash?.let { report -> CrashDialog(report, vm::dismissCrash) }
+    state.closingParent?.let { parent ->
+        val left = state.subtasksOf(parent).count { it.isOpen }
+        AlertDialog(
+            onDismissRequest = { vm.closeParent(null) },
+            containerColor = C.raised,
+            title = { Text(tr("ยังมีงานย่อยค้าง $left งาน", "$left subtasks are still open")) },
+            text = { Text(tr("ติ๊กงานย่อยที่เหลือให้เสร็จไปด้วยไหม", "Tick the remaining subtasks as done too?"), color = C.text2) },
+            confirmButton = { TextButton(onClick = { vm.closeParent(true) }) { Text(tr("ติ๊กทั้งหมด", "Tick all"), color = C.accent) } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { vm.closeParent(null) }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
+                    TextButton(onClick = { vm.closeParent(false) }) { Text(tr("เฉพาะงานแม่", "Only this task"), color = C.text2) }
+                }
+            },
+        )
+    }
     adding?.let { r ->
         QuickAddSheet(state, vm, r.voice, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
     }

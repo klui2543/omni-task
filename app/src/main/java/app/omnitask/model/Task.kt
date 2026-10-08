@@ -47,10 +47,17 @@ data class Task(
     val lineIndex: Int = -1,
     /** Set when the line lives in a list note (Bucket list, Watch list...), which keeps it out of the task views. */
     val list: String? = null,
+    /** The key of the task this one sits under (an indented checkbox line), or null for a top-level task. */
+    val parent: String? = null,
 ) {
     val isOpen get() = status == Status.TODO || status == Status.IN_PROGRESS
     val noteName get() = filePath.substringAfterLast('/').removeSuffix(".md")
     val key get() = "$fileUri#$lineIndex"
+
+    /** Leading spaces of the line (a tab counts as four), which decide which task a subtask belongs to. */
+    val indent: Int get() = raw.takeWhile { it == ' ' || it == '\t' }.sumOf { if (it == '\t') 4 else 1 }
+
+    val isSubtask get() = parent != null
 
     /** Images embedded in the lines under the task, e.g. `- ![[Omni-2026-10-07-1430.webp]]`. */
     val attachments: List<String>
@@ -68,12 +75,18 @@ data class Task(
     val firstStep: String?
         get() = notes.firstOrNull { it.startsWith(FIRST_STEP) }?.removePrefix(FIRST_STEP)?.trim()?.ifEmpty { null }
 
-    /** Notes the user wrote, without the image embeds, note links and first step. */
+    /** Notes the user wrote (the description), without the image embeds, note links and first step. */
     val textNotes: List<String>
-        get() = notes.filter { EMBED.find(it) == null && LINK_LINE.find(it) == null && !it.startsWith(FIRST_STEP) }
+        get() = notes.filter { isPlainNote(it) }
+
+    /** The description as one text, a line per note. */
+    val description: String get() = textNotes.joinToString("\n")
 
     companion object {
         const val FIRST_STEP = "ก้าวแรก:"
+
+        /** A note line that is part of the description, not one of the app's own lines. */
+        fun isPlainNote(note: String) = EMBED.find(note) == null && LINK_LINE.find(note) == null && !note.startsWith(FIRST_STEP)
     }
 
     /** When this task's reminder fires, or null when it has no time or no date to hang it on. */

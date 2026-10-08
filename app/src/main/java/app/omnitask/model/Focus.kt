@@ -57,7 +57,7 @@ object Focus {
      * than [reviewEvery]. Oldest first, so the longest-ignored work gets looked at first.
      */
     fun toReview(tasks: List<Task>, today: LocalDate, reviewed: Map<String, LocalDate>): List<Task> =
-        tasks.filter { t -> t.isOpen && t.due == null && !isWaiting(t) && (t.scheduled == null || t.scheduled < today) }
+        tasks.filter { t -> t.isOpen && t.parent == null && t.due == null && !isWaiting(t) && (t.scheduled == null || t.scheduled < today) }
             .mapNotNull { t ->
                 val base = listOfNotNull(t.created, reviewed[t.title]).maxOrNull()
                 if (base == null || ChronoUnit.DAYS.between(base, today) >= reviewEvery(t)) t to (base ?: LocalDate.MIN) else null

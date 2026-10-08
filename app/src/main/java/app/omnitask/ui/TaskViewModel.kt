@@ -85,6 +85,8 @@ data class UiState(
     val pendingImage: PendingImage? = null,
     /** The report of a crash since the app was last open, shown once so it can be copied. */
     val crash: String? = null,
+    /** A parent being ticked while some subtasks are still open: ask whether to tick them too. */
+    val closingParent: Task? = null,
     /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
@@ -99,6 +101,9 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
+    val projectTaskOrder: Map<String, List<String>> = emptyMap(),
+    val strictProjects: Set<String> = emptySet(),
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -114,6 +119,19 @@ data class UiState(
 
     /** Tasks and list items together, for the task list when a list is chosen in the filter. */
     val allTasks get() = tasks + listItems
+
+    /** A task's direct subtasks, in file order (which is their 1, 2, 3 order). */
+    fun subtasksOf(task: Task): List<Task> = allTasks.filter { it.parent == task.key }.sortedBy { it.lineIndex }
+
+    fun parentOf(task: Task): Task? = task.parent?.let { p -> allTasks.firstOrNull { it.key == p } }
+
+    private val progressIndex: Map<String, Pair<Int, Int>> by lazy {
+        allTasks.filter { it.parent != null && it.status != Status.CANCELLED }.groupBy { it.parent!! }
+            .mapValues { (_, kids) -> kids.count { it.status == Status.DONE } to kids.size }
+    }
+
+    /** Done and total subtasks, for the "2/4" on a parent; null when it has none. */
+    fun progressOf(task: Task): Pair<Int, Int>? = progressIndex[task.key]
     val notes get() = tasks.map { it.noteName }.distinct().sorted()
 
     /** Everything but the date filter, so the date tabs can show a count each. */
@@ -182,6 +200,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         notify = Scheduler.loadSettings(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
+            e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
+        },
+        strictProjects = prefs.getStringSet(KEY_STRICT, emptySet()).orEmpty().toSet(),
         savedFilters = prefs.getStringSet(KEY_SAVED_FILTERS, emptySet()).orEmpty()
             .associate { it.substringBefore('\t') to it.substringAfter('\t', "") },
     )
@@ -292,6 +314,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleDone(task: Task) {
+        if (task.isOpen && _state.value.subtasksOf(task).any { it.isOpen }) {
+            _state.update { it.copy(closingParent = task) }
+            return
+        }
         if (task.recurrence != null && task.isOpen) return completeRecurring(task)
         if (task.isOpen) logDone(task)
         edit(task) { TaskLine.setDone(it, task.isOpen, LocalDate.now()) }
@@ -566,6 +592,49 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(starred = next) }
     }
 
+    /**
+     * A project's open tasks in the owner's order: tasks never placed come after, by date. The first is
+     * the one to do next.
+     */
+    fun orderedProjectTasks(project: String, tasks: List<Task>): List<Task> {
+        val rank = _state.value.projectTaskOrder[project].orEmpty().withIndex().associate { it.value to it.index }
+        return tasks.sortedWith(compareBy<Task>({ rank[it.title] ?: Int.MAX_VALUE }, { it.due ?: it.scheduled ?: LocalDate.MAX }))
+    }
+
+    fun setProjectTaskOrder(project: String, ordered: List<Task>) {
+        val next = _state.value.projectTaskOrder + (project to ordered.map { it.title })
+        prefs.edit().putStringSet(KEY_PROJECT_TASKS, next.map { (k, v) -> k + "\t" + v.joinToString("\u001F") }.toSet()).apply()
+        _state.update { it.copy(projectTaskOrder = next) }
+        if (project in _state.value.strictProjects) writeChain(ordered, on = true)
+    }
+
+    /** Turns "do in order" on (each task waits for the one before it, via 🆔/⛔ in the file) or off. */
+    fun setStrict(project: String, on: Boolean, ordered: List<Task>) {
+        val next = _state.value.strictProjects.let { if (on) it + project else it - project }
+        prefs.edit().putStringSet(KEY_STRICT, next).apply()
+        _state.update { it.copy(strictProjects = next) }
+        writeChain(ordered, on)
+    }
+
+    private fun writeChain(ordered: List<Task>, on: Boolean) {
+        val ids = ordered.map { it.id ?: ("o" + java.util.UUID.randomUUID().toString().filter { c -> c.isLetterOrDigit() }.take(5)) }
+        val own = ids.toSet()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    ordered.forEachIndexed { i, t ->
+                        // Keep any waits on tasks outside this project; replace the ones inside it.
+                        val outside = t.dependsOn.filter { it !in own }
+                        val deps = if (on && i > 0) outside + ids[i - 1] else outside
+                        repo.rewriteLine(t) { raw -> TaskLine.setDependsOn(if (on) TaskLine.setId(raw, ids[i]) else raw, deps) }
+                    }
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกลำดับไม่ได้: ", "Could not save the order: ") + e.message) } }
+            reload()
+        }
+    }
+
     /** Saves the order the owner dragged the projects into. */
     fun setProjectOrder(order: List<String>) {
         prefs.edit().putString(KEY_PROJECT_ORDER, order.joinToString("\n")).apply()
@@ -581,6 +650,64 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         list[i] = list[j].also { list[j] = list[i] }
         prefs.edit().putString(KEY_PROJECT_ORDER, list.joinToString("\n")).apply()
         _state.update { it.copy(projectOrder = list) }
+    }
+
+    // ---- Subtasks and description ----
+
+    /** Answers the "tick the open subtasks too?" question; null cancels. */
+    fun closeParent(withSubtasks: Boolean?) {
+        val parent = _state.value.closingParent ?: return
+        _state.update { it.copy(closingParent = null) }
+        if (withSubtasks == null) return
+        val open = if (withSubtasks) _state.value.subtasksOf(parent).filter { it.isOpen } else emptyList()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val today = LocalDate.now()
+                    open.forEach { child -> repo.rewriteLine(child) { TaskLine.setDone(it, true, today) } }
+                    if (parent.recurrence != null) repo.completeRecurring(parent, today) else repo.rewriteLine(parent) { TaskLine.setDone(it, true, today) }
+                }
+            }
+            logDone(parent)
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ", "Could not save: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Adds a subtask; the text is read like quick add, so "พรุ่งนี้ 9:00 #tag" works here too. */
+    fun addSubtask(parent: Task, text: String) {
+        if (text.isBlank()) return
+        val line = QuickAdd.parse(text, LocalDate.now()).line(LocalDate.now())
+        sub(parent) { repo.addSubtask(parent, line) }
+    }
+
+    fun reorderSubtasks(parent: Task, ordered: List<Task>) = sub(parent) { repo.reorderSubtasks(parent, ordered.map { it.raw }) }
+
+    fun setDescription(task: Task, text: String) {
+        if (text.trim() == task.description.trim()) return
+        sub(task) { repo.setDescription(task, text) }
+    }
+
+    /** A long description moves to its own note in the vault, linked under the task. */
+    fun moveDescriptionToNote(task: Task, text: String) {
+        val vault = _state.value.vault ?: return
+        val name = task.title.replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").replace(Regex("""\s+"""), " ").trim().take(80).ifEmpty { "Task" }
+        val path = "${OmniList.FOLDER}/Notes/$name.md"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val existing = repo.readPath(vault, path)
+                    repo.writePath(vault, path, (existing?.trimEnd()?.plus("\n\n") ?: "# $name\n\n") + text.trim() + "\n")
+                    repo.setDescription(task, "")
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Could not move: ") + e.message) } }
+            // The task line is unchanged by the description edit, so the link can go under it right after.
+            val fresh = _state.value.tasks.firstOrNull { it.key == task.key } ?: task
+            if (result.isSuccess) withContext(Dispatchers.IO) { runCatching { repo.addSubLine(fresh, "[[$name]]") } }
+            _state.update { it.copy(message = tr("ย้ายรายละเอียดไปที่ $path แล้ว", "Moved the description to $path")) }
+            reload()
+        }
     }
 
     // ---- Lists ----
@@ -934,6 +1061,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+        const val KEY_PROJECT_TASKS = "projectTaskOrder"
+        const val KEY_STRICT = "strictProjects"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
 

@@ -45,6 +45,8 @@ data class TaskQuery(
     val lists: Set<String> = emptySet(),
     /** The views (Kanban, Matrix, Gantt, calendar) leave done and cancelled work out. */
     val hideDone: Boolean = true,
+    /** Subtasks normally live inside their parent; the calendar asks for them so dated ones still show. */
+    val withSubtasks: Boolean = false,
     val text: String = "",
     val groupBy: GroupBy = GroupBy.DATE,
     val sortBy: SortBy = SortBy.DUE,
@@ -63,6 +65,7 @@ data class TaskQuery(
             (tags.isEmpty() || t.tags.any { tag -> tags.any { tag == it || tag.startsWith("$it/") } }) &&
             (notes.isEmpty() || t.noteName in notes) &&
             (buckets.isEmpty() || t.bucket(today) in buckets) &&
+            (withSubtasks || t.parent == null) &&
             (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true)) &&
             typeMatches(t)
 

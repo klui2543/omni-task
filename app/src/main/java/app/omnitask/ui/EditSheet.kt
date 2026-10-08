@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
@@ -48,6 +51,8 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,16 +62,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
@@ -88,7 +99,7 @@ import java.time.ZoneOffset
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
+fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Unit, onOpen: (Task) -> Unit = {}) {
     var picking by remember { mutableStateOf<DateField?>(null) }
     var addingTag by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
@@ -101,12 +112,23 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     }
 
     // Which chip's choices are open under the chip row, and which folded row is expanded.
-    var open by remember { mutableStateOf<Prop?>(null) }
-    var fold by remember { mutableStateOf<String?>(null) }
+    var open by remember(task.key) { mutableStateOf<Prop?>(null) }
+    var fold by remember(task.key) { mutableStateOf<String?>(null) }
     fun toggle(p: Prop) { open = if (open == p) null else p }
     val today = state.today
 
     SheetFrame(onDismiss) {
+        // A subtask opens as a full task of its own; this leads back to the task it sits under.
+        state.parentOf(task)?.let { parent ->
+            Row(
+                Modifier.padding(bottom = 6.dp).clip(RoundedCornerShape(15.dp)).background(C.raised)
+                    .clickable { onOpen(parent) }.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Ic.back, null, tint = C.accentText, modifier = Modifier.size(14.dp))
+                Text(parent.title, Modifier.padding(start = 4.dp).widthIn(max = 260.dp), color = C.accentText, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.padding(top = 0.dp)) { TaskCheck(task, { vm.toggleDone(task) }, size = 22.dp) }
             Column(Modifier.weight(1f).padding(top = 8.dp)) {
@@ -115,9 +137,10 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"),
                     color = C.faint, fontSize = TS.caption,
                 )
-                task.textNotes.forEach { Text(it, Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption) }
             }
         }
+
+        DescriptionBlock(task, vm)
 
         Segmented(
             Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
@@ -207,6 +230,8 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             }
         }
 
+        SubtaskBlock(task, state, vm, onOpen)
+
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
             FoldRow(Ic.footsteps, tr("ก้าวแรกที่เล็กที่สุด", "Smallest first step"), task.firstStep ?: tr("ยังไม่มี", "None yet"), fold == "step", first = true) {
@@ -295,6 +320,115 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             confirmButton = { TextButton(onClick = { vm.removeImage(task, name); confirmDelete = null }) { Text(tr("ลบ", "Delete"), color = C.red) } },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
         )
+    }
+}
+
+/** The description under the title: tap to write; a long one can move to its own note. */
+@Composable
+private fun DescriptionBlock(task: Task, vm: TaskViewModel) {
+    var editing by remember(task.key) { mutableStateOf(false) }
+    var text by remember(task.key, task.description) { mutableStateOf(task.description) }
+    val long = text.length > 280 || text.lines().size > 6
+    Column(
+        Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
+            .border(1.dp, if (editing) Color(0xFF3A3466) else C.cardBorder, RoundedCornerShape(14.dp))
+            .clickable(enabled = !editing) { editing = true }.padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Ic.tasks, null, tint = C.muted, modifier = Modifier.size(14.dp))
+            Text(tr("รายละเอียด", "Details"), Modifier.padding(start = 6.dp).weight(1f), color = C.muted, fontSize = TS.caption)
+            if (editing && long) {
+                Text(
+                    tr("ย้ายไปโน้ตแยก", "Move to a note"),
+                    Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.moveDescriptionToNote(task, text); editing = false }.padding(horizontal = 6.dp, vertical = 2.dp),
+                    color = C.accentText, fontSize = TS.caption,
+                )
+            }
+        }
+        if (editing) {
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont, lineHeight = 1.45.em),
+                cursorBrush = SolidColor(C.accent),
+                modifier = Modifier.padding(top = 6.dp).fillMaxWidth().heightIn(min = 60.dp),
+                decorationBox = { inner ->
+                    Box {
+                        if (text.isEmpty()) Text(tr("เขียนรายละเอียดงาน บรรทัดละเรื่อง", "Write the details, one point per line"), color = C.faint, fontSize = TS.body)
+                        inner()
+                    }
+                },
+            )
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f))
+                GhostButton(tr("ยกเลิก", "Cancel"), { text = task.description; editing = false })
+                PrimaryButton(tr("บันทึก", "Save"), { vm.setDescription(task, text); editing = false })
+            }
+        } else {
+            Text(
+                task.description.ifEmpty { tr("แตะเพื่อเขียนรายละเอียด", "Tap to add details") },
+                Modifier.padding(top = 4.dp), color = if (task.description.isEmpty()) C.faint else C.text, fontSize = TS.body,
+            )
+        }
+    }
+}
+
+/**
+ * Subtasks numbered in file order, which is the order to do them in. The handle drags a row up or down;
+ * tapping a row opens that subtask as a full task.
+ */
+@Composable
+private fun SubtaskBlock(task: Task, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+    val subs = state.subtasksOf(task)
+    var adding by remember(task.key) { mutableStateOf("") }
+    val done = subs.count { it.status == Status.DONE }
+
+    Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (subs.isEmpty()) tr("งานย่อย", "Subtasks") else tr("งานย่อย $done/${subs.size}", "Subtasks $done/${subs.size}"),
+            Modifier.weight(1f), color = C.muted, fontSize = TS.caption,
+        )
+        if (subs.isNotEmpty()) {
+            Box(Modifier.width(90.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.raised)) {
+                Box(Modifier.fillMaxWidth(done.toFloat() / subs.size).height(6.dp).background(C.lime))
+            }
+        }
+    }
+    Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
+        OrderedTaskList(
+            subs,
+            onToggle = { vm.toggleDone(it) },
+            onOpen = onOpen,
+            onReorder = { vm.reorderSubtasks(task, it) },
+            meta = { sub ->
+                listOfNotNull(
+                    (sub.due ?: sub.scheduled)?.let { dayText(it, state.today) },
+                    sub.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) },
+                    state.progressOf(sub)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
+                ).joinToString(", ")
+            },
+        )
+        if (subs.isNotEmpty()) Divider()
+        Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).padding(start = 14.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Ic.plus, null, tint = C.accentText, modifier = Modifier.size(16.dp))
+            BasicTextField(
+                value = adding,
+                onValueChange = { adding = it },
+                singleLine = true,
+                modifier = Modifier.weight(1f).padding(start = 10.dp),
+                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
+                cursorBrush = SolidColor(C.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { vm.addSubtask(task, adding); adding = "" }),
+                decorationBox = { inner ->
+                    Box {
+                        if (adding.isEmpty()) Text(tr("เพิ่มงานย่อย (พรุ่งนี้ 9:00 #tag ได้)", "Add a subtask (tomorrow 9:00 #tag works)"), color = C.accentText, fontSize = TS.body)
+                        inner()
+                    }
+                },
+            )
+            if (adding.isNotBlank()) SquareButton(Ic.check, tr("เพิ่ม", "Add"), { vm.addSubtask(task, adding); adding = "" }, filled = true)
+        }
     }
 }
 

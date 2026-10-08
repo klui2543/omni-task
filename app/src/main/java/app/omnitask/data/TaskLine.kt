@@ -154,6 +154,18 @@ object TaskLine {
         return setDate(marked, DateField.DONE, if (done) today else null)
     }
 
+    /** Sets or clears the task's 🆔, which other tasks name in ⛔ to wait for it. */
+    fun setId(raw: String, id: String?): String = editBody(raw) { body ->
+        val cleared = ID.find(body)?.let { remove(body, it.range) } ?: body
+        id?.let { "${cleared.trimEnd()} 🆔 $it" } ?: cleared
+    }
+
+    /** Sets the ids this task waits for (⛔ a,b), or clears them when the list is empty. */
+    fun setDependsOn(raw: String, ids: List<String>): String = editBody(raw) { body ->
+        val cleared = DEPENDS.find(body)?.let { remove(body, it.range) } ?: body
+        if (ids.isEmpty()) cleared else "${cleared.trimEnd()} ⛔ ${ids.joinToString(",")}"
+    }
+
     /** Sets or clears the 🔁 rule, keeping TaskForge's token order. */
     fun setRecurrence(raw: String, rule: String?): String = editBody(raw) { body ->
         val cleared = RECURRENCE.find(body)?.let { remove(body, it.range) } ?: body

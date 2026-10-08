@@ -103,7 +103,12 @@ fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             Mode.KANBAN -> Kanban(state, pool, vm, onOpen)
             Mode.MATRIX -> Matrix(state, narrowed, vm, onOpen)
             Mode.GANTT -> GanttView(state, narrowed, vm, onOpen)
-            Mode.CALENDAR -> CalendarViews(state, narrowed, vm, onOpen)
+            // Subtasks live inside their parent, but a dated one still belongs on the calendar.
+            Mode.CALENDAR -> CalendarViews(
+                state,
+                narrowed + state.tasks.filter { it.isSubtask && (it.due != null || it.scheduled != null) && (!q.hideDone || it.isOpen) },
+                vm, onOpen,
+            )
         }
     }
     if (filtering) FilterSheet(state, vm) { filtering = false }
@@ -187,7 +192,7 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
             if (i > 0) MoveButton(Ic.back, tr("ย้ายไป ", "Move to ") + order[i - 1].label) { vm.setStatus(t, order[i - 1]) }
             if (i in 0 until order.lastIndex) MoveButton(Ic.next, tr("ย้ายไป ", "Move to ") + order[i + 1].label) { vm.setStatus(t, order[i + 1]) }
         }
-        val meta = metaOf(t, state.today, compact = true)
+        val meta = metaOf(t, state.today, compact = true, progress = state.progressOf(t))
         if (meta.isNotEmpty()) {
             FlowRow(Modifier.padding(start = 11.dp, top = 6.dp, end = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }

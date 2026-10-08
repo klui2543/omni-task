@@ -250,7 +250,8 @@ fun OnOff(checked: Boolean) {
 data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageVector? = null)
 
 /** The small labels under a task title. */
-fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false): List<Meta> = buildList {
+fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false, progress: Pair<Int, Int>? = null): List<Meta> = buildList {
+    progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else C.raised, if (done == all) C.lime else C.text2, Ic.tasks)) }
     val open = t.isOpen
     if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
     t.due?.let { d ->
@@ -287,6 +288,7 @@ fun TaskRow(
     onOpen: () -> Unit,
     blockedBy: String? = null,
     compact: Boolean = false,
+    progress: Pair<Int, Int>? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val done = !task.isOpen
@@ -301,7 +303,7 @@ fun TaskRow(
                 maxLines = if (compact) 2 else 4,
                 overflow = TextOverflow.Ellipsis,
             )
-            val meta = metaOf(task, today, blockedBy, compact)
+            val meta = metaOf(task, today, blockedBy, compact, progress)
             if (meta.isNotEmpty()) {
                 FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }

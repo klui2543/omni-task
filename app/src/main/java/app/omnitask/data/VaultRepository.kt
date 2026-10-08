@@ -58,6 +58,17 @@ class VaultRepository(private val context: Context) {
         return true
     }
 
+    /** Adds a subtask as the last line of the parent's block, one level deeper. */
+    fun addSubtask(parent: Task, taskLine: String) = editLines(parent) { lines, index -> insertSubtask(lines, index, taskLine) }
+
+    /** Puts the parent's direct subtasks in the order of [rawsInOrder]; see [orderSubtasks]. */
+    fun reorderSubtasks(parent: Task, rawsInOrder: List<String>) = editLines(parent) { lines, index ->
+        if (!orderSubtasks(lines, index, rawsInOrder)) throw ConflictException()
+    }
+
+    /** Replaces the task's description; see [describe]. */
+    fun setDescription(task: Task, text: String) = editLines(task) { lines, index -> describe(lines, index, text) }
+
     /** Appends `line` as the last indented line under the task (after its existing notes). */
     fun addSubLine(task: Task, line: String) = editLines(task) { lines, index ->
         val indent = lines[index].takeWhile { it.isWhitespace() } + "    "
@@ -236,13 +247,73 @@ class VaultRepository(private val context: Context) {
         /** The live TaskForge file, where new tasks are added. */
         const val TASK_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge.md"
 
+        private fun indentOf(line: String) = line.takeWhile { it == ' ' || it == '\t' }.sumOf { if (it == '\t') 4 else 1 }
+
+        /** Where the task's block ends: the first line after it that is not indented deeper (exclusive). */
+        private fun blockEnd(lines: List<String>, index: Int): Int {
+            val base = indentOf(lines[index])
+            var end = index + 1
+            while (end < lines.size && lines[end].isNotBlank() && indentOf(lines[end]) > base) end++
+            return end
+        }
+
+        fun insertSubtask(lines: MutableList<String>, index: Int, taskLine: String) {
+            val indent = lines[index].takeWhile { it == ' ' || it == '\t' } + "    "
+            lines.add(blockEnd(lines, index), indent + taskLine.trimStart())
+        }
+
+        /**
+         * Puts the direct subtasks of the task at [index] in the order of [rawsInOrder] (their lines as they are
+         * now). Each subtask moves with everything indented under it; the parent's own notes stay on top.
+         * Returns false when the subtasks no longer match.
+         */
+        fun orderSubtasks(lines: MutableList<String>, index: Int, rawsInOrder: List<String>): Boolean {
+            val end = blockEnd(lines, index)
+            val region = lines.subList(index + 1, end).toList()
+            val childIndent = region.filter { TaskLine.isTask(it) }.minOfOrNull { indentOf(it) } ?: return false
+            val head = region.takeWhile { !(TaskLine.isTask(it) && indentOf(it) == childIndent) }
+            val blocks = ArrayList<MutableList<String>>()
+            region.drop(head.size).forEach { line ->
+                if (TaskLine.isTask(line) && indentOf(line) == childIndent) blocks += mutableListOf(line) else blocks.lastOrNull()?.add(line)
+            }
+            val ordered = rawsInOrder.mapNotNull { raw -> blocks.firstOrNull { it.first() == raw } } + blocks.filter { b -> b.first() !in rawsInOrder }
+            if (ordered.size != blocks.size) return false
+            val rebuilt = head + ordered.flatten()
+            for (k in rebuilt.indices) lines[index + 1 + k] = rebuilt[k]
+            return true
+        }
+
+        /**
+         * Replaces the description of the task at [index]: its plain note lines (not links, images, the first
+         * step or subtasks). Each line of [text] becomes a `- ` line, which Obsidian shows nested under the task.
+         */
+        fun describe(lines: MutableList<String>, index: Int, text: String) {
+            val indent = lines[index].takeWhile { it == ' ' || it == '\t' } + "    "
+            var i = index + 1
+            var at = -1
+            while (i < lines.size && lines[i].isNotBlank() && lines[i].first().isWhitespace() && !TaskLine.isTask(lines[i])) {
+                if (Task.isPlainNote(lines[i].trim().removePrefix("- ").trim())) {
+                    if (at < 0) at = i
+                    lines.removeAt(i)
+                } else {
+                    i++
+                }
+            }
+            val fresh = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { "$indent- $it" }
+            lines.addAll(if (at >= 0) at else index + 1, fresh)
+        }
+
         fun parseFile(fileUri: String, filePath: String, text: String): List<Task> {
             val lines = text.split("\r\n", "\n")
             val tasks = ArrayList<Task>()
+            // Open parents by indent: a deeper checkbox line right under a task is its subtask.
+            val stack = ArrayList<Task>()
             var i = 0
             while (i < lines.size) {
                 val parsed = TaskLine.parse(lines[i])
                 if (parsed == null) {
+                    // Anything at the left margin (a heading, a paragraph) ends the nesting.
+                    if (lines[i].isNotBlank() && !lines[i].first().isWhitespace()) stack.clear()
                     i++
                     continue
                 }
@@ -253,7 +324,11 @@ class VaultRepository(private val context: Context) {
                     notes += lines[j].trim().removePrefix("- ").trim()
                     j++
                 }
-                tasks += parsed.copy(filePath = filePath, fileUri = fileUri, lineIndex = i, notes = notes)
+                val placed = parsed.copy(filePath = filePath, fileUri = fileUri, lineIndex = i, notes = notes)
+                while (stack.isNotEmpty() && stack.last().indent >= placed.indent) stack.removeAt(stack.lastIndex)
+                val task = placed.copy(parent = stack.lastOrNull()?.key)
+                tasks += task
+                stack += task
                 i = j
             }
             return tasks
