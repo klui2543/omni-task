@@ -2,13 +2,21 @@ package app.omnitask.web
 
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
+import app.omnitask.model.DateBucket
+import app.omnitask.model.GroupBy
+import app.omnitask.model.Priority
 import app.omnitask.model.QuickAdd
+import app.omnitask.model.SortBy
+import app.omnitask.model.TaskKind
+import app.omnitask.model.TaskQuery
+import app.omnitask.model.Recurrence
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.Projects
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -40,6 +48,12 @@ object WebCore {
         val bucket: String,
         val lineIndex: Int,
         val parent: String?,
+        /** The description's first line, shown quietly under the title. */
+        val preview: String? = null,
+        /** The repeat rule in words, as on Android's task rows. */
+        val repeatText: String? = null,
+        val attachments: Int = 0,
+        val links: Int = 0,
     )
 
     @Serializable
@@ -52,12 +66,68 @@ object WebCore {
         reminder = t.reminderTime?.let { app.omnitask.time.hhmm(it.hour, it.minute) },
         tags = t.tags, project = Projects.projectOf(t), description = t.description,
         bucket = t.bucket(today).name, lineIndex = t.lineIndex, parent = t.parent,
+        preview = t.descriptionPreview, repeatText = t.recurrence?.let { Recurrence.describe(it) },
+        attachments = t.attachments.size, links = t.links.size,
     )
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String {
         val day = LocalDate.parse(today)
         return json.encodeToString(VaultText.parseFile(fileKey, path, text).map { dto(it, day) })
+    }
+
+    /** The task list's filters, grouping and sorting, named as in [TaskQuery]; empty sets mean no filter. */
+    @Serializable
+    data class QueryDto(
+        val statuses: List<String> = listOf("TODO", "IN_PROGRESS"),
+        val priorities: List<String> = emptyList(),
+        val tags: List<String> = emptyList(),
+        val buckets: List<String> = emptyList(),
+        val kinds: List<String> = emptyList(),
+        val text: String = "",
+        val groupBy: String = "DATE",
+        /** Sort levels in order, each a [SortBy] name and whether it runs ascending. */
+        val sorts: List<SortDto> = listOf(SortDto("DUE", true)),
+    )
+
+    @Serializable
+    data class SortDto(val by: String, val ascending: Boolean)
+
+    /** One group of the list: its heading, how the heading is coloured, and its tasks by key, in order. */
+    @Serializable
+    data class GroupDto(val label: String, val tone: String, val keys: List<String>)
+
+    /** Done and total subtasks of a parent, for the "2/4" on its row. */
+    @Serializable
+    data class ProgressDto(val done: Int, val total: Int)
+
+    @Serializable
+    data class ListDto(val groups: List<GroupDto>, val progress: Map<String, ProgressDto>)
+
+    /** The task list as Android shows it: [TaskQuery] run over the note, plus each parent's subtask progress. */
+    fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
+        val day = LocalDate.parse(today)
+        val tasks = VaultText.parseFile(fileKey, path, text)
+        val q = json.decodeFromString<QueryDto>(query)
+        fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
+        val sorts = q.sorts.mapNotNull { s -> SortBy.entries.firstOrNull { it.name == s.by }?.let { it to s.ascending } }
+        val main = sorts.firstOrNull() ?: (SortBy.DUE to true)
+        val query = TaskQuery(
+            statuses = pick(q.statuses, Status.entries.toTypedArray()),
+            priorities = pick(q.priorities, Priority.entries.toTypedArray()),
+            tags = q.tags.toSet(),
+            buckets = pick(q.buckets, DateBucket.entries.toTypedArray()),
+            kinds = pick(q.kinds, TaskKind.entries.toTypedArray()),
+            text = q.text,
+            groupBy = GroupBy.entries.firstOrNull { it.name == q.groupBy } ?: GroupBy.DATE,
+            sortBy = main.first,
+            ascending = main.second,
+            thenBy = sorts.drop(1),
+        )
+        val groups = query.run(tasks, day).map { g -> GroupDto(g.label, g.tone.name, g.tasks.map { it.key }) }
+        val progress = tasks.filter { it.parent != null && it.status != Status.CANCELLED }.groupBy { it.parent!! }
+            .mapValues { (_, kids) -> ProgressDto(kids.count { it.status == Status.DONE }, kids.size) }
+        return json.encodeToString(ListDto(groups, progress))
     }
 
     private fun ok(text: String) = json.encodeToString(EditResult(true, text))

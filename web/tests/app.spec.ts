@@ -25,7 +25,9 @@ test('signs in, finds the vault by its TaskForge note and shows tasks by when th
   await expect(page.getByText('ส่งรายงาน')).toBeVisible()
   await expect(page.getByRole('heading', { name: /วันนี้/ })).toBeVisible()
   await expect(page.getByText('โทรหาแม่')).toBeVisible()
-  await expect(page.getByText('⏰ 09:30')).toBeVisible()
+  await expect(page.getByText('09:30', { exact: true })).toBeVisible()
+  await expect(page.getByText('ทุกวัน', { exact: true })).toBeVisible()
+  await expect(page.locator('.pill.teal', { hasText: 'งาน' })).toBeVisible()
   await expect(page.getByRole('heading', { name: /ไม่มีวันที่/ })).toBeVisible()
   await expect(page.getByText('เสร็จแล้วเมื่อวาน')).toHaveCount(0)
 })
@@ -52,7 +54,8 @@ test('quick add writes a task line in TaskForge order', async ({ page }) => {
   const { file } = await setup(page)
   await signInAndPick(page)
 
-  await page.getByLabel('เพิ่มงาน').fill('จองตั๋ว พรุ่งนี้ 9:00 #เดินทาง')
+  await page.getByRole('button', { name: /เพิ่มงาน/ }).click()
+  await page.getByLabel('งานใหม่').fill('จองตั๋ว พรุ่งนี้ 9:00 #เดินทาง')
   await page.getByRole('button', { name: 'เพิ่ม', exact: true }).click()
   await expect(page.getByText('จองตั๋ว')).toBeVisible()
   expect(file.text).toContain('- [ ] จองตั๋ว #เดินทาง #remind-at-due ⏰ 09:00 ➕ 2026-10-08 📅 2026-10-09')
@@ -183,4 +186,44 @@ test('the vault folder can be picked by opening folders', async ({ page }) => {
   await page.getByRole('button', { name: 'ใช้โฟลเดอร์ "ObsidianVault" เป็น vault' }).click()
   await expect(page.getByText('ส่งรายงาน')).toBeVisible()
   expect(root.name).toBe('ObsidianVault')
+})
+
+test('search narrows the list, and a folded group stays folded', async ({ page }) => {
+  await setup(page)
+  await signInAndPick(page)
+  await expect(page.getByText('โทรหาแม่')).toBeVisible()
+
+  await page.getByLabel('ค้นหาชื่องาน').fill('นม')
+  await expect(page.getByText('ซื้อนม')).toBeVisible()
+  await expect(page.getByText('โทรหาแม่')).toHaveCount(0)
+  await page.getByLabel('ค้นหาชื่องาน').fill('')
+
+  await page.getByRole('button', { name: /วันนี้/ }).click()
+  await expect(page.getByText('โทรหาแม่')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+  await expect(page.getByText('โทรหาแม่')).toHaveCount(0)
+})
+
+test('a parent shows how many of its subtasks are done', async ({ page }) => {
+  await setup(page, '- [ ] เตรียมสไลด์ 📅 2026-10-08\n    - [ ] ทำโครง\n    - [x] หาข้อมูล ✅ 2026-10-07\n')
+  await signInAndPick(page)
+  await expect(page.getByText('1/2', { exact: true })).toBeVisible()
+  await expect(page.getByText('ทำโครง')).toHaveCount(0)
+})
+
+test('the menu moves between pages and the page stays after a reload', async ({ page }) => {
+  await setup(page)
+  await signInAndPick(page)
+  const menu = page.getByRole('navigation', { name: 'เมนูหลัก' })
+  await expect(menu).toHaveCount(1)
+  await expect(menu.getByRole('button', { name: 'งาน', exact: true })).toHaveAttribute('aria-current', 'page')
+
+  await menu.getByRole('button', { name: 'มุมมอง' }).click()
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
+
+  await page.getByRole('button', { name: 'ตั้งค่า' }).first().click()
+  await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
 })

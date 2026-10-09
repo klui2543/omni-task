@@ -1,6 +1,6 @@
 // The vault logic shared with the Android app, compiled from Kotlin (see ../scripts/sync-core.mjs).
 import { WebApi } from './kotlin/OmniTask-shared.mjs'
-import type { EditResult, Task } from './types'
+import type { EditResult, Query, Task, TaskList } from './types'
 
 const api = WebApi.getInstance()
 
@@ -11,6 +11,10 @@ export const taskFilePath: string = api.taskFile()
 
 export const loadTasks = (fileKey: string, path: string, text: string): Task[] =>
   JSON.parse(api.loadTasks(fileKey, path, text, today()))
+
+/** The list as Android shows it for [query]: groups of task keys, plus each parent's subtask progress. */
+export const listTasks = (fileKey: string, path: string, text: string, query: Query): TaskList =>
+  JSON.parse(api.list(fileKey, path, text, today(), JSON.stringify(query)))
 
 const result = (json: string): EditResult => JSON.parse(json)
 
