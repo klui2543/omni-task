@@ -17,6 +17,14 @@ object VaultText {
     /** The live TaskForge file, where new tasks are added. */
     const val TASK_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge.md"
 
+    private val CONFLICT_COPY = Regex("""\((?:conflict|conflicted copy)\b[^)]*\)|\.sync-conflict-""", RegexOption.IGNORE_CASE)
+
+    /**
+     * A second copy a sync app leaves when a note changed on two sides at once, e.g.
+     * `TaskForge (conflict 2026-10-09-05-55-31).md`. Its tasks are the same tasks again, so it is not read.
+     */
+    fun isConflictCopy(path: String): Boolean = CONFLICT_COPY.containsMatchIn(path.substringAfterLast('/'))
+
     /** The line ending the file already uses, so an edit never changes it. */
     fun separatorOf(text: String) = if (text.contains("\r\n")) "\r\n" else "\n"
 
