@@ -1,6 +1,6 @@
-import { addTask, loadTasks, taskFilePath, toggle } from './core'
+import { addTask, listTasks, loadTasks, taskFilePath, toggle } from './core'
 import { Drive, DriveFile, sameName } from './drive'
-import type { EditResult, Task } from './types'
+import type { EditResult, Query, Task, TaskList } from './types'
 
 export class VaultError extends Error {
   constructor(public code: 'notfound' | 'busy', message: string) {
@@ -20,10 +20,10 @@ export class Vault {
     return (this.fileId = file.id)
   }
 
-  async load(): Promise<Task[]> {
+  async load(): Promise<Snapshot> {
     const id = await this.file()
     const { text } = await this.drive.readText(id)
-    return loadTasks(id, taskFilePath, text)
+    return new Snapshot(id, text, loadTasks(id, taskFilePath, text))
   }
 
   /**
@@ -50,6 +50,19 @@ export class Vault {
 
   add(sentence: string) {
     return this.edit((text) => addTask(text, sentence))
+  }
+}
+
+/** The note as last read: its tasks, and the text the shared logic groups and sorts them from. */
+export class Snapshot {
+  readonly byKey: Map<string, Task>
+
+  constructor(private fileId: string, private text: string, readonly tasks: Task[]) {
+    this.byKey = new Map(tasks.map((t) => [t.key, t]))
+  }
+
+  list(query: Query): TaskList {
+    return listTasks(this.fileId, taskFilePath, this.text, query)
   }
 }
 

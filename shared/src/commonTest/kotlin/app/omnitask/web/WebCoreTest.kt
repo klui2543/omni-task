@@ -41,6 +41,27 @@ class WebCoreTest {
     }
 
     @Test
+    fun rowsCarryTheirPreviewRepeatWordsAndCounts() {
+        val note = "- [ ] ประชุม 🔁 every day 📅 2026-10-08\n    - ห้อง 3\n    - ![[Omni-1.webp]]\n    - [[บันทึกประชุม]]"
+        val r = WebCore.loadTasks("f", "TaskForge.md", note, "2026-10-08")
+        assertTrue(r.contains("\"preview\":\"ห้อง 3\""), r)
+        assertTrue(r.contains("\"repeatText\":\"ทุกวัน\""), r)
+        assertTrue(r.contains("\"attachments\":1"), r)
+        assertTrue(r.contains("\"links\":1"), r)
+    }
+
+    @Test
+    fun listGroupsByDateWithSubtaskProgress() {
+        val note = "- [ ] ส่งรายงาน 📅 2026-10-07\n- [ ] สไลด์ 📅 2026-10-08\n    - [x] โครง ✅ 2026-10-07\n    - [ ] รูป\n- [ ] อ่านหนังสือ"
+        val r = WebCore.list("f", "TaskForge.md", note, "2026-10-08", "{}")
+        assertTrue(r.contains("{\"label\":\"เลยกำหนด\",\"tone\":\"ALERT\",\"keys\":[\"f#0\"]}"), r)
+        assertTrue(r.contains("{\"label\":\"วันนี้\",\"tone\":\"ACCENT\",\"keys\":[\"f#1\"]}"), r)
+        assertTrue(r.contains("\"f#1\":{\"done\":1,\"total\":2}"), r)
+        val searched = WebCore.list("f", "TaskForge.md", note, "2026-10-08", "{\"text\":\"อ่าน\"}")
+        assertTrue(searched.contains("\"keys\":[\"f#4\"]") && !searched.contains("f#0"), searched)
+    }
+
+    @Test
     fun parentCanCloseItsOpenSubtasksInOneWrite() {
         val text = "- [ ] เตรียมสไลด์\n    - [ ] ทำโครง\n    - [x] หาข้อมูล ✅ 2026-10-07\n- [ ] งานอื่น"
         val both = WebCore.toggle(text, "- [ ] เตรียมสไลด์", 0, "2026-10-08", withSubtasks = true)
