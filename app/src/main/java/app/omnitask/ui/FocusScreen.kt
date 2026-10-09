@@ -162,6 +162,13 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
+        // A sync clash left a second copy of a note: say so, since its tasks are left out until it is sorted.
+        state.conflicts.map { path ->
+            tr(
+                "มีไฟล์ซ้ำจากการ sync: ${path.substringAfterLast('/')}\nแอปไม่อ่านไฟล์นี้ ดูว่ามีอะไรที่ไฟล์หลักไม่มีไหม แล้วลบทิ้ง",
+                "A sync clash left a copy: ${path.substringAfterLast('/')}\nThe app skips it. Check it for anything the main note lacks, then delete it.",
+            )
+        }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
         brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
         item { ReviewPrompt(state) { reviewing = true } }

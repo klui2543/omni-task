@@ -21,10 +21,17 @@ class VaultRepository(private val context: Context) {
     fun loadTasks(treeUri: Uri): List<Task> = load(treeUri).tasks.filter { it.list == null }
 
     /** Tasks plus the path of every note in the vault (for linking notes to tasks). */
-    class Snapshot(val tasks: List<Task>, val notePaths: List<String>, val lists: List<OmniList> = emptyList())
+    class Snapshot(
+        val tasks: List<Task>,
+        val notePaths: List<String>,
+        val lists: List<OmniList> = emptyList(),
+        /** Copies a sync app left after a clash, which are not read (see [VaultText.isConflictCopy]). */
+        val conflicts: List<String> = emptyList(),
+    )
 
     fun load(treeUri: Uri): Snapshot {
-        val files = listMarkdown(treeUri)
+        val all = listMarkdown(treeUri)
+        val (conflicts, files) = all.partition { VaultText.isConflictCopy(it.path) }
         val lists = ArrayList<OmniList>()
         val tasks = files.flatMap { file ->
             // The archive keeps finished work for Obsidian; the app leaves it unread so Done stays short.
@@ -34,7 +41,7 @@ class VaultRepository(private val context: Context) {
             val list = OmniList.parse(file.path, text)?.also { lists += it }
             VaultText.parseFile(file.uri.toString(), file.path, text).let { found -> if (list == null) found else found.map { it.copy(list = list.name) } }
         }
-        return Snapshot(tasks, files.map { it.path }, lists.sortedBy { it.name.lowercase() })
+        return Snapshot(tasks, files.map { it.path }, lists.sortedBy { it.name.lowercase() }, conflicts.map { it.path })
     }
 
     /** The vault's folder name, which is also its name in Obsidian. */

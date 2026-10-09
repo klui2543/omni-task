@@ -108,6 +108,8 @@ data class UiState(
     val crash: String? = null,
     /** A parent being ticked while some subtasks are still open: ask whether to tick them too. */
     val closingParent: Task? = null,
+    /** Copies a sync app left after a clash (not read, so their tasks don't show twice). */
+    val conflicts: List<String> = emptyList(),
     /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
@@ -366,6 +368,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     listItems = result.getOrNull()?.tasks?.filter { t -> t.list != null } ?: it.listItems,
                     lists = result.getOrNull()?.lists ?: it.lists,
                     notePaths = result.getOrNull()?.notePaths ?: it.notePaths,
+                    conflicts = result.getOrNull()?.conflicts ?: it.conflicts,
                     vaultName = vaultName,
                     profile = profile,
                     insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined()),
