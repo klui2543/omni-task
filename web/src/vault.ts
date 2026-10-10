@@ -2,7 +2,7 @@ import {
   addTask, focus, archiveAppend, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
-import { Drive, DriveFile, FOLDER, sameName } from './drive'
+import { Drive, DriveError, DriveFile, FOLDER, sameName } from './drive'
 import { branchStates } from './ui/projects/projectState'
 import { config } from './config'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
@@ -40,10 +40,16 @@ export class Vault {
 
   private async file(): Promise<string> {
     if (this.located && this.fileId) return this.fileId
-    if (this.fileId) {
+    const name = this.fileId ? await this.nameIfStillTheNote(this.fileId) : null
+    if (this.fileId && name === null) {
+      // The remembered file is no longer the task note: it is looked up again by its path.
+      this.fileId = null
+      this.folderId = null
+      config.taskFileId = null
+    }
+    if (this.fileId && name !== null) {
       // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
       // an Omni note.md once the owner has made one in the new place.
-      const name = (await this.drive.get(this.fileId, 'name')).name
       this.notePath = sameName(name, 'TaskForge.md') ? legacyTaskFilePath : taskFilePath
       if (this.notePath === legacyTaskFilePath) {
         const fresh = await this.drive.resolve(this.rootId, taskFilePath)
@@ -63,6 +69,24 @@ export class Vault {
     }
     this.located = true
     return this.fileId!
+  }
+
+  /**
+   * The remembered file's name while it is still the task note, else null. When a sync app finds the note changed on
+   * two sides, it renames this file (e.g. "Omni note (older, before conflict ...).md") and makes a new one under the
+   * note's name; Obsidian moves a deleted note to .trash. Writing to the old file then would go to a copy.
+   */
+  private async nameIfStillTheNote(id: string): Promise<string | null> {
+    try {
+      const f = await this.drive.get(id, 'name,parents,trashed')
+      if (f.trashed || !['Omni note.md', 'TaskForge.md'].some((n) => sameName(f.name, n))) return null
+      const parent = f.parents?.[0]
+      if (parent && (await this.drive.get(parent, 'name')).name.startsWith('.')) return null
+      return f.name
+    } catch (e) {
+      if (e instanceof DriveError && e.status === 404) return null
+      throw e
+    }
   }
 
   /** The note's name with the part that conflict copies and the archive start with. */
@@ -89,6 +113,8 @@ export class Vault {
    * those mean two versions met, so the owner should compare them before going on.
    */
   async load(): Promise<Snapshot> {
+    // Checked again on every load: a sync app may have set the file aside since the page was opened.
+    this.located = false
     const id = await this.file()
     const index = this.index()
     index.skip = id

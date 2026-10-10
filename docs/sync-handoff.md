@@ -4,6 +4,7 @@ Where the conflict question stands, for the next session.
 
 ## Facts checked
 - One conflict so far: `TaskForge (conflict 2026-10-09-05-55-31).md`, now in the vault's `.trash` folder on Drive. No other TaskForge conflict copies found.
+- A second one on 2026-10-10 18:43: the sync app renamed the note to `Omni note (older, before conflict 2026-10-10-18-43-58).md` and made a new `Omni note.md` (a new Drive id). The web kept writing to the renamed file by its remembered id, and neither app took that name for a conflict copy, so every task showed twice (before and after the edit). Fixed: the conflict-copy check matches any parenthesis with "conflict", and the web drops a remembered id that is no longer named as the task note, is trashed, or sits in a hidden folder, and looks the note up by its path again.
 - The sync app ("Drive Sync Ultimate") is most likely Autosync for Google Drive by MetaCtrl: the conflict name matches its documented pattern. Per MetaCtrl's 2015 post it compares MD5 (identical content is not a conflict) and, on a real conflict, keeps both versions: one under the original name, one as "(conflict ...)". Which side gets which name is not documented.
 - Autosync offers 15 min to hourly intervals, Instant upload (local changes go up right away) and a manual sync. The owner's actual settings are not known yet.
 - The Android app has no Drive access; it reads and writes the vault through the folder picked with SAF. On the first open of each day it runs the archive sweep (`TaskViewModel.sweepIfDue`), which edits `TaskForge.md` without any tap.

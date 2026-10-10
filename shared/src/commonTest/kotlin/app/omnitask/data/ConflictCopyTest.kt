@@ -12,6 +12,8 @@ class ConflictCopyTest {
         assertTrue(VaultText.isConflictCopy("📁 Folder/หลังบ้าน/TaskForge/TaskForge (conflict 2026-10-09-05-55-31).md"))
         assertTrue(VaultText.isConflictCopy("Notes/TaskForge (Conflicted copy 2026-10-09).md"))
         assertTrue(VaultText.isConflictCopy("Notes/TaskForge.sync-conflict-20261009-055531-ABC.md"))
+        // The sync app also renames the side it set aside, and makes a new file under the note's own name.
+        assertTrue(VaultText.isConflictCopy("📁 Folder/หลังบ้าน/Omni/Omni note (older, before conflict 2026-10-10-18-43-58).md"))
     }
 
     @Test
