@@ -159,3 +159,116 @@ export interface ViewsOut {
   gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string }[] }[]
   progress: Record<string, { done: number; total: number }>
 }
+
+/* ---------- Projects ---------- */
+
+/** What was chosen on this device for the Projects page; see WebProjects.StateIn. */
+export interface ProjectsIn {
+  order: string[]
+  starred: string[]
+  /** Branch states as Android saves them: "project\tpath\tSTATE". */
+  branches: string[]
+  taskOrder: Record<string, string[]>
+  strict: string[]
+}
+
+export type BranchState = 'ACTIVE' | 'TRYING' | 'CHOSEN' | 'PARKED'
+
+export interface BranchOut {
+  path: string
+  name: string
+  tag: string
+  depth: number
+  parentPath: string
+  state: BranchState
+  done: number
+  count: number
+  /** The tasks tagged exactly with this branch, by key. */
+  own: string[]
+  /** The paths of the sub-branches. */
+  children: string[]
+}
+
+export interface OrderOut {
+  key: string
+  pos: number
+  next: boolean
+  locked: boolean
+  /** Which line goes under the title: waits for task [pos], waits for [waitingOn], or next, date and subtasks. */
+  meta: 'strict' | 'waiting' | 'plain'
+  waitingOn?: string
+  date?: string
+  subDone?: number
+  subTotal?: number
+}
+
+export interface ProjectOut {
+  name: string
+  total: number
+  done: number
+  pct: number
+  overdue: number
+  blocked: string[]
+  next?: { key: string; title: string }
+  starred: boolean
+  strict: boolean
+  renameLines: number
+  renameFiles: number
+  branches: BranchOut[]
+  order: OrderOut[]
+  finished: string[]
+}
+
+export interface ListItemOut {
+  key: string
+  done: boolean
+  tags: string[]
+  sub: string
+}
+
+export interface ListOut {
+  /** The list note's file id. */
+  key: string
+  name: string
+  path: string
+  icon: string
+  emoji: string
+  categories: string[]
+  tag: string
+  done: number
+  total: number
+  items: ListItemOut[]
+}
+
+/** The Projects page as the shared logic builds it; see WebProjects.Out. */
+export interface ProjectsOut {
+  projects: ProjectOut[]
+  lists: ListOut[]
+  noteTasks: Task[]
+  parked: string[]
+  ignored: string[]
+}
+
+/** A list note read from Drive: its id, path in the vault and text. */
+export interface ListNote {
+  id: string
+  path: string
+  text: string
+}
+
+export interface ProjectEditResult extends Omit<EditResult, "error"> {
+  error?: string | null
+  changed?: number
+  path?: string | null
+}
+
+export interface BranchResult {
+  ok: boolean
+  states: string[]
+  error?: 'missing' | 'empty' | 'hasTasks' | 'unknown' | null
+  oldTag?: string | null
+  newTag?: string | null
+  path?: string | null
+}
+
+export type BranchOp = { op: 'set' | 'choose' | 'add' | 'rename' | 'delete' | 'moveProject'; project: string; path?: string; value?: string }

@@ -55,3 +55,14 @@ Open the site in Safari, Share > Add to Home Screen.
 Every edit reads the note again, lets the shared code change just the one line, checks the file's version in Drive
 right before writing and starts over on the new text if it moved. If the line itself changed elsewhere, nothing is
 written and the app says so.
+
+## Projects and lists
+
+The "โปรเจกต์/ลิสต์" page reads `TaskForge.md` and the list notes in the vault's `Omni/` folder (the notes whose
+header says `omni-list: true`; the app finds only those directly in `Omni/`). Every text change (renaming a project or
+a branch, adding to a list, pulling tasks into a list, "do in order" with 🆔 and ⛔, a new list note) is made by
+`shared/.../web/WebProjects.kt`, the same code paths Android uses, and written with the same version check.
+
+What the owner chooses on this page stays on this device (localStorage `omni.projects`): the order of projects, the
+starred ones, the state of each branch (active, trying, chosen, parked), each project's task order. The web does not
+read or write Android's `omni-settings.json` yet, so these choices do not travel between the phone and the iPad.

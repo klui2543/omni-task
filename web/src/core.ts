@@ -60,3 +60,46 @@ export const views = (fileKey: string, path: string, text: string, state: ViewsI
 /** Quick add from a Kanban column: the new task starts in [status]. */
 export const addTaskInStatus = (text: string, sentence: string, status: Task['status']) =>
   result(api.addTaskInStatus(text, sentence, today(), status))
+
+/* ---------- Projects ---------- */
+
+import type { BranchOp, BranchResult, ProjectEditResult, ProjectsIn, ProjectsOut } from './types'
+
+const TAGS_KEY = 'omni.ignoredTags'
+
+/**
+ * Tags that are lists or their categories never name a project. The shared logic keeps them as a setting, so
+ * they are remembered on this device and applied at start, before any note is read.
+ */
+export const setIgnoredTags = (tags: string[]) => {
+  try { localStorage.setItem(TAGS_KEY, JSON.stringify(tags)) } catch { /* just not kept */ }
+}
+try {
+  const saved = JSON.parse(localStorage.getItem(TAGS_KEY) ?? '[]')
+  if (Array.isArray(saved) && saved.length) api.projectIgnoreTags(JSON.stringify(saved))
+} catch { /* start without them */ }
+
+const edited = (json: string): ProjectEditResult => JSON.parse(json)
+
+/** Projects, branches and lists from the TaskForge note, the list notes and what this device chose. */
+export const projects = (fileKey: string, path: string, text: string, notes: { key: string; path: string; text: string }[], state: ProjectsIn): ProjectsOut =>
+  JSON.parse(api.projects(fileKey, path, text, JSON.stringify(notes), JSON.stringify(state), today()))
+
+/** A project or branch tag renamed in every task line of [text]; `changed` counts the lines. */
+export const renameTag = (text: string, old: string, name: string) => edited(api.projectRenameTag(text, old, name))
+export const cleanProjectName = (name: string): string => api.projectCleanName(name)
+export const addTagged = (text: string, tag: string, title: string) => edited(api.projectAddTagged(text, tag, title, today()))
+export const chainTasks = (text: string, ordered: Task[], on: boolean) =>
+  edited(api.projectChain(text, JSON.stringify(ordered.map((t) => ({ raw: t.raw, lineIndex: t.lineIndex }))), on))
+export const branchChange = (fileKey: string, path: string, text: string, states: string[], op: BranchOp): BranchResult =>
+  JSON.parse(api.projectBranchChange(fileKey, path, text, JSON.stringify(states), JSON.stringify(op)))
+
+export const listStarters = (): { path: string; text: string }[] => JSON.parse(api.listStarters())
+export const listIconThemes = (): { label: string; emoji: string[] }[] => JSON.parse(api.listIconThemes())
+export const createListNote = (name: string, icon: string, categories: string[]) => edited(api.listCreate(name, icon, JSON.stringify(categories)))
+export const updateListNote = (text: string, path: string, icon: string, categories: string[]) =>
+  edited(api.listUpdate(text, path, icon, JSON.stringify(categories)))
+export const addListItem = (text: string, path: string, title: string, category: string | null) =>
+  edited(api.listAddItem(text, path, title, category ?? undefined, today()))
+export const includeInList = (text: string, tasks: Task[], tag: string, category: string | null) =>
+  edited(api.listInclude(text, JSON.stringify(tasks.map((t) => ({ raw: t.raw, lineIndex: t.lineIndex }))), tag, category ?? undefined))

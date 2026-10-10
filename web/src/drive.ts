@@ -146,4 +146,14 @@ export class Drive {
       body: text,
     })
   }
+
+  /** A new folder in [parentId]; returns its id. */
+  async createFolder(parentId: string, name: string): Promise<string> {
+    const res = await this.call(`${API}/files?supportsAllDrives=true&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parents: [parentId], mimeType: FOLDER }),
+    })
+    return (await res.json()).id
+  }
 }
