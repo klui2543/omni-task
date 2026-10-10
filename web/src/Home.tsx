@@ -8,6 +8,8 @@ import { ProjectsPage } from './pages/Projects'
 import { ViewsPage } from './pages/Views'
 import { TasksPage } from './pages/Tasks'
 import { readEvents } from './calendar'
+import { logDone } from './assistantCore'
+import { sweepIfDue } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
@@ -119,7 +121,8 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   const reload = () => run(async () => undefined)
 
-  useEffect(() => { reload() }, [vault])
+  // Once a day finished tasks move to the archive note (Settings: archive days); the note is read again only if some moved.
+  useEffect(() => { reload(); sweepIfDue(vault).then((moved) => { if (moved.length > 0) reload() }, () => {}) }, [vault])
 
   /**
    * Ticks a task; a parent with open subtasks first asks whether to tick them too, as on Android.
@@ -133,6 +136,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     const ask = snapshot != null && offersFinish(t, snapshot.tasks, withSubtasks)
     run(async () => {
       const res = await vault.toggle(fresh(t), withSubtasks)
+      if (res.ok && t.open) logDone(t.title)
       if (res.ok && ask) setFinished(t)
       return res
     })
