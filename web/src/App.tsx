@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { Auth } from './auth'
+import { Auth, CALENDAR_SCOPE, CALENDAR_WRITE_SCOPE } from './auth'
 import { config } from './config'
 import { AuthExpired, Drive, DriveFile } from './drive'
 import { Main } from './Home'
 import { FoundVault, findVaults } from './vault'
+import { clearNoteIndex } from './noteIndex'
 
 type Stage = 'setup' | 'signin' | 'vault' | 'ready'
 
@@ -59,7 +60,9 @@ export function App({ authError }: { authError: string | null }) {
       drive={drive!}
       vaultId={vaultId!}
       onSignIn={signIn}
-      onSignOut={() => { auth!.signOut(); setSignedIn(false); location.reload() }}
+      onConnectCalendar={() => auth!.signIn('select_account', CALENDAR_SCOPE)}
+      onAllowCalendarWrite={() => auth!.signIn('select_account', `${CALENDAR_SCOPE} ${CALENDAR_WRITE_SCOPE}`)}
+      onSignOut={() => { auth!.signOut(); setSignedIn(false); clearNoteIndex().finally(() => location.reload()) }}
       onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
     />
   )
@@ -108,10 +111,10 @@ function PickVault({ drive, onPick }: { drive: Drive; onPick: (rootId: string, f
   return (
     <main class="card center">
       <h1>เลือก vault</h1>
-      {found === null && <p class="muted">กำลังหา TaskForge.md ใน Google Drive...</p>}
+      {found === null && <p class="muted">กำลังหา Omni note.md ใน Google Drive...</p>}
       {error && <p class="error" role="alert">{error}</p>}
-      {found?.length === 0 && !error && <p>ไม่พบ TaskForge.md ใน Drive ลองเลือกโฟลเดอร์ vault เอง</p>}
-      {found && found.length > 0 && <p>พบ TaskForge.md ใน Drive แตะเพื่อเลือก</p>}
+      {found?.length === 0 && !error && <p>ไม่พบ Omni note.md (หรือ TaskForge.md เดิม) ใน Drive ลองเลือกโฟลเดอร์ vault เอง</p>}
+      {found && found.length > 0 && <p>พบไฟล์งานใน Drive แตะเพื่อเลือก</p>}
       <ul class="plain">
         {found?.map((v) => (
           <li key={v.fileId}>

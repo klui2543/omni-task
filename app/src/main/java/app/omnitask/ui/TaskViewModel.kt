@@ -324,7 +324,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     SettingsSync.tidy(repo, vault)
                     SettingsSync.load(getApplication(), repo, vault).also { loaded ->
                         // First run with this vault: start the file from what this phone has.
-                        if (!loaded && repo.readPath(vault, SettingsSync.PATH) == null) SettingsSync.save(getApplication(), repo, vault)
+                        if (!loaded && SettingsSync.read(repo, vault) == null) SettingsSync.save(getApplication(), repo, vault)
                     }
                 }.getOrDefault(false)
             }
@@ -354,7 +354,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }.getOrDefault(emptyList())
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
-            val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH)) }.getOrDefault(_state.value.profile) }
+            val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {

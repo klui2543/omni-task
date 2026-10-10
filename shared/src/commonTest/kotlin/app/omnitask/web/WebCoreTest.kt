@@ -1,7 +1,10 @@
 package app.omnitask.web
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class WebCoreTest {
 
@@ -68,5 +71,51 @@ class WebCoreTest {
         assertTrue(both.contains("- [x] เตรียมสไลด์ ✅ 2026-10-08\\n    - [x] ทำโครง ✅ 2026-10-08\\n    - [x] หาข้อมูล ✅ 2026-10-07\\n- [ ] งานอื่น"), both)
         val onlyParent = WebCore.toggle(text, "- [ ] เตรียมสไลด์", 0, "2026-10-08")
         assertTrue(onlyParent.contains("    - [ ] ทำโครง"), onlyParent)
+    }
+
+    private fun result(json: String) = Json.decodeFromString<WebCore.EditResult>(json)
+
+    @Test
+    fun editsKeepTaskForgeTokenOrder() {
+        var text = note
+        fun apply(op: String) {
+            val r = result(WebCore.editTask(text, text.split("\n")[1], 1, "2026-10-08", op))
+            assertTrue(r.ok, r.toString())
+            text = r.text!!
+        }
+        apply("""{"op":"date","field":"SCHEDULED","value":"2026-10-08"}""")
+        apply("""{"op":"priority","value":"HIGH"}""")
+        apply("""{"op":"recurrence","value":"every week"}""")
+        apply("""{"op":"reminder","value":"09:30","on":"DUE"}""")
+        apply("""{"op":"addTag","value":"งาน"}""")
+        assertEquals("- [ ] ส่งรายงาน #งาน #remind-at-due ⏰ 09:30 ⏫ 🔁 every week ⏳ 2026-10-08 📅 2026-10-09", text.split("\n")[1])
+        apply("""{"op":"reminder","value":null,"on":"DUE"}""")
+        apply("""{"op":"date","field":"SCHEDULED","value":null}""")
+        assertEquals("- [ ] ส่งรายงาน #งาน ⏫ 🔁 every week 📅 2026-10-09", text.split("\n")[1])
+    }
+
+    @Test
+    fun unreadableRepeatIsRefused() {
+        val r = result(WebCore.editTask(note, "- [ ] ส่งรายงาน 📅 2026-10-09", 1, "2026-10-08", """{"op":"recurrence","value":"sometimes"}"""))
+        assertEquals("rule", r.error)
+    }
+
+    @Test
+    fun subtaskGoesUnderItsParent() {
+        val r = result(WebCore.editTask(note, "- [ ] ส่งรายงาน 📅 2026-10-09", 1, "2026-10-08", """{"op":"subtask","value":"หาข้อมูล"}"""))
+        assertTrue(r.text!!.contains("📅 2026-10-09\n    - [ ] หาข้อมูล"), r.text)
+    }
+
+    @Test
+    fun cutRestoreAndArchive() {
+        val withSub = "- [ ] สไลด์\n    - [ ] โครง\n- [ ] อื่น\n"
+        val cut = result(WebCore.cut(withSub, "- [ ] สไลด์", 0))
+        assertEquals("- [ ] อื่น\n", cut.text)
+        assertEquals(listOf("- [ ] สไลด์", "    - [ ] โครง"), cut.cutLines)
+        val lines = Json.encodeToString(cut.cutLines!!)
+        assertEquals(withSub, result(WebCore.restore(cut.text!!, cut.cutIndex!!, lines)).text)
+        val archive = WebCore.archiveAppend("", lines, "2026-10-08")
+        assertTrue(archive.contains("## 2026-10\n\n- [ ] สไลด์\n    - [ ] โครง"), archive)
+        assertTrue(WebCore.archiveRemove(archive, lines)!!.contains("สไลด์").not())
     }
 }

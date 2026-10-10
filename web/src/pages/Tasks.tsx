@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { today } from '../core'
 import type { PageProps } from '../Home'
-import type { Group } from '../types'
+import { BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, SORTS, STATUSES, filterCount, labelOf, storedQuery } from '../query'
+import type { Group, Task } from '../types'
+import { EditPanel } from '../ui/EditPanel'
+import { FilterPanel, SortDialog } from '../ui/ListTools'
 import { PageHead } from '../ui/PageHead'
 import { TaskRow } from '../ui/TaskRow'
+import { useStored } from '../ui/views/hooks'
 
 const DRAFT_KEY = 'omni.draft'
 const FOLD_KEY = 'omni.folded'
@@ -30,24 +34,58 @@ export function TasksPage(p: PageProps) {
   // Folded groups are remembered on this device, as Android remembers them.
   const [folded, setFolded] = useState<string[]>(() => read(() => localStorage, FOLD_KEY).split('\n').filter(Boolean))
   const [adding, setAdding] = useState(false)
+  const [hide, setHide] = useStored('omni.hideDone', 'yes', ['yes', 'no'] as const)
   const [showDone, setShowDone] = useState(false)
+  const [query, setQueryState] = useState<ListQuery>(storedQuery.get)
+  const setQuery = (q: ListQuery) => { setQueryState(q); storedQuery.set(q) }
+  const [overlay, setOverlay] = useState<'filter' | 'sort' | null>(null)
+  // The open task, by key and title: a key is its line, so the title confirms it is still the same task.
+  const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
   const search = useRef<HTMLInputElement>(null)
 
   // "/" jumps to the search box, as on the web versions of TickTick and Linear.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
-      if (e.key === '/' && !typing && !adding) {
+      if (e.key === '/' && !typing && !adding && !overlay) {
         e.preventDefault()
         search.current?.focus()
       }
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
-  }, [adding])
+  }, [adding, overlay])
 
-  const list = useMemo(() => p.snapshot?.list({ text }), [p.snapshot, text])
-  const doneToday = p.snapshot?.tasks.filter((t) => t.status === 'DONE' && t.done === today() && !t.parent) ?? []
+  const list = useMemo(() => p.snapshot?.list({ ...query, text }), [p.snapshot, query, text])
+  const shown = list ? new Set(list.groups.flatMap((g) => g.keys)).size : 0
+  const doneToday = query.statuses.includes('DONE') ? [] : p.snapshot?.tasks.filter((t) => t.status === 'DONE' && t.done === today() && !t.parent) ?? []
+  const tags = useMemo(() => {
+    const count = new Map<string, number>()
+    p.snapshot?.tasks.forEach((t) => t.tags.forEach((g) => { if (!g.startsWith('remind-at-')) count.set(g, (count.get(g) ?? 0) + 1) }))
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([g]) => g)
+  }, [p.snapshot])
+
+  const all = p.snapshot?.tasks ?? []
+  const current: Task | null = selected
+    ? (() => {
+        const byKey = p.snapshot?.byKey.get(selected.key)
+        return byKey?.title === selected.title ? byKey : all.find((t) => t.title === selected.title) ?? null
+      })()
+    : null
+  const openTask = (t: Task) => setSelected({ key: t.key, title: t.title })
+
+  // What the filter row shows: each active filter as a chip that takes it off.
+  const active: [string, () => void][] = [
+    ...query.kinds.map((k): [string, () => void] => [labelOf(KINDS, k), () => setQuery({ ...query, kinds: query.kinds.filter((x) => x !== k) })]),
+    ...query.buckets.map((k): [string, () => void] => [labelOf(BUCKETS, k), () => setQuery({ ...query, buckets: query.buckets.filter((x) => x !== k) })]),
+    ...query.priorities.map((k): [string, () => void] => [labelOf(PRIORITIES, k), () => setQuery({ ...query, priorities: query.priorities.filter((x) => x !== k) })]),
+    ...query.tags.map((k): [string, () => void] => ['#' + k, () => setQuery({ ...query, tags: query.tags.filter((x) => x !== k) })]),
+    ...(filterCount({ ...query, kinds: [], buckets: [], priorities: [], tags: [] })
+      ? [[query.statuses.map((s) => labelOf(STATUSES, s)).join(', ') || 'ทุกสถานะ', () => setQuery({ ...query, statuses: DEFAULT_QUERY.statuses })] as [string, () => void]]
+      : []),
+  ]
+  const sorts = query.sorts.length ? query.sorts : DEFAULT_QUERY.sorts
+  const sortText = `${labelOf(SORTS, sorts[0].by)} ${sorts[0].ascending ? '↑' : '↓'}${sorts.length > 1 ? ` +${sorts.length - 1}` : ''}`
   const fold = (label: string) => {
     const next = folded.includes(label) ? folded.filter((f) => f !== label) : [...folded, label]
     setFolded(next)
@@ -55,6 +93,7 @@ export function TasksPage(p: PageProps) {
   }
 
   return (
+    <div class={`split${current ? ' with-pane' : ''}`}>
     <main class="page">
       <PageHead title="งาน">
           <label class="search">
@@ -65,11 +104,31 @@ export function TasksPage(p: PageProps) {
           <button class="primary wide-only" onClick={() => setAdding(true)}>+ เพิ่มงาน</button>
       </PageHead>
 
+      <div class="toolbar">
+        <button class={`chip tool${filterCount(query) ? ' on' : ''}`} onClick={() => setOverlay('filter')}>
+          กรอง{filterCount(query) ? ` ${filterCount(query)}` : ''}
+        </button>
+        <button class="chip tool" onClick={() => setOverlay('sort')}>กลุ่ม: {labelOf(GROUPS, query.groupBy)}</button>
+        <button class="chip tool" onClick={() => setOverlay('sort')}>เรียง: {sortText}</button>
+      </div>
+      {active.length > 0 && (
+        <div class="chips">
+          {active.map(([label, off]) => (
+            <span key={label} class="chip on saved">
+              <span class="chip-main">{label}</span>
+              <button class="chip-x" aria-label={`เอา ${label} ออก`} onClick={off}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
       {!p.snapshot ? (
         <p class="muted pad">กำลังโหลด...</p>
       ) : (
         <div class="groups">
-          {list!.groups.length === 0 && <section class="group empty">{text ? 'ไม่มีงานตรงกับคำค้น' : 'ไม่มีงานค้าง'}</section>}
+          {list!.groups.length === 0 && (
+            <section class="group empty">{text ? 'ไม่มีงานตรงกับคำค้น' : filterCount(query) ? 'ไม่มีงานตรงกับตัวกรอง' : 'ไม่มีงานค้าง'}</section>
+          )}
           {list!.groups.map((g) => {
             const open = !folded.includes(g.label)
             return (
@@ -85,7 +144,10 @@ export function TasksPage(p: PageProps) {
                   <ul class="plain">
                     {g.keys.map((k) => {
                       const t = p.snapshot!.byKey.get(k)!
-                      return <TaskRow key={k} task={t} progress={list!.progress[k]} busy={p.busy} onToggle={() => p.tick(t)} />
+                      return (
+                        <TaskRow key={k} task={t} progress={list!.progress[k]} busy={p.busy} selected={current?.key === k}
+                          onToggle={() => p.tick(t)} onOpen={() => openTask(t)} />
+                      )
                     })}
                   </ul>
                 )}
@@ -103,7 +165,9 @@ export function TasksPage(p: PageProps) {
               </h2>
               {showDone && (
                 <ul class="plain">
-                  {doneToday.map((t) => <TaskRow key={t.key} task={t} busy={p.busy} onToggle={() => p.tick(t)} />)}
+                  {doneToday.map((t) => (
+                    <TaskRow key={t.key} task={t} busy={p.busy} selected={current?.key === t.key} onToggle={() => p.tick(t)} onOpen={() => openTask(t)} />
+                  ))}
                 </ul>
               )}
             </section>
@@ -113,12 +177,27 @@ export function TasksPage(p: PageProps) {
 
       <button class="fab narrow-only" aria-label="เพิ่มงาน" onClick={() => setAdding(true)}>+</button>
       {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
+      {overlay === 'filter' && (
+        // Android's one filter sheet has the "hide done" switch here too, though only the views honour it; the choice is shared with Views.
+        <FilterPanel query={query} tags={tags} shown={shown} onChange={setQuery} onClose={() => setOverlay(null)}
+          hideDone={{ on: hide === 'yes', set: (on) => setHide(on ? 'yes' : 'no') }} />
+      )}
+      {overlay === 'sort' && <SortDialog query={query} onChange={setQuery} onClose={() => setOverlay(null)} />}
     </main>
+    {current && (
+      <>
+        <div class="pane-scrim" onClick={() => setSelected(null)} />
+        <aside class="pane" role="dialog" aria-label="แก้ไขงาน">
+          <EditPanel {...p} task={current} onOpen={openTask} onClose={() => setSelected(null)} />
+        </aside>
+      </>
+    )}
+    </div>
   )
 }
 
 /** A sentence in, a TaskForge line out: dates, times, tags and priority are read from the words, as on Android. */
-function QuickAdd(p: PageProps & { onClose: () => void }) {
+export function QuickAdd(p: PageProps & { onClose: () => void }) {
   // The draft survives the trip to Google when the sign-in runs out while typing.
   const [sentence, setSentenceState] = useState(() => read(() => sessionStorage, DRAFT_KEY))
   const setSentence = (v: string) => { setSentenceState(v); write(() => sessionStorage, DRAFT_KEY, v) }

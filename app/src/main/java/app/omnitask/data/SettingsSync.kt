@@ -7,13 +7,19 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Keeps the app's settings in the vault as `Omni/omni-settings.json`, so they survive clearing the app
+ * Keeps the app's settings in the vault as `หลังบ้าน/Omni/omni-settings.json`, so they survive clearing the app
  * and follow the vault to another phone. The phone's own preferences stay the working copy; the file
  * wins when it was saved more recently than this phone last synced.
  */
 object SettingsSync {
 
-    const val PATH = "Omni/omni-settings.json"
+    const val PATH = "${VaultText.OMNI_DIR}/omni-settings.json"
+
+    /** Where the file was before the Omni folder moved into the back-office folder; read when the new one is not there. */
+    const val LEGACY_PATH = "Omni/omni-settings.json"
+
+    /** The settings file text: the new place, else the old one. */
+    fun read(repo: VaultRepository, vault: Uri): String? = repo.readPath(vault, PATH) ?: repo.readPath(vault, LEGACY_PATH)
 
     private const val PREFS = "omnitask"
     private const val KEY_SYNCED_AT = "settings.syncedAt"
@@ -47,7 +53,7 @@ object SettingsSync {
         val now = System.currentTimeMillis()
         val json = toJson(context, now)
         // Same settings as the file already holds: leave it alone, so two phones don't keep rewriting it.
-        val existing = repo.readPath(vault, PATH)?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val existing = read(repo, vault)?.let { runCatching { JSONObject(it) }.getOrNull() }
         if (existing != null && existing.optJSONObject("settings")?.toString() == JSONObject(json).optJSONObject("settings")?.toString()) {
             prefs(context).edit().putLong(KEY_SYNCED_AT, existing.optLong("savedAt", now)).apply()
             return
@@ -60,24 +66,25 @@ object SettingsSync {
     private val STRAY = Regex("""omni-settings\.json(?: \(\d+\))?\.md""")
 
     /**
-     * Folds those copies back into the one file: the most recently saved of them all is kept as `omni-settings.json`
-     * (each save held every setting, so the newest is complete), and the copies are deleted.
+     * Leaves one settings file, at [PATH]. The copies above, in either Omni folder, and a file still at [LEGACY_PATH]
+     * are folded in: the most recently saved of them all is kept (each save held every setting, so the newest is
+     * complete), and the rest are deleted, only once [PATH] is there.
      */
     fun tidy(repo: VaultRepository, vault: Uri) {
-        val dir = PATH.substringBeforeLast('/')
-        val strays = repo.namesIn(vault, dir).filter { STRAY.matches(it) }
-        if (strays.isEmpty()) return
+        val dirs = listOf(PATH, LEGACY_PATH).map { it.substringBeforeLast('/') }
+        val extra = dirs.flatMap { dir -> repo.namesIn(vault, dir).filter { STRAY.matches(it) }.map { "$dir/$it" } } +
+            listOfNotNull(LEGACY_PATH.takeIf { repo.readPath(vault, it) != null })
+        if (extra.isEmpty()) return
         val current = repo.readPath(vault, PATH)
         val savedAt = { text: String -> runCatching { JSONObject(text).optLong("savedAt", 0) }.getOrDefault(-1L) }
-        val newest = (strays.mapNotNull { repo.readPath(vault, "$dir/$it") } + listOfNotNull(current)).maxByOrNull(savedAt)
+        val newest = (extra.mapNotNull { repo.readPath(vault, it) } + listOfNotNull(current)).maxByOrNull(savedAt)
         if (newest != null && newest != current && savedAt(newest) >= 0) repo.writePath(vault, PATH, newest)
-        // Only once the one file holds the newest settings are the copies let go.
-        if (repo.readPath(vault, PATH) != null) strays.forEach { repo.deletePath(vault, "$dir/$it") }
+        if (repo.readPath(vault, PATH) != null) extra.forEach { repo.deletePath(vault, it) }
     }
 
     /** Applies the file if it is newer than this phone's last sync. Returns true when anything changed. */
     fun load(context: Context, repo: VaultRepository, vault: Uri): Boolean {
-        val text = repo.readPath(vault, PATH) ?: return false
+        val text = read(repo, vault) ?: return false
         val root = runCatching { JSONObject(text) }.getOrNull() ?: return false
         val savedAt = root.optLong("savedAt", 0)
         val p = prefs(context)

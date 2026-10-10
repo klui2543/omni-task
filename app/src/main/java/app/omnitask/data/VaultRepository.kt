@@ -35,7 +35,7 @@ class VaultRepository(private val context: Context) {
         val lists = ArrayList<OmniList>()
         val tasks = files.flatMap { file ->
             // The archive keeps finished work for Obsidian; the app leaves it unread so Done stays short.
-            if (file.path == Archive.FILE) return@flatMap emptyList<Task>()
+            if (Archive.isArchive(file.path)) return@flatMap emptyList<Task>()
             val text = readText(file.uri)
             // Lines in a list note (Bucket list, Watch list...) are marked with the list's name.
             val list = OmniList.parse(file.path, text)?.also { lists += it }
@@ -145,17 +145,11 @@ class VaultRepository(private val context: Context) {
     }
 
     /**
-     * Whether a sync app left a conflict copy beside the live task note (the archive sits in the same folder).
+     * Whether a sync app left a conflict copy beside the task note, in its new place or its old one (the archive sits beside it).
      * Until the owner sorts it out, writes the owner did not ask for are better left undone.
      */
-    fun hasTaskConflict(treeUri: Uri): Boolean {
-        val dirId = findDirId(treeUri, TASK_FILE.substringBeforeLast('/')) ?: return false
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
-        context.contentResolver.query(children, arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
-            while (c.moveToNext()) if (VaultText.isConflictCopy(c.getString(0) ?: continue)) return true
-        }
-        return false
-    }
+    fun hasTaskConflict(treeUri: Uri): Boolean =
+        listOf(TASK_FILE, VaultText.LEGACY_TASK_FILE).any { file -> namesIn(treeUri, file.substringBeforeLast('/')).any { VaultText.isConflictCopy(it) } }
 
     /**
      * Renames a project in every task line of the given files: `#old` and `#old/branch` become `#new...`.

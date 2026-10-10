@@ -30,7 +30,7 @@ data class OmniList(val name: String, val path: String, val icon: String, val ca
     }
 
     companion object {
-        const val FOLDER = "Omni"
+        const val FOLDER = "📁 Folder/หลังบ้าน/Omni"
 
         /** The header of a list note, or null when the note is not a list. */
         fun parse(path: String, text: String): OmniList? {
