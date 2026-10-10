@@ -1,5 +1,6 @@
 import type { AgendaOut, Proposal, Ranked } from '../../assistantCore'
 import type { Chat } from '../../assistantState'
+import { evLink, evTag } from '../views/dates'
 
 /** "จ. 12 ต.ค." */
 export const dayShort = (iso: string) =>
@@ -131,7 +132,10 @@ export function AgendaCard(p: { title: string; summary: string; data: AgendaOut;
         <div key={d.day} class="as-day">
           <span class={`as-day-label${d.day === p.today ? ' today' : ''}`}>{d.day === p.today ? 'วันนี้' : dayShort(d.day)}</span>
           <div class="as-day-items">
-            {d.events.map((e, i) => <span key={i} class="teal-text">{e.allDay ? 'ทั้งวัน ' : `${e.time} `}{e.title}</span>)}
+            {d.events.map((e, i) => {
+              const Ev = evTag(e.link, 'span')
+              return <Ev key={i} class="teal-text" {...evLink(e.link)}>{e.allDay ? 'ทั้งวัน ' : `${e.time} `}{e.title}</Ev>
+            })}
             {d.tasks.map((t) => (
               <button key={t.key} class="link-plain as-day-task" onClick={() => p.onOpen(t.key)}>{t.due ? 'ครบ: ' : 'นัดทำ: '}{t.title}</button>
             ))}

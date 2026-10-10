@@ -210,6 +210,7 @@ export function Gantt(p: ViewCtx & { first: string; setFirst: (first: string) =>
                   to: Math.min(daysBetween(first, evLastDay(e)), days - 1),
                   sub: eventSub(e, p.today),
                   dim: evLastDay(e) < p.today,
+                  onClick: e.link ? () => window.open(e.link, '_blank', 'noopener,noreferrer') : undefined,
                 }))}
               />
             ))}

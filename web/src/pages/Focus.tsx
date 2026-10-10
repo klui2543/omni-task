@@ -9,6 +9,7 @@ import { EditPanel } from '../ui/EditPanel'
 import { BedtimeDialog, CountdownDialog, FutureDialog, ReviewAction, ReviewDialog } from '../ui/FocusDialogs'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { Check } from '../ui/TaskRow'
+import { evLink, evTag } from '../ui/views/dates'
 import { QuickAdd } from './Tasks'
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
@@ -118,10 +119,11 @@ export function FocusPage(p: PageProps) {
       )
     }
     if (it.type === 'event') {
+      const Box = evTag(it.link, 'div')
       return (
         <div key={`ev${i}`} class="prow event">
           <span class="ptime">{it.time}</span>
-          <div class="ebox"><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></div>
+          <Box class="ebox" {...evLink(it.link)}><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></Box>
         </div>
       )
     }

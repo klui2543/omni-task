@@ -160,6 +160,13 @@ class WebAssistantTest {
     }
 
     @Test
+    fun anAgendaEventCarriesItsGoogleCalendarLink() {
+        val s = state(""","events":[{"id":5,"title":"ประชุมทีม","begin":"2026-10-12T10:00","end":"2026-10-12T11:00","link":"https://www.google.com/calendar/event?eid=x"}]""")
+        val r = WebAssistant.agenda("f", "TaskForge.md", note, s, "2026-10-12", "2026-10-18")
+        assertTrue(r.contains("\"time\":\"10:00\",\"link\":\"https://www.google.com/calendar/event?eid=x\""), r)
+    }
+
+    @Test
     fun aRangePlanPlacesUndatedWorkAndNeverTheDatedOnes() {
         val r = WebAssistant.planRange("f", "TaskForge.md", note, state(), "2026-10-12", "2026-10-18")
         // Work already due before the range (the case) is not placed; undated work and work due in it is, each on its own time.

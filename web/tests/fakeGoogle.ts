@@ -16,13 +16,21 @@ export class FakeDrive {
   requests: string[] = []
   /** The prompt of each trip to Google's sign-in page. */
   signIns: string[] = []
+  /** The scopes of each trip to Google's sign-in page. */
+  scopesAsked: string[] = []
   /** Makes Google refuse quiet renewals, as when the owner has signed out of Google meanwhile. */
   refuseQuiet = false
   /** Google Calendar: the events one calendar holds, and whether the Calendar API is switched off for the project. */
-  events: { title: string; begin: Date; end: Date; allDay?: boolean }[] = []
+  events: { title: string; begin: Date; end: Date; allDay?: boolean; link?: string }[] = []
   calendarOff = false
   /** Whether the owner has agreed to read the calendar; set by the sign-in page when it is asked for. */
   calendarGranted = false
+  /** Whether the owner has agreed to add events (the calendar.events scope); set by the sign-in page when it is asked for. */
+  calendarWriteGranted = false
+  /** The events the app added to the calendar, as Google was sent them. */
+  inserted: { summary: string; start: { date?: string; dateTime?: string; timeZone?: string }; end: { date?: string; dateTime?: string; timeZone?: string } }[] = []
+  /** Makes Google refuse to add events, as when the Calendar API is switched off. */
+  insertFails = false
   /** Runs once, right after the app's next read of a file, to play someone else editing it. */
   afterNextRead: ((n: Node) => void) | null = null
 
@@ -81,10 +89,12 @@ export class FakeDrive {
       this.signIns.push(q.get('prompt') ?? '')
       const back = new URLSearchParams({ state: q.get('state') ?? '' })
       if (q.get('scope')?.includes('calendar.readonly')) this.calendarGranted = true
+      if (q.get('scope')?.includes('calendar.events')) this.calendarWriteGranted = true
+      this.scopesAsked.push(q.get('scope') ?? '')
       if (q.get('prompt') === 'none' && this.refuseQuiet) back.set('error', 'interaction_required')
       else {
         // The token covers what was agreed to before as well, as Google does with include_granted_scopes.
-        back.set('scope', 'https://www.googleapis.com/auth/drive' + (this.calendarGranted ? ' https://www.googleapis.com/auth/calendar.readonly' : ''))
+        back.set('scope', 'https://www.googleapis.com/auth/drive' + (this.calendarGranted ? ' https://www.googleapis.com/auth/calendar.readonly' : '') + (this.calendarWriteGranted ? ' https://www.googleapis.com/auth/calendar.events' : ''))
         back.set('access_token', 'fake-token')
         back.set('token_type', 'Bearer')
         back.set('expires_in', '3600')
@@ -102,6 +112,20 @@ export class FakeDrive {
         if (this.calendarOff) return route.fulfill({ status: 403, body: 'accessNotConfigured: Google Calendar API has not been used in project' })
         return json({ items: [{ id: 'primary', selected: true }] })
       }
+      if (url.pathname === '/calendar/v3/calendars/primary/events' && req.method() === 'POST') {
+        if (!this.calendarWriteGranted) return route.fulfill({ status: 403, body: 'insufficientPermissions: Request had insufficient authentication scopes' })
+        if (this.insertFails) return route.fulfill({ status: 403, body: 'accessNotConfigured: Google Calendar API has not been used in project' })
+        const body = JSON.parse(req.postData() ?? '{}')
+        this.inserted.push(body)
+        // The new event is on the calendar from now on, as the app reads it back.
+        const allDay = !!body.start.date
+        this.events.push({
+          title: body.summary, allDay,
+          begin: allDay ? new Date(body.start.date + 'T00:00') : new Date(body.start.dateTime),
+          end: allDay ? new Date(body.end.date + 'T00:00') : new Date(body.end.dateTime),
+        })
+        return json({ id: `new${this.inserted.length}`, htmlLink: `https://www.google.com/calendar/event?eid=new${this.inserted.length}` })
+      }
       if (url.pathname === '/calendar/v3/calendars/primary/events') {
         const from = new Date(url.searchParams.get('timeMin')!).getTime()
         const to = new Date(url.searchParams.get('timeMax')!).getTime()
@@ -109,7 +133,7 @@ export class FakeDrive {
         const items = this.events
           .filter((e) => e.end.getTime() > from && e.begin.getTime() < to)
           .map((e, i) => ({
-            id: `e${i}`, summary: e.title,
+            id: `e${i}`, summary: e.title, htmlLink: e.link ?? `https://www.google.com/calendar/event?eid=e${i}`,
             start: e.allDay ? { date: day(e.begin) } : { dateTime: e.begin.toISOString() },
             end: e.allDay ? { date: day(e.end) } : { dateTime: e.end.toISOString() },
           }))

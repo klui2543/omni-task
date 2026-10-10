@@ -5,7 +5,7 @@ import { TaskRow } from '../TaskRow'
 import { CalendarConnect } from './CalendarConnect'
 import type { ViewCtx } from './ctx'
 import {
-  type Ev, WEEKDAYS, addDays, addMonths, evCovers, evInStrip, evTimes, firstOfMonth, longDay, mediumDay, mondayOf, monthTitle, rangeText, weekdayIndex,
+  type Ev, WEEKDAYS, addDays, addMonths, evCovers, evInStrip, evLink, evTag, evTimes, firstOfMonth, longDay, mediumDay, mondayOf, monthTitle, rangeText, weekdayIndex,
 } from './dates'
 import { useStored, useSwipe } from './hooks'
 
@@ -93,12 +93,15 @@ function Month(p: ViewCtx & { onConnect: () => void }) {
         <section class="dcard" aria-label="งานของวันที่เลือก">
           <h2 class="dhead2">{(sel === p.today ? 'วันนี้, ' : '') + longDay(sel)}</h2>
           {dayEvents.length === 0 && dayTasks.length === 0 && <p class="muted pad">ว่างทั้งวัน</p>}
-          {dayEvents.map((e, i) => (
-            <div key={i} class="ebox mev">
-              <span class="ebar" />
-              <span class="etext"><span class="etitle">{e.title}</span><span class="erange">{evTimes(e)}</span></span>
-            </div>
-          ))}
+          {dayEvents.map((e, i) => {
+            const Box = evTag(e.link, 'div')
+            return (
+              <Box key={i} class="ebox mev" {...evLink(e.link)}>
+                <span class="ebar" />
+                <span class="etext"><span class="etitle">{e.title}</span><span class="erange">{evTimes(e)}</span></span>
+              </Box>
+            )
+          })}
           <ul class="plain">
             {dayTasks.map(({ t }) => (
               <TaskRow key={t.key} task={t} progress={p.out.progress[t.key]} busy={p.p.busy} selected={p.selectedKey === t.key} onToggle={() => p.p.tick(t)} onOpen={() => p.open(t)} />
@@ -249,7 +252,7 @@ function Timeline(p: ViewCtx & { onConnect: () => void; days: number }) {
               return (
                 <div key={range[i]} class="tstripcol">
                   {shown.map((it, j) => 'e' in it
-                    ? <span key={j} class="tpill ev">{it.e!.title}</span>
+                    ? (() => { const Pill = evTag(it.e!.link, 'span'); return <Pill key={j} class="tpill ev" {...evLink(it.e!.link)}>{it.e!.title}</Pill> })()
                     : <button key={j} class={`tpill${it.t!.open ? '' : ' done'}`} style={{ '--tint': TINT[it.t!.priority] }} onClick={() => p.open(it.t!)}>{it.t!.title}</button>)}
                   {items.length > shown.length && <button class="tmore" onClick={() => setUnfolded(true)}>+{items.length - shown.length}</button>}
                 </div>
@@ -274,11 +277,12 @@ function Timeline(p: ViewCtx & { onConnect: () => void; days: number }) {
                     const room = Math.max(Math.floor((parseFloat(style.height) - 6) / ((days === 1 ? 14 : days === 3 ? 12.5 : 11.5) * 1.25)), 1)
                     const clamp = { WebkitLineClamp: days === 1 ? Math.max(room - 1, 1) : room }
                     if (b.ev) {
+                      const Box = evTag(b.ev.link, 'div')
                       return (
-                        <div key={j} class="tblock ev" style={style}>
+                        <Box key={j} class="tblock ev" style={style} {...evLink(b.ev.link)}>
                           <span class="ttl" style={clamp}>{b.ev.title}</span>
                           {days === 1 && <span class="ttm">{evTimes(b.ev)}</span>}
-                        </div>
+                        </Box>
                       )
                     }
                     const t = b.task!

@@ -94,7 +94,7 @@ export interface FocusIn {
   countdown: string | null
   tonightBed: { evening: string; time: string } | null
   profile: string | null
-  events: { id: number; title: string; begin: string; end: string; allDay: boolean }[]
+  events: { id: number; title: string; begin: string; end: string; allDay: boolean; link?: string }[]
   branches?: string[]
 }
 
@@ -108,6 +108,8 @@ export interface PlanItem {
   extra?: string
   blocked: boolean
   range?: string
+  /** For an event: its page in Google Calendar. */
+  link?: string
 }
 
 export interface Pick {

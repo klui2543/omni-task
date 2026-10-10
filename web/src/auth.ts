@@ -8,6 +8,11 @@ const REVOKE = 'https://oauth2.googleapis.com/revoke'
 export const SCOPE = 'https://www.googleapis.com/auth/drive'
 /** Asked for only when the owner connects Google Calendar on the Focus page. */
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
+/**
+ * Asked for only when the owner first lets the assistant put an event on the calendar, never with sign-in. It can
+ * create events but not list the calendars, so it is asked together with the read one.
+ */
+export const CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
 const TOKEN_KEY = 'omni.token'
 const STATE_KEY = 'omni.oauthState'
