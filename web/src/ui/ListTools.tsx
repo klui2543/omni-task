@@ -25,7 +25,7 @@ export function FilterPanel(p: {
   shown: number
   onChange: (q: ListQuery) => void
   onClose: () => void
-  /** The Views page adds Android's "hide done" switch, which only the views honour. */
+  /** Android's "hide done" switch, which only the views honour; both the Tasks and Views pages show it (one shared choice). */
   hideDone?: { on: boolean; set: (on: boolean) => void }
 }) {
   const q = p.query

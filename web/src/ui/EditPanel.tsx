@@ -44,7 +44,7 @@ type Chip = 'DUE' | 'SCHEDULED' | 'REMIND' | 'REPEAT' | 'PRIORITY' | 'TAG'
  * the description and the subtasks. A pane beside the list on wide screens, a sheet from the bottom on narrow ones.
  * Each change is written to the note at once.
  */
-export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void; onClose: () => void }) {
+export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void; onClose: () => void; /** The file name of the list note the task is an item of, when opened from a list. */ noteName?: string }) {
   const t = p.task
   const [open, setOpen] = useState<Chip | null>(null)
   const [folds, setFolds] = useState<Record<string, boolean>>({})
@@ -72,7 +72,7 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   ]
 
   // The note the task is in: the task note, or a list note.
-  const noteLabel = p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : 'โน้ตลิสต์'
+  const noteLabel = p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : p.noteName ?? 'โน้ตลิสต์'
   const saveDesc = () => { if (desc.trim() !== t.description.trim()) change({ op: 'describe', value: desc }) }
 
   return (

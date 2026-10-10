@@ -205,7 +205,7 @@ export function ProjectsPage(p: PageProps) {
     <>
       <div class="pane-scrim" onClick={() => setSelected(null)} />
       <aside class="pane" role="dialog" aria-label="แก้ไขงาน">
-        <EditPanel {...p} task={current} onOpen={openTask} onClose={() => setSelected(null)} />
+        <EditPanel {...p} task={current} onOpen={openTask} onClose={() => setSelected(null)} noteName={list?.path.split('/').pop()} />
       </aside>
     </>
   )
