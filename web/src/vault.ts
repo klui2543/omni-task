@@ -104,11 +104,23 @@ export class Vault {
     const base = this.isLegacy ? 'TaskForge' : 'Omni note'
     const beside = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
     const conflicts = quick ? [...new Set([...beside, ...index.conflicts()])] : beside
-    // The old TaskForge.md is left unread once an Omni note.md has taken its place.
-    const notes = quick ? index.notes().filter((n) => this.isLegacy || !samePath(n.path, legacyTaskFilePath)) : []
+    const notes = quick ? this.otherNotes(index) : []
     const src = sourceOf(id, this.notePath, text, notes)
-    this.notes = notes
     return new Snapshot(id, text, loadTasks(src.key, src.path, src.text), conflicts, this.notePath, notes)
+  }
+
+  /** The other notes with tasks as the index has them; the old TaskForge.md is left unread once an Omni note.md has taken its place. */
+  private otherNotes(index: NoteIndex): NoteText[] {
+    return (this.notes = index.notes().filter((n) => this.isLegacy || !samePath(n.path, legacyTaskFilePath)))
+  }
+
+  /**
+   * [s] with the other notes as the first walk found them, the task note as it was read: what the page shows when
+   * the walk ends, without reading the task note again under an action that is about to change it.
+   */
+  withOtherNotes(s: Snapshot): Snapshot {
+    const index = this.index()
+    return s.withNotes(this.otherNotes(index), [...new Set([...s.conflicts, ...index.conflicts()])])
   }
 
   /* ---------- Every note of the vault (see noteIndex.ts) ---------- */
@@ -406,6 +418,12 @@ export class Snapshot {
     readonly notes: NoteText[] = [],
   ) {
     this.byKey = new Map(tasks.map((t) => [t.key, t]))
+  }
+
+  /** The same task note with [notes] as the other notes. */
+  withNotes(notes: NoteText[], conflicts: string[]): Snapshot {
+    const src = sourceOf(this.fileId, this.path, this.text, notes)
+    return new Snapshot(this.fileId, this.text, loadTasks(src.key, src.path, src.text), conflicts, this.path, notes)
   }
 
   private src: { key: string; path: string; text: string } | null = null

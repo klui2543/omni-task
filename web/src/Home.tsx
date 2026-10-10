@@ -121,16 +121,17 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   const reload = () => run(async () => undefined)
 
-  // The first walk of the vault ends in the background: its notes join without a spinner or clearing a message.
+  // The first walk of the vault ends in the background: its notes join the task note as last read, without a
+  // spinner, a message cleared or the task note read again.
   useEffect(() => {
     vault.onIndexed = () => {
-      queue.current = queue.current.then(async () => {
-        try {
-          const loaded = await vault.load()
-          latest.current = loaded
-          setSnapshot(loaded)
-          setSyncedAt(new Date())
-        } catch { /* the next reload says what is wrong */ }
+      queue.current = queue.current.then(() => {
+        if (!latest.current) return
+        const joined = vault.withOtherNotes(latest.current)
+        // Nothing found beyond the task note: the page is left as it is (a drag in progress is not disturbed).
+        if (joined.notes.length === 0 && joined.conflicts.length === latest.current.conflicts.length) return
+        latest.current = joined
+        setSnapshot(joined)
       })
     }
     return () => { vault.onIndexed = null }
