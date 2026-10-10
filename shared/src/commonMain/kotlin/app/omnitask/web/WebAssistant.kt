@@ -244,7 +244,7 @@ object WebAssistant {
     }
 
     @Serializable
-    data class AgendaEvent(val title: String, val allDay: Boolean, val time: String?)
+    data class AgendaEvent(val title: String, val allDay: Boolean, val time: String?, val link: String? = null)
 
     @Serializable
     data class AgendaTask(val key: String, val title: String, val due: Boolean)
@@ -270,10 +270,11 @@ object WebAssistant {
         val busiest = days.maxByOrNull { (_, v) -> v.first.count { !it.allDay } + v.second.size }
             ?.takeIf { (_, v) -> v.first.size + v.second.size > 2 }?.first
         val due = days.sumOf { (d, v) -> v.second.count { it.due == d } }
+        val links = s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }
         val out = days.filter { (_, v) -> v.first.isNotEmpty() || v.second.isNotEmpty() }.map { (d, v) ->
             AgendaDay(
                 d.toString(),
-                v.first.map { AgendaEvent(it.title, it.allDay, if (it.allDay) null else hm(it.begin.time)) },
+                v.first.map { AgendaEvent(it.title, it.allDay, if (it.allDay) null else hm(it.begin.time), links[it.id]) },
                 v.second.map { AgendaTask(it.key, it.title, it.due == d) },
             )
         }

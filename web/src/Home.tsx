@@ -7,9 +7,9 @@ import { AssistantPage } from './pages/Assistant'
 import { ProjectsPage } from './pages/Projects'
 import { ViewsPage } from './pages/Views'
 import { TasksPage } from './pages/Tasks'
-import { readEvents } from './calendar'
+import { createEvent, readEvents, type NewEvent } from './calendar'
 import { logDone } from './assistantCore'
-import { sweepIfDue } from './settingsDevice'
+import { sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
@@ -34,6 +34,10 @@ export interface PageProps {
   onConnectCalendar: () => void
   /** Reads Google Calendar between two moments; fails with CalendarError when it is not allowed or not switched on. */
   readCalendar: (from: Date, to: Date) => ReturnType<typeof readEvents>
+  /** Asks Google for the permission to add events to the calendar (a trip to Google and back); asked only when the owner first uses it. */
+  onAllowCalendarWrite: () => void
+  /** Adds an event to the owner's calendar and returns its page in Google Calendar; fails with CalendarError when not allowed or not switched on. */
+  addCalendarEvent: (e: NewEvent) => Promise<string>
 }
 
 const ASK_KEY = 'omni.askOnDone'
@@ -53,7 +57,7 @@ const offersFinish = (t: Task, tasks: Task[], withSubtasks: boolean) => {
   return withSubtasks ? below(t.key).every((c) => !c.open || c.parent === t.key) : below(t.key).every((c) => !c.open)
 }
 
-export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onConnectCalendar: () => void; onSignOut: () => void; onChangeVault: () => void }) {
+export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onConnectCalendar: () => void; onAllowCalendarWrite: () => void; onSignOut: () => void; onChangeVault: () => void }) {
   const vault = useMemo(() => new Vault(p.drive, p.vaultId, config.taskFileId), [p.drive, p.vaultId])
   const [page, navigate] = usePage()
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
@@ -100,7 +104,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   const runNow = async (action: () => Promise<unknown>) => {
     setMessage('')
     try {
-      const res = (await action()) as { ok?: boolean; error?: string } | undefined
+      const res = (await action()) as { ok?: boolean; error?: string; notice?: string } | undefined
       if (res && res.ok === false) {
         setMessage(
           res.error === 'conflict' ? 'บรรทัดนี้ถูกแก้จากที่อื่นไปแล้ว จึงโหลดใหม่ให้ ลองอีกครั้ง'
@@ -113,6 +117,8 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
       setSnapshot(loaded)
       setSyncedAt(new Date())
       setNeedSignIn(false)
+      // A plain notice from the action (e.g. "moved 3 finished tasks to the archive"), shown once the note is read.
+      if (res?.ok && res.notice) setMessage(res.notice)
     } catch (e) {
       if (e instanceof AuthExpired) setNeedSignIn(true)
       else if (e instanceof VaultError) setMessage(e.message)
@@ -122,7 +128,10 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   const reload = () => run(async () => undefined)
 
   // Once a day finished tasks move to the archive note (Settings: archive days); the note is read again only if some moved.
-  useEffect(() => { reload(); sweepIfDue(vault).then((moved) => { if (moved.length > 0) reload() }, () => {}) }, [vault])
+  useEffect(() => {
+    reload()
+    sweepIfDue(vault).then((moved) => { if (moved.length > 0) run(async () => ({ ok: true, notice: sweptNotice(moved.length) })) }, () => {})
+  }, [vault])
 
   /**
    * Ticks a task; a parent with open subtasks first asks whether to tick them too, as on Android.
@@ -156,6 +165,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     vault, snapshot, busy, run, tick, remove: (t) => takeOut(t, false), fresh,
     onReload: reload, onNavigate: navigate, onChangeVault: p.onChangeVault, onSignOut: p.onSignOut,
     onConnectCalendar: p.onConnectCalendar, readCalendar: (from, to) => readEvents(p.drive, from, to),
+    onAllowCalendarWrite: p.onAllowCalendarWrite, addCalendarEvent: (e) => createEvent(p.drive, e),
   }
 
   return (

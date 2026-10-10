@@ -62,5 +62,9 @@ export const evCovers = (e: Ev, d: string) => {
 /** All-day events, and timed ones a day or longer, go in the strip instead of filling whole columns. */
 export const evInStrip = (e: Ev) => e.allDay || new Date(e.end).getTime() - new Date(e.begin).getTime() >= 86_400_000
 export const evClock = (e: Ev) => `${e.begin.slice(11, 16)} ถึง ${e.end.slice(11, 16)}`
+/** Makes an element open the event's page in Google Calendar in a new tab: use as `<a {...evLink(e.link)}>`; empty when the event has no page. */
+export const evLink = (link?: string) => (link ? { href: link, target: '_blank', rel: 'noopener noreferrer' } : {})
+/** `a` for an event with a page in Google Calendar, else the plain element. */
+export const evTag = <T extends string>(link: string | undefined, plain: T) => (link ? 'a' : plain) as 'a'
 /** "ทั้งวัน" or "10:00 ถึง 11:00". */
 export const evTimes = (e: Ev) => (e.allDay ? 'ทั้งวัน' : evClock(e))

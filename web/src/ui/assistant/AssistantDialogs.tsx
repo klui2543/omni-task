@@ -59,3 +59,17 @@ export function RangeDialog(p: { from: string; onAgenda: (from: string, to: stri
     </Sheet>
   )
 }
+
+/** Before the first event is added to Google Calendar: what Google will ask and why, and that the plan on screen is kept. */
+export function CalendarWriteDialog(p: { onGo: () => void; onClose: () => void }) {
+  return (
+    <Sheet title="ให้ผู้ช่วยลงนัดใน Google Calendar" onClose={p.onClose}>
+      <p>ตอนนี้เว็บอ่านปฏิทินของคุณได้อย่างเดียว การสร้างนัดต้องให้ Google ถามสิทธิ์เพิ่ม: เพิ่มและแก้นัดใน Google Calendar</p>
+      <p class="muted small">ผู้ช่วยจะสร้างนัดเฉพาะที่คุณกดลงแผนหรือสร้างงานเท่านั้น ไม่แตะนัดเดิม กดต่อไปแล้วจะไปที่หน้าของ Google และกลับมาที่นี่ แผนที่เลือกไว้จะยังอยู่ ถอนสิทธิ์ได้ทุกเมื่อที่ myaccount.google.com/permissions</p>
+      <div class="dialog-actions">
+        <button class="ghost" onClick={p.onClose}>ยกเลิก</button>
+        <button class="primary" onClick={p.onGo}>ไปที่ Google เพื่ออนุญาต</button>
+      </div>
+    </Sheet>
+  )
+}

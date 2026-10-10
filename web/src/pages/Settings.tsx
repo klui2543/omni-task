@@ -5,7 +5,7 @@ import { customKindTags, firstGlyph, kindsStore } from '../kinds'
 import { Auth, CALENDAR_SCOPE } from '../auth'
 import { askOnDone, type PageProps } from '../Home'
 import { URGENT_RULES, urgentRule } from '../settings'
-import { ARCHIVE_DAYS, archiveDays, sweepIfDue } from '../settingsDevice'
+import { ARCHIVE_DAYS, archiveDays, sweepAndSay } from '../settingsDevice'
 import { FONTS, PALETTES, SCALES, THEMES, appearance, setAppearance } from '../settingsAppearance'
 
 /** A row of choices that works like a radio group, in Android's segmented look. */
@@ -91,7 +91,7 @@ export function SettingsPage(p: PageProps) {
             <div class="set-chips" role="radiogroup" aria-label="ย้ายเข้าคลังอัตโนมัติหลัง">
               {ARCHIVE_DAYS.map((d) => (
                 <button key={d} class={`chip${days === d ? ' on' : ''}`} role="radio" aria-checked={days === d}
-                  onClick={() => { archiveDays.set(d); setDays(d); p.run(() => sweepIfDue(p.vault)) }}>{d === 0 ? 'ไม่ย้าย' : `${d} วัน`}</button>
+                  onClick={() => { archiveDays.set(d); setDays(d); p.run(() => sweepAndSay(p.vault)) }}>{d === 0 ? 'ไม่ย้าย' : `${d} วัน`}</button>
               ))}
             </div>
             <span class="set-note">ย้ายวันละครั้งไปที่ Omni note Archive.md ข้างไฟล์ Omni note งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม</span>

@@ -47,6 +47,11 @@ export class Drive {
     return (await this.call(url)).json()
   }
 
+  /** A POST of a JSON body to any Google API with the owner's token (used for Calendar), answered as JSON. */
+  async postJson(url: string, body: unknown): Promise<any> {
+    return (await this.call(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json()
+  }
+
   /** Every match, following Drive's pages (a folder like Attachments can hold hundreds of files). */
   private async list(q: string, fields = 'files(id,name,mimeType,parents)'): Promise<DriveFile[]> {
     const out: DriveFile[] = []

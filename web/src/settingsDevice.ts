@@ -30,6 +30,18 @@ export const archiveDays = {
   },
 }
 
+/** What Android says after a sweep moved finished tasks to the archive. */
+export const sweptNotice = (count: number) => `ย้ายงานที่เสร็จ ${count} งานเข้าคลังแล้ว`
+
+/**
+ * Runs the sweep as an action of the page, which then says how many tasks it moved (nothing when none did).
+ * The notice is shown once the note is read again, since every action clears the previous message.
+ */
+export async function sweepAndSay(vault: Vault): Promise<{ ok: true; notice?: string }> {
+  const moved = await sweepIfDue(vault)
+  return moved.length > 0 ? { ok: true, notice: sweptNotice(moved.length) } : { ok: true }
+}
+
 /**
  * Once a day, moves finished tasks closed at least [archiveDays] days ago from the TaskForge note to the archive note,
  * with their whole blocks. Project work stays. Returns the titles moved.

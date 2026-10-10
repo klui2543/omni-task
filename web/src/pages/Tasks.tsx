@@ -7,6 +7,7 @@ import { EditPanel } from '../ui/EditPanel'
 import { FilterPanel, SortDialog } from '../ui/ListTools'
 import { PageHead } from '../ui/PageHead'
 import { TaskRow } from '../ui/TaskRow'
+import { useStored } from '../ui/views/hooks'
 
 const DRAFT_KEY = 'omni.draft'
 const FOLD_KEY = 'omni.folded'
@@ -33,6 +34,7 @@ export function TasksPage(p: PageProps) {
   // Folded groups are remembered on this device, as Android remembers them.
   const [folded, setFolded] = useState<string[]>(() => read(() => localStorage, FOLD_KEY).split('\n').filter(Boolean))
   const [adding, setAdding] = useState(false)
+  const [hide, setHide] = useStored('omni.hideDone', 'yes', ['yes', 'no'] as const)
   const [showDone, setShowDone] = useState(false)
   const [query, setQueryState] = useState<ListQuery>(storedQuery.get)
   const setQuery = (q: ListQuery) => { setQueryState(q); storedQuery.set(q) }
@@ -175,7 +177,11 @@ export function TasksPage(p: PageProps) {
 
       <button class="fab narrow-only" aria-label="เพิ่มงาน" onClick={() => setAdding(true)}>+</button>
       {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
-      {overlay === 'filter' && <FilterPanel query={query} tags={tags} shown={shown} onChange={setQuery} onClose={() => setOverlay(null)} />}
+      {overlay === 'filter' && (
+        // Android's one filter sheet has the "hide done" switch here too, though only the views honour it; the choice is shared with Views.
+        <FilterPanel query={query} tags={tags} shown={shown} onChange={setQuery} onClose={() => setOverlay(null)}
+          hideDone={{ on: hide === 'yes', set: (on) => setHide(on ? 'yes' : 'no') }} />
+      )}
       {overlay === 'sort' && <SortDialog query={query} onChange={setQuery} onClose={() => setOverlay(null)} />}
     </main>
     {current && (

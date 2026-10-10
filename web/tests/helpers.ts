@@ -19,7 +19,7 @@ export const NOTE = [
 ].join('\n')
 
 /** Signs in and picks the vault; the app opens on Focus. [granted] has the calendar already allowed. */
-export async function open(page: Page, opts: { now?: Date; note?: string; profile?: string; events?: FakeDrive['events']; granted?: boolean; layout?: FakeDrive['layout'] } = {}) {
+export async function open(page: Page, opts: { now?: Date; note?: string; profile?: string; events?: FakeDrive['events']; granted?: boolean; writeGranted?: boolean; layout?: FakeDrive['layout'] } = {}) {
   const drive = new FakeDrive()
   if (opts.layout) drive.layout = opts.layout
   const { root, file } = drive.vault(opts.note ?? NOTE)
@@ -28,6 +28,11 @@ export async function open(page: Page, opts: { now?: Date; note?: string; profil
   if (opts.granted) {
     drive.calendarGranted = true
     await page.addInitScript(() => localStorage.setItem('omni.scopes', 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar.readonly'))
+  }
+  if (opts.writeGranted) {
+    drive.calendarGranted = true
+    drive.calendarWriteGranted = true
+    await page.addInitScript(() => localStorage.setItem('omni.scopes', 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events'))
   }
   await page.clock.setFixedTime(opts.now ?? at(9, 20))
   await drive.install(page)

@@ -15,6 +15,7 @@ export interface EventIn {
   begin: string
   end: string
   allDay: boolean
+  link?: string
 }
 
 /** What the page knows besides the note, as WebAssistant.StateIn takes it. */
@@ -95,7 +96,7 @@ export interface AgendaOut {
   events: number
   due: number
   busiest: string | null
-  days: { day: string; events: { title: string; allDay: boolean; time?: string }[]; tasks: { key: string; title: string; due: boolean }[] }[]
+  days: { day: string; events: { title: string; allDay: boolean; time?: string; link?: string }[]; tasks: { key: string; title: string; due: boolean }[] }[]
 }
 
 export interface Proposal {

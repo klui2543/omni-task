@@ -38,16 +38,33 @@ export const declined = {
 export type Chat =
   | { t: 'asked'; text: string }
   | { t: 'duration'; request: string; answered?: number }
-  | { t: 'slots'; plan: PlanOut; page: number; picked: number; title: string; done?: string }
+  | { t: 'slots'; plan: PlanOut; page: number; picked: number; title: string; done?: string; toCalendar?: boolean }
   | { t: 'today'; items: Ranked[] }
   | { t: 'ranked'; items: Ranked[] }
   | { t: 'review'; title: string; lines: string[] }
   | { t: 'agenda'; title: string; summary: string; data: AgendaOut }
-  | { t: 'range'; title: string; proposals: Proposal[]; accepted: number[] }
+  | { t: 'range'; title: string; proposals: Proposal[]; accepted: number[]; toCalendar?: boolean }
+
+const RESUME_KEY = 'omni.chatResume'
+
+/** Keeps the conversation through a trip to Google (asking for the calendar permission leaves the page). */
+export function keepChatForReturn() {
+  try { sessionStorage.setItem(RESUME_KEY, JSON.stringify(chat)) } catch { /* the conversation just starts afresh */ }
+}
+
+const takeKeptChat = (): Chat[] => {
+  try {
+    const kept = sessionStorage.getItem(RESUME_KEY)
+    sessionStorage.removeItem(RESUME_KEY)
+    return kept ? JSON.parse(kept) : []
+  } catch {
+    return []
+  }
+}
 
 // The conversation lives as long as the page is open, as Android's does for the session: leaving for another page
-// and coming back finds it again, a reload starts afresh.
-let chat: Chat[] = []
+// and coming back finds it again, a reload starts afresh (but not a trip to Google for the calendar permission).
+let chat: Chat[] = takeKeptChat()
 const listeners = new Set<() => void>()
 
 export function useChat(): [Chat[], (change: (c: Chat[]) => Chat[]) => void] {
