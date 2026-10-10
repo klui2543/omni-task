@@ -66,6 +66,8 @@ object WebCore {
         val attachmentNames: List<String> = emptyList(),
         /** The vault path of the note the task is in. */
         val note: String? = null,
+        /** Today's round of a repeating task whose earlier round is still open; it ticks the same line past today. */
+        val todayCopy: Boolean = false,
     )
 
     @Serializable
@@ -90,13 +92,13 @@ object WebCore {
         attachments = t.attachments.size, links = t.links.size,
         start = t.start?.toString(), reminderOn = t.reminderOn?.name,
         linkNames = t.links, attachmentNames = t.attachments,
-        note = t.filePath.ifEmpty { null },
+        note = t.filePath.ifEmpty { null }, todayCopy = t.todayCopy,
     )
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String {
         val day = LocalDate.parse(today)
-        return json.encodeToString(WebNotes.tasks(fileKey, path, text).map { dto(it, day) })
+        return json.encodeToString(WebNotes.tasks(fileKey, path, text, day).map { dto(it, day) })
     }
 
     /** The tasks without those in a parked branch, which every page but Projects leaves out (as on Android). */
@@ -140,7 +142,7 @@ object WebCore {
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
         val day = LocalDate.parse(today)
         val q = json.decodeFromString<QueryDto>(query)
-        val tasks = withoutParked(WebNotes.tasks(fileKey, path, text), q.branches)
+        val tasks = withoutParked(WebNotes.tasks(fileKey, path, text, day), q.branches)
         fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
         val sorts = q.sorts.mapNotNull { s -> SortBy.entries.firstOrNull { it.name == s.by }?.let { it to s.ascending } }
         val main = sorts.firstOrNull() ?: (SortBy.DUE to true)
@@ -177,7 +179,7 @@ object WebCore {
      * Ticks or unticks a task; a repeating task moves on to its next date instead of being ticked. With
      * [withSubtasks], the task's open direct subtasks are ticked in the same write, as the Android app offers.
      */
-    fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean = false): String {
+    fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean = false, todayCopy: Boolean = false): String {
         val day = LocalDate.parse(today)
         val task = find(text, raw, lineIndex) ?: return fail("conflict")
         val repeats = task.recurrence != null && task.isOpen
@@ -191,7 +193,7 @@ object WebCore {
             // Ticking changes no line count, so the subtasks are still where they were parsed.
             children.forEach { lines[it.lineIndex] = TaskLine.setDone(it.raw, true, day) }
             if (repeats) {
-                if (!VaultText.advanceRecurring(lines, i, day)) throw RuleUnreadable()
+                if (!VaultText.advanceRecurring(lines, i, day, todayCopy)) throw RuleUnreadable()
             } else {
                 lines[i] = TaskLine.setDone(task.raw, task.isOpen, day)
             }

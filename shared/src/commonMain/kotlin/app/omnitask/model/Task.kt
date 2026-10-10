@@ -49,10 +49,16 @@ data class Task(
     val list: String? = null,
     /** The key of the task this one sits under (an indented checkbox line), or null for a top-level task. */
     val parent: String? = null,
+    /**
+     * Set on the stand-in for today's round of a repeating task whose earlier round is still open (see
+     * [Recurrence.todayCopy]). It has no line of its own: [raw] and [lineIndex] are the open line's, only the dates
+     * are today's, and ticking it moves that line past today.
+     */
+    val todayCopy: Boolean = false,
 ) {
     val isOpen get() = status == Status.TODO || status == Status.IN_PROGRESS
     val noteName get() = filePath.substringAfterLast('/').removeSuffix(".md")
-    val key get() = "$fileUri#$lineIndex"
+    val key get() = if (todayCopy) "$fileUri#$lineIndex@today" else "$fileUri#$lineIndex"
 
     /** Leading spaces of the line (a tab counts as four), which decide which task a subtask belongs to. */
     val indent: Int get() = raw.takeWhile { it == ' ' || it == '\t' }.fold(0) { n, c -> n + (if (c == '\t') 4 else 1) }

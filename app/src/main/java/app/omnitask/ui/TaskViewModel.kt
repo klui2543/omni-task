@@ -481,7 +481,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val text = result.fold(
                 { made ->
                     if (made) {
-                        val next = TaskLine.parse(TaskLine.advanceRecurring(task.raw, LocalDate.now()) ?: "")?.let { it.due ?: it.scheduled ?: it.start }
+                        val next = TaskLine.parse(TaskLine.advanceRecurring(task.raw, LocalDate.now(), task.todayCopy) ?: "")?.let { it.due ?: it.scheduled ?: it.start }
                         tr("เสร็จแล้ว รอบถัดไป ", "Done. Next: ") + (next?.format(SHORT_DATE) ?: "")
                     } else {
                         tr(

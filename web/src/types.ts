@@ -31,6 +31,8 @@ export interface Task {
   attachmentNames: string[]
   /** The vault path of the note the task is in. */
   note?: string | null
+  /** Today's round of a repeating task whose earlier round is still open; ticking it moves the same line past today. */
+  todayCopy?: boolean
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
