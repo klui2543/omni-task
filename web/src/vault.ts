@@ -1,6 +1,17 @@
-import { addTask, listTasks, loadTasks, taskFilePath, toggle } from './core'
+import {
+  addTask, archiveAppend, archiveFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
+  restoreBlock, taskFilePath, toggle,
+} from './core'
 import { Drive, DriveFile, sameName } from './drive'
-import type { EditResult, Query, Task, TaskList } from './types'
+import type { EditOp, EditResult, Query, Task, TaskList } from './types'
+
+/** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
+export interface Cut {
+  title: string
+  index: number
+  lines: string[]
+  archived: boolean
+}
 
 export class VaultError extends Error {
   constructor(public code: 'notfound' | 'busy', message: string) {
@@ -20,10 +31,25 @@ export class Vault {
     return (this.fileId = file.id)
   }
 
+  private folderId: string | null = null
+
+  /** The TaskForge folder, which also holds the archive note and any conflict copies. */
+  private async folder(): Promise<string> {
+    if (this.folderId) return this.folderId
+    const parent = (await this.drive.get(await this.file(), 'parents')).parents?.[0]
+    if (!parent) throw new VaultError('notfound', 'ไม่พบโฟลเดอร์ของ TaskForge.md')
+    return (this.folderId = parent)
+  }
+
+  /**
+   * The note, and the names of conflict copies a sync app left beside it (e.g. "TaskForge (conflict ...).md"):
+   * those mean two versions met, so the owner should compare them before going on.
+   */
   async load(): Promise<Snapshot> {
     const id = await this.file()
-    const { text } = await this.drive.readText(id)
-    return new Snapshot(id, text, loadTasks(id, taskFilePath, text))
+    const [{ text }, files] = await Promise.all([this.drive.readText(id), this.folder().then((f) => this.drive.children(f))])
+    const conflicts = files.map((f) => f.name).filter((n) => n.startsWith('TaskForge') && isConflictCopy(n))
+    return new Snapshot(id, text, loadTasks(id, taskFilePath, text), conflicts)
   }
 
   /**
@@ -51,13 +77,67 @@ export class Vault {
   add(sentence: string) {
     return this.edit((text) => addTask(text, sentence))
   }
+
+  change(task: Task, op: EditOp) {
+    return this.edit((text) => editTask(text, task, op))
+  }
+
+  /** Deletes the task with its description and subtasks; the cut is kept for undo. */
+  async remove(task: Task): Promise<EditResult & { cut?: Cut }> {
+    const res = await this.edit((text) => cutTask(text, task))
+    return res.ok ? { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: false } } : res
+  }
+
+  private async archiveNote(): Promise<{ id: string | null; text: string; version: string }> {
+    const name = archiveFilePath.split('/').pop()!
+    const file = await this.drive.child(await this.folder(), name)
+    if (!file) return { id: null, text: '', version: '' }
+    return { id: file.id, ...(await this.drive.readText(file.id)) }
+  }
+
+  /**
+   * Moves a finished task with its whole block to the archive note beside TaskForge, under this month's
+   * heading, as Android does. The archive is written first; if the live note changed meanwhile, the archive
+   * is put back as it was and the move starts over on the new text.
+   */
+  async archive(task: Task): Promise<EditResult & { cut?: Cut }> {
+    const id = await this.file()
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { text, version } = await this.drive.readText(id)
+      const res = cutTask(text, task)
+      if (!res.ok) return res
+      const archive = await this.archiveNote()
+      const next = archiveAppend(archive.text, res.cutLines!)
+      const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), archiveFilePath.split('/').pop()!, next))
+      if (archive.id) await this.drive.writeText(archive.id, next)
+      if ((await this.drive.version(id)) !== version) {
+        if (archive.id) await this.drive.writeText(archive.id, archive.text)
+        else await this.drive.trash(archiveId)
+        continue
+      }
+      await this.drive.writeText(id, res.text!)
+      return { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: true } }
+    }
+    throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
+  }
+
+  /** Puts a deleted or archived task back where it was (and takes it out of the archive note). */
+  async undo(cut: Cut): Promise<EditResult> {
+    const res = await this.edit((text) => restoreBlock(text, cut.index, cut.lines))
+    if (res.ok && cut.archived) {
+      const archive = await this.archiveNote()
+      const back = archive.id ? archiveRemove(archive.text, cut.lines) : null
+      if (archive.id && back !== null) await this.drive.writeText(archive.id, back)
+    }
+    return res
+  }
 }
 
 /** The note as last read: its tasks, and the text the shared logic groups and sorts them from. */
 export class Snapshot {
   readonly byKey: Map<string, Task>
 
-  constructor(private fileId: string, private text: string, readonly tasks: Task[]) {
+  constructor(private fileId: string, private text: string, readonly tasks: Task[], readonly conflicts: string[] = []) {
     this.byKey = new Map(tasks.map((t) => [t.key, t]))
   }
 

@@ -198,7 +198,7 @@ test('search narrows the list, and a folded group stays folded', async ({ page }
   await expect(page.getByText('โทรหาแม่')).toHaveCount(0)
   await page.getByLabel('ค้นหาชื่องาน').fill('')
 
-  await page.getByRole('button', { name: /วันนี้/ }).click()
+  await page.getByRole('heading', { name: /วันนี้/ }).getByRole('button').click()
   await expect(page.getByText('โทรหาแม่')).toHaveCount(0)
   await page.reload()
   await expect(page.getByText('ส่งรายงาน')).toBeVisible()
@@ -226,4 +226,107 @@ test('the menu moves between pages and the page stays after a reload', async ({ 
 
   await page.getByRole('button', { name: 'ตั้งค่า' }).first().click()
   await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
+})
+
+test('a sync conflict copy beside the note is pointed out', async ({ page }) => {
+  const { drive, file } = await setup(page)
+  drive.add('TaskForge (conflict 2026-10-09-05-55-31).md', file.parent, TASKS)
+  await signInAndPick(page)
+  await expect(page.getByRole('alert')).toContainText('TaskForge (conflict 2026-10-09-05-55-31).md')
+  await expect(page.getByText('ส่งรายงาน')).toHaveCount(1)
+})
+
+test('the edit panel changes dates, priority, repeat, tags and the description', async ({ page }) => {
+  const { file } = await setup(page)
+  await signInAndPick(page)
+
+  await page.getByRole('button', { name: /^ส่งรายงาน/ }).click()
+  const panel = page.getByRole('dialog', { name: 'แก้ไขงาน' })
+  await expect(panel.getByRole('heading', { name: 'ส่งรายงาน' })).toBeVisible()
+
+  await panel.getByRole('button', { name: /^นัดทำ/ }).click()
+  await panel.getByRole('button', { name: 'พรุ่งนี้', exact: true }).click()
+  await expect.poll(() => file.text).toContain('⏳ 2026-10-09 📅 2026-10-07')
+
+  await panel.getByRole('button', { name: /^ความสำคัญ/ }).click()
+  await panel.getByRole('button', { name: 'สูงสุด', exact: true }).click()
+  await expect.poll(() => file.text).toContain('- [ ] ส่งรายงาน #งาน 🔺 ➕')
+
+  await panel.getByRole('button', { name: /^วนซ้ำ/ }).click()
+  await panel.getByRole('button', { name: 'แบบอื่น' }).click()
+  await panel.getByLabel('กฎวนซ้ำ').fill('every week on Monday')
+  await expect(panel.getByText('ทุกจันทร์')).toBeVisible()
+  await panel.getByRole('button', { name: 'บันทึก' }).click()
+  await expect.poll(() => file.text).toContain('🔺 🔁 every week on Monday ➕')
+
+  await panel.getByRole('button', { name: /^Tag/ }).click()
+  await panel.getByLabel('Tag ใหม่').fill('ด่วน')
+  await panel.getByRole('button', { name: 'เพิ่ม', exact: true }).click()
+  await expect.poll(() => file.text).toContain('- [ ] ส่งรายงาน #งาน #ด่วน 🔺')
+
+  await panel.getByLabel('รายละเอียด').fill('ส่งอาจารย์ก่อนเที่ยง')
+  await panel.getByRole('radio', { name: 'กำลังทำ' }).click()
+  await expect.poll(() => file.text).toContain('- [/] ส่งรายงาน')
+  expect(file.text).toContain('📅 2026-10-07\n    - ส่งอาจารย์ก่อนเที่ยง\n')
+
+  await panel.getByLabel('เพิ่มงานย่อย').fill('เขียนบทสรุป')
+  await panel.getByLabel('เพิ่มงานย่อย').press('Enter')
+  await expect(panel.getByText('เขียนบทสรุป')).toBeVisible()
+  expect(file.text).toContain('    - ส่งอาจารย์ก่อนเที่ยง\n    - [ ] เขียนบทสรุป ➕ 2026-10-08\n')
+})
+
+test('a finished task can go to the archive, and come back with undo', async ({ page }) => {
+  const { drive, file } = await setup(page)
+  await signInAndPick(page)
+
+  await page.getByRole('checkbox', { name: /ติ๊กเสร็จ อ่านหนังสือ/ }).click()
+  await page.getByRole('button', { name: 'เก็บเข้าคลัง' }).click()
+  await expect(page.getByText('ย้าย "อ่านหนังสือ" เข้าคลังแล้ว')).toBeVisible()
+  expect(file.text).not.toContain('อ่านหนังสือ')
+  const archive = drive.nodes.find((n) => n.name === 'TaskForge Archive.md')!
+  expect(archive.parent).toBe(file.parent)
+  expect(archive.text).toBe('# TaskForge Archive\n\n## 2026-10\n\n- [x] อ่านหนังสือ ✅ 2026-10-08\n')
+
+  await page.getByRole('button', { name: 'เลิกทำ' }).click()
+  await expect.poll(() => file.text).toContain('- [x] อ่านหนังสือ ✅ 2026-10-08\n- [x] เสร็จแล้วเมื่อวาน')
+  expect(archive.text).not.toContain('อ่านหนังสือ')
+})
+
+test('a finished task can be deleted, and repeating or project tasks are not asked about', async ({ page }) => {
+  const { file } = await setup(page)
+  await signInAndPick(page)
+
+  await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ส่งรายงาน/ }).click()
+  await expect(page.getByText('เก็บเข้าคลัง หรือลบออกจากโน้ตเลยไหม')).toHaveCount(0)
+
+  await page.getByRole('checkbox', { name: /ติ๊กเสร็จ อ่านหนังสือ/ }).click()
+  await page.getByRole('button', { name: 'ลบ', exact: true }).click()
+  await expect(page.getByText('ลบ "อ่านหนังสือ" แล้ว')).toBeVisible()
+  expect(file.text).not.toContain('อ่านหนังสือ')
+})
+
+test('filters, grouping and sorting change the list and are remembered', async ({ page }) => {
+  await setup(page)
+  await signInAndPick(page)
+  await expect(page.getByText('โทรหาแม่')).toBeVisible()
+
+  await page.getByRole('button', { name: 'กรอง', exact: true }).click()
+  const filter = page.getByRole('dialog', { name: 'กรอง' })
+  await filter.getByRole('group', { name: 'วันที่' }).getByRole('button', { name: 'วันนี้' }).click()
+  await filter.getByRole('button', { name: 'แสดง 2 งาน' }).click()
+  await expect(page.getByText('ส่งรายงาน')).toHaveCount(0)
+  await expect(page.getByText('โทรหาแม่')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'กรอง 1' })).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByText('โทรหาแม่')).toBeVisible()
+  await expect(page.getByText('ส่งรายงาน')).toHaveCount(0)
+  await page.getByRole('button', { name: 'เอา วันนี้ ออก' }).click()
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+
+  await page.getByRole('button', { name: /^กลุ่ม:/ }).click()
+  await page.getByRole('radio', { name: 'ความสำคัญ' }).click()
+  await page.getByRole('button', { name: 'เสร็จ', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'กลุ่ม: ความสำคัญ' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /เลยกำหนด/ })).toHaveCount(0)
 })

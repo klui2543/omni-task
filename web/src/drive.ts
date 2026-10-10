@@ -106,6 +106,34 @@ export class Drive {
     return (await this.get(id, 'version')).version ?? ''
   }
 
+  /** Everything directly inside [parentId], with names, for spotting a sync app's conflict copies. */
+  children(parentId: string): Promise<DriveFile[]> {
+    return this.list(`${quote(parentId)} in parents and trashed = false`)
+  }
+
+  /** A new text file in [parentId]; returns its id. */
+  async createText(parentId: string, name: string, text: string): Promise<string> {
+    const boundary = 'omni' + Math.random().toString(36).slice(2)
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [parentId], mimeType: 'text/markdown' })}\r\n` +
+      `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${text}\r\n--${boundary}--`
+    const res = await this.call(`${UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    })
+    return (await res.json()).id
+  }
+
+  /** Moves a file to Drive's trash, where it can still be restored. */
+  async trash(id: string): Promise<void> {
+    await this.call(`${API}/files/${id}?supportsAllDrives=true`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trashed: true }),
+    })
+  }
+
   async writeText(id: string, text: string): Promise<void> {
     await this.call(`${UPLOAD}/files/${id}?uploadType=media&supportsAllDrives=true`, {
       method: 'PATCH',

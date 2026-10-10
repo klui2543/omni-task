@@ -1,5 +1,6 @@
 package app.omnitask.web
 
+import app.omnitask.data.Archive
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import app.omnitask.model.DateBucket
@@ -15,6 +16,8 @@ import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.Projects
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
+import app.omnitask.model.ReminderOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -54,10 +57,24 @@ object WebCore {
         val repeatText: String? = null,
         val attachments: Int = 0,
         val links: Int = 0,
+        val start: String? = null,
+        /** Which date the reminder hangs on: DUE or SCHEDULED. */
+        val reminderOn: String? = null,
+        /** Linked note names, for the edit panel. */
+        val linkNames: List<String> = emptyList(),
+        val attachmentNames: List<String> = emptyList(),
     )
 
     @Serializable
-    data class EditResult(val ok: Boolean, val text: String? = null, val error: String? = null, val message: String? = null)
+    data class EditResult(
+        val ok: Boolean,
+        val text: String? = null,
+        val error: String? = null,
+        val message: String? = null,
+        /** For a delete or archive: where the block was and its lines, so it can be put back. */
+        val cutIndex: Int? = null,
+        val cutLines: List<String>? = null,
+    )
 
     fun dto(t: Task, today: LocalDate) = TaskDto(
         key = t.key, raw = t.raw, title = t.title, status = t.status.name, open = t.isOpen,
@@ -68,6 +85,8 @@ object WebCore {
         bucket = t.bucket(today).name, lineIndex = t.lineIndex, parent = t.parent,
         preview = t.descriptionPreview, repeatText = t.recurrence?.let { Recurrence.describe(it) },
         attachments = t.attachments.size, links = t.links.size,
+        start = t.start?.toString(), reminderOn = t.reminderOn?.name,
+        linkNames = t.links, attachmentNames = t.attachments,
     )
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
@@ -181,6 +200,80 @@ object WebCore {
         if (draft.title.isBlank()) return fail("empty")
         return ok(VaultText.appendLine(text, draft.line(day)))
     }
+
+    /** One change from the edit panel; [op] names it and the other fields carry its value. */
+    @Serializable
+    data class EditOp(
+        val op: String,
+        val field: String? = null,
+        val value: String? = null,
+        val on: String? = null,
+    )
+
+    /**
+     * Applies one edit-panel change to the task, as the Android edit sheet does: dates, priority, repeat,
+     * reminder, tags, status, description and a new subtask (read like quick add).
+     */
+    fun editTask(text: String, raw: String, lineIndex: Int, today: String, opJson: String): String {
+        val day = LocalDate.parse(today)
+        val op = json.decodeFromString<EditOp>(opJson)
+        val task = find(text, raw, lineIndex) ?: return fail("conflict")
+        val value = op.value?.trim()?.ifEmpty { null }
+        fun line(change: (String) -> String) = VaultText.edit(text, task) { lines, i -> lines[i] = change(lines[i]) }
+        val edited = when (op.op) {
+            "date" -> {
+                val field = TaskLine.DateField.entries.first { it.name == op.field }
+                line { TaskLine.setDate(it, field, value?.let { LocalDate.parse(it) }) }
+            }
+            "priority" -> line { TaskLine.setPriority(it, Priority.valueOf(op.value!!)) }
+            "recurrence" -> {
+                if (value != null && Recurrence.parse(value) == null) return fail("rule")
+                line { TaskLine.setRecurrence(it, value) }
+            }
+            "reminder" -> {
+                val on = if (op.on == "SCHEDULED") ReminderOn.SCHEDULED else ReminderOn.DUE
+                line { TaskLine.setReminder(it, value?.let { LocalTime.parse(it) }, on) }
+            }
+            "addTag" -> {
+                val tag = value ?: return fail("empty")
+                line { TaskLine.addTag(it, tag) }
+            }
+            "removeTag" -> line { TaskLine.removeTag(it, op.value!!) }
+            "status" -> line { TaskLine.setStatus(it, Status.valueOf(op.value!!), day) }
+            "describe" -> VaultText.edit(text, task) { lines, i -> VaultText.describe(lines, i, op.value.orEmpty()) }
+            "subtask" -> {
+                val draft = QuickAdd.parse(value ?: return fail("empty"), day)
+                if (draft.title.isBlank()) return fail("empty")
+                VaultText.edit(text, task) { lines, i -> VaultText.insertSubtask(lines, i, draft.line(day)) }
+            }
+            else -> return fail("unknown")
+        }
+        return ok(edited ?: return fail("conflict"))
+    }
+
+    /** Takes the task out with its whole block (description, links, subtasks); the result says what was cut. */
+    fun cut(text: String, raw: String, lineIndex: Int): String {
+        val task = find(text, raw, lineIndex) ?: return fail("conflict")
+        var index = -1
+        var removed: List<String> = emptyList()
+        val edited = VaultText.edit(text, task) { lines, i -> index = i; removed = VaultText.cutBlock(lines, i) } ?: return fail("conflict")
+        return json.encodeToString(EditResult(true, edited, cutIndex = index, cutLines = removed))
+    }
+
+    /** Puts a block taken out by [cut] back where it was. */
+    fun restore(text: String, index: Int, linesJson: String): String =
+        ok(VaultText.restore(text, index, json.decodeFromString<List<String>>(linesJson)))
+
+    /** The archive note with the block added under this month's heading; [archive] is empty when the note is new. */
+    fun archiveAppend(archive: String, linesJson: String, today: String): String =
+        Archive.append(archive.ifEmpty { null }, listOf(json.decodeFromString<List<String>>(linesJson)), LocalDate.parse(today))
+
+    /** The archive note with an archived block taken back out; null when it is no longer there. */
+    fun archiveRemove(archive: String, linesJson: String): String? =
+        Archive.remove(archive, json.decodeFromString<List<String>>(linesJson))
+
+    /** A repeat rule in words, or null when the Tasks plugin would not read it. */
+    fun describeRule(rule: String): String? = Recurrence.parse(rule)?.let { Recurrence.describe(rule) }
 
     private class RuleUnreadable : Exception()
 

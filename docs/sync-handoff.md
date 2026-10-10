@@ -17,7 +17,7 @@ Where the conflict question stands, for the next session.
 
 ## Agreed direction (proportional, step by step)
 0. Owner: in Autosync turn on Instant upload, shortest acceptable interval, exempt it from battery optimisation, and sync manually before editing on the phone right after using the web. Owner may send screenshots of the Autosync settings.
-1. Small code change (suggested Opus 5.5 medium): the web warns when a conflict copy exists (Android already does in Focus); Android skips the daily archive sweep while a conflict copy exists.
+1. Small code change (suggested Opus 5.5 medium): the web warns when a conflict copy exists (done 2026-10-10: a notice above every page names the copy); Android skips the daily archive sweep while a conflict copy exists (still to do).
 2. Measure for one week, then decide.
 3. Only if conflicts keep happening (suggested Opus 5.5 high): a conflict review screen comparing the two versions task by task, the owner confirms each choice, and the conflict copy moves to `.trash` instead of being deleted.
 
@@ -26,4 +26,5 @@ Not now: building our own full-vault sync ("Omni Sync") or moving to Obsidian Sy
 ## Links
 - Infographic (private to the owner): https://claude.ai/artifact/Un9qtBRbX9xivzsTdiuzGr
 - Web UI mockups: https://claude.ai/artifact/YaAv8JPuGSW4dcCQkAAuSi
-- Web UI next step after sync: edit panel, filter/group/sort, archive-or-delete prompt on done (suggested Opus 5.5 medium).
+- Web UI done 2026-10-10: edit panel (status, dates, reminder, repeat, priority, tags, description, subtasks, delete), filter panel with saved filters, group and sort, archive-or-delete prompt on done with undo. The web does no daily archive sweep of its own.
+- Web UI still to do: Focus, Views (Kanban, Matrix, Gantt, calendar), Projects/Lists, assistant; in the edit panel the kind, note links and images (shown read-only for now) and dragging subtasks into order.

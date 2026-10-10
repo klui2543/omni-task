@@ -68,6 +68,15 @@ export class FakeDrive {
 
       const m = /\/files\/?([^/?]*)$/.exec(url.pathname)
       const id = m?.[1]
+      if (req.method() === 'POST' && !id) {
+        // A multipart upload: the metadata part, then the text.
+        const body = req.postData() ?? ''
+        const boundary = /boundary=(\S+)/.exec(req.headers()['content-type'] ?? '')![1]
+        const parts = body.split(`--${boundary}`).slice(1, 3).map((p) => p.slice(p.indexOf('\r\n\r\n') + 4).replace(/\r\n$/, ''))
+        const meta = JSON.parse(parts[0])
+        const n = this.add(meta.name, meta.parents[0], parts[1])
+        return json({ id: n.id })
+      }
       if (req.method() === 'GET' && !id) {
         return json({ files: this.find(url.searchParams.get('q') ?? '').map((n) => ({ id: n.id, name: n.name, parents: n.parent ? [n.parent] : [] })) })
       }
@@ -82,6 +91,10 @@ export class FakeDrive {
       }
       if (req.method() === 'GET') {
         return json({ id: node.id, name: node.name, parents: node.parent ? [node.parent] : [], version: String(node.version) })
+      }
+      if (req.method() === 'PATCH' && !url.pathname.startsWith('/upload')) {
+        if (JSON.parse(req.postData() ?? '{}').trashed) this.nodes = this.nodes.filter((n) => n !== node)
+        return json({ id: node.id })
       }
       if (req.method() === 'PATCH') {
         node.text = req.postData() ?? ''

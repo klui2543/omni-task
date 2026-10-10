@@ -1,7 +1,10 @@
+import { useState } from 'preact/hooks'
 import { taskFilePath } from '../core'
+import { askOnDone } from '../Home'
 
 /** For now the vault and account; notifications, appearance and the rest follow Android's Settings next. */
 export function SettingsPage(p: { busy: boolean; onReload: () => void; onChangeVault: () => void; onSignOut: () => void }) {
+  const [ask, setAsk] = useState(askOnDone.get)
   return (
     <main class="page">
       <header class="head">
@@ -20,6 +23,16 @@ export function SettingsPage(p: { busy: boolean; onReload: () => void; onChangeV
           <div>เปลี่ยน vault</div>
           <button class="ghost" onClick={p.onChangeVault}>เลือกใหม่</button>
         </div>
+      </section>
+      <section class="group">
+        <h2 class="section-title">งานที่เสร็จ</h2>
+        <label class="setting">
+          <div>
+            <div>ถามเมื่อติ๊กเสร็จ</div>
+            <div class="muted small">เก็บเข้าคลัง ลบ หรือไว้ก่อน</div>
+          </div>
+          <input type="checkbox" role="switch" class="switch" checked={ask} onChange={(e) => { askOnDone.set(e.currentTarget.checked); setAsk(e.currentTarget.checked) }} />
+        </label>
       </section>
       <section class="group">
         <h2 class="section-title">บัญชี Google</h2>
