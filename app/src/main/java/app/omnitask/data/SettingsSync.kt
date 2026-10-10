@@ -62,6 +62,26 @@ object SettingsSync {
         prefs(context).edit().putLong(KEY_SYNCED_AT, now).apply()
     }
 
+    /** Copies an older build left by saving the file as Markdown: `omni-settings.json.md`, `omni-settings.json (3).md`... */
+    private val STRAY = Regex("""omni-settings\.json(?: \(\d+\))?\.md""")
+
+    /**
+     * Leaves one settings file, at [PATH]. The copies above, in either Omni folder, and a file still at [LEGACY_PATH]
+     * are folded in: the most recently saved of them all is kept (each save held every setting, so the newest is
+     * complete), and the rest are deleted, only once [PATH] is there.
+     */
+    fun tidy(repo: VaultRepository, vault: Uri) {
+        val dirs = listOf(PATH, LEGACY_PATH).map { it.substringBeforeLast('/') }
+        val extra = dirs.flatMap { dir -> repo.namesIn(vault, dir).filter { STRAY.matches(it) }.map { "$dir/$it" } } +
+            listOfNotNull(LEGACY_PATH.takeIf { repo.readPath(vault, it) != null })
+        if (extra.isEmpty()) return
+        val current = repo.readPath(vault, PATH)
+        val savedAt = { text: String -> runCatching { JSONObject(text).optLong("savedAt", 0) }.getOrDefault(-1L) }
+        val newest = (extra.mapNotNull { repo.readPath(vault, it) } + listOfNotNull(current)).maxByOrNull(savedAt)
+        if (newest != null && newest != current && savedAt(newest) >= 0) repo.writePath(vault, PATH, newest)
+        if (repo.readPath(vault, PATH) != null) extra.forEach { repo.deletePath(vault, it) }
+    }
+
     /** Applies the file if it is newer than this phone's last sync. Returns true when anything changed. */
     fun load(context: Context, repo: VaultRepository, vault: Uri): Boolean {
         val text = read(repo, vault) ?: return false
