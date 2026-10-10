@@ -44,10 +44,19 @@ closes for Omni's files and nothing runs in the background.
    sign-in shows "Google hasn't verified this app"; for the owner's own use, Advanced > continue.
 3. Optional later: in DriveSync, make the Omni folder download-only or leave it; Omni no longer writes the phone copy.
 
-## Split into PRs
-1. DriveClient, OmniStore (with offline queue), routing for taps in the app, Settings card, CI fingerprint step, tests
-   against a fake Drive (JVM unit tests; CI only, no SDK locally).
-2. Background paths (alarm actions, widgets, sweep, settings sync) and the switch-over check.
+## Status (2026-10-10)
+Built in one PR, since routing inside `VaultRepository` covers every caller, the background ones included (alarm
+actions, widgets, the daily sweep, settings sync):
+- `shared/.../drive/`: `DriveRest` (REST over a transport the app gives), `OmniDrive` (cache, version-checked edits,
+  offline queue), `Merge3` (line-by-line join of an offline edit with Drive's text); tests against a fake Drive.
+- `app/.../data/DriveLink.kt`: sign-in (`AuthorizationClient`), OkHttp transport, the cache file, one store per process.
+- Settings > Google Drive: connect, sign in again, status, pending edits, disconnect. Before connecting, the phone's copy
+  of the task note is compared with Drive's; if they differ, the owner is asked (sync in DriveSync first, or use Drive's).
+- The daily sweep runs only when Drive answers.
+- CI prints the release key's SHA-1 and publishes releases from main only.
+- Conflict copies named "(older, before conflict ...)" (DriveSync's other pattern) are now recognised and not read.
+
+Still open: a screen listing offline edits that clashed (today they show once as a message).
 
 ## Edges that remain
 - Drive v3 has no conditional write, so two writers in the same second can still race; the version re-check and retry

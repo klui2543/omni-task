@@ -1,6 +1,7 @@
 package app.omnitask.ui
 
 import android.app.Application
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -10,11 +11,15 @@ import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
 import app.omnitask.CrashLog
 import app.omnitask.data.CalendarReader
+import app.omnitask.data.DriveLink
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.SettingsSync
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
+import app.omnitask.data.VaultText
+import app.omnitask.drive.OmniDrive
+import app.omnitask.drive.sameName
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Insight
@@ -142,6 +147,8 @@ data class UiState(
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
+    /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
+    val drive: DriveUi = DriveUi(),
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -187,6 +194,24 @@ data class UiState(
     val visible get() = scoped.filter { filters.bucket == null || it.bucket(today) == filters.bucket }
 }
 
+/** The Omni folder on Google Drive as Settings shows it (see [DriveLink]). */
+data class DriveUi(
+    val on: Boolean = false,
+    val online: Boolean = true,
+    /** Google wants the owner to sign in again; edits wait on the phone meanwhile. */
+    val signIn: Boolean = false,
+    /** Files with edits not on Drive yet. */
+    val pending: Int = 0,
+    /** When Drive was last read in full (epoch milliseconds). */
+    val lastSync: Long = 0,
+    /** Connecting or signing in is under way. */
+    val busy: Boolean = false,
+    /** Google's sign-in screen, to show once. */
+    val signInIntent: PendingIntent? = null,
+    /** The Omni folder found on Drive while the phone's copy of the task note differs: asks before connecting. */
+    val confirmDir: String? = null,
+)
+
 /** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
 data class QuickAddRequest(
     val voice: Boolean = false,
@@ -230,7 +255,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = VaultRepository(app)
     private val prefs = app.getSharedPreferences("omnitask", Context.MODE_PRIVATE)
 
-    private val _state = MutableStateFlow(fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse))))
+    private val _state = MutableStateFlow(
+        fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse), drive = DriveUi(on = DriveLink.isOn(app)))),
+    )
 
     /** The settings kept in preferences (and synced through the vault file), laid over [base]. */
     private fun fromPrefs(base: UiState) = base.copy(
@@ -376,11 +403,133 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     vaultName = vaultName,
                     profile = profile,
                     insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined()),
+                    drive = driveUi(it.drive, result.getOrNull()?.drive),
                     message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") }
+                        ?: result.getOrNull()?.drive?.lost?.takeIf { l -> l.isNotEmpty() }?.let { l ->
+                            tr(
+                                "การแก้ตอนออฟไลน์ชนกับการแก้จากที่อื่น จึงใช้ของใน Drive ไว้ ที่แก้ไว้คือ:\n${l.joinToString("\n")}",
+                                "An offline edit clashed with a change made elsewhere, so Drive's version was kept. Your edit was:\n${l.joinToString("\n")}",
+                            )
+                        }
+                        ?: result.getOrNull()?.drive?.takeIf { d -> d.signIn && !it.drive.signIn }?.let {
+                            tr("ต้องลงชื่อ Google อีกครั้งในหน้าตั้งค่า การแก้ยังเก็บไว้ในเครื่อง", "Sign in to Google again in Settings. Your edits are kept on the phone.")
+                        }
                         ?: swept.takeIf { s -> s.isNotEmpty() }?.let { s -> tr("ย้ายงานที่เสร็จ ${s.size} งานเข้าคลังแล้ว", "Moved ${s.size} finished tasks to the archive") }
                         ?: it.message,
                 )
             }
+        }
+    }
+
+    /** The Drive card's state after a load: [status] is null when Drive is not in use. */
+    private fun driveUi(old: DriveUi, status: VaultRepository.DriveStatus?): DriveUi =
+        if (status == null) old.copy(on = DriveLink.isOn(getApplication()))
+        else old.copy(on = true, online = status.online, signIn = status.signIn, pending = status.pending, lastSync = status.lastSync)
+
+    /**
+     * Connects the Omni folder on Google Drive: asks Google for access, showing its screen when it needs to
+     * ([DriveUi.signInIntent], answered through [driveSignedIn]), then finds the folder.
+     */
+    fun connectDrive() {
+        _state.update { it.copy(drive = it.drive.copy(busy = true)) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { DriveLink.authorize(getApplication()) } }
+            result.fold(
+                { r -> if (r.hasResolution()) _state.update { it.copy(drive = it.drive.copy(signInIntent = r.pendingIntent)) } else findDriveFolder() },
+                { e -> driveFailed(e) },
+            )
+        }
+    }
+
+    fun driveSignInShown() = _state.update { it.copy(drive = it.drive.copy(signInIntent = null)) }
+
+    /** Google's sign-in screen closed; [data] carries its answer. */
+    fun driveSignedIn(data: Intent?) {
+        viewModelScope.launch {
+            val token = withContext(Dispatchers.IO) { runCatching { DriveLink.tokenFrom(getApplication(), data) }.getOrNull() }
+            if (token == null) {
+                _state.update { it.copy(drive = it.drive.copy(busy = false), message = tr("ยังไม่ได้อนุญาตให้ใช้ Google Drive", "Google Drive access was not given")) }
+            } else {
+                findDriveFolder()
+            }
+        }
+    }
+
+    /**
+     * Finds the Omni folder on Drive. When the phone's copy of the task note differs from Drive's, the sync app may
+     * still hold edits made on the phone, so the owner is asked first ([DriveUi.confirmDir]).
+     */
+    private suspend fun findDriveFolder() {
+        val app = getApplication<Application>()
+        // Signed in again for a folder already connected: read again and send what waited.
+        if (DriveLink.isOn(app)) {
+            _state.update { it.copy(drive = it.drive.copy(busy = false, signIn = false)) }
+            reload()
+            return
+        }
+        val vault = _state.value.vault
+        val found = withContext(Dispatchers.IO) {
+            runCatching {
+                val drive = DriveLink.drive(app)
+                val dir = OmniDrive.locate(drive, VaultText.OMNI_DIR, vault?.let { repo.vaultName(it) }) ?: return@runCatching null
+                val name = OmniDrive.nameOf(VaultRepository.TASK_FILE)
+                val remote = drive.childrenOfMany(listOf(dir)).firstOrNull { !it.isFolder && sameName(it.name, name) }?.let { drive.read(it.id).text }
+                val local = vault?.let { repo.readPath(it, VaultRepository.TASK_FILE) }
+                dir to (local == null || remote == null || local == remote)
+            }
+        }
+        found.fold(
+            { pair ->
+                when {
+                    pair == null -> _state.update {
+                        it.copy(
+                            drive = it.drive.copy(busy = false),
+                            message = tr("ไม่พบโฟลเดอร์ ${VaultText.OMNI_DIR} ใน Google Drive", "Folder ${VaultText.OMNI_DIR} not found in Google Drive"),
+                        )
+                    }
+                    pair.second -> finishDriveConnect(pair.first)
+                    else -> _state.update { it.copy(drive = it.drive.copy(busy = false, confirmDir = pair.first)) }
+                }
+            },
+            { e -> driveFailed(e) },
+        )
+    }
+
+    /** The answer to "the phone's copy differs": connect anyway (Drive's copy is used) or not now. */
+    fun confirmDrive(connect: Boolean) {
+        val dir = _state.value.drive.confirmDir ?: return
+        _state.update { it.copy(drive = it.drive.copy(confirmDir = null)) }
+        if (connect) viewModelScope.launch { finishDriveConnect(dir) }
+    }
+
+    private suspend fun finishDriveConnect(dir: String) {
+        withContext(Dispatchers.IO) { DriveLink.connect(getApplication(), dir) }
+        _state.update {
+            it.copy(
+                drive = it.drive.copy(on = true, busy = false, signIn = false),
+                message = tr("เชื่อม Google Drive แล้ว ไฟล์ในโฟลเดอร์ Omni อ่านและเขียนบน Drive โดยตรง", "Google Drive connected. Files in the Omni folder are read and written on Drive directly."),
+            )
+        }
+        reload()
+    }
+
+    /** Back to the picked folder for the Omni files; edits not sent yet are dropped, which Settings warns about. */
+    fun disconnectDrive() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { DriveLink.disconnect(getApplication()) }
+            _state.update { it.copy(drive = DriveUi()) }
+            reload()
+        }
+    }
+
+    private fun driveFailed(e: Throwable) {
+        val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+        val detail = if (cause is com.google.android.gms.common.api.ApiException) "${cause.statusCode} ${cause.message.orEmpty()}" else cause.message.orEmpty()
+        _state.update {
+            it.copy(
+                drive = it.drive.copy(busy = false),
+                message = tr("เชื่อม Google Drive ไม่ได้: $detail", "Cannot connect Google Drive: $detail"),
+            )
         }
     }
 
@@ -1483,6 +1632,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_ASK_ON_DONE = "archive.askOnDone"
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
-        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN)
+        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
     }
 }
