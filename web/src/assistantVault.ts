@@ -58,12 +58,14 @@ Vault.prototype.changeProfile = async function (this: any, change: (text: string
     if (!file) {
       const text = change(null)
       await this.drive.createText(await this.ensureFolders(omniDirPath), profileFilePath.split('/').pop()!, text)
+      this.setProfile(text, null)
       return text
     }
     const { text: current, version } = await this.drive.readText(file.id)
     const text = change(current)
     if ((await this.drive.version(file.id)) !== version) continue
     await this.drive.writeText(file.id, text)
+    this.setProfile(text, file.id)
     return text
   }
   throw new VaultError('busy', 'ไฟล์โปรไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')

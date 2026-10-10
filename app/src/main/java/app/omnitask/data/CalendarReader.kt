@@ -15,8 +15,29 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import app.omnitask.time.*
 
-/** Reads events from every calendar on the phone; Google Calendar syncs into these. */
+/** Reads events from the calendars on the phone that are shown there and not switched off in Omni; Google Calendar syncs into these. */
 object CalendarReader {
+
+    private const val PREFS = "omnitask"
+
+    /**
+     * Ids of the calendars the owner switched off in Omni. Hidden, not shown, so a calendar added later appears by default.
+     * Ids differ per phone, so this key stays out of the synced settings file (see SettingsSync).
+     */
+    const val KEY_HIDDEN = "calendars.hidden"
+
+    /** Whether [id] is switched off in [hidden]. */
+    fun isHidden(id: Long, hidden: Set<Long>) = id in hidden
+
+    fun hiddenIds(context: Context): Set<Long> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(KEY_HIDDEN, emptySet()).orEmpty()
+            .mapNotNull { it.toLongOrNull() }.toSet()
+
+    /** Switches calendar [id] on or off in Omni; the phone's own visibility is not touched. */
+    fun setShown(context: Context, id: Long, shown: Boolean) {
+        val next = if (shown) hiddenIds(context) - id else hiddenIds(context) + id
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY_HIDDEN, next.map { it.toString() }.toSet()).apply()
+    }
 
     fun hasPermission(context: Context) =
         context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
@@ -103,12 +124,15 @@ object CalendarReader {
             CalendarContract.Instances.BEGIN,
             CalendarContract.Instances.END,
             CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.CALENDAR_ID,
         )
+        val hidden = hiddenIds(context)
         val out = ArrayList<CalendarEvent>()
         runCatching {
-            // Calendars hidden in the calendar app stay hidden here too.
+            // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
             context.contentResolver.query(uri, cols, CalendarContract.Instances.VISIBLE + " = 1", null, CalendarContract.Instances.BEGIN)?.use { c ->
                 while (c.moveToNext()) {
+                    if (isHidden(c.getLong(5), hidden)) continue
                     val allDay = c.getInt(4) == 1
                     // All-day instances are stored in UTC midnights; read them as local dates.
                     fun at(ms: Long) = if (allDay) {

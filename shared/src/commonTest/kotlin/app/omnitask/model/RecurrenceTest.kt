@@ -82,5 +82,44 @@ class RecurrenceTest {
             TaskLine.advanceRecurring(raw, d("2026-10-07")),
         )
     }
-}
 
+    private fun task(raw: String) = TaskLine.parse(raw)!!.copy(fileUri = "f", lineIndex = 3)
+
+    @Test
+    fun anOpenRepeatingTaskPastItsDateAlsoHasTodaysRound() {
+        // Yesterday's round was never ticked, so the line still says 2026-10-09; today is the 10th.
+        val missed = task("- [ ] กินยา 🔁 every day ➕ 2026-09-01 ⏳ 2026-10-08 📅 2026-10-09")
+        val copy = Recurrence.todayCopy(missed, d("2026-10-10"))!!
+        assertEquals(d("2026-10-10"), copy.due)
+        assertEquals(d("2026-10-09"), copy.scheduled)
+        assertEquals(true, copy.todayCopy)
+        assertEquals("f#3@today", copy.key)
+        assertEquals("f#3", missed.key)
+        assertEquals(missed.raw, copy.raw)
+        assertEquals(listOf(missed, copy), Recurrence.withTodayCopies(listOf(missed), d("2026-10-10")))
+    }
+
+    @Test
+    fun noTodaysRoundWhenNothingFallsOnToday() {
+        val today = d("2026-10-10")
+        // Due today, or still ahead: the line is the round.
+        assertNull(Recurrence.todayCopy(task("- [ ] ก 🔁 every day 📅 2026-10-10"), today))
+        assertNull(Recurrence.todayCopy(task("- [ ] ก 🔁 every day 📅 2026-10-12"), today))
+        // Weekly on the 5th: its next round (the 12th) is not today.
+        assertNull(Recurrence.todayCopy(task("- [ ] ก 🔁 every week 📅 2026-10-05"), today))
+        // Weekly on the 3rd: the 10th is a round.
+        assertEquals(d("2026-10-10"), Recurrence.todayCopy(task("- [ ] ก 🔁 every week 📅 2026-10-03"), today)!!.due)
+        // Counting from completion has no rounds of its own, a done task and a plain task have none.
+        assertNull(Recurrence.todayCopy(task("- [ ] ก 🔁 every day when done 📅 2026-10-08"), today))
+        assertNull(Recurrence.todayCopy(task("- [x] ก 🔁 every day 📅 2026-10-08 ✅ 2026-10-09"), today))
+        assertNull(Recurrence.todayCopy(task("- [ ] ก 📅 2026-10-08"), today))
+    }
+
+    @Test
+    fun tickingTodaysRoundSkipsPastToday() {
+        val raw = "- [ ] กินยา 🔁 every day ➕ 2026-09-01 📅 2026-10-07"
+        // The old round moves one step, the copy of today's round moves past today.
+        assertEquals("- [ ] กินยา 🔁 every day ➕ 2026-09-01 📅 2026-10-08", TaskLine.advanceRecurring(raw, d("2026-10-10")))
+        assertEquals("- [ ] กินยา 🔁 every day ➕ 2026-09-01 📅 2026-10-11", TaskLine.advanceRecurring(raw, d("2026-10-10"), pastToday = true))
+    }
+}

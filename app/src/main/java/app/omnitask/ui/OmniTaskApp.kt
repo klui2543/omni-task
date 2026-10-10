@@ -144,6 +144,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         SettingsScreen(
             profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
             archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
+            calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
         ) { settingsOpen = false }
         return
     }

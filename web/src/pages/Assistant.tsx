@@ -42,8 +42,11 @@ type Dialog = { kind: 'custom'; index: number; allDay: boolean } | { kind: 'rang
 export function AssistantPage(p: PageProps) {
   const [chat, setChat] = useChat()
   const [local] = useFocusLocal()
-  const [profileText, setProfileText] = useState<string | null | undefined>(undefined)
-  const [events, setEvents] = useState<A.EventIn[]>([])
+  const [profileText, setProfileText] = useState<string | null | undefined>(() => p.vault.peekProfile())
+  const [events, setEvents] = useState<A.EventIn[]>(() => {
+    const from = new Date(); from.setHours(0, 0, 0, 0)
+    return p.peekCalendar(addDays(from, -1), addDays(from, 36)) ?? []
+  })
   const [note, setNote] = useState('')
   const [interviewing, setInterviewing] = useState(false)
   const [input, setInput] = useState('')

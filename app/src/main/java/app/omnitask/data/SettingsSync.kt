@@ -24,8 +24,8 @@ object SettingsSync {
     private const val PREFS = "omnitask"
     private const val KEY_SYNCED_AT = "settings.syncedAt"
 
-    /** Device-specific or derived keys that must not travel: the folder grant and the scheduled alarm ids. */
-    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT)
+    /** Device-specific or derived keys that must not travel: the folder grant, the scheduled alarm ids and the calendar ids (they differ per phone). */
+    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, CalendarReader.KEY_HIDDEN)
 
     private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

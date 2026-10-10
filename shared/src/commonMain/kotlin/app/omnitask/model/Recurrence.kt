@@ -96,6 +96,38 @@ object Recurrence {
         else -> from.plusDays(1)
     }
 
+    /** How many rounds [todayCopy] walks before it gives up on a task left open for years. */
+    private const val MAX_ROUNDS = 5000
+
+    /**
+     * The round of an open repeating task that falls on [today] while the open line is still on an earlier one
+     * (yesterday's was never ticked, so the line never moved on). The line keeps the round that was missed, and
+     * this copy stands for today's, with every date moved by the same amount. Null when no round lands on today,
+     * and for "when done" rules, which have no rounds apart from the completion itself.
+     */
+    fun todayCopy(task: Task, today: LocalDate): Task? {
+        if (!task.isOpen || task.parent != null || task.list != null || task.todayCopy) return null
+        val rule = parse(task.recurrence) ?: return null
+        if (rule.whenDone) return null
+        val from = task.due ?: task.scheduled ?: task.start ?: return null
+        if (from >= today) return null
+        var round = from
+        var walked = 0
+        while (round < today && walked++ < MAX_ROUNDS) round = next(rule, round)
+        if (round != today) return null
+        val shift = ChronoUnit.DAYS.between(from, today)
+        return task.copy(
+            start = task.start?.plusDays(shift),
+            scheduled = task.scheduled?.plusDays(shift),
+            due = task.due?.plusDays(shift),
+            todayCopy = true,
+        )
+    }
+
+    /** [tasks] with each repeating task's [todayCopy] added right after it. */
+    fun withTodayCopies(tasks: List<Task>, today: LocalDate): List<Task> =
+        tasks.flatMap { t -> listOfNotNull(t, todayCopy(t, today)) }
+
     /** Ready-made rules for the edit sheet, in the words the Tasks plugin reads. */
     val PRESETS = listOf(
         "every day", "every weekday", "every week", "every 2 weeks", "every month", "every year",

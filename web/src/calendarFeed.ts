@@ -15,7 +15,7 @@ export const CALENDAR_OFF =
  */
 export function useCalendarFeed(p: PageProps, from: string, to: string) {
   const connected = Auth.granted(CALENDAR_SCOPE)
-  const [events, setEvents] = useState<FocusIn['events']>([])
+  const [events, setEvents] = useState<FocusIn['events']>(() => p.peekCalendar(parseDay(from), parseDay(to)) ?? [])
   const [note, setNote] = useState('')
   const last = useRef({ key: '', at: 0 })
 

@@ -4,7 +4,9 @@ import app.omnitask.data.Archive
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import app.omnitask.model.OmniList
+import app.omnitask.model.Recurrence
 import app.omnitask.model.Task
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -32,12 +34,18 @@ object WebNotes {
     /**
      * The tasks of [text]: one note's, or with [fileKey] [MANY] those of every note in the list. Archives, conflict
      * copies and list notes (whose items belong to their list, as on Android) are left out of a list of notes.
+     * Pass [today] for the views that show the day's work; the edits that look a line up leave it out.
      */
-    fun tasks(fileKey: String, path: String, text: String): List<Task> {
-        if (fileKey != MANY) return VaultText.parseFile(fileKey, path, text)
-        return json.decodeFromString<List<Note>>(text)
-            .filter { isRead(it.path) && OmniList.parse(it.path, it.text) == null }
-            .flatMap { VaultText.parseFile(it.key, it.path, it.text) }
+    fun tasks(fileKey: String, path: String, text: String, today: LocalDate? = null): List<Task> {
+        val found = if (fileKey != MANY) {
+            VaultText.parseFile(fileKey, path, text)
+        } else {
+            json.decodeFromString<List<Note>>(text)
+                .filter { isRead(it.path) && OmniList.parse(it.path, it.text) == null }
+                .flatMap { VaultText.parseFile(it.key, it.path, it.text) }
+        }
+        // With [today], a repeating task left open past its date also shows today's round (see Recurrence.todayCopy).
+        return if (today == null) found else Recurrence.withTodayCopies(found, today)
     }
 
     /** A task as an edit finds it again: its note, its line as read and where that line was. */

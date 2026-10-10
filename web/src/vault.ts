@@ -185,6 +185,8 @@ export class Vault {
       if (result.text === text) return result
       if ((await this.drive.version(id)) !== version) continue
       await this.drive.writeText(id, result.text!)
+      // A note other than the task note may be a list note: the lists are read again next time.
+      if (id !== this.fileId) this.staleLists()
       return result
     }
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
@@ -248,8 +250,47 @@ export class Vault {
 
   /** The profile note the assistant keeps (wake and sleep times...), or null when the vault has none. */
   async profile(): Promise<string | null> {
-    const file = (await this.drive.resolve(this.rootId, profileFilePath)) ?? (await this.drive.resolve(this.rootId, legacyProfileFilePath))
-    return file ? (await this.drive.readText(file.id)).text : null
+    const m = this.profileMemo
+    if (m && Date.now() - m.at < MEMO_MS) return m.text
+    return (this.profileLoad ??= this.readProfile().finally(() => { this.profileLoad = null }))
+  }
+
+  private async readProfile(): Promise<string | null> {
+    // The file is looked up once; later reads go straight to it.
+    const id = this.profileMemo?.id ?? ((await this.drive.resolve(this.rootId, profileFilePath)) ?? (await this.drive.resolve(this.rootId, legacyProfileFilePath)))?.id ?? null
+    const text = id ? (await this.drive.readText(id)).text : null
+    this.profileMemo = { text, id, at: Date.now() }
+    return text
+  }
+
+  private profileMemo: { text: string | null; id: string | null; at: number } | null = null
+  private profileLoad: Promise<string | null> | null = null
+  private listsMemo: { notes: ListNote[]; at: number } | null = null
+  private listsLoad: Promise<ListNote[]> | null = null
+
+  /** The profile as last read (null: the vault has none), or undefined before the first read: a page shows it at once. */
+  peekProfile(): string | null | undefined {
+    return this.profileMemo ? this.profileMemo.text : undefined
+  }
+
+  /** The list notes as last read, or undefined before the first read. */
+  peekLists(): ListNote[] | undefined {
+    return this.listsMemo?.notes
+  }
+
+  /** Remembers a profile this app just wrote. */
+  setProfile(text: string, id: string | null = this.profileMemo?.id ?? null) {
+    this.profileMemo = { text, id, at: Date.now() }
+  }
+
+  /** The profile and the list notes are read again on next use (what is shown meanwhile is kept). */
+  clearCaches() {
+    if (this.profileMemo) this.profileMemo = { ...this.profileMemo, id: null, at: 0 }
+    this.staleLists()
+  }
+
+  private staleLists() {
+    if (this.listsMemo) this.listsMemo = { ...this.listsMemo, at: 0 }
   }
 
   /** Puts a deleted or archived task back where it was (and takes it out of the archive note). */
@@ -297,6 +338,12 @@ export class Vault {
 
   /** The list notes (Bucket list, Watch list...) in the Omni folder (or the old one), with their text. */
   async lists(): Promise<ListNote[]> {
+    const m = this.listsMemo
+    if (m && Date.now() - m.at < MEMO_MS) return m.notes
+    return (this.listsLoad ??= this.readLists().finally(() => { this.listsLoad = null }))
+  }
+
+  private async readLists(): Promise<ListNote[]> {
     const read: ListNote[] = []
     const seen = new Set<string>()
     for (const folder of await this.omniFolders()) {
@@ -306,7 +353,9 @@ export class Vault {
       read.push(...notes)
     }
     // The shared code decides what is a list; this only leaves out the notes that cannot be one.
-    return read.filter((n) => n.text.startsWith('---') && n.text.includes('omni-list'))
+    const notes = read.filter((n) => n.text.startsWith('---') && n.text.includes('omni-list'))
+    this.listsMemo = { notes, at: Date.now() }
+    return notes
   }
 
   /** Writes the starter lists (Bucket list, Watch list) that are not in the Omni folder yet. */
@@ -316,6 +365,7 @@ export class Vault {
       const name = s.path.split('/').pop()!
       if (!(await this.drive.child(folder, name))) await this.drive.createText(folder, name, s.text)
     }
+    this.staleLists()
   }
 
   /** A new list note in the Omni folder, unless one with that name is there already. */
@@ -326,6 +376,7 @@ export class Vault {
     const file = made.path!.split('/').pop()!
     if (await this.drive.child(folder, file)) return { ok: false, error: 'exists' }
     await this.drive.createText(folder, file, made.text!)
+    this.staleLists()
     return made
   }
 
@@ -431,6 +482,16 @@ const sourceOf = (fileId: string, path: string, text: string, notes: NoteText[])
   notes.length === 0 ? { key: fileId, path, text } : { key: MANY, path: '', text: JSON.stringify([{ key: fileId, path, text }, ...notes]) }
 
 /** The note as last read: its tasks, and the text the shared logic groups and sorts them from. */
+/** A quick fingerprint of a text, to tell whether it changed. */
+function hash(text: string): number {
+  let h = 5381
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
+  return h
+}
+
+/** How long the profile and the list notes read once are used again before Drive is asked (a reload or a write of theirs asks sooner). */
+const MEMO_MS = 5 * 60_000
+
 export class Snapshot {
   readonly byKey: Map<string, Task>
 
@@ -459,26 +520,49 @@ export class Snapshot {
     return (this.src ??= sourceOf(this.fileId, this.path, this.text, this.notes))
   }
 
+  /**
+   * What the shared code built for an input, kept for the snapshot's lifetime: a page opened again with the same
+   * choices shows at once instead of building it over. A snapshot never changes, so a kept answer stays right.
+   */
+  private memo = new Map<string, unknown>()
+  private memoed<T>(kind: string, input: unknown, make: () => T): T {
+    const key = kind + JSON.stringify(input)
+    if (this.memo.has(key)) {
+      const kept = this.memo.get(key) as T
+      this.memo.delete(key)
+      this.memo.set(key, kept)
+      return kept
+    }
+    const built = make()
+    this.memo.set(key, built)
+    if (this.memo.size > 16) this.memo.delete(this.memo.keys().next().value!)
+    return built
+  }
+
   list(query: Query): TaskList {
     const s = this.source()
-    return listTasks(s.key, s.path, s.text, { ...query, branches: branchStates() })
+    const input = { ...query, branches: branchStates() }
+    return this.memoed('list', input, () => listTasks(s.key, s.path, s.text, input))
   }
 
   focus(state: FocusIn): FocusOut {
     const s = this.source()
-    return focus(s.key, s.path, s.text, { ...state, branches: branchStates() })
+    const input = { ...state, branches: branchStates() }
+    return this.memoed('focus', input, () => focus(s.key, s.path, s.text, input))
   }
 
   /** The Views page: Kanban, Matrix, Gantt and calendar tasks under the list's filters. */
   views(state: ViewsIn): ViewsOut {
     const s = this.source()
-    return views(s.key, s.path, s.text, { ...state, query: { ...state.query, branches: branchStates() } })
+    const input = { ...state, query: { ...state.query, branches: branchStates() } }
+    return this.memoed('views', input, () => views(s.key, s.path, s.text, input))
   }
 
   /** The Projects page: projects, branches and lists, from every note, the list notes and what this device chose. */
   projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
     const s = this.source()
-    return projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state)
+    return this.memoed('projects', { state, notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }, () =>
+      projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state))
   }
 
   /** What the shared code does to the branch states of a project, from the tasks as they stand. */

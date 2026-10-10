@@ -1,6 +1,9 @@
 package app.omnitask.ui
 
+import android.Manifest
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
@@ -26,6 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +57,17 @@ private const val SAMPLE = "ส่งรายงานเวร พรุ่ง
 /** What happens to finished tasks: how many days before they move to the archive note (0 is off), and whether ticking asks. */
 class ArchiveSettings(val days: Int, val ask: Boolean, val onDays: (Int) -> Unit, val onAsk: (Boolean) -> Unit)
 
+/**
+ * Which of the phone's calendars Omni shows: [calendars] are the ones visible in the phone's calendar app, [hidden] the ids
+ * switched off here. [onPermissionChanged] runs after the calendar permission prompt closes.
+ */
+class CalendarChoices(
+    val calendars: List<app.omnitask.data.CalendarReader.Calendar>,
+    val hidden: Set<Long>,
+    val onShown: (Long, Boolean) -> Unit,
+    val onPermissionChanged: () -> Unit,
+)
+
 /** The choices for [ArchiveSettings.days]. */
 private val ARCHIVE_DAYS = listOf(0, 1, 3, 7, 14, 30)
 
@@ -63,10 +82,17 @@ fun SettingsScreen(
     onSleepTimes: (kotlinx.datetime.LocalTime, kotlinx.datetime.LocalTime) -> Unit = { _, _ -> },
     onLanguageChange: () -> Unit = {},
     archive: ArchiveSettings? = null,
+    calendars: CalendarChoices? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
     BackHandler(onBack = onBack)
+    // Bumped after the permission prompt closes so the section re-reads whether access is granted.
+    var permissionTick by remember { mutableIntStateOf(0) }
+    val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        permissionTick++
+        calendars?.onPermissionChanged?.invoke()
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding(),
@@ -130,6 +156,47 @@ fun SettingsScreen(
                             Text(tr("เก็บเข้าคลัง ลบ หรือไว้ก่อน", "Archive, delete or keep it"), color = C.muted, fontSize = TS.caption)
                         }
                         OnOff(archive.ask)
+                    }
+                }
+            }
+        }
+        if (calendars != null) {
+            item {
+                SettingsGroup(tr("ปฏิทินที่แสดง", "Calendars shown")) {
+                    val granted = permissionTick >= 0 && app.omnitask.data.CalendarReader.hasPermission(context)
+                    val visible = calendars.calendars.filter { it.visible }
+                    if (!granted) {
+                        Text(
+                            tr("อนุญาตให้อ่านปฏิทินในเครื่องก่อน แล้วเลือกได้ว่าจะแสดงปฏิทินไหน", "Allow reading the calendars on this phone, then choose which ones to show"),
+                            Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+                        )
+                        PrimaryButton(
+                            tr("อนุญาต", "Allow"),
+                            { askCalendar.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
+                            Modifier.padding(top = 8.dp, bottom = 12.dp),
+                        )
+                    } else {
+                        if (visible.isEmpty()) {
+                            Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
+                        }
+                        visible.forEach { cal ->
+                            val on = !app.omnitask.data.CalendarReader.isHidden(cal.id, calendars.hidden)
+                            Row(Modifier.fillMaxWidth().clickable { calendars.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(cal.name.ifBlank { cal.account }, color = C.text, fontSize = TS.body)
+                                    if (cal.account.isNotBlank() && cal.account != cal.name) Text(cal.account, color = C.muted, fontSize = TS.caption)
+                                }
+                                Box(Modifier.width(12.dp))
+                                OnOff(on)
+                            }
+                        }
+                        Text(
+                            tr(
+                                "เลือกได้เฉพาะปฏิทินที่เปิดแสดงไว้ในแอปปฏิทินของเครื่อง ปฏิทินที่ปิดตรงนี้จะไม่โผล่ในปฏิทินเดือน แกนต์ ไทม์ไลน์ วิดเจ็ต การแจ้งเตือน และผู้ช่วย",
+                                "Only calendars switched on in the phone's calendar app are listed. A calendar turned off here is left out of the month view, Gantt, timeline, widgets, reminders and the assistant.",
+                            ),
+                            Modifier.padding(bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                        )
                     }
                 }
             }

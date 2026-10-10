@@ -24,6 +24,16 @@ class WebCoreTest {
     }
 
     @Test
+    fun aMissedRoundAlsoListsTodaysAndTickingItSkipsPastToday() {
+        val missed = "- [ ] ซื้อนม 🔁 every day 📅 2026-10-08"
+        val r = WebCore.loadTasks("f", "TaskForge.md", "# งาน\n$missed\n", "2026-10-09")
+        assertTrue(r.contains("\"key\":\"f#1\"") && r.contains("\"key\":\"f#1@today\""), r)
+        assertTrue(r.contains("\"todayCopy\":true") && r.contains("\"due\":\"2026-10-09\""), r)
+        val ticked = WebCore.toggle("# งาน\n$missed\n", missed, 1, "2026-10-09", todayCopy = true)
+        assertTrue(ticked.contains("- [ ] ซื้อนม 🔁 every day 📅 2026-10-10"), ticked)
+    }
+
+    @Test
     fun changedLineIsAConflictNotAnOverwrite() {
         val r = WebCore.toggle(note, "- [ ] ส่งรายงานเก่า", 1, "2026-10-08")
         assertTrue(r.contains("\"ok\":false") && r.contains("\"error\":\"conflict\""), r)
