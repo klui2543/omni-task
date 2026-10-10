@@ -41,12 +41,7 @@ export class Vault {
   private async file(): Promise<string> {
     if (this.located && this.fileId) return this.fileId
     const name = this.fileId ? await this.nameIfStillTheNote(this.fileId) : null
-    if (this.fileId && name === null) {
-      // The remembered file is no longer the task note: it is looked up again by its path.
-      this.fileId = null
-      this.folderId = null
-      config.taskFileId = null
-    }
+    if (this.fileId && name === null) this.forget()
     if (this.fileId && name !== null) {
       // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
       // an Omni note.md once the owner has made one in the new place.
@@ -69,6 +64,14 @@ export class Vault {
     }
     this.located = true
     return this.fileId!
+  }
+
+  /** Drops the remembered task note, so it is looked up again by its path. */
+  private forget() {
+    this.fileId = null
+    this.folderId = null
+    this.located = false
+    config.taskFileId = null
   }
 
   /**
@@ -112,10 +115,12 @@ export class Vault {
    * The note, and the names of conflict copies a sync app left beside it (e.g. "TaskForge (conflict ...).md"):
    * those mean two versions met, so the owner should compare them before going on.
    */
-  async load(): Promise<Snapshot> {
-    // Checked again on every load: a sync app may have set the file aside since the page was opened.
-    this.located = false
+  async load(again = false): Promise<Snapshot> {
+    const checked = this.located
     const id = await this.file()
+    // Checked again on every load, beside the reads so it costs no wait: a sync app may have set the file aside
+    // since the page was opened. (A file just located has been checked already.)
+    const still = checked ? this.nameIfStillTheNote(id) : Promise.resolve('')
     const index = this.index()
     index.skip = id
     // Once the vault has been walked (now or on an earlier visit), a reload reads only what changed and waits for it.
@@ -127,6 +132,10 @@ export class Vault {
       this.folder().then((f) => this.drive.children(f)),
       quick ? index.refresh() : null,
     ])
+    if ((await still) === null && !again) {
+      this.forget()
+      return this.load(true)
+    }
     const base = this.isLegacy ? 'TaskForge' : 'Omni note'
     const beside = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
     const conflicts = quick ? [...new Set([...beside, ...index.conflicts()])] : beside
