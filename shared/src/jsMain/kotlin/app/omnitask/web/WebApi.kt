@@ -22,6 +22,23 @@ object WebApi {
 
     fun addTask(text: String, sentence: String, today: String): String = WebCore.addTask(text, sentence, today)
 
+    fun editTask(text: String, raw: String, lineIndex: Int, today: String, op: String): String = WebCore.editTask(text, raw, lineIndex, today, op)
+
+    fun cut(text: String, raw: String, lineIndex: Int): String = WebCore.cut(text, raw, lineIndex)
+
+    fun restore(text: String, index: Int, lines: String): String = WebCore.restore(text, index, lines)
+
+    fun archiveAppend(archive: String, lines: String, today: String): String = WebCore.archiveAppend(archive, lines, today)
+
+    fun archiveRemove(archive: String, lines: String): String? = WebCore.archiveRemove(archive, lines)
+
+    fun describeRule(rule: String): String? = WebCore.describeRule(rule)
+
+    fun isConflictCopy(name: String): Boolean = app.omnitask.data.VaultText.isConflictCopy(name)
+
+    /** The vault path of the archive note. */
+    fun archiveFile(): String = app.omnitask.data.Archive.FILE
+
     /** The vault path of the live task file. */
     fun taskFile(): String = app.omnitask.data.VaultText.TASK_FILE
 }

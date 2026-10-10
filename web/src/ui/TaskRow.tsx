@@ -72,7 +72,7 @@ export function TaskRow(p: {
   return (
     <li class={`trow${t.open ? '' : ' done'}${p.selected ? ' selected' : ''}`}>
       <Check task={t} disabled={p.busy} onToggle={p.onToggle} />
-      <div class="trow-body" onClick={p.onOpen}>
+      <button class="trow-body" onClick={p.onOpen}>
         <span class="ttitle">{t.title}</span>
         {t.preview && <span class="tpreview">{t.preview}</span>}
         {meta.length > 0 && (
@@ -80,7 +80,7 @@ export function TaskRow(p: {
             {meta.map((m, i) => <span key={i} class={`pill ${m.tone}`}>{m.text}</span>)}
           </span>
         )}
-      </div>
+      </button>
     </li>
   )
 }

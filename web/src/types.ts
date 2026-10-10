@@ -25,6 +25,10 @@ export interface Task {
   repeatText: string | null
   attachments: number
   links: number
+  start: string | null
+  reminderOn: 'DUE' | 'SCHEDULED' | null
+  linkNames: string[]
+  attachmentNames: string[]
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
@@ -58,4 +62,18 @@ export interface EditResult {
   text?: string | null
   error?: 'conflict' | 'rule' | 'empty' | null
   message?: string | null
+  /** For a delete or archive: where the block was and its lines, so it can be put back. */
+  cutIndex?: number | null
+  cutLines?: string[] | null
 }
+
+/** One change from the edit panel, as the shared WebCore.editTask takes it. */
+export type EditOp =
+  | { op: 'date'; field: 'DUE' | 'SCHEDULED' | 'START'; value: string | null }
+  | { op: 'priority'; value: Task['priority'] }
+  | { op: 'recurrence'; value: string | null }
+  | { op: 'reminder'; value: string | null; on: 'DUE' | 'SCHEDULED' }
+  | { op: 'addTag' | 'removeTag'; value: string }
+  | { op: 'status'; value: Task['status'] }
+  | { op: 'describe'; value: string }
+  | { op: 'subtask'; value: string }
