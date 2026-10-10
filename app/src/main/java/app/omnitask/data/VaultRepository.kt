@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import app.omnitask.model.OmniList
+import app.omnitask.model.Recurrence
 import app.omnitask.model.Task
 import kotlinx.datetime.LocalDate
 import app.omnitask.model.tr
@@ -41,7 +42,8 @@ class VaultRepository(private val context: Context) {
             val list = OmniList.parse(file.path, text)?.also { lists += it }
             VaultText.parseFile(file.uri.toString(), file.path, text).let { found -> if (list == null) found else found.map { it.copy(list = list.name) } }
         }
-        return Snapshot(tasks, files.map { it.path }, lists.sortedBy { it.name.lowercase() }, conflicts.map { it.path })
+        // A repeating task left open past its date also shows today's round (see Recurrence.todayCopy).
+        return Snapshot(Recurrence.withTodayCopies(tasks, LocalDate.now()), files.map { it.path }, lists.sortedBy { it.name.lowercase() }, conflicts.map { it.path })
     }
 
     /** The vault's folder name, which is also its name in Obsidian. */
@@ -60,11 +62,12 @@ class VaultRepository(private val context: Context) {
     /**
      * Completes a repeating task by moving the same line on to its next occurrence (no copy is added),
      * and notes the completion in the app's history. Returns false (and writes nothing) when the rule cannot be read.
+     * Ticking today's round of a task left open ([Task.todayCopy]) moves the line past today.
      */
     fun completeRecurring(task: Task, today: LocalDate): Boolean {
-        if (TaskLine.advanceRecurring(task.raw, today) == null) return false
+        if (TaskLine.advanceRecurring(task.raw, today, task.todayCopy) == null) return false
         // Its subtasks are unticked in the same write, so the next round starts with the checklist open.
-        editLines(task) { lines, index -> VaultText.advanceRecurring(lines, index, today) }
+        editLines(task) { lines, index -> VaultText.advanceRecurring(lines, index, today, task.todayCopy) }
         RecurHistory.add(context, task.title, today)
         return true
     }

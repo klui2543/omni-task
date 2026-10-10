@@ -199,19 +199,27 @@ object TaskLine {
      * the rule (from the old due, scheduled or start date, or from today for "when done"), and a fresh ➕.
      * Null when the rule cannot be read or the task has no date to repeat from.
      */
-    fun nextOccurrence(raw: String, today: LocalDate): String? = advance(raw, today, freshCreated = true)
+    fun nextOccurrence(raw: String, today: LocalDate): String? = advance(raw, today, freshCreated = true, pastToday = false)
 
     /**
      * The same line moved on to its next occurrence: still unticked, every date shifted by the rule, ➕ kept.
      * This is how the app completes a repeating task, so no copy of the line piles up in the file.
+     * With [pastToday] (ticking [app.omnitask.model.Task.todayCopy]) it moves to the first round after today instead,
+     * so the rounds missed on the way are skipped.
      */
-    fun advanceRecurring(raw: String, today: LocalDate): String? = advance(raw, today, freshCreated = false)
+    fun advanceRecurring(raw: String, today: LocalDate, pastToday: Boolean = false): String? =
+        advance(raw, today, freshCreated = false, pastToday = pastToday)
 
-    private fun advance(raw: String, today: LocalDate, freshCreated: Boolean): String? {
+    private fun advance(raw: String, today: LocalDate, freshCreated: Boolean, pastToday: Boolean): String? {
         val t = parse(raw) ?: return null
         val rule = Recurrence.parse(t.recurrence) ?: return null
         val ref = t.due ?: t.scheduled ?: t.start ?: return null
-        val shift = ChronoUnit.DAYS.between(ref, Recurrence.next(rule, if (rule.whenDone) today else ref))
+        var target = Recurrence.next(rule, if (rule.whenDone) today else ref)
+        if (pastToday && !rule.whenDone) {
+            var walked = 0
+            while (target <= today && walked++ < 5000) target = Recurrence.next(rule, target)
+        }
+        val shift = ChronoUnit.DAYS.between(ref, target)
         var line = setDone(raw, false, today)
         listOf(DateField.START to t.start, DateField.SCHEDULED to t.scheduled, DateField.DUE to t.due).forEach { (field, date) ->
             if (date != null) line = setDate(line, field, date.plusDays(shift))

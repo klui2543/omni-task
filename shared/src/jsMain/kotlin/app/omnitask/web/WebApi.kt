@@ -17,8 +17,8 @@ object WebApi {
 
     fun focus(fileKey: String, path: String, text: String, state: String): String = WebFocus.build(fileKey, path, text, state)
 
-    fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean): String =
-        WebCore.guarded { WebCore.toggle(text, raw, lineIndex, today, withSubtasks) }
+    fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean, todayCopy: Boolean): String =
+        WebCore.guarded { WebCore.toggle(text, raw, lineIndex, today, withSubtasks, todayCopy) }
 
     fun setStatus(text: String, raw: String, lineIndex: Int, status: String, today: String): String = WebCore.setStatus(text, raw, lineIndex, status, today)
 

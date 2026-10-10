@@ -24,7 +24,7 @@ export const focus = (fileKey: string, path: string, text: string, state: FocusI
 const result = (json: string): EditResult => JSON.parse(json)
 
 export const toggle = (text: string, t: Task, withSubtasks: boolean) =>
-  result(api.toggle(text, t.raw, t.lineIndex, today(), withSubtasks))
+  result(api.toggle(text, t.raw, t.lineIndex, today(), withSubtasks, t.todayCopy === true))
 export const addTask = (text: string, sentence: string) => result(api.addTask(text, sentence, today()))
 
 export const editTask = (text: string, t: Task, op: EditOp) =>

@@ -131,8 +131,8 @@ object VaultText {
      * Moves the repeating task at [index] on to its next occurrence and unticks the subtasks under it, so the
      * new round starts with its checklist open. False (and nothing changed) when the rule cannot be read.
      */
-    fun advanceRecurring(lines: MutableList<String>, index: Int, today: LocalDate): Boolean {
-        val next = TaskLine.advanceRecurring(lines[index], today) ?: return false
+    fun advanceRecurring(lines: MutableList<String>, index: Int, today: LocalDate, pastToday: Boolean = false): Boolean {
+        val next = TaskLine.advanceRecurring(lines[index], today, pastToday) ?: return false
         lines[index] = next
         for (i in index + 1 until blockEnd(lines, index)) {
             if (TaskLine.parse(lines[i])?.status == Status.DONE) lines[i] = TaskLine.setDone(lines[i], false, today)
