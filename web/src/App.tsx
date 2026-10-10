@@ -4,6 +4,7 @@ import { config } from './config'
 import { AuthExpired, Drive, DriveFile } from './drive'
 import { Main } from './Home'
 import { FoundVault, findVaults } from './vault'
+import { clearNoteIndex } from './noteIndex'
 
 type Stage = 'setup' | 'signin' | 'vault' | 'ready'
 
@@ -60,7 +61,7 @@ export function App({ authError }: { authError: string | null }) {
       vaultId={vaultId!}
       onSignIn={signIn}
       onConnectCalendar={() => auth!.signIn('select_account', CALENDAR_SCOPE)}
-      onSignOut={() => { auth!.signOut(); setSignedIn(false); location.reload() }}
+      onSignOut={() => { auth!.signOut(); setSignedIn(false); clearNoteIndex().finally(() => location.reload()) }}
       onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
     />
   )

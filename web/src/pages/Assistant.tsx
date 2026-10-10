@@ -10,6 +10,7 @@ import { EditPanel } from '../ui/EditPanel'
 import { CustomTimeDialog, RangeDialog } from '../ui/assistant/AssistantDialogs'
 import { AgendaCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, ReviewCard, SlotsCard, dayShort } from '../ui/assistant/Cards'
 import { AskCard, Interview } from '../ui/assistant/Interview'
+import { byNote } from '../vault'
 
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
@@ -209,11 +210,14 @@ export function AssistantPage(p: PageProps) {
     const todo = which.filter((i) => !item.accepted.includes(i))
     if (todo.length === 0) return
     const items = todo.map((i) => ({ raw: item.proposals[i].raw, lineIndex: item.proposals[i].lineIndex, day: item.proposals[i].day, time: item.proposals[i].start }))
-    let done: boolean[] = []
+    const done: boolean[] = items.map(() => false)
     await p.run(async () => {
-      const r = await p.vault.editNote((text) => A.scheduleTasks(text, items))
-      done = r.done ?? []
-      return r
+      // Each task is dated in the note it is in, one write per note.
+      for (const [note, some] of byNote(todo.map((i, k) => ({ key: item.proposals[i].key, k })))) {
+        const r = await p.vault.editNote((text) => A.scheduleTasks(text, some.map((s) => items[s.k])), note)
+        some.forEach((s, j) => { done[s.k] = r.done?.[j] ?? false })
+      }
+      return { ok: done.some(Boolean) }
     })
     const ok = todo.filter((_, i) => done[i])
     patch(index, 'range', (c) => ({ ...c, accepted: [...c.accepted, ...ok] }))

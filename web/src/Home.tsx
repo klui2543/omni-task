@@ -121,6 +121,21 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   const reload = () => run(async () => undefined)
 
+  // The first walk of the vault ends in the background: its notes join without a spinner or clearing a message.
+  useEffect(() => {
+    vault.onIndexed = () => {
+      queue.current = queue.current.then(async () => {
+        try {
+          const loaded = await vault.load()
+          latest.current = loaded
+          setSnapshot(loaded)
+          setSyncedAt(new Date())
+        } catch { /* the next reload says what is wrong */ }
+      })
+    }
+    return () => { vault.onIndexed = null }
+  }, [vault])
+
   // Once a day finished tasks move to the archive note (Settings: archive days); the note is read again only if some moved.
   useEffect(() => { reload(); sweepIfDue(vault).then((moved) => { if (moved.length > 0) reload() }, () => {}) }, [vault])
 
@@ -170,7 +185,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         <div class="banner" role="alert">
           พบสำเนาจากการซิงก์ชนกัน: {snapshot.conflicts.join(', ')}
           <br />
-          <span class="small">เปิดเทียบกับไฟล์งานใน Obsidian แล้วลบสำเนาทิ้ง ระหว่างนี้แอปอ่านแค่ไฟล์หลัก</span>
+          <span class="small">เปิดเทียบกับโน้ตต้นฉบับใน Obsidian แล้วลบสำเนาทิ้ง ระหว่างนี้แอปไม่อ่านสำเนา</span>
         </div>
       )}
 

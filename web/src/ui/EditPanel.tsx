@@ -72,7 +72,7 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   ]
 
   // The note the task is in: the task note, or a list note.
-  const noteLabel = p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : 'โน้ตลิสต์'
+  const noteLabel = t.note ? t.note.split('/').pop() : p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : 'โน้ตลิสต์'
   const saveDesc = () => { if (desc.trim() !== t.description.trim()) change({ op: 'describe', value: desc }) }
 
   return (

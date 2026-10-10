@@ -15,9 +15,9 @@ declare module './drive' {
 
 declare module './vault' {
   interface Snapshot {
-    /** The note's text as last read, for the shared assistant logic. */
+    /** What the shared assistant logic reads: the task note's text, or every note with tasks as a JSON list. */
     noteText(): string
-    /** The note's key, the start of every task key in it. */
+    /** The task note's key (the start of every task key in it), or the key that says "every note". */
     noteKey(): string
   }
 
@@ -28,8 +28,8 @@ declare module './vault' {
      * Returns the new text. Starts over when the note changed meanwhile.
      */
     changeProfile(change: (text: string | null) => string): Promise<string>
-    /** Applies a change of the TaskForge note's text as one safe write (read again, version checked). */
-    editNote<T extends EditResult>(op: (text: string) => T): Promise<T>
+    /** Applies a change of the task note's text (or the note [fileId]) as one safe write (read again, version checked). */
+    editNote<T extends EditResult>(op: (text: string) => T, fileId?: string): Promise<T>
     /** Moves finished tasks to the archive note, as [sweepOp] decides; returns the titles moved. */
     sweep(sweepOp: (live: string, archive: string) => { text: string; archive: string; titles: string[] } | null): Promise<string[]>
   }
@@ -44,11 +44,11 @@ Drive.prototype.createFolder = async function (this: any, parentId: string, name
   return (await res.json()).id
 }
 
-Snapshot.prototype.noteText = function (this: any) {
-  return this.text
+Snapshot.prototype.noteText = function (this: Snapshot) {
+  return this.source().text
 }
-Snapshot.prototype.noteKey = function (this: any) {
-  return this.fileId
+Snapshot.prototype.noteKey = function (this: Snapshot) {
+  return this.source().key
 }
 
 Vault.prototype.changeProfile = async function (this: any, change: (text: string | null) => string): Promise<string> {
@@ -69,8 +69,8 @@ Vault.prototype.changeProfile = async function (this: any, change: (text: string
   throw new VaultError('busy', 'ไฟล์โปรไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
 }
 
-Vault.prototype.editNote = function (this: any, op: (text: string) => EditResult) {
-  return this.edit(op)
+Vault.prototype.editNote = function (this: any, op: (text: string) => EditResult, fileId?: string) {
+  return this.edit(op, fileId)
 }
 
 Vault.prototype.sweep = async function (

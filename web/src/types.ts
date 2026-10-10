@@ -29,6 +29,8 @@ export interface Task {
   reminderOn: 'DUE' | 'SCHEDULED' | null
   linkNames: string[]
   attachmentNames: string[]
+  /** The vault path of the note the task is in. */
+  note?: string | null
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
