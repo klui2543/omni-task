@@ -35,16 +35,30 @@ const idOf = (key: string) => {
   return id
 }
 
+/** The calendars the owner shows, remembered for ten minutes (they rarely change). */
+const calendarLists = new WeakMap<Drive, { at: number; cals: { id: string; selected?: boolean }[] }>()
+async function calendarsOf(drive: Drive) {
+  const hit = calendarLists.get(drive)
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.cals
+  const all: { id: string; selected?: boolean }[] = (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
+  const cals = all.filter((c) => c.selected !== false).slice(0, 20)
+  calendarLists.set(drive, { at: Date.now(), cals })
+  return cals
+}
+
 /** Events overlapping [from, to) in every calendar the owner shows, soonest first. */
 export async function readEvents(drive: Drive, from: Date, to: Date): Promise<FocusIn['events']> {
   try {
-    const cals: { id: string; selected?: boolean }[] = (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
+    const cals = await calendarsOf(drive)
     const out: FocusIn['events'] = []
-    for (const cal of cals.filter((c) => c.selected !== false).slice(0, 20)) {
-      const params = new URLSearchParams({
-        timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
-      })
-      const items: GoogleEvent[] = (await drive.json(`${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}`)).items ?? []
+    const params = new URLSearchParams({
+      timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
+    })
+    // Every calendar is asked at the same time, not one after the other.
+    const lists = await Promise.all(cals.map(async (cal) => ({
+      cal, items: ((await drive.json(`${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}`)).items ?? []) as GoogleEvent[],
+    })))
+    for (const { cal, items } of lists) {
       for (const e of items) {
         if (e.status === 'cancelled' || e.attendees?.some((a) => a.self && a.responseStatus === 'declined')) continue
         const allDay = !!e.start?.date

@@ -29,7 +29,7 @@ export function SettingsPage(p: PageProps) {
   const [days, setDays] = useState(archiveDays.get)
   const [look, setLook] = useState(appearance)
   const [urgent, setUrgent] = useState(urgentRule.get)
-  const [profile, setProfile] = useState<string | null | undefined>(undefined)
+  const [profile, setProfile] = useState<string | null | undefined>(() => p.vault.peekProfile())
   const [note, setNote] = useState('')
   const connected = Auth.granted(CALENDAR_SCOPE)
 
