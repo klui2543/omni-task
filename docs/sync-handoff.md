@@ -18,8 +18,12 @@ Where the conflict question stands, for the next session.
 - Owner's sync app settings (screen recording): DriveSync Ultimate 7.7.4 (MetaCtrl, the Autosync family). **"Enable autosync" (monitor folders and sync in background) is off**; the schedule shows "Every 2 hours" greyed out. So the phone only syncs when the owner syncs by hand, and its copy can be hours old: this is the most likely cause of both conflicts.
 - No "Automation" section (secret code for the documented `syncNow` broadcast, package `com.ttxapps.autosync`, class `com.ttxapps.autosync.Automation`) appears in Settings, Synchronization or Security in this version, so Omni cannot ask it to sync. Could be asked of drivesync@metactrl.com.
 
+- Owner declined background sync (battery) and asked for a seamless fix rather than more settings or habits. Decided:
+  Android reads and writes the Omni folder on Drive directly, like the web. Plan: `drive-direct-plan.md`. This replaces
+  steps 0 to 3 below for Omni's files.
+
 ## Not known
-- Whether conflicts stop once background sync is on.
+- Whether conflicts stop once background sync is on (moot if the Drive plan ships).
 
 ## Agreed direction (proportional, step by step)
 0. Owner: in Autosync turn on Instant upload, shortest acceptable interval, exempt it from battery optimisation, and sync manually before editing on the phone right after using the web. Owner may send screenshots of the Autosync settings. (2026-10-10 evening: background sync found off; owner asked to turn on "Enable autosync", pick the shortest schedule, turn on "Try again automatically", and set the app's battery use to Unrestricted. Then measure a week.)
