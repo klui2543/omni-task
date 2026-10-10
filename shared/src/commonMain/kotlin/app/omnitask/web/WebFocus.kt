@@ -130,7 +130,7 @@ object WebFocus {
         val s = json.decodeFromString<StateIn>(stateJson)
         val now = LocalDateTime.parse(s.now)
         val today = now.date
-        val tasks = WebCore.withoutParked(VaultText.parseFile(fileKey, path, text), s.branches)
+        val tasks = WebCore.withoutParked(WebNotes.tasks(fileKey, path, text), s.branches)
         val profile = Profile.parse(s.profile)
         val events = s.events.map { CalendarEvent(it.id, it.title, LocalDateTime.parse(it.begin), LocalDateTime.parse(it.end), it.allDay) }
         val todayEvents = events.filter { it.begin.date <= today && it.end.date >= today && it.end > today.atTime(0, 0) }

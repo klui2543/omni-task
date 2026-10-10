@@ -148,7 +148,7 @@ object WebAssistant {
 
     private fun next(fileKey: String, path: String, text: String, s: StateIn): Insight.Ask? {
         val today = LocalDateTime.parse(s.now).date
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         return Insight.next(tasks, log(s), Profile.parse(s.profile), today, s.declined.toSet())
     }
 
@@ -199,7 +199,7 @@ object WebAssistant {
     /** Three-at-a-time candidate times for [request]; [minutes] at 0 or less means "estimate from the kind of work". */
     fun slots(fileKey: String, path: String, text: String, stateJson: String, request: String, minutes: Int): String {
         val s = parse(stateJson)
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         val plan = Planner.plan(request, tasks, events(s), Profile.parse(s.profile), LocalDateTime.parse(s.now), minutes.takeIf { it > 0 })
         return json.encodeToString(
             PlanOut(
@@ -216,7 +216,7 @@ object WebAssistant {
     fun rank(fileKey: String, path: String, text: String, stateJson: String): String {
         val s = parse(stateJson)
         val today = LocalDateTime.parse(s.now).date
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         return json.encodeToString(Focus.rank(tasks, today).take(12).map { (t, why) -> Ranked(t.key, t.title, why) })
     }
 
@@ -224,7 +224,7 @@ object WebAssistant {
     fun today(fileKey: String, path: String, text: String, stateJson: String): String {
         val s = parse(stateJson)
         val today = LocalDateTime.parse(s.now).date
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         val b = Focus.build(tasks, today, s.futureCount, s.skippedToday.toSet())
         val list = (b.must + b.waiting + b.future).distinct()
         return json.encodeToString(list.map { t -> Ranked(t.key, t.title, reason(t, b, today)) })
@@ -260,7 +260,7 @@ object WebAssistant {
         val s = parse(stateJson)
         val a = LocalDate.parse(from)
         val b = LocalDate.parse(to)
-        val tasks = VaultText.parseFile(fileKey, path, text).filter { it.status != Status.CANCELLED && !Focus.isSomeday(it) }
+        val tasks = WebNotes.tasks(fileKey, path, text).filter { it.status != Status.CANCELLED && !Focus.isSomeday(it) }
         val all = events(s).filter { it.end > a.atStartOfDay() && it.begin < b.plusDays(1).atStartOfDay() }
         val days = generateSequence(a) { it.plusDays(1) }.takeWhile { it <= b }.map { d ->
             val evs = all.filter { it.begin < d.plusDays(1).atStartOfDay() && it.end > d.atStartOfDay() }.sortedBy { it.begin }
@@ -293,7 +293,7 @@ object WebAssistant {
         val today = now.date
         val a = LocalDate.parse(from)
         val b = LocalDate.parse(to)
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         val candidates = Focus.rank(tasks, today).map { it.first }.filter { t ->
             t.scheduled.let { it == null || it < today } && t.due.let { it == null || it >= a } && t.reminderTime == null
         }.take(12)
@@ -308,7 +308,7 @@ object WebAssistant {
     /** The last seven days in three lines. */
     fun weekly(fileKey: String, path: String, text: String, stateJson: String): String {
         val today = LocalDateTime.parse(parse(stateJson).now).date
-        val m = Digest.weekly(VaultText.parseFile(fileKey, path, text), today)
+        val m = Digest.weekly(WebNotes.tasks(fileKey, path, text), today)
         return json.encodeToString(ReviewOut(m.title, m.lines))
     }
 
@@ -316,7 +316,7 @@ object WebAssistant {
     fun snapshot(fileKey: String, path: String, text: String, stateJson: String): String {
         val s = parse(stateJson)
         val today = LocalDateTime.parse(s.now).date
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         val profile = Profile.parse(s.profile)
         val todayEvents = events(s).filter { it.begin < today.plusDays(1).atStartOfDay() && it.end > today.atStartOfDay() }
         return buildString {
