@@ -43,6 +43,8 @@ object WebProjects {
         val taskOrder: Map<String, List<String>> = emptyMap(),
         /** Projects whose order is enforced with 🆔 and ⛔. */
         val strict: List<String> = emptyList(),
+        /** Tags of the owner's own task kinds, which never name a project either. */
+        val kindTags: List<String> = emptyList(),
     )
 
     @Serializable
@@ -151,7 +153,7 @@ object WebProjects {
         lists.sortBy { it.name.lowercase() }
         // Lists, their categories: tags that are not projects. Set before any project is read.
         val ignored = lists.flatMap { listOf(it.tag) + it.categories }.toSet()
-        Projects.ignoredTags = ignored
+        Projects.ignoredTags = ignored + st.kindTags
 
         val states = Branches.parse(st.branches.toSet())
         val everything = VaultText.parseFile(fileKey, path, text)

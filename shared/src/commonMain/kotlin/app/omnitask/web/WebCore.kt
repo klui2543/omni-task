@@ -218,6 +218,9 @@ object WebCore {
         val field: String? = null,
         val value: String? = null,
         val on: String? = null,
+        /** For a kind change: who is waiting (the "kind" op) and the tags of the owner's own kinds, which are swapped out too. */
+        val who: String? = null,
+        val custom: List<String> = emptyList(),
     )
 
     /**
@@ -253,10 +256,12 @@ object WebCore {
             // The kind tag (#รอ, #อนาคต, #สักวัน) is swapped for the new one, as Android's kind picker does.
             "kind" -> {
                 val kind = TaskKind.valueOf(op.value!!)
-                line { raw ->
-                    val cleared = TaskKind.kindTags(task).fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
-                    kind.tag?.let { TaskLine.addTag(cleared, it) } ?: cleared
-                }
+                line { raw -> WebKinds.withKind(task, raw, kind, op.who, op.custom) }
+            }
+            // One of the owner's own kinds (see WebKinds): its tag replaces any other kind's.
+            "customKind" -> {
+                val tag = value ?: return fail("empty")
+                line { raw -> WebKinds.withCustomKind(task, raw, tag, op.custom) }
             }
             "describe" -> VaultText.edit(text, task) { lines, i -> VaultText.describe(lines, i, op.value.orEmpty()) }
             "subtask" -> {

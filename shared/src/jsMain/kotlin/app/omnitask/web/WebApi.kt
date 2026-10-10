@@ -94,4 +94,16 @@ object WebApi {
         WebProjects.addListItem(text, path, title, category, today)
 
     fun listInclude(text: String, tasks: String, tag: String, category: String?): String = WebProjects.includeInList(text, tasks, tag, category)
+
+    // ---- Task kinds ----
+
+    fun kindsView(state: String): String = WebKinds.view(state)
+
+    fun kindsAdd(state: String, name: String, emoji: String): String = WebKinds.add(state, name, emoji)
+
+    fun kindsRemove(state: String, tag: String): String = WebKinds.remove(state, tag)
+
+    fun kindsToggleHidden(state: String, kind: String): String = WebKinds.toggleHidden(state, kind)
+
+    fun kindsPicker(state: String, raw: String): String = WebKinds.picker(state, raw)
 }
