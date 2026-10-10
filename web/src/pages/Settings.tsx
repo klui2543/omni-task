@@ -1,9 +1,9 @@
 import { useState } from 'preact/hooks'
 import { taskFilePath } from '../core'
-import { askOnDone } from '../Home'
+import { askOnDone, type PageProps } from '../Home'
 
 /** For now the vault and account; notifications, appearance and the rest follow Android's Settings next. */
-export function SettingsPage(p: { busy: boolean; onReload: () => void; onChangeVault: () => void; onSignOut: () => void }) {
+export function SettingsPage(p: PageProps) {
   const [ask, setAsk] = useState(askOnDone.get)
   return (
     <main class="page">

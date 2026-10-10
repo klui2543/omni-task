@@ -3,10 +3,12 @@ import { config } from './config'
 import { AuthExpired, Drive } from './drive'
 import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
-import { SoonPage } from './pages/Soon'
+import { AssistantPage } from './pages/Assistant'
+import { ProjectsPage } from './pages/Projects'
+import { ViewsPage } from './pages/Views'
 import { TasksPage } from './pages/Tasks'
 import { readEvents } from './calendar'
-import { Shell, TABS, usePage } from './Shell'
+import { Page, Shell, usePage } from './Shell'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
 
@@ -21,6 +23,15 @@ export interface PageProps {
   remove: (t: Task) => void
   /** The task as last read, for an action that waited behind another one. */
   fresh: (t: Task) => Task
+  /** Reads the note again. */
+  onReload: () => void
+  onNavigate: (page: Page) => void
+  onChangeVault: () => void
+  onSignOut: () => void
+  /** Asks Google for read access to the calendar (a trip to Google and back). */
+  onConnectCalendar: () => void
+  /** Reads Google Calendar between two moments; fails with CalendarError when it is not allowed or not switched on. */
+  readCalendar: (from: Date, to: Date) => ReturnType<typeof readEvents>
 }
 
 const ASK_KEY = 'omni.askOnDone'
@@ -137,8 +148,11 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     })
   const finishedNow = finished && snapshot?.tasks.find((c) => c.lineIndex === finished.lineIndex && c.title === finished.title)
 
-  const props: PageProps = { vault, snapshot, busy, run, tick, remove: (t) => takeOut(t, false), fresh }
-  const title = TABS.find(([id]) => id === page)?.[1] ?? ''
+  const props: PageProps = {
+    vault, snapshot, busy, run, tick, remove: (t) => takeOut(t, false), fresh,
+    onReload: reload, onNavigate: navigate, onChangeVault: p.onChangeVault, onSignOut: p.onSignOut,
+    onConnectCalendar: p.onConnectCalendar, readCalendar: (from, to) => readEvents(p.drive, from, to),
+  }
 
   return (
     <Shell page={page} onNavigate={navigate} sync={{ state: needSignIn ? 'off' : busy ? 'busy' : 'ok', at: syncedAt }} onReload={reload}>
@@ -156,19 +170,12 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         </div>
       )}
 
-      {page === 'focus' ? (
-        <FocusPage
-          {...props}
-          onConnectCalendar={p.onConnectCalendar}
-          onReload={reload}
-          onChangeVault={p.onChangeVault}
-          onNavigate={navigate}
-          readCalendar={(from, to) => readEvents(p.drive, from, to)}
-        />
-      )
+      {page === 'focus' ? <FocusPage {...props} />
         : page === 'tasks' ? <TasksPage {...props} />
-        : page === 'settings' ? <SettingsPage busy={busy} onReload={reload} onChangeVault={p.onChangeVault} onSignOut={p.onSignOut} />
-        : <SoonPage title={title} onTasks={() => navigate('tasks')} />}
+        : page === 'views' ? <ViewsPage {...props} />
+        : page === 'projects' ? <ProjectsPage {...props} />
+        : page === 'assistant' ? <AssistantPage {...props} />
+        : <SettingsPage {...props} />}
 
       {closing && (
         <div class="scrim" onClick={() => setClosing(null)}>

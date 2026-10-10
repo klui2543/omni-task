@@ -1,13 +1,14 @@
+import type { PageProps } from '../Home'
 import { PageHead } from '../ui/PageHead'
 
-/** A page not built on the web yet. */
-export function SoonPage({ title, onTasks }: { title: string; onTasks: () => void }) {
+/** Placeholder until the Assistant page is built. */
+export function AssistantPage(p: PageProps) {
   return (
     <main class="page">
-      <PageHead title={title} />
+      <PageHead title="ผู้ช่วย" />
       <section class="group empty">
         <p>หน้านี้กำลังทำบนเว็บ ระหว่างนี้ใช้ในแอป Android ได้</p>
-        <button class="ghost" onClick={onTasks}>ไปหน้างาน</button>
+        <button class="ghost" onClick={() => p.onNavigate('tasks')}>ไปหน้างาน</button>
       </section>
     </main>
   )

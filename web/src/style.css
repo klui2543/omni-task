@@ -302,6 +302,7 @@ button.small-btn { min-height: 34px; padding: 0 12px; border-radius: 10px; borde
 .popmenu { position: absolute; right: 0; top: 48px; width: 220px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 30px rgb(20 20 40 / .14); padding: 6px; z-index: 5; display: flex; flex-direction: column; }
 .popmenu button { min-height: 40px; border: 0; border-radius: 8px; background: transparent; text-align: left; padding: 0 10px; }
 .popmenu button:hover { background: var(--raised); }
+.popmenu button.on { color: var(--accent-text); font-weight: 500; }
 .focus-cols { display: flex; gap: 16px; align-items: flex-start; }
 .colA, .colB { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .colA { flex: 3 1 0; }
