@@ -43,4 +43,10 @@ object WebApi {
 
     /** The vault path of the live task file. */
     fun taskFile(): String = app.omnitask.data.VaultText.TASK_FILE
+
+    /* ---------- Views ---------- */
+
+    fun views(fileKey: String, path: String, text: String, state: String): String = WebViews.build(fileKey, path, text, state)
+
+    fun addTaskInStatus(text: String, sentence: String, today: String, status: String): String = WebViews.addTask(text, sentence, today, status)
 }

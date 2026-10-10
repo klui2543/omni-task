@@ -15,6 +15,7 @@ import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.Projects
+import app.omnitask.model.quadrant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import app.omnitask.model.ReminderOn
@@ -253,6 +254,15 @@ object WebCore {
                 val draft = QuickAdd.parse(value ?: return fail("empty"), day)
                 if (draft.title.isBlank()) return fail("empty")
                 VaultText.edit(text, task) { lines, i -> VaultText.insertSubtask(lines, i, draft.line(day)) }
+            }
+            // Moved between Matrix quadrants (see WebViews): importance changes, urgency comes from the dates.
+            "quadrant" -> {
+                val to = app.omnitask.model.Quadrant.valueOf(op.value!!)
+                val rule = app.omnitask.model.UrgentRule.entries.firstOrNull { it.name == op.field } ?: app.omnitask.model.UrgentRule.THIS_WEEK
+                val from = task.quadrant(day, rule)
+                if (from == to) return ok(text)
+                if (from.urgent != to.urgent) return fail("sideways", WebViews.SIDEWAYS)
+                line { TaskLine.setPriority(it, WebViews.priorityFor(to)) }
             }
             else -> return fail("unknown")
         }
