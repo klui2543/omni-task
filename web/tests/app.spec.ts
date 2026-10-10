@@ -291,7 +291,7 @@ test('a finished task can go to the archive, and come back with undo', async ({ 
 
   await page.getByRole('button', { name: 'เลิกทำ' }).click()
   await expect.poll(() => file.text).toContain('- [x] อ่านหนังสือ ✅ 2026-10-08\n- [x] เสร็จแล้วเมื่อวาน')
-  expect(archive.text).not.toContain('อ่านหนังสือ')
+  await expect.poll(() => archive.text).not.toContain('อ่านหนังสือ')
 })
 
 test('a finished task can be deleted, and repeating or project tasks are not asked about', async ({ page }) => {

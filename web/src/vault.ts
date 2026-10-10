@@ -10,6 +10,8 @@ import {
   addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
 } from './core'
 import type { BranchOp, BranchResult, ListNote, ProjectEditResult, ProjectsIn, ProjectsOut } from './types'
+import { MANY, NoteIndex, NoteText, samePath } from './noteIndex'
+import { WebNotesApi } from './kotlin/OmniTask-shared.mjs'
 
 /** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
 export interface Cut {
@@ -88,10 +90,57 @@ export class Vault {
    */
   async load(): Promise<Snapshot> {
     const id = await this.file()
-    const [{ text }, files] = await Promise.all([this.drive.readText(id), this.folder().then((f) => this.drive.children(f))])
+    const index = this.index()
+    index.skip = id
+    // Once the vault has been walked (now or on an earlier visit), a reload reads only what changed and waits for it.
+    // The first time, the task note is shown at once and the other notes join when the walk is done.
+    const quick = await index.ready()
+    if (!quick) this.walkInBackground(index)
+    const [{ text }, files] = await Promise.all([
+      this.drive.readText(id),
+      this.folder().then((f) => this.drive.children(f)),
+      quick ? index.refresh() : null,
+    ])
     const base = this.isLegacy ? 'TaskForge' : 'Omni note'
-    const conflicts = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
-    return new Snapshot(id, text, loadTasks(id, this.notePath, text), conflicts, this.notePath)
+    const beside = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
+    const conflicts = quick ? [...new Set([...beside, ...index.conflicts()])] : beside
+    const notes = quick ? this.otherNotes(index) : []
+    const src = sourceOf(id, this.notePath, text, notes)
+    return new Snapshot(id, text, loadTasks(src.key, src.path, src.text), conflicts, this.notePath, notes)
+  }
+
+  /** The other notes with tasks as the index has them; the old TaskForge.md is left unread once an Omni note.md has taken its place. */
+  private otherNotes(index: NoteIndex): NoteText[] {
+    return (this.notes = index.notes().filter((n) => this.isLegacy || !samePath(n.path, legacyTaskFilePath)))
+  }
+
+  /**
+   * [s] with the other notes as the first walk found them, the task note as it was read: what the page shows when
+   * the walk ends, without reading the task note again under an action that is about to change it.
+   */
+  withOtherNotes(s: Snapshot): Snapshot {
+    const index = this.index()
+    return s.withNotes(this.otherNotes(index), [...new Set([...s.conflicts, ...index.conflicts()])])
+  }
+
+  /* ---------- Every note of the vault (see noteIndex.ts) ---------- */
+
+  private noteIndex: NoteIndex | null = null
+  private walking: Promise<void> | null = null
+  /** The other notes as last read, for a change that touches every note with a tag. */
+  private notes: NoteText[] = []
+  /** Called when the first walk of the vault is done, so the page can show the other notes' tasks. */
+  onIndexed: (() => void) | null = null
+
+  private index(): NoteIndex {
+    return (this.noteIndex ??= new NoteIndex(this.drive, this.rootId))
+  }
+
+  private walkInBackground(index: NoteIndex) {
+    this.walking ??= index.refresh().then(
+      () => this.onIndexed?.(),
+      () => { this.walking = null },
+    )
   }
 
   /**
@@ -150,7 +199,8 @@ export class Vault {
    * is put back as it was and the move starts over on the new text.
    */
   async archive(task: Task): Promise<EditResult & { cut?: Cut }> {
-    const id = await this.file()
+    // The block leaves the note it is in; the archive note is the one beside the task note.
+    const id = noteOf(task)
     for (let attempt = 0; attempt < 3; attempt++) {
       const { text, version } = await this.drive.readText(id)
       const res = cutTask(text, task)
@@ -165,7 +215,7 @@ export class Vault {
         continue
       }
       await this.drive.writeText(id, res.text!)
-      return { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: true } }
+      return { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: true, fileId: id } }
     }
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
   }
@@ -265,9 +315,16 @@ export class Vault {
     return this.editProject((text) => addListItem(text, note.path, title, category), note.id)
   }
 
-  /** Tags tasks of TaskForge with a list's tag (and category), so they show in the list where they are. */
-  includeInList(tasks: Task[], tag: string, category: string | null) {
-    return this.editProject((text) => includeInList(text, tasks, tag, category))
+  /** Tags tasks with a list's tag (and category), so they show in the list where they are; each note is written once. */
+  async includeInList(tasks: Task[], tag: string, category: string | null): Promise<ProjectEditResult> {
+    let last: ProjectEditResult = { ok: true, changed: 0 }
+    let changed = 0
+    for (const [id, some] of byNote(tasks)) {
+      last = await this.editProject((text) => includeInList(text, some, tag, category), id)
+      if (!last.ok) return last
+      changed += last.changed ?? 0
+    }
+    return { ...last, changed }
   }
 
   /** A task in a project or branch: the title is read like quick add and gets the tag. */
@@ -275,9 +332,31 @@ export class Vault {
     return this.editProject((text) => addTagged(text, tag, title))
   }
 
-  /** "Do in order" on or off for the project's open tasks, written as 🆔 and ⛔ in the note. */
-  chain(ordered: Task[], on: boolean) {
-    return this.editProject((text) => chainTasks(text, ordered, on))
+  /** "Do in order" on or off for the project's open tasks, written as 🆔 and ⛔ in the notes they are in. */
+  chain(ordered: Task[], on: boolean): Promise<ProjectEditResult> {
+    const notes = [...byNote(ordered).keys()]
+    if (notes.length <= 1) return this.editProject((text) => chainTasks(text, ordered, on), notes[0])
+    return this.chainAcross(ordered, on, notes)
+  }
+
+  /**
+   * "Do in order" for tasks in several notes: every note is read again, the shared code changes them together,
+   * and each is written only if no note moved meanwhile (otherwise it starts over on the new texts).
+   */
+  private async chainAcross(ordered: Task[], on: boolean, ids: string[]): Promise<ProjectEditResult> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const read = await Promise.all(ids.map(async (id) => ({ id, ...(await this.drive.readText(id)) })))
+      const refs = ordered.map((t) => ({ key: noteOf(t), raw: t.raw, lineIndex: t.lineIndex }))
+      const notes = read.map((r) => ({ key: r.id, path: '', text: r.text }))
+      const res: { ok: boolean; texts: Record<string, string>; error?: string; changed: number } =
+        JSON.parse(notesApi.chain(JSON.stringify(notes), JSON.stringify(refs), on))
+      if (!res.ok) return { ok: false, error: res.error }
+      const versions = await Promise.all(read.map((r) => this.drive.version(r.id)))
+      if (read.some((r, i) => versions[i] !== r.version)) continue
+      for (const [id, text] of Object.entries(res.texts)) await this.drive.writeText(id, text)
+      return { ok: true, changed: res.changed }
+    }
+    throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
   }
 
   /**
@@ -293,12 +372,16 @@ export class Vault {
     })
     if (!main.ok) return main
     let total = changed
-    for (const note of await this.lists()) {
+    // The list notes, and every other note with a line that carries the tag.
+    const lists = (await this.lists()).map((n) => n.id)
+    const others = this.notes.filter((n) => n.text.includes('#' + old)).map((n) => n.key)
+    for (const id of new Set([...lists, ...others])) {
+      if (id === this.fileId) continue
       await this.editProject((text) => {
         const r = renameTag(text, old, name)
         changed = r.changed ?? 0
         return r
-      }, note.id)
+      }, id)
       total += changed
     }
     return { ...main, changed: total }
@@ -306,37 +389,76 @@ export class Vault {
 }
 
 /** The id of the note a task lives in: its key is the note's id and the line (see Task.key). */
-const noteOf = (task: Task) => task.key.slice(0, task.key.lastIndexOf('#'))
+export const noteOf = (task: { key: string }) => task.key.slice(0, task.key.lastIndexOf('#'))
+
+/** Tasks grouped by the note they are in, in the order they came. */
+export const byNote = <T extends { key: string }>(tasks: T[]): Map<string, T[]> => {
+  const out = new Map<string, T[]>()
+  for (const t of tasks) out.set(noteOf(t), [...(out.get(noteOf(t)) ?? []), t])
+  return out
+}
+
+const notesApi = WebNotesApi.getInstance()
+
+/** What the shared page builders read: the task note alone, or (when other notes have tasks) every note as a JSON list. */
+const sourceOf = (fileId: string, path: string, text: string, notes: NoteText[]) =>
+  notes.length === 0 ? { key: fileId, path, text } : { key: MANY, path: '', text: JSON.stringify([{ key: fileId, path, text }, ...notes]) }
 
 /** The note as last read: its tasks, and the text the shared logic groups and sorts them from. */
 export class Snapshot {
   readonly byKey: Map<string, Task>
 
-  constructor(readonly fileId: string, private text: string, readonly tasks: Task[], readonly conflicts: string[] = [], readonly path: string = taskFilePath) {
+  constructor(
+    readonly fileId: string,
+    private text: string,
+    readonly tasks: Task[],
+    readonly conflicts: string[] = [],
+    readonly path: string = taskFilePath,
+    /** The vault's other notes with tasks, read with the task note as Android reads every note. */
+    readonly notes: NoteText[] = [],
+  ) {
     this.byKey = new Map(tasks.map((t) => [t.key, t]))
   }
 
+  /** The same task note with [notes] as the other notes. */
+  withNotes(notes: NoteText[], conflicts: string[]): Snapshot {
+    const src = sourceOf(this.fileId, this.path, this.text, notes)
+    return new Snapshot(this.fileId, this.text, loadTasks(src.key, src.path, src.text), conflicts, this.path, notes)
+  }
+
+  private src: { key: string; path: string; text: string } | null = null
+
+  /** The key, path and text the shared page builders read: the task note, or every note with tasks. */
+  source() {
+    return (this.src ??= sourceOf(this.fileId, this.path, this.text, this.notes))
+  }
+
   list(query: Query): TaskList {
-    return listTasks(this.fileId, this.path, this.text, { ...query, branches: branchStates() })
+    const s = this.source()
+    return listTasks(s.key, s.path, s.text, { ...query, branches: branchStates() })
   }
 
   focus(state: FocusIn): FocusOut {
-    return focus(this.fileId, this.path, this.text, { ...state, branches: branchStates() })
+    const s = this.source()
+    return focus(s.key, s.path, s.text, { ...state, branches: branchStates() })
   }
 
   /** The Views page: Kanban, Matrix, Gantt and calendar tasks under the list's filters. */
   views(state: ViewsIn): ViewsOut {
-    return views(this.fileId, this.path, this.text, { ...state, query: { ...state.query, branches: branchStates() } })
+    const s = this.source()
+    return views(s.key, s.path, s.text, { ...state, query: { ...state.query, branches: branchStates() } })
   }
 
-  /** The Projects page: projects, branches and lists, from this note, the list notes and what this device chose. */
+  /** The Projects page: projects, branches and lists, from every note, the list notes and what this device chose. */
   projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
-    return projects(this.fileId, this.path, this.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state)
+    const s = this.source()
+    return projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state)
   }
 
   /** What the shared code does to the branch states of a project, from the tasks as they stand. */
   branchChange(states: string[], op: BranchOp): BranchResult {
-    return branchChange(this.fileId, this.path, this.text, states, op)
+    const s = this.source()
+    return branchChange(s.key, s.path, s.text, states, op)
   }
 }
 

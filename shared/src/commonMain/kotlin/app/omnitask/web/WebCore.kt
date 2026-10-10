@@ -64,6 +64,8 @@ object WebCore {
         /** Linked note names, for the edit panel. */
         val linkNames: List<String> = emptyList(),
         val attachmentNames: List<String> = emptyList(),
+        /** The vault path of the note the task is in. */
+        val note: String? = null,
     )
 
     @Serializable
@@ -88,12 +90,13 @@ object WebCore {
         attachments = t.attachments.size, links = t.links.size,
         start = t.start?.toString(), reminderOn = t.reminderOn?.name,
         linkNames = t.links, attachmentNames = t.attachments,
+        note = t.filePath.ifEmpty { null },
     )
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String {
         val day = LocalDate.parse(today)
-        return json.encodeToString(VaultText.parseFile(fileKey, path, text).map { dto(it, day) })
+        return json.encodeToString(WebNotes.tasks(fileKey, path, text).map { dto(it, day) })
     }
 
     /** The tasks without those in a parked branch, which every page but Projects leaves out (as on Android). */
@@ -137,7 +140,7 @@ object WebCore {
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
         val day = LocalDate.parse(today)
         val q = json.decodeFromString<QueryDto>(query)
-        val tasks = withoutParked(VaultText.parseFile(fileKey, path, text), q.branches)
+        val tasks = withoutParked(WebNotes.tasks(fileKey, path, text), q.branches)
         fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
         val sorts = q.sorts.mapNotNull { s -> SortBy.entries.firstOrNull { it.name == s.by }?.let { it to s.ascending } }
         val main = sorts.firstOrNull() ?: (SortBy.DUE to true)

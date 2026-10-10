@@ -76,9 +76,53 @@ export class FakeDrive {
 
   private find(q: string) {
     const name = /name = '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1')
-    const parent = /'([^']+)' in parents/.exec(q)?.[1]
+    // One parent, or several joined with "or" (the vault walk asks about many folders at once).
+    const parents = [...q.matchAll(/'([^']+)' in parents/g)].map((m) => m[1])
     const folderOnly = q.includes('google-apps.folder')
-    return this.nodes.filter((n) => (!name || n.name === name) && (!parent || n.parent === parent) && (!folderOnly || n.folder))
+    return this.nodes.filter((n) => (!name || n.name === name) && (!parents.length || parents.includes(n.parent ?? '')) && (!folderOnly || n.folder))
+  }
+
+  /* ---------- The whole vault ---------- */
+
+  /** Folder ids read by the app's walk of the vault, and file ids whose text was read. */
+  get listedFolders() {
+    return this.requests.filter((r) => r.startsWith('GET /drive/v3/files?')).flatMap((r) => [...decodeURIComponent(r).matchAll(/'([^']+)' in parents/g)].map((m) => m[1]))
+  }
+  get readFiles() {
+    return this.requests.filter((r) => r.includes('alt=media')).map((r) => /\/files\/([^?]+)/.exec(r)![1])
+  }
+
+  /** A note at [path] inside the vault (folders made where missing); returns it so a test can read its text later. */
+  note(path: string, text: string, vaultName = 'ObsidianVault') {
+    let parent = this.nodes.find((n) => n.name === vaultName && n.folder)!
+    const parts = path.split('/')
+    for (const part of parts.slice(0, -1)) {
+      parent = this.nodes.find((n) => n.name === part && n.folder && n.parent === parent.id) ?? this.add(part, parent.id)
+    }
+    return this.add(parts[parts.length - 1], parent.id, text)
+  }
+
+  /** What each change-log position saw: every item's version, name and folder. */
+  private marks: Map<string, string>[] = []
+
+  private mark() {
+    this.marks.push(new Map(this.nodes.map((n) => [n.id, `${n.version}|${n.name}|${n.parent}`])))
+    return String(this.marks.length - 1)
+  }
+
+  /** Drive's change log, worked out by comparing the files now with what they were at [token]. */
+  private changesSince(token: string) {
+    const then = this.marks[Number(token)] ?? new Map()
+    const now = new Set(this.nodes.map((n) => n.id))
+    const changes = [
+      ...this.nodes.filter((n) => then.get(n.id) !== `${n.version}|${n.name}|${n.parent}`).map((n) => ({ fileId: n.id, removed: false, file: this.meta(n) })),
+      ...[...then.keys()].filter((id) => !now.has(id)).map((id) => ({ fileId: id, removed: true })),
+    ]
+    return { changes, newStartPageToken: this.mark() }
+  }
+
+  private meta(n: Node) {
+    return { id: n.id, name: n.name, parents: n.parent ? [n.parent] : [], mimeType: n.folder ? 'application/vnd.google-apps.folder' : 'text/markdown', version: String(n.version) }
   }
 
   async install(page: Page) {
@@ -140,6 +184,9 @@ export class FakeDrive {
         return json({ items })
       }
 
+      if (url.pathname === '/drive/v3/changes/startPageToken') return json({ startPageToken: this.mark() })
+      if (url.pathname === '/drive/v3/changes') return json(this.changesSince(url.searchParams.get('pageToken') ?? ''))
+
       const m = /\/files\/?([^/?]*)$/.exec(url.pathname)
       const id = m?.[1]
       // A new folder is a plain JSON post (a new note is a multipart upload).
@@ -157,7 +204,7 @@ export class FakeDrive {
         return json({ id: n.id })
       }
       if (req.method() === 'GET' && !id) {
-        return json({ files: this.find(url.searchParams.get('q') ?? '').map((n) => ({ id: n.id, name: n.name, parents: n.parent ? [n.parent] : [] })) })
+        return json({ files: this.find(url.searchParams.get('q') ?? '').map((n) => this.meta(n)) })
       }
       const node = this.nodes.find((n) => n.id === id)
       if (!node) return route.fulfill({ status: 404, body: 'not found' })

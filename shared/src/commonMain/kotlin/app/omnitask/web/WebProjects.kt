@@ -156,7 +156,7 @@ object WebProjects {
         Projects.ignoredTags = ignored + st.kindTags
 
         val states = Branches.parse(st.branches.toSet())
-        val everything = VaultText.parseFile(fileKey, path, text)
+        val everything = WebNotes.tasks(fileKey, path, text)
         val parked = everything.filter { Branches.isParked(it, states) }
         val tasks = everything.filter { !Branches.isParked(it, states) }
         val projectTasks = tasks + parked
@@ -407,7 +407,7 @@ object WebProjects {
             val name = op.value
             return done(states.mapKeys { (k, _) -> if (k.first == op.project) name to k.second else k })
         }
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebNotes.tasks(fileKey, path, text)
         val tree = Branches.tree(op.project, tasks, states)
         val nodes = tree.flatten()
         val node = nodes.firstOrNull { it.path == op.path } ?: return json.encodeToString(BranchResult(false, error = "missing"))

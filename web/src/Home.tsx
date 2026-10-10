@@ -127,6 +127,22 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   const reload = () => run(async () => undefined)
 
+  // The first walk of the vault ends in the background: its notes join the task note as last read, without a
+  // spinner, a message cleared or the task note read again.
+  useEffect(() => {
+    vault.onIndexed = () => {
+      queue.current = queue.current.then(() => {
+        if (!latest.current) return
+        const joined = vault.withOtherNotes(latest.current)
+        // Nothing found beyond the task note: the page is left as it is (a drag in progress is not disturbed).
+        if (joined.notes.length === 0 && joined.conflicts.length === latest.current.conflicts.length) return
+        latest.current = joined
+        setSnapshot(joined)
+      })
+    }
+    return () => { vault.onIndexed = null }
+  }, [vault])
+
   // Once a day finished tasks move to the archive note (Settings: archive days); the note is read again only if some moved.
   useEffect(() => {
     reload()
@@ -180,7 +196,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         <div class="banner" role="alert">
           พบสำเนาจากการซิงก์ชนกัน: {snapshot.conflicts.join(', ')}
           <br />
-          <span class="small">เปิดเทียบกับไฟล์งานใน Obsidian แล้วลบสำเนาทิ้ง ระหว่างนี้แอปอ่านแค่ไฟล์หลัก</span>
+          <span class="small">เปิดเทียบกับโน้ตต้นฉบับใน Obsidian แล้วลบสำเนาทิ้ง ระหว่างนี้แอปไม่อ่านสำเนา</span>
         </div>
       )}
 
