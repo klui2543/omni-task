@@ -82,8 +82,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     ) {
         item {
             Column {
-                Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(tr("งาน", "Tasks"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
+                ScreenHeader(tr("งาน", "Tasks"), Modifier.padding(start = 4.dp)) {
                     SquareButton(Ic.search, tr("ค้นหา", "Search"), { searching = !searching; if (!searching) vm.setQuery(q.copy(text = "")) })
                 }
                 if (searching) {

@@ -4,6 +4,12 @@ import android.Manifest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +22,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,6 +39,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +77,35 @@ class CalendarChoices(
     val onPermissionChanged: () -> Unit,
 )
 
+/** The categories of the settings page; each opens as its own page from the list. */
+private enum class SettingsPage(val icon: androidx.compose.ui.graphics.vector.ImageVector, val zh: String, val en: String) {
+    LANGUAGE(Ic.pen, "ภาษา", "Language"),
+    LOOK(Ic.spark, "รูปลักษณ์", "Appearance"),
+    SLEEP(Ic.moon, "การนอน", "Sleep"),
+    FINISHED(Ic.archive, "งานที่เสร็จแล้ว", "Finished tasks"),
+    CALENDARS(Ic.calendar, "ปฏิทินที่แสดง", "Calendars shown"),
+    NOTIFY(Ic.bell, "การแจ้งเตือน", "Notifications");
+
+    val title: String get() = tr(zh, en)
+}
+
+/** One row of the category list: icon, name, a line saying what is set now, and what to do on tap. */
+private class CategoryEntry(val icon: androidx.compose.ui.graphics.vector.ImageVector, val title: String, val summary: String, val onClick: () -> Unit)
+
+@Composable
+private fun CategoryRow(e: CategoryEntry) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = e.onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(C.accentSoft), contentAlignment = Alignment.Center) {
+            Icon(e.icon, null, tint = C.accentText, modifier = Modifier.size(17.dp))
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(e.title, color = C.text, fontSize = TS.body)
+            Text(e.summary, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(18.dp))
+    }
+}
+
 /** The choices for [ArchiveSettings.days]. */
 private val ARCHIVE_DAYS = listOf(0, 1, 3, 7, 14, 30)
 
@@ -83,10 +121,14 @@ fun SettingsScreen(
     onLanguageChange: () -> Unit = {},
     archive: ArchiveSettings? = null,
     calendars: CalendarChoices? = null,
+    onNotify: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    BackHandler(onBack = onBack)
+    // Which category page is open (null is the list of categories). Saved by name so rotation keeps it.
+    var pageName by rememberSaveable { mutableStateOf<String?>(null) }
+    val page = SettingsPage.entries.firstOrNull { it.name == pageName }
+    BackHandler { if (page != null) pageName = null else onBack() }
     // Bumped after the permission prompt closes so the section re-reads whether access is granted.
     var permissionTick by remember { mutableIntStateOf(0) }
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -94,147 +136,188 @@ fun SettingsScreen(
         calendars?.onPermissionChanged?.invoke()
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
-                Text(tr("ตั้งค่า", "Settings"), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = C.text)
-            }
-        }
-        item {
-            SettingsGroup(tr("ภาษา", "Language")) {
-                // Each language is named in itself, so it can be found whichever one is showing.
-                Segmented(
-                    listOf(false to "ไทย", true to "English"),
-                    Lang.english,
-                    { english ->
-                        if (english != Lang.english) {
-                            Lang.set(context, english)
-                            onLanguageChange()
-                        }
-                    },
-                    Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+    // Categories slide in from the right and back out to the right, like a stack of pages.
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            if (targetState != null) slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
+            else slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
+        },
+        label = "settings-page",
+    ) { current ->
+        LazyColumn(
+            Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding(),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                ScreenHeader(
+                    current?.title ?: tr("ตั้งค่า", "Settings"), Modifier.padding(start = 4.dp),
+                    onBack = if (current != null) ({ pageName = null }) else onBack,
                 )
             }
-        }
-        if (profile != null) {
-            item {
-                // The usual night; tonight alone can be moved from the Focus screen.
-                SettingsGroup(tr("การนอน", "Sleep")) {
-                    TimeRow(tr("เวลานอนประจำ", "Usual bedtime"), profile.sleep) { pickSystemTime(context, profile.sleep) { onSleepTimes(it, profile.wake) } }
-                    TimeRow(tr("เวลาตื่นประจำ", "Usual wake time"), profile.wake) { pickSystemTime(context, profile.wake) { onSleepTimes(profile.sleep, it) } }
-                    Text(
-                        tr("หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้", "After 6 pm Focus shows the time until bed and the hours of sleep. Tap that line to change tonight only."),
-                        Modifier.padding(top = 4.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
-                    )
-                }
-            }
-        }
-        if (archive != null) {
-            item {
-                SettingsGroup(tr("งานที่เสร็จแล้ว", "Finished tasks")) {
-                    Text(tr("ย้ายเข้าคลังอัตโนมัติหลัง", "Move to the archive after"), Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body)
-                    FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ARCHIVE_DAYS.forEach { d ->
-                            Chip(if (d == 0) tr("ไม่ย้าย", "Never") else tr("$d วัน", if (d == 1) "1 day" else "$d days"), archive.days == d, { archive.onDays(d) })
-                        }
-                    }
-                    Text(
-                        tr(
-                            "ย้ายวันละครั้งไปที่ Omni note Archive.md ข้างไฟล์ Omni note งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม",
-                            "Once a day, to Omni note Archive.md next to the Omni note. Project tasks stay ticked where they are.",
+            when (current) {
+                null -> {
+                    val rows = listOf(
+                        tr("ทั่วไป", "General") to listOfNotNull(
+                            CategoryEntry(SettingsPage.LANGUAGE.icon, SettingsPage.LANGUAGE.title, if (Lang.english) "English" else "ไทย") { pageName = SettingsPage.LANGUAGE.name },
+                            CategoryEntry(SettingsPage.LOOK.icon, SettingsPage.LOOK.title, "${Appearance.themeMode.label}, ${Appearance.font.label}, ${(Appearance.scale * 100).roundToInt()}%") { pageName = SettingsPage.LOOK.name },
                         ),
-                        color = C.muted, fontSize = TS.caption,
+                        tr("งานและเวลา", "Tasks and time") to listOfNotNull(
+                            profile?.let { CategoryEntry(SettingsPage.SLEEP.icon, SettingsPage.SLEEP.title, "%02d:%02d ".format(it.sleep.hour, it.sleep.minute) + tr("ถึง", "to") + " %02d:%02d".format(it.wake.hour, it.wake.minute)) { pageName = SettingsPage.SLEEP.name } },
+                            archive?.let { CategoryEntry(SettingsPage.FINISHED.icon, SettingsPage.FINISHED.title, if (it.days == 0) tr("ไม่ย้ายอัตโนมัติ", "Not moved automatically") else tr("ย้ายหลัง ${it.days} วัน", "Moved after ${it.days} days")) { pageName = SettingsPage.FINISHED.name } },
+                            calendars?.let { CategoryEntry(SettingsPage.CALENDARS.icon, SettingsPage.CALENDARS.title, tr("เลือกปฏิทินที่แสดง", "Choose which to show")) { pageName = SettingsPage.CALENDARS.name } },
+                            CategoryEntry(SettingsPage.NOTIFY.icon, SettingsPage.NOTIFY.title, tr("เตือนงานและสรุปประจำวัน", "Task reminders and daily summary")) { onNotify() },
+                        ),
                     )
-                    Row(Modifier.fillMaxWidth().clickable { archive.onAsk(!archive.ask) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(tr("ถามเมื่อติ๊กเสร็จ", "Ask when a task is done"), color = C.text, fontSize = TS.body)
-                            Text(tr("เก็บเข้าคลัง ลบ หรือไว้ก่อน", "Archive, delete or keep it"), color = C.muted, fontSize = TS.caption)
-                        }
-                        OnOff(archive.ask)
-                    }
-                }
-            }
-        }
-        if (calendars != null) {
-            item {
-                SettingsGroup(tr("ปฏิทินที่แสดง", "Calendars shown")) {
-                    val granted = permissionTick >= 0 && app.omnitask.data.CalendarReader.hasPermission(context)
-                    val visible = calendars.calendars.filter { it.visible }
-                    if (!granted) {
-                        Text(
-                            tr("อนุญาตให้อ่านปฏิทินในเครื่องก่อน แล้วเลือกได้ว่าจะแสดงปฏิทินไหน", "Allow reading the calendars on this phone, then choose which ones to show"),
-                            Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
-                        )
-                        PrimaryButton(
-                            tr("อนุญาต", "Allow"),
-                            { askCalendar.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
-                            Modifier.padding(top = 8.dp, bottom = 12.dp),
-                        )
-                    } else {
-                        if (visible.isEmpty()) {
-                            Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
-                        }
-                        visible.forEach { cal ->
-                            val on = !app.omnitask.data.CalendarReader.isHidden(cal.id, calendars.hidden)
-                            Row(Modifier.fillMaxWidth().clickable { calendars.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(cal.name.ifBlank { cal.account }, color = C.text, fontSize = TS.body)
-                                    if (cal.account.isNotBlank() && cal.account != cal.name) Text(cal.account, color = C.muted, fontSize = TS.caption)
+                    rows.forEach { (label, entries) ->
+                        item {
+                            Text(label, Modifier.padding(start = 6.dp), color = C.muted, fontSize = TS.caption)
+                            Card(Modifier.padding(top = 6.dp)) {
+                                entries.forEachIndexed { i, e ->
+                                    if (i > 0) Box(Modifier.padding(start = 56.dp).fillMaxWidth().height(1.dp).background(C.cardBorder))
+                                    CategoryRow(e)
                                 }
-                                Box(Modifier.width(12.dp))
-                                OnOff(on)
                             }
                         }
-                        Text(
-                            tr(
-                                "เลือกได้เฉพาะปฏิทินที่เปิดแสดงไว้ในแอปปฏิทินของเครื่อง ปฏิทินที่ปิดตรงนี้จะไม่โผล่ในปฏิทินเดือน แกนต์ ไทม์ไลน์ วิดเจ็ต การแจ้งเตือน และผู้ช่วย",
-                                "Only calendars switched on in the phone's calendar app are listed. A calendar turned off here is left out of the month view, Gantt, timeline, widgets, reminders and the assistant.",
-                            ),
-                            Modifier.padding(bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                    }
+                }
+                SettingsPage.LANGUAGE -> {
+                    item {
+                    SettingsGroup("") {
+                        // Each language is named in itself, so it can be found whichever one is showing.
+                        Segmented(
+                            listOf(false to "ไทย", true to "English"),
+                            Lang.english,
+                            { english ->
+                                if (english != Lang.english) {
+                                    Lang.set(context, english)
+                                    onLanguageChange()
+                                }
+                            },
+                            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
                         )
                     }
-                }
-            }
-        }
-        item {
-            SettingsGroup(tr("ธีม", "Theme")) {
-                Segmented(
-                    ThemeMode.entries.map { it to it.label },
-                    Appearance.themeMode,
-                    { Appearance.setThemeMode(context, it) },
-                    Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                Segmented(
-                    PaletteChoice.entries.map { it to it.label },
-                    Appearance.palette,
-                    { Appearance.setPalette(context, it) },
-                    Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
-                )
-            }
-        }
-        item {
-            SettingsGroup(tr("ฟอนต์", "Font")) {
-                Column(Modifier.selectableGroup().padding(top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FontChoice.entries.forEach { choice ->
-                        FontOption(choice, choice == Appearance.font) { Appearance.setFont(context, choice) }
                     }
                 }
-            }
-        }
-        item {
-            SettingsGroup(tr("ขนาดตัวอักษร", "Text size")) {
-                Segmented(
-                    Appearance.SCALES.map { it to "${(it * 100).roundToInt()}%" },
-                    Appearance.scale,
-                    { Appearance.setScale(context, it) },
-                    Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                SizePreview(Modifier.padding(top = 10.dp, bottom = 12.dp))
+                SettingsPage.LOOK -> {
+                    item {
+                    SettingsGroup("") {
+                        Segmented(
+                            ThemeMode.entries.map { it to it.label },
+                            Appearance.themeMode,
+                            { Appearance.setThemeMode(context, it) },
+                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                        Segmented(
+                            PaletteChoice.entries.map { it to it.label },
+                            Appearance.palette,
+                            { Appearance.setPalette(context, it) },
+                            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                        )
+                    }
+                    }
+                    item {
+                    SettingsGroup(tr("ฟอนต์", "Font")) {
+                        Column(Modifier.selectableGroup().padding(top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FontChoice.entries.forEach { choice ->
+                                FontOption(choice, choice == Appearance.font) { Appearance.setFont(context, choice) }
+                            }
+                        }
+                    }
+                    }
+                    item {
+                    SettingsGroup(tr("ขนาดตัวอักษร", "Text size")) {
+                        Segmented(
+                            Appearance.SCALES.map { it to "${(it * 100).roundToInt()}%" },
+                            Appearance.scale,
+                            { Appearance.setScale(context, it) },
+                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                        SizePreview(Modifier.padding(top = 10.dp, bottom = 12.dp))
+                    }
+                    }
+                }
+                SettingsPage.SLEEP -> if (profile != null) {
+                    item {
+                        SettingsGroup("") {
+                            TimeRow(tr("เวลานอนประจำ", "Usual bedtime"), profile.sleep) { pickSystemTime(context, profile.sleep) { onSleepTimes(it, profile.wake) } }
+                            TimeRow(tr("เวลาตื่นประจำ", "Usual wake time"), profile.wake) { pickSystemTime(context, profile.wake) { onSleepTimes(profile.sleep, it) } }
+                            Text(
+                                tr("หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้", "After 6 pm Focus shows the time until bed and the hours of sleep. Tap that line to change tonight only."),
+                                Modifier.padding(top = 4.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                            )
+                        }
+                    }
+                }
+                SettingsPage.FINISHED -> if (archive != null) {
+                    item {
+                        SettingsGroup("") {
+                            Text(tr("ย้ายเข้าคลังอัตโนมัติหลัง", "Move to the archive after"), Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body)
+                            FlowRow(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ARCHIVE_DAYS.forEach { d ->
+                                    Chip(if (d == 0) tr("ไม่ย้าย", "Never") else tr("$d วัน", if (d == 1) "1 day" else "$d days"), archive.days == d, { archive.onDays(d) })
+                                }
+                            }
+                            Text(
+                                tr(
+                                    "ย้ายวันละครั้งไปที่ Omni note Archive.md ข้างไฟล์ Omni note งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม",
+                                    "Once a day, to Omni note Archive.md next to the Omni note. Project tasks stay ticked where they are.",
+                                ),
+                                color = C.muted, fontSize = TS.caption,
+                            )
+                            Row(Modifier.fillMaxWidth().clickable { archive.onAsk(!archive.ask) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(tr("ถามเมื่อติ๊กเสร็จ", "Ask when a task is done"), color = C.text, fontSize = TS.body)
+                                    Text(tr("เก็บเข้าคลัง ลบ หรือไว้ก่อน", "Archive, delete or keep it"), color = C.muted, fontSize = TS.caption)
+                                }
+                                OnOff(archive.ask)
+                            }
+                        }
+                    }
+                }
+                SettingsPage.CALENDARS -> if (calendars != null) {
+                    item {
+                        SettingsGroup("") {
+                            val granted = permissionTick >= 0 && app.omnitask.data.CalendarReader.hasPermission(context)
+                            val visible = calendars.calendars.filter { it.visible }
+                            if (!granted) {
+                                Text(
+                                    tr("อนุญาตให้อ่านปฏิทินในเครื่องก่อน แล้วเลือกได้ว่าจะแสดงปฏิทินไหน", "Allow reading the calendars on this phone, then choose which ones to show"),
+                                    Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+                                )
+                                PrimaryButton(
+                                    tr("อนุญาต", "Allow"),
+                                    { askCalendar.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
+                                    Modifier.padding(top = 8.dp, bottom = 12.dp),
+                                )
+                            } else {
+                                if (visible.isEmpty()) {
+                                    Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
+                                }
+                                visible.forEach { cal ->
+                                    val on = !app.omnitask.data.CalendarReader.isHidden(cal.id, calendars.hidden)
+                                    Row(Modifier.fillMaxWidth().clickable { calendars.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(cal.name.ifBlank { cal.account }, color = C.text, fontSize = TS.body)
+                                            if (cal.account.isNotBlank() && cal.account != cal.name) Text(cal.account, color = C.muted, fontSize = TS.caption)
+                                        }
+                                        Box(Modifier.width(12.dp))
+                                        OnOff(on)
+                                    }
+                                }
+                                Text(
+                                    tr(
+                                        "เลือกได้เฉพาะปฏิทินที่เปิดแสดงไว้ในแอปปฏิทินของเครื่อง ปฏิทินที่ปิดตรงนี้จะไม่โผล่ในปฏิทินเดือน แกนต์ ไทม์ไลน์ วิดเจ็ต การแจ้งเตือน และผู้ช่วย",
+                                        "Only calendars switched on in the phone's calendar app are listed. A calendar turned off here is left out of the month view, Gantt, timeline, widgets, reminders and the assistant.",
+                                    ),
+                                    Modifier.padding(bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                                )
+                            }
+                        }
+                    }
+                }
+                SettingsPage.NOTIFY -> Unit
             }
         }
     }
@@ -252,7 +335,7 @@ private fun TimeRow(label: String, time: kotlinx.datetime.LocalTime, onClick: ()
 private fun SettingsGroup(title: String, content: @Composable () -> Unit) {
     Card {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text(title, Modifier.padding(top = 6.dp, bottom = 2.dp), color = C.accentText, style = MaterialTheme.typography.titleSmall)
+            if (title.isNotBlank()) Text(title, Modifier.padding(top = 6.dp, bottom = 2.dp), color = C.accentText, style = MaterialTheme.typography.titleSmall)
             content()
         }
     }

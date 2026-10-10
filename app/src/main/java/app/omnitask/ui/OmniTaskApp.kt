@@ -145,6 +145,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
             archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
             calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
+            onNotify = { settingsOpen = false; notifyOpen = true },
         ) { settingsOpen = false }
         return
     }

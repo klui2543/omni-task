@@ -88,11 +88,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
-                    Text(greeting(), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                }
+            ScreenHeader(greeting(), Modifier.padding(start = 2.dp), subtitle = today.format(LONG_DATE)) {
                 RoundButton(Ic.spark, tr("ผู้ช่วย", "Assistant"), C.accentSoft, C.accentText, onAssistant)
                 Box(Modifier.width(8.dp))
                 menu()

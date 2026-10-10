@@ -245,6 +245,33 @@ fun SquareButton(icon: ImageVector, description: String, onClick: () -> Unit, fi
     }
 }
 
+/**
+ * The title row every screen starts with. The title always sits in the same 42dp band at the top, with the optional
+ * [subtitle] under it and the [actions] top-aligned on the right, so it does not jump when switching screens.
+ */
+@Composable
+fun ScreenHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    onBack: (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        if (onBack != null) {
+            SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
+            Box(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Box(Modifier.height(42.dp), contentAlignment = Alignment.CenterStart) {
+                Text(title, style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            if (subtitle != null) Text(subtitle, color = C.muted, fontSize = TS.caption)
+        }
+        actions()
+    }
+}
+
 /** Back to today in the calendar views. Always shown, as in Google Calendar, so it is there when needed. */
 @Composable
 fun TodayButton(onClick: () -> Unit, modifier: Modifier = Modifier) {

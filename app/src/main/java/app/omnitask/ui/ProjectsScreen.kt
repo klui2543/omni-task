@@ -108,10 +108,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         val mine = open.tasks.filter { it !in parked }
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { projectView = null })
-                    Text(open.name, Modifier.padding(start = 14.dp), style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1)
-                }
+                ScreenHeader(open.name, Modifier.padding(start = 4.dp), onBack = { projectView = null })
                 ProjectViewSwitch(view, Modifier.padding(top = 12.dp)) { projectView = it }
             }
             Box(Modifier.weight(1f)) { ViewBody(view, state, mine, mine.filter { !state.query.hideDone || it.isOpen }, vm, onOpen, scoped = true) }
@@ -126,30 +123,28 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (open != null || openList != null) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false })
-                    Box(Modifier.width(10.dp))
-                }
-                Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                    Text(
-                        when {
-                            open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
-                            openList != null -> tr("แตะเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap to tick what you've done or watched")
-                            else -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
-                        },
-                        color = C.muted, fontSize = TS.caption,
-                    )
-                }
+            ScreenHeader(
+                open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"),
+                Modifier.padding(start = 4.dp),
+                subtitle = when {
+                    open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
+                    openList != null -> tr("แตะเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap to tick what you've done or watched")
+                    else -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
+                },
+                onBack = if (open != null || openList != null) {
+                    { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false }
+                } else null,
+            ) {
                 if (open != null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
                 if (open == null && openList == null && projects.size > 1) {
-                    Text(
-                        if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
-                        Modifier.clip(RoundedCornerShape(12.dp)).background(if (arranging) C.accent else C.card)
-                            .clickable { arranging = !arranging }.padding(horizontal = 14.dp, vertical = 9.dp),
-                        color = if (arranging) C.onAccent else C.text2, fontSize = TS.caption,
-                    )
+                    Box(Modifier.height(42.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
+                            Modifier.clip(RoundedCornerShape(12.dp)).background(if (arranging) C.accent else C.card)
+                                .clickable { arranging = !arranging }.padding(horizontal = 14.dp, vertical = 9.dp),
+                            color = if (arranging) C.onAccent else C.text2, fontSize = TS.caption,
+                        )
+                    }
                 }
             }
         }

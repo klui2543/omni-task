@@ -137,11 +137,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val profile = state.profile
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("ผู้ช่วย", "Assistant"), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                Text(sources(state), color = C.muted, fontSize = TS.caption)
-            }
+        ScreenHeader(tr("ผู้ช่วย", "Assistant"), Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), subtitle = sources(state)) {
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
         }
 
