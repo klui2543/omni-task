@@ -50,3 +50,6 @@ export const renamedProject = (s: ProjectsIn, old: string, name: string): Projec
 })
 
 export const toggleIn = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+
+/** The branch states chosen on this device; pages other than Projects leave out the tasks in parked branches. */
+export const branchStates = (): string[] => load().branches

@@ -41,6 +41,8 @@ export interface Query {
   text?: string
   groupBy?: 'DATE' | 'NOTE' | 'PRIORITY' | 'TAG' | 'STATUS' | 'NONE'
   sorts?: { by: string; ascending: boolean }[]
+  /** Branch states ("project\tpath\tSTATE"): tasks in a parked branch are left out. */
+  branches?: string[]
 }
 
 export interface Group {
@@ -93,6 +95,7 @@ export interface FocusIn {
   tonightBed: { evening: string; time: string } | null
   profile: string | null
   events: { id: number; title: string; begin: string; end: string; allDay: boolean }[]
+  branches?: string[]
 }
 
 export interface PlanItem {

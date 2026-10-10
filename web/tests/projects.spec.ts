@@ -426,3 +426,25 @@ test('a project has its own Kanban, Matrix, Gantt and calendar over just its tas
   await page.getByRole('tab', { name: 'ภาพรวม' }).click()
   await expect(page.getByRole('tablist', { name: 'มุมมองของโปรเจกต์' })).toBeVisible()
 })
+
+test('a parked branch is left out of Focus, the task list and the views, but stays in its project', async ({ page }) => {
+  await start(page)
+  await page.locator('.pj-card', { hasText: 'peddose' }).click()
+  await page.getByRole('button', { name: /Mind map/ }).click()
+  // Park the "แอป" branch from the mind map.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('omni.projects') ?? '{}')
+    s.branches = ['peddose\tแอป\tPARKED']
+    localStorage.setItem('omni.projects', JSON.stringify(s))
+  })
+  await page.reload()
+  await page.evaluate(() => { location.hash = '/tasks' })
+  await expect(page.getByText('ส่งรายงานความก้าวหน้า')).toBeVisible()
+  await expect(page.getByText('ทำหน้าคำนวณ')).toHaveCount(0)
+  await expect(page.getByText('ทำหน้าเว็บ', { exact: true })).toHaveCount(0)
+  await page.evaluate(() => { location.hash = '/views' })
+  await expect(page.getByText('ทำหน้าคำนวณ')).toHaveCount(0)
+  await page.evaluate(() => { location.hash = '/projects' })
+  await page.locator('.pj-card', { hasText: 'peddose' }).click()
+  await expect(page.getByText('Mind map ของโปรเจกต์')).toBeVisible()
+})

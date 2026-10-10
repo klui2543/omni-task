@@ -96,6 +96,13 @@ object WebCore {
         return json.encodeToString(VaultText.parseFile(fileKey, path, text).map { dto(it, day) })
     }
 
+    /** The tasks without those in a parked branch, which every page but Projects leaves out (as on Android). */
+    internal fun withoutParked(tasks: List<Task>, branches: List<String>): List<Task> {
+        if (branches.isEmpty()) return tasks
+        val states = app.omnitask.model.Branches.parse(branches.toSet())
+        return tasks.filter { !app.omnitask.model.Branches.isParked(it, states) }
+    }
+
     /** The task list's filters, grouping and sorting, named as in [TaskQuery]; empty sets mean no filter. */
     @Serializable
     data class QueryDto(
@@ -108,6 +115,8 @@ object WebCore {
         val groupBy: String = "DATE",
         /** Sort levels in order, each a [SortBy] name and whether it runs ascending. */
         val sorts: List<SortDto> = listOf(SortDto("DUE", true)),
+        /** Branch states as Android saves them ("project\tpath\tSTATE"); tasks in a parked branch are left out. */
+        val branches: List<String> = emptyList(),
     )
 
     @Serializable
@@ -127,8 +136,8 @@ object WebCore {
     /** The task list as Android shows it: [TaskQuery] run over the note, plus each parent's subtask progress. */
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
         val day = LocalDate.parse(today)
-        val tasks = VaultText.parseFile(fileKey, path, text)
         val q = json.decodeFromString<QueryDto>(query)
+        val tasks = withoutParked(VaultText.parseFile(fileKey, path, text), q.branches)
         fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
         val sorts = q.sorts.mapNotNull { s -> SortBy.entries.firstOrNull { it.name == s.by }?.let { it to s.ascending } }
         val main = sorts.firstOrNull() ?: (SortBy.DUE to true)

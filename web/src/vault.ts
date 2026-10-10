@@ -3,6 +3,7 @@ import {
   restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
 import { Drive, DriveFile, FOLDER, sameName } from './drive'
+import { branchStates } from './ui/projects/projectState'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 import {
   addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
@@ -258,16 +259,16 @@ export class Snapshot {
   }
 
   list(query: Query): TaskList {
-    return listTasks(this.fileId, taskFilePath, this.text, query)
+    return listTasks(this.fileId, taskFilePath, this.text, { ...query, branches: branchStates() })
   }
 
   focus(state: FocusIn): FocusOut {
-    return focus(this.fileId, taskFilePath, this.text, state)
+    return focus(this.fileId, taskFilePath, this.text, { ...state, branches: branchStates() })
   }
 
   /** The Views page: Kanban, Matrix, Gantt and calendar tasks under the list's filters. */
   views(state: ViewsIn): ViewsOut {
-    return views(this.fileId, taskFilePath, this.text, state)
+    return views(this.fileId, taskFilePath, this.text, { ...state, query: { ...state.query, branches: branchStates() } })
   }
 
   /** The Projects page: projects, branches and lists, from this note, the list notes and what this device chose. */
