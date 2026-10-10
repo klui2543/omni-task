@@ -41,7 +41,8 @@ export class Vault {
 
   private async file(): Promise<string> {
     if (this.located && this.fileId) return this.fileId
-    const name = this.fileId ? await this.nameIfStillTheNote(this.fileId) : null
+    // Only the name here, as one request; load() checks the folder too, beside its reads.
+    const name = this.fileId ? await this.nameIfStillTheNote(this.fileId, false) : null
     if (this.fileId && name === null) this.forget()
     if (this.fileId && name !== null) {
       // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
@@ -80,12 +81,12 @@ export class Vault {
    * two sides, it renames this file (e.g. "Omni note (older, before conflict ...).md") and makes a new one under the
    * note's name; Obsidian moves a deleted note to .trash. Writing to the old file then would go to a copy.
    */
-  private async nameIfStillTheNote(id: string): Promise<string | null> {
+  private async nameIfStillTheNote(id: string, withFolder = true): Promise<string | null> {
     try {
       const f = await this.drive.get(id, 'name,parents,trashed')
       if (f.trashed || !['Omni note.md', 'TaskForge.md'].some((n) => sameName(f.name, n))) return null
       const parent = f.parents?.[0]
-      if (parent && (await this.drive.get(parent, 'name')).name.startsWith('.')) return null
+      if (withFolder && parent && (await this.drive.get(parent, 'name')).name.startsWith('.')) return null
       return f.name
     } catch (e) {
       if (e instanceof DriveError && e.status === 404) return null
@@ -117,11 +118,11 @@ export class Vault {
    * those mean two versions met, so the owner should compare them before going on.
    */
   async load(again = false): Promise<Snapshot> {
-    const checked = this.located
     const id = await this.file()
     // Checked again on every load, beside the reads so it costs no wait: a sync app may have set the file aside
-    // since the page was opened. (A file just located has been checked already.)
-    const still = checked ? this.nameIfStillTheNote(id) : Promise.resolve('')
+    // since the page was opened, or Obsidian moved it to .trash.
+    // A failed check is not a reason to fail the load; the next load checks again.
+    const still = this.nameIfStillTheNote(id).catch(() => '')
     const index = this.index()
     index.skip = id
     // Once the vault has been walked (now or on an earlier visit), a reload reads only what changed and waits for it.
