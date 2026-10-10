@@ -66,3 +66,11 @@ a branch, adding to a list, pulling tasks into a list, "do in order" with 🆔 a
 What the owner chooses on this page stays on this device (localStorage `omni.projects`): the order of projects, the
 starred ones, the state of each branch (active, trying, chosen, parked), each project's task order. The web does not
 read or write Android's `omni-settings.json` yet, so these choices do not travel between the phone and the iPad.
+
+## Task kinds
+
+Settings has the same "ประเภทงาน" manager as Android: hide the built-in kinds (#รอ, #อนาคต, #สักวัน; hiding one also removes its
+card from Focus and its choice from the edit panel unless the task has that kind) and make kinds of your own (a name, an emoji
+and the tag that marks it, which never names a project). The edit panel's "ประเภท" field and the Tasks filter use that list. The
+logic is `shared/.../web/WebKinds.kt`. The choices stay on this device (localStorage `omni.kinds`, in Android's own
+tab-separated `name, emoji, tag` form); the web does not read or write `omni-settings.json`, so they do not travel yet.
