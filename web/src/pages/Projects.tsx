@@ -8,6 +8,7 @@ import { ListDetail } from '../ui/projects/ListDetail'
 import { MindMap } from '../ui/projects/MindMap'
 import { ProjectHome } from '../ui/projects/ProjectHome'
 import { ProjectOverview } from '../ui/projects/ProjectOverview'
+import { ViewsPage, type ViewMode } from './Views'
 import { listsSeeded, renamedProject, toggleIn, useProjectsLocal } from '../ui/projects/projectState'
 import { QuickAdd } from './Tasks'
 
@@ -29,6 +30,8 @@ export function ProjectsPage(p: PageProps) {
   const [openName, setOpenName] = useState<string | null>(null)
   const [openPath, setOpenPath] = useState<string | null>(null)
   const [mapping, setMapping] = useState(false)
+  // Inside a project: its overview (null) or one of its own views.
+  const [projectView, setProjectView] = useState<ViewMode | null>(null)
   const [arranging, setArranging] = useState(false)
   const [category, setCategory] = useState<string | null>(null)
   const [dialog, setDialog] = useState<Dialog | null>(null)
@@ -87,7 +90,7 @@ export function ProjectsPage(p: PageProps) {
   const openTask = (t: Task) => setSelected({ key: t.key, title: t.title })
   const say = (text: string) => setNotice(text)
 
-  const home = () => { setOpenName(null); setOpenPath(null); setMapping(false); setCategory(null); setSelected(null) }
+  const home = () => { setProjectView(null); setOpenName(null); setOpenPath(null); setMapping(false); setCategory(null); setSelected(null) }
   const back = () => (mapping ? setMapping(false) : home())
   const noteOf = (l: { path: string }) => notes?.find((n) => n.path === l.path)
 
@@ -228,7 +231,7 @@ export function ProjectsPage(p: PageProps) {
       <ProjectOverview
         project={project} task={task} selected={current?.key} busy={p.busy}
         onTick={p.tick} onOpen={openTask} onMap={() => { setMapSelect(''); setMapping(true) }}
-        onStrict={(on) => setStrict(project, on)} onOrder={(ordered) => reorder(project, ordered)}
+        onStrict={(on) => setStrict(project, on)} onOrder={(ordered) => reorder(project, ordered)} onView={setProjectView}
       />
     </>
   ) : list ? (
@@ -254,6 +257,16 @@ export function ProjectsPage(p: PageProps) {
       onCreateList={() => setDialog({ k: 'create' })}
     />
   )
+
+  // A view needs the whole page (Kanban and Gantt scroll sideways), so it replaces the overview.
+  if (project && projectView) {
+    return (
+      <ViewsPage
+        {...p}
+        scope={{ project: project.name, mode: projectView, setMode: setProjectView, onOverview: () => setProjectView(null) }}
+      />
+    )
+  }
 
   return (
     <div class={`split${current ? ' with-pane' : ''}`}>

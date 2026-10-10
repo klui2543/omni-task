@@ -16,19 +16,32 @@ import { addDays } from '../ui/views/dates'
 import { useStored } from '../ui/views/hooks'
 import { QuickAdd } from './Tasks'
 
-const MODES = ['kanban', 'matrix', 'gantt', 'calendar'] as const
-const MODE_LABEL: Record<(typeof MODES)[number], string> = { kanban: 'Kanban', matrix: 'Matrix', gantt: 'Gantt', calendar: 'ปฏิทิน' }
+export const MODES = ['kanban', 'matrix', 'gantt', 'calendar'] as const
+export type ViewMode = (typeof MODES)[number]
+export const MODE_LABEL: Record<ViewMode, string> = { kanban: 'Kanban', matrix: 'Matrix', gantt: 'Gantt', calendar: 'ปฏิทิน' }
+
+/** A project's own views: the same four over only its tasks, with the way back to its overview (as on Android). */
+export interface ViewsScope {
+  project: string
+  mode: ViewMode
+  setMode: (mode: ViewMode) => void
+  onOverview: () => void
+}
 
 /**
  * The Views tab: Kanban, Matrix, Gantt and the calendars over the same filters as the task list (the filter and
  * sort are shared with it, as on Android). Every change goes through the shared edit path like the other pages.
  */
-export function ViewsPage(p: PageProps) {
-  const [mode, setMode] = useStored('omni.viewMode', 'kanban', MODES)
+export function ViewsPage(p: PageProps & { scope?: ViewsScope }) {
+  const [storedMode, setStoredMode] = useStored('omni.viewMode', 'kanban', MODES)
+  const mode = p.scope?.mode ?? storedMode
+  const setMode = p.scope?.setMode ?? setStoredMode
   const [hide, setHide] = useStored('omni.hideDone', 'yes', ['yes', 'no'] as const)
   const hideDone = hide === 'yes'
-  const [query, setQueryState] = useState<ListQuery>(storedQuery.get)
+  const [stored, setQueryState] = useState<ListQuery>(storedQuery.get)
   const setQuery = (q: ListQuery) => { setQueryState(q); storedQuery.set(q) }
+  // Inside a project the tag filter is the project itself (it also covers its branches, #project/branch).
+  const query: ListQuery = p.scope ? { ...stored, tags: [p.scope.project] } : stored
   const [urgent, setUrgent] = useState(urgentRule.get)
   const [overlay, setOverlay] = useState<'filter' | 'sort' | 'urgent' | null>(null)
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
@@ -67,7 +80,7 @@ export function ViewsPage(p: PageProps) {
     ...query.kinds.map((k): [string, () => void] => [labelOf(KINDS, k), () => setQuery({ ...query, kinds: query.kinds.filter((x) => x !== k) })]),
     ...query.buckets.map((k): [string, () => void] => [labelOf(BUCKETS, k), () => setQuery({ ...query, buckets: query.buckets.filter((x) => x !== k) })]),
     ...query.priorities.map((k): [string, () => void] => [labelOf(PRIORITIES, k), () => setQuery({ ...query, priorities: query.priorities.filter((x) => x !== k) })]),
-    ...query.tags.map((k): [string, () => void] => ['#' + k, () => setQuery({ ...query, tags: query.tags.filter((x) => x !== k) })]),
+    ...(p.scope ? [] : query.tags.map((k): [string, () => void] => ['#' + k, () => setQuery({ ...query, tags: query.tags.filter((x) => x !== k) })])),
     ...(filterCount({ ...query, kinds: [], buckets: [], priorities: [], tags: [] })
       ? [[query.statuses.map((s) => labelOf(STATUSES, s)).join(', ') || 'ทุกสถานะ', () => setQuery({ ...query, statuses: DEFAULT_QUERY.statuses })] as [string, () => void]]
       : []),
@@ -84,8 +97,10 @@ export function ViewsPage(p: PageProps) {
     <div class={`split${current ? ' with-pane' : ''}`}>
       <main class="page views">
         <header class="head vhead">
-          <h1>มุมมอง</h1>
+          {p.scope && <button class="ghost" onClick={p.scope.onOverview}>‹ กลับ</button>}
+          <h1>{p.scope ? p.scope.project : 'มุมมอง'}</h1>
           <div class="seg big" role="tablist" aria-label="ชนิดมุมมอง">
+            {p.scope && <button role="tab" aria-selected={false} onClick={p.scope.onOverview}>ภาพรวม</button>}
             {MODES.map((m) => <button key={m} role="tab" aria-selected={m === mode} onClick={() => setMode(m)}>{MODE_LABEL[m]}</button>)}
           </div>
           <span class="grow" />

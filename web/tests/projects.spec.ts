@@ -406,3 +406,23 @@ test('a change made to a list note meanwhile is kept, not overwritten', async ({
   await expect.poll(() => bucket!.text).toContain('ไปเชียงราย')
   expect(bucket!.text).toContain('เพิ่มจาก Obsidian')
 })
+
+test('a project has its own Kanban, Matrix, Gantt and calendar over just its tasks', async ({ page }) => {
+  await start(page)
+  await page.locator('.pj-card', { hasText: 'peddose' }).click()
+  const tabs = page.getByRole('tablist', { name: 'มุมมองของโปรเจกต์' })
+  await expect(tabs.getByRole('tab', { name: 'ภาพรวม' })).toHaveAttribute('aria-selected', 'true')
+  await tabs.getByRole('tab', { name: 'Kanban' }).click()
+
+  // Only peddose work, branches included; the other projects' tasks stay out.
+  await expect(page.getByRole('heading', { level: 1, name: 'peddose' })).toBeVisible()
+  await expect(page.getByText('ส่งรายงานความก้าวหน้า').first()).toBeVisible()
+  await expect(page.getByText('ทำหน้าเว็บ', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('ทบทวนเคสก่อนราวด์')).toHaveCount(0)
+  await expect(page.getByText('ซื้อนม')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Matrix' }).click()
+  await expect(page.getByText('ทบทวนเคสก่อนราวด์')).toHaveCount(0)
+  await page.getByRole('tab', { name: 'ภาพรวม' }).click()
+  await expect(page.getByRole('tablist', { name: 'มุมมองของโปรเจกต์' })).toBeVisible()
+})

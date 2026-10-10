@@ -1,4 +1,5 @@
 import type { OrderOut, ProjectOut, Task } from '../../types'
+import { MODES, MODE_LABEL, type ViewMode } from '../../pages/Views'
 import { Check } from '../TaskRow'
 import { shortDate } from './bits'
 import { useSortable } from './Sortable'
@@ -27,6 +28,8 @@ export function ProjectOverview(p: {
   onMap: () => void
   onStrict: (on: boolean) => void
   onOrder: (tasks: Task[]) => void
+  /** Opens one of the project's own views (Kanban, Matrix, Gantt, calendar). */
+  onView: (mode: ViewMode) => void
 }) {
   const pr = p.project
   const sort = useSortable(pr.order.map((o) => o.key), (keys) => p.onOrder(keys.map((k) => p.task(k)).filter((t): t is Task => !!t)))
@@ -44,6 +47,10 @@ export function ProjectOverview(p: {
   return (
     <div class="pj-cols">
       <div class="pj-col a">
+        <div class="seg big pj-views" role="tablist" aria-label="มุมมองของโปรเจกต์">
+          <button role="tab" aria-selected>ภาพรวม</button>
+          {MODES.map((m) => <button key={m} role="tab" aria-selected={false} onClick={() => p.onView(m)}>{MODE_LABEL[m]}</button>)}
+        </div>
         <div class="pj-stats">
           <div class="pj-stat"><div class="pj-num lime">{pr.pct}%</div><div class="small muted">เสร็จแล้ว</div></div>
           <div class="pj-stat"><div class={`pj-num${pr.overdue > 0 ? ' red' : ''}`}>{pr.overdue}</div><div class="small muted">เลยกำหนด</div></div>

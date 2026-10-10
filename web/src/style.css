@@ -666,3 +666,6 @@ input.pj-focus-input { border: 1.5px solid var(--accent); border-radius: 12px; p
 .pj-field input { min-height: 44px; border: 1px solid var(--border); border-radius: 12px; padding: 0 12px; background: var(--card); width: 100%; }
 .pj-field input:focus { border-color: var(--accent); }
 .pj-field input.pj-focus-input { border: 1.5px solid var(--accent); }
+
+/* ---------- Project views ---------- */
+.pj-views { align-self: flex-start; }
