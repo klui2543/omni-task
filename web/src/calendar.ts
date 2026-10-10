@@ -1,4 +1,5 @@
 import { DriveError, Drive } from './drive'
+import { hiddenCalendars } from './calendarChoice'
 import type { FocusIn } from './types'
 
 // Google Calendar, read-only: the owner's visible calendars around today, as the events Android reads from the
@@ -36,14 +37,34 @@ const idOf = (key: string) => {
 }
 
 /** The calendars the owner shows, remembered for ten minutes (they rarely change). */
-const calendarLists = new WeakMap<Drive, { at: number; cals: { id: string; selected?: boolean }[] }>()
-async function calendarsOf(drive: Drive) {
+const calendarLists = new WeakMap<Drive, { at: number; cals: CalendarInfo[] }>()
+
+/** One of the owner's Google calendars, as the picker in Settings lists it. */
+export interface CalendarInfo {
+  id: string
+  name: string
+  primary: boolean
+}
+
+/** The calendars Google shows the owner (the ones switched on in Google Calendar), by name. */
+export async function listCalendars(drive: Drive): Promise<CalendarInfo[]> {
   const hit = calendarLists.get(drive)
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit.cals
-  const all: { id: string; selected?: boolean }[] = (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
-  const cals = all.filter((c) => c.selected !== false).slice(0, 20)
-  calendarLists.set(drive, { at: Date.now(), cals })
-  return cals
+  try {
+    const all: { id: string; selected?: boolean; summary?: string; summaryOverride?: string; primary?: boolean }[] =
+      (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
+    const cals = all.filter((c) => c.selected !== false).map((c) => ({ id: c.id, name: c.summaryOverride ?? c.summary ?? c.id, primary: !!c.primary }))
+    calendarLists.set(drive, { at: Date.now(), cals })
+    return cals
+  } catch (e) {
+    throw asCalendarError(e)
+  }
+}
+
+/** The calendars to read: those shown in Google Calendar, less the ones the owner switched off here. */
+async function calendarsOf(drive: Drive) {
+  const off = new Set(hiddenCalendars.get())
+  return (await listCalendars(drive)).filter((c) => !off.has(c.id)).slice(0, 20)
 }
 
 /** Events overlapping [from, to) in every calendar the owner shows, soonest first. */

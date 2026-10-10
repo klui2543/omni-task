@@ -9,6 +9,7 @@ import { ViewsPage } from './pages/Views'
 import { TasksPage } from './pages/Tasks'
 import { createEvent, readEvents, type NewEvent } from './calendar'
 import { calendarCache } from './calendarCache'
+import { listCalendars } from './calendar'
 import { logDone } from './assistantCore'
 import { sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
@@ -37,6 +38,8 @@ export interface PageProps {
   readCalendar: (from: Date, to: Date) => ReturnType<typeof readEvents>
   /** The events last read for a range, however old (undefined when never read): a page shows them while it reads again. */
   peekCalendar: (from: Date, to: Date) => Awaited<ReturnType<typeof readEvents>> | undefined
+  /** The Google calendars the owner has, for choosing which to show; fails with CalendarError when not allowed or not switched on. */
+  listCalendars: () => ReturnType<typeof listCalendars>
   /** Asks Google for the permission to add events to the calendar (a trip to Google and back); asked only when the owner first uses it. */
   onAllowCalendarWrite: () => void
   /** Adds an event to the owner's calendar and returns its page in Google Calendar; fails with CalendarError when not allowed or not switched on. */
@@ -186,7 +189,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     vault, snapshot, busy, run, tick, remove: (t) => takeOut(t, false), fresh,
     onReload: reload, onNavigate: navigate, onChangeVault: p.onChangeVault, onSignOut: p.onSignOut,
     onConnectCalendar: p.onConnectCalendar, readCalendar: calendar.read, peekCalendar: calendar.peek,
-    onAllowCalendarWrite: p.onAllowCalendarWrite,
+    onAllowCalendarWrite: p.onAllowCalendarWrite, listCalendars: () => listCalendars(p.drive),
     addCalendarEvent: async (e) => { const link = await createEvent(p.drive, e); calendar.stale(); return link },
   }
 

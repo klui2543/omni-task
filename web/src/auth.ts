@@ -1,7 +1,8 @@
 // Google sign-in by redirect (OAuth 2.0 for browser apps): the page goes to Google and comes back with a
 // short-lived access token in the address. A redirect, not a popup, because popups are often blocked in an app
 // added to the iPad home screen. The token is kept on this device until it runs out (an hour), so opening the
-// app again does not ask again; after that one quiet round trip to Google renews it.
+// app again does not ask again; after that one quiet round trip to Google renews it. The sign-in as a whole
+// lasts 24 hours from the owner's last sign-in; then the sign-in page asks again.
 
 const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 const REVOKE = 'https://oauth2.googleapis.com/revoke'
@@ -20,6 +21,11 @@ const SILENT_KEY = 'omni.silentTried'
 const RETURN_KEY = 'omni.returnTo'
 const SIGNED_IN_BEFORE = 'omni.signedInBefore'
 const SCOPES_KEY = 'omni.scopes'
+const LOGIN_AT_KEY = 'omni.loginAt'
+const ENDED_KEY = 'omni.sessionEnded'
+
+/** A sign-in lasts this long from the owner's last sign-in; quiet renewals in between do not extend it. */
+export const SESSION_MS = 24 * 60 * 60 * 1000
 
 interface Stored {
   token: string
@@ -48,7 +54,32 @@ const store = {
 export const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '')
 
 export class Auth {
-  constructor(private clientId: string) {}
+  constructor(private clientId: string) {
+    // Signed in before this limit existed: it counts from now. Past the limit, the session is over.
+    if (store.get(localStorage, SIGNED_IN_BEFORE) === '1' && store.get(localStorage, LOGIN_AT_KEY) === null) store.set(localStorage, LOGIN_AT_KEY, String(Date.now()))
+    this.endIfOld()
+  }
+
+  /** Ends the sign-in when the owner last signed in [SESSION_MS] ago or more: the next visit asks for a sign-in. */
+  private endIfOld(): boolean {
+    const at = Number(store.get(localStorage, LOGIN_AT_KEY))
+    if (!at || Date.now() - at < SESSION_MS) return false
+    this.forget()
+    store.set(localStorage, ENDED_KEY, '1')
+    return true
+  }
+
+  private forget() {
+    store.set(localStorage, TOKEN_KEY, null)
+    store.set(localStorage, SIGNED_IN_BEFORE, null)
+    store.set(localStorage, SCOPES_KEY, null)
+    store.set(localStorage, LOGIN_AT_KEY, null)
+  }
+
+  /** Whether the last sign-in ended by itself after 24 hours (the sign-in page says so). */
+  static get sessionEnded(): boolean {
+    return store.get(localStorage, ENDED_KEY) === '1'
+  }
 
   /**
    * Picks up what Google just sent back in the address, if anything, and clears it from the address bar.
@@ -66,6 +97,9 @@ export class Auth {
     if (!expected || p.get('state') !== expected) return 'state_mismatch'
     const token = p.get('access_token')
     if (!token) return p.get('error') ?? 'no_token'
+    // A quiet renewal keeps the time of the last sign-in the owner made; any other trip to Google is a sign-in.
+    if (store.get(sessionStorage, SILENT_KEY) !== '1' || store.get(localStorage, LOGIN_AT_KEY) === null) store.set(localStorage, LOGIN_AT_KEY, String(Date.now()))
+    store.set(localStorage, ENDED_KEY, null)
     const stored: Stored = { token, expiresAt: Date.now() + Number(p.get('expires_in') ?? 3600) * 1000 }
     store.set(localStorage, TOKEN_KEY, JSON.stringify(stored))
     store.set(localStorage, SIGNED_IN_BEFORE, '1')
@@ -77,6 +111,7 @@ export class Auth {
 
   /** The access token while it is still good for a minute or more, else null. */
   get token(): string | null {
+    if (this.endIfOld()) return null
     const raw = store.get(localStorage, TOKEN_KEY)
     if (!raw) return null
     try {
@@ -124,8 +159,7 @@ export class Auth {
   signOut() {
     const token = this.token
     if (token) fetch(`${REVOKE}?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
-    store.set(localStorage, TOKEN_KEY, null)
-    store.set(localStorage, SIGNED_IN_BEFORE, null)
-    store.set(localStorage, SCOPES_KEY, null)
+    this.forget()
+    store.set(localStorage, ENDED_KEY, null)
   }
 }

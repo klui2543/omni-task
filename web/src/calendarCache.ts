@@ -1,4 +1,5 @@
 import { readEvents } from './calendar'
+import { hiddenCalendars } from './calendarChoice'
 import type { Drive } from './drive'
 import type { FocusIn } from './types'
 
@@ -14,7 +15,8 @@ const KEEP_MS = 2 * 60_000
 export function calendarCache(drive: Drive) {
   const kept = new Map<string, { events: Events; at: number }>()
   const reading = new Map<string, Promise<Events>>()
-  const keyOf = (from: Date, to: Date) => `${from.getTime()}|${to.getTime()}`
+  // The calendars switched off are part of the key, so a new choice is read at once.
+  const keyOf = (from: Date, to: Date) => `${from.getTime()}|${to.getTime()}|${hiddenCalendars.get().join(',')}`
 
   return {
     read(from: Date, to: Date): Promise<Events> {

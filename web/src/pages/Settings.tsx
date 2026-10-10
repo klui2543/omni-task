@@ -3,6 +3,9 @@ import { profileApply, profileOf } from '../assistantCore'
 import { applyKindTags, kindsAdd, kindsRemove, kindsToggleHidden, kindsView } from '../core'
 import { customKindTags, firstGlyph, kindsStore } from '../kinds'
 import { Auth, CALENDAR_SCOPE } from '../auth'
+import { CalendarError, type CalendarInfo } from '../calendar'
+import { hiddenCalendars } from '../calendarChoice'
+import { CALENDAR_OFF } from '../calendarFeed'
 import { askOnDone, type PageProps } from '../Home'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { ARCHIVE_DAYS, archiveDays, sweepAndSay } from '../settingsDevice'
@@ -140,6 +143,8 @@ export function SettingsPage(p: PageProps) {
 
           <KindsCard />
 
+          {connected && <CalendarsCard {...p} />}
+
           <section class="set-card">
             <h2>บัญชีและข้อมูล</h2>
             <div class="set-row">
@@ -153,12 +158,12 @@ export function SettingsPage(p: PageProps) {
             <div class="set-row">
               <span class="grow">
                 <span>Google Calendar</span>
-                <span class="set-note">{connected ? 'อ่านนัดและเวรได้แล้ว (เว็บลงนัดให้ไม่ได้ อ่านได้อย่างเดียว)' : 'ยังไม่ได้เชื่อม ให้เว็บอ่านนัดและเวรเพื่อจัดเวลาว่าง'}</span>
+                <span class="set-note">{connected ? 'อ่านนัดและเวรได้แล้ว เลือกปฏิทินที่แสดงได้ด้านล่าง' : 'ยังไม่ได้เชื่อม ให้เว็บอ่านนัดและเวรเพื่อจัดเวลาว่าง'}</span>
               </span>
               {!connected && <button class="pillbtn" onClick={p.onConnectCalendar}>อนุญาต</button>}
             </div>
             <div class="set-row">
-              <span class="grow"><span>บัญชี Google</span><span class="set-note">เข้าสู่ระบบอยู่ จะต่ออายุเองทุกชั่วโมง</span></span>
+              <span class="grow"><span>บัญชี Google</span><span class="set-note">เข้าสู่ระบบอยู่ ครบ 24 ชั่วโมงนับจากการเข้าสู่ระบบครั้งล่าสุดแล้วจะถามใหม่</span></span>
               <button class="pillbtn danger" onClick={p.onSignOut}>ออกจากระบบ</button>
             </div>
             <div class="set-row">
@@ -233,6 +238,44 @@ function KindsCard() {
         <button class="pillbtn" disabled={!name.trim()}>เพิ่ม</button>
       </form>
       {tag && <span class="set-note">จะติดแท็ก #{tag}</span>}
+      {error && <span class="error" role="alert">{error}</span>}
+    </section>
+  )
+}
+
+/** Which of the owner's Google calendars Focus, Views and the assistant show; the rest stay out of the way. */
+function CalendarsCard(p: PageProps) {
+  const [cals, setCals] = useState<CalendarInfo[] | null>(null)
+  const [off, setOff] = useState(hiddenCalendars.get)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    p.listCalendars().then(setCals, (e) => {
+      setCals([])
+      setError(e instanceof CalendarError ? (e.code === 'off' ? CALENDAR_OFF : 'Google ยังไม่อนุญาตให้อ่านปฏิทิน') : 'อ่านรายการปฏิทินไม่ได้ ลองโหลดใหม่')
+    })
+  }, [])
+
+  const toggle = (id: string, shown: boolean) => {
+    const next = shown ? off.filter((x) => x !== id) : [...off, id]
+    hiddenCalendars.set(next)
+    setOff(next)
+  }
+  return (
+    <section class="set-card" aria-label="ปฏิทินที่แสดง">
+      <h2>ปฏิทินที่แสดง</h2>
+      {cals === null && <span class="set-note">กำลังอ่านรายการปฏิทิน...</span>}
+      {cals?.map((c) => (
+        <label key={c.id} class="set-row">
+          <span class="grow">
+            <span>{c.name}</span>
+            {c.primary && <span class="set-note">ปฏิทินหลัก</span>}
+          </span>
+          <input type="checkbox" role="switch" class="switch" aria-label={c.name} checked={!off.includes(c.id)} onChange={(e) => toggle(c.id, e.currentTarget.checked)} />
+        </label>
+      ))}
+      {cals?.length === 0 && !error && <span class="set-note">ไม่พบปฏิทิน</span>}
+      <span class="set-note">เฉพาะปฏิทินที่เปิดไว้ใน Google Calendar ปฏิทินที่เพิ่มใหม่จะแสดงเอง ตัวเลือกนี้อยู่ในเครื่องนี้</span>
       {error && <span class="error" role="alert">{error}</span>}
     </section>
   )

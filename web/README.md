@@ -27,7 +27,8 @@ npm test         # browser tests against a fake Google Drive
 
 The app asks for the `drive` scope, which lets it find the vault folder by name. Sign-in is a redirect to Google and
 back, not a popup, since popups are often blocked in an app added to the iPad home screen. The access token is kept
-on the device for its hour; after that one quiet round trip to Google renews it. Nothing passes through a server of ours.
+on the device for its hour; after that one quiet round trip to Google renews it. A sign-in lasts 24 hours from the
+owner's last sign-in (quiet renewals do not extend it); after that the sign-in page asks again and says why. Nothing passes through a server of ours.
 
 ## Google Calendar on the Focus page (optional)
 
@@ -37,6 +38,9 @@ of `drive`. For it to work:
 
 1. In the same Google Cloud project, enable the Google Calendar API (APIs & Services > Library).
 2. On the consent screen (Data access), add the `.../auth/calendar.readonly` scope.
+
+Settings has a card "ปฏิทินที่แสดง" to switch Google calendars off (only the ones Google Calendar shows are listed; a
+calendar added later shows by default). The choice stays on this device, like the other web settings.
 
 Tapping an event (in the Focus plan, Views or the assistant's agenda) opens its page in Google Calendar.
 
