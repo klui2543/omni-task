@@ -1,6 +1,6 @@
 // The vault logic shared with the Android app, compiled from Kotlin (see ../scripts/sync-core.mjs).
 import { WebApi } from './kotlin/OmniTask-shared.mjs'
-import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList } from './types'
+import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 
 const api = WebApi.getInstance()
 
@@ -49,3 +49,14 @@ export const archiveFilePath: string = api.archiveFile()
 /** The archive note with an archived block taken back out; null when it is no longer there. */
 export const archiveRemove = (archive: string, lines: string[]): string | null =>
   api.archiveRemove(archive, JSON.stringify(lines)) ?? null
+
+/* ---------- Views ---------- */
+
+
+/** Kanban columns, Matrix quadrants, calendar tasks and Gantt bars for the note, under the list's filters. */
+export const views = (fileKey: string, path: string, text: string, state: ViewsIn): ViewsOut =>
+  JSON.parse(api.views(fileKey, path, text, JSON.stringify(state)))
+
+/** Quick add from a Kanban column: the new task starts in [status]. */
+export const addTaskInStatus = (text: string, sentence: string, status: Task['status']) =>
+  result(api.addTaskInStatus(text, sentence, today(), status))

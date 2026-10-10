@@ -78,6 +78,7 @@ export type EditOp =
   | { op: 'kind'; value: Kind }
   | { op: 'describe'; value: string }
   | { op: 'subtask'; value: string }
+  | { op: 'quadrant'; value: Quadrant; field: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK' }
 
 export type Kind = 'NORMAL' | 'WAITING' | 'FUTURE' | 'SOMEDAY'
 
@@ -130,4 +131,31 @@ export interface FocusOut {
   bedtime: string
   evening: string
   softDate: string
+}
+
+/* ---------- Views ---------- */
+
+export type Quadrant = 'DO' | 'PLAN' | 'QUICK' | 'LATER'
+
+/** What the Views page asks of the shared logic; see WebViews.In. */
+export interface ViewsIn {
+  today: string
+  query: Query
+  hideDone: boolean
+  urgent: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK'
+  /** First day of the Gantt range. */
+  ganttFirst: string
+}
+
+/** Task keys by column, quadrant, calendar day and Gantt bar; see WebViews.Out. */
+export interface ViewsOut {
+  shown: number
+  kanban: { status: Task['status']; keys: string[] }[]
+  matrix: { id: Quadrant; label: string; urgent: boolean; important: boolean; keys: string[] }[]
+  /** What to say when a task is dragged across the urgent line. */
+  sideways: string
+  /** Tasks on the calendar; [at] is when the reminder fires (yyyy-MM-ddTHH:mm). */
+  calendar: { key: string; at?: string }[]
+  gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string }[] }[]
+  progress: Record<string, { done: number; total: number }>
 }

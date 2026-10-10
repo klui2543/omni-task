@@ -19,7 +19,15 @@ function Overlay(p: { label: string; side?: boolean; onClose: () => void; childr
  * Filters by kind, date, priority, status and tag, applied as they are tapped. The button at the foot says how
  * many tasks are left; filters can be saved by name, as on Android.
  */
-export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number; onChange: (q: ListQuery) => void; onClose: () => void }) {
+export function FilterPanel(p: {
+  query: ListQuery
+  tags: string[]
+  shown: number
+  onChange: (q: ListQuery) => void
+  onClose: () => void
+  /** The Views page adds Android's "hide done" switch, which only the views honour. */
+  hideDone?: { on: boolean; set: (on: boolean) => void }
+}) {
   const q = p.query
   const [saved, setSaved] = useState(savedFilters.get)
   const [naming, setNaming] = useState<string | null>(null)
@@ -64,6 +72,15 @@ export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number
         {section('ความสำคัญ', PRIORITIES, q.priorities, 'priorities', (k) => PRIORITY_DOT[k])}
         {section('สถานะ', STATUSES, q.statuses, 'statuses')}
         {p.tags.length > 0 && section('Tag', p.tags.map((t): [string, string] => [t, '#' + t]), q.tags, 'tags')}
+        {p.hideDone && (
+          <label class="setting hide-done">
+            <span class="stack">
+              <span>ซ่อนงานที่เสร็จและยกเลิก</span>
+              <span class="muted small">ในมุมมอง Kanban, Matrix, Gantt และปฏิทิน</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" aria-label="ซ่อนงานที่เสร็จและยกเลิก" checked={p.hideDone.on} onChange={(e) => p.hideDone!.set(e.currentTarget.checked)} />
+          </label>
+        )}
       </div>
       {naming !== null ? (
         <form class="panel-foot" onSubmit={(e) => { e.preventDefault(); if (naming.trim()) { keep([...saved.filter((s) => s.name !== naming.trim()), { name: naming.trim(), query: q }]); setNaming(null) } }}>
@@ -81,7 +98,7 @@ export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number
 }
 
 /** Grouping and up to three sort levels in one box, as on Android. */
-export function SortDialog(p: { query: ListQuery; onChange: (q: ListQuery) => void; onClose: () => void }) {
+export function SortDialog(p: { query: ListQuery; onChange: (q: ListQuery) => void; onClose: () => void; /** Views have no grouping. */ noGroup?: boolean }) {
   const q = p.query
   const sorts = q.sorts.length ? q.sorts : DEFAULT_QUERY.sorts
   const setSorts = (s: ListQuery['sorts']) => p.onChange({ ...q, sorts: s })
@@ -89,14 +106,14 @@ export function SortDialog(p: { query: ListQuery; onChange: (q: ListQuery) => vo
   return (
     <Overlay label="จัดกลุ่มและเรียงลำดับ" onClose={p.onClose}>
       <div class="sort-cols">
-        <div class="sort-groups" role="radiogroup" aria-label="จัดกลุ่มตาม">
+        {!p.noGroup && <div class="sort-groups" role="radiogroup" aria-label="จัดกลุ่มตาม">
           <h2>จัดกลุ่มตาม</h2>
           {GROUPS.map(([k, label]) => (
             <button key={k} class="option" role="radio" aria-checked={q.groupBy === k} onClick={() => p.onChange({ ...q, groupBy: k })}>
               <span>{label}</span><span class="accent-text">{q.groupBy === k ? '✓' : ''}</span>
             </button>
           ))}
-        </div>
+        </div>}
         <div class="sort-levels">
           <h2>เรียงลำดับ</h2>
           {sorts.map((s, i) => (

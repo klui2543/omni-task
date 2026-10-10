@@ -1,9 +1,9 @@
 import {
   addTask, focus, archiveAppend, archiveFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
-  restoreBlock, taskFilePath, toggle,
+  restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
 import { Drive, DriveFile, sameName } from './drive'
-import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList } from './types'
+import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 
 /** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
 export interface Cut {
@@ -76,6 +76,11 @@ export class Vault {
 
   add(sentence: string) {
     return this.edit((text) => addTask(text, sentence))
+  }
+
+  /** Adds a task that starts in [status] (the "+" on a Kanban column). */
+  addInStatus(sentence: string, status: Task['status']) {
+    return this.edit((text) => addTaskInStatus(text, sentence, status))
   }
 
   change(task: Task, op: EditOp) {
@@ -153,6 +158,11 @@ export class Snapshot {
 
   focus(state: FocusIn): FocusOut {
     return focus(this.fileId, taskFilePath, this.text, state)
+  }
+
+  /** The Views page: Kanban, Matrix, Gantt and calendar tasks under the list's filters. */
+  views(state: ViewsIn): ViewsOut {
+    return views(this.fileId, taskFilePath, this.text, state)
   }
 }
 

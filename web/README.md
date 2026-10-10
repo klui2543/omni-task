@@ -37,7 +37,8 @@ of `drive`. For it to work:
 1. In the same Google Cloud project, enable the Google Calendar API (APIs & Services > Library).
 2. On the consent screen (Data access), add the `.../auth/calendar.readonly` scope.
 
-If step 1 is missing, the Focus page says so instead of showing events. The tests use a stand-in for Google Calendar;
+The Views page (Gantt, month and 7, 3 or 1 day calendars) reads the same calendar with the same permission. If
+step 1 is missing, the Focus page says so instead of showing events. The tests use a stand-in for Google Calendar;
 the real service has not been tried yet.
 
 ## On a computer
