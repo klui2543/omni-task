@@ -5,6 +5,7 @@ import {
 import { Drive, DriveError, DriveFile, FOLDER, sameName } from './drive'
 import { branchStates } from './ui/projects/projectState'
 import { config } from './config'
+import { customKindTags } from './kinds'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 import {
   addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
@@ -570,7 +571,8 @@ export class Snapshot {
   /** The Projects page: projects, branches and lists, from every note, the list notes and what this device chose. */
   projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
     const s = this.source()
-    return this.memoed('projects', { state, notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }, () =>
+    // The kinds of your own are read by projects() from this device's settings, so they are part of the key.
+    return this.memoed('projects', { state, kindTags: customKindTags(), notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }, () =>
       projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state))
   }
 
