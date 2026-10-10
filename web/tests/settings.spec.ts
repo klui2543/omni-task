@@ -123,6 +123,6 @@ test('what only Android can do is said so, with no switches that do nothing', as
 
 test('Google Calendar is read only, and says so', async ({ page }) => {
   await openSettings(page, { granted: true })
-  await expect(page.getByText('อ่านนัดและเวรได้แล้ว (เว็บลงนัดให้ไม่ได้ อ่านได้อย่างเดียว)')).toBeVisible()
+  await expect(page.getByText('อ่านนัดและเวรได้แล้ว เลือกปฏิทินที่แสดงได้ด้านล่าง')).toBeVisible()
   await page.getByRole('button', { name: 'ออกจากระบบ' }).waitFor()
 })

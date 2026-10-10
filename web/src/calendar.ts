@@ -1,4 +1,5 @@
 import { DriveError, Drive } from './drive'
+import { hiddenCalendars } from './calendarChoice'
 import type { FocusIn } from './types'
 
 // Google Calendar, read-only: the owner's visible calendars around today, as the events Android reads from the
@@ -35,16 +36,50 @@ const idOf = (key: string) => {
   return id
 }
 
+/** The calendars the owner shows, remembered for ten minutes (they rarely change). */
+const calendarLists = new WeakMap<Drive, { at: number; cals: CalendarInfo[] }>()
+
+/** One of the owner's Google calendars, as the picker in Settings lists it. */
+export interface CalendarInfo {
+  id: string
+  name: string
+  primary: boolean
+}
+
+/** The calendars Google shows the owner (the ones switched on in Google Calendar), by name. */
+export async function listCalendars(drive: Drive): Promise<CalendarInfo[]> {
+  const hit = calendarLists.get(drive)
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.cals
+  try {
+    const all: { id: string; selected?: boolean; summary?: string; summaryOverride?: string; primary?: boolean }[] =
+      (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
+    const cals = all.filter((c) => c.selected !== false).map((c) => ({ id: c.id, name: c.summaryOverride ?? c.summary ?? c.id, primary: !!c.primary }))
+    calendarLists.set(drive, { at: Date.now(), cals })
+    return cals
+  } catch (e) {
+    throw asCalendarError(e)
+  }
+}
+
+/** The calendars to read: those shown in Google Calendar, less the ones the owner switched off here. */
+async function calendarsOf(drive: Drive) {
+  const off = new Set(hiddenCalendars.get())
+  return (await listCalendars(drive)).filter((c) => !off.has(c.id)).slice(0, 20)
+}
+
 /** Events overlapping [from, to) in every calendar the owner shows, soonest first. */
 export async function readEvents(drive: Drive, from: Date, to: Date): Promise<FocusIn['events']> {
   try {
-    const cals: { id: string; selected?: boolean }[] = (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
+    const cals = await calendarsOf(drive)
     const out: FocusIn['events'] = []
-    for (const cal of cals.filter((c) => c.selected !== false).slice(0, 20)) {
-      const params = new URLSearchParams({
-        timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
-      })
-      const items: GoogleEvent[] = (await drive.json(`${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}`)).items ?? []
+    const params = new URLSearchParams({
+      timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
+    })
+    // Every calendar is asked at the same time, not one after the other.
+    const lists = await Promise.all(cals.map(async (cal) => ({
+      cal, items: ((await drive.json(`${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}`)).items ?? []) as GoogleEvent[],
+    })))
+    for (const { cal, items } of lists) {
       for (const e of items) {
         if (e.status === 'cancelled' || e.attendees?.some((a) => a.self && a.responseStatus === 'declined')) continue
         const allDay = !!e.start?.date

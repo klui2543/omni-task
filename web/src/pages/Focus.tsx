@@ -23,10 +23,18 @@ const greeting = (d: Date) => (d.getHours() < 12 ? 'สวัสดีตอน�
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
 
+/** Yesterday to the end of tomorrow. */
+function focusRange() {
+  const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - 1)
+  const to = new Date(from); to.setDate(to.getDate() + 3)
+  return { from, to }
+}
+
 export function FocusPage(p: PageProps) {
   const [local, setLocal] = useFocusLocal()
-  const [profile, setProfile] = useState<string | null>(null)
-  const [events, setEvents] = useState<FocusIn['events']>([])
+  // What was read when the page was last open is shown at once; the page reads again behind it.
+  const [profile, setProfile] = useState<string | null>(() => p.vault.peekProfile() ?? null)
+  const [events, setEvents] = useState<FocusIn['events']>(() => { const r = focusRange(); return p.peekCalendar(r.from, r.to) ?? [] })
   const [calendarNote, setCalendarNote] = useState('')
   const [minute, setMinute] = useState(() => localIso(new Date()))
   const [menu, setMenu] = useState(false)
@@ -55,8 +63,7 @@ export function FocusPage(p: PageProps) {
   useEffect(() => {
     if (!connected || !p.snapshot || Date.now() - lastRead.current < 60_000) return
     lastRead.current = Date.now()
-    const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - 1)
-    const to = new Date(from); to.setDate(to.getDate() + 3)
+    const { from, to } = focusRange()
     p.readCalendar(from, to).then(
       (e) => { setEvents(e); setCalendarNote('') },
       (e) => {

@@ -103,6 +103,8 @@ data class UiState(
     /** Null until the first load; then whether the app may read the phone's calendars. */
     val calendarAccess: Boolean? = null,
     val calendars: List<CalendarReader.Calendar> = emptyList(),
+    /** Ids of the phone's calendars the owner switched off in Omni (this phone only). */
+    val hiddenCalendars: Set<Long> = emptySet(),
     val pendingImage: PendingImage? = null,
     /** The report of a crash since the app was last open, shown once so it can be copied. */
     val crash: String? = null,
@@ -247,6 +249,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { e.substringBeforeLast('|') to LocalDate.parse(e.substringAfterLast('|')) }.getOrNull()
         }.toMap(),
         notify = Scheduler.loadSettings(getApplication()),
+        hiddenCalendars = CalendarReader.hiddenIds(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         countdown = prefs.getString(KEY_COUNTDOWN, null),
@@ -636,6 +639,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Calendar access just changed: read the events again and let the alarms pick them up. */
     fun calendarChanged() = reload()
+
+    /** Switches a calendar on or off in Omni, then reads the events again so every screen follows. */
+    fun setCalendarShown(id: Long, shown: Boolean) {
+        CalendarReader.setShown(getApplication(), id, shown)
+        _state.update { it.copy(hiddenCalendars = CalendarReader.hiddenIds(getApplication())) }
+        reload()
+    }
 
     fun setFutureCount(count: Int) {
         prefs.edit().putInt(KEY_FUTURE_COUNT, count).apply()
@@ -1473,6 +1483,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_ASK_ON_DONE = "archive.askOnDone"
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
-        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT)
+        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN)
     }
 }

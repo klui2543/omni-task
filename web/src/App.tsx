@@ -44,6 +44,7 @@ export function App({ authError }: { authError: string | null }) {
     return (
       <SignIn
         error={authError && !QUIET_ERRORS.includes(authError) ? authError : null}
+        ended={Auth.sessionEnded}
         onSignIn={() => auth!.signIn('select_account')}
         onReset={() => { config.clientId = null; setClientId(null) }}
       />
@@ -85,11 +86,12 @@ function Setup({ onSave }: { onSave: (id: string) => void }) {
   )
 }
 
-function SignIn({ error, onSignIn, onReset }: { error: string | null; onSignIn: () => void; onReset: () => void }) {
+function SignIn({ error, ended, onSignIn, onReset }: { error: string | null; ended: boolean; onSignIn: () => void; onReset: () => void }) {
   return (
     <main class="card center">
       <h1>Omni Task</h1>
       <p>อ่านและเขียนงานใน Obsidian vault ของคุณบน Google Drive โดยตรง</p>
+      {ended && <p class="muted" role="status">ครบ 24 ชั่วโมงนับจากการเข้าสู่ระบบครั้งล่าสุด กรุณาเข้าสู่ระบบอีกครั้ง</p>}
       <button class="primary" onClick={onSignIn}>เข้าสู่ระบบด้วย Google</button>
       {error && <p class="error" role="alert">เข้าสู่ระบบไม่สำเร็จ ({error})</p>}
       <button class="link" onClick={onReset}>เปลี่ยน Client ID</button>

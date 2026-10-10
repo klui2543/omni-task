@@ -26,7 +26,7 @@ type Dialog =
  */
 export function ProjectsPage(p: PageProps) {
   const [local, setLocal] = useProjectsLocal()
-  const [notes, setNotes] = useState<ListNote[] | null>(null)
+  const [notes, setNotes] = useState<ListNote[] | null>(() => p.vault.peekLists() ?? null)
   const [openName, setOpenName] = useState<string | null>(null)
   const [openPath, setOpenPath] = useState<string | null>(null)
   const [mapping, setMapping] = useState(false)

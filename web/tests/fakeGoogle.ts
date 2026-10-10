@@ -23,6 +23,8 @@ export class FakeDrive {
   /** Google Calendar: the events one calendar holds, and whether the Calendar API is switched off for the project. */
   events: { title: string; begin: Date; end: Date; allDay?: boolean; link?: string }[] = []
   calendarOff = false
+  /** More calendars beside the primary one, each with its own events. */
+  otherCalendars: { id: string; name: string; selected?: boolean; events: { title: string; begin: Date; end: Date; allDay?: boolean }[] }[] = []
   /** Whether the owner has agreed to read the calendar; set by the sign-in page when it is asked for. */
   calendarGranted = false
   /** Whether the owner has agreed to add events (the calendar.events scope); set by the sign-in page when it is asked for. */
@@ -154,7 +156,7 @@ export class FakeDrive {
 
       if (url.pathname === '/calendar/v3/users/me/calendarList') {
         if (this.calendarOff) return route.fulfill({ status: 403, body: 'accessNotConfigured: Google Calendar API has not been used in project' })
-        return json({ items: [{ id: 'primary', selected: true }] })
+        return json({ items: [{ id: 'primary', selected: true, summary: 'ปฏิทินของฉัน', primary: true }, ...this.otherCalendars.map((c) => ({ id: c.id, selected: c.selected ?? true, summary: c.name }))] })
       }
       if (url.pathname === '/calendar/v3/calendars/primary/events' && req.method() === 'POST') {
         if (!this.calendarWriteGranted) return route.fulfill({ status: 403, body: 'insufficientPermissions: Request had insufficient authentication scopes' })
@@ -169,6 +171,18 @@ export class FakeDrive {
           end: allDay ? new Date(body.end.date + 'T00:00') : new Date(body.end.dateTime),
         })
         return json({ id: `new${this.inserted.length}`, htmlLink: `https://www.google.com/calendar/event?eid=new${this.inserted.length}` })
+      }
+      const other = /^\/calendar\/v3\/calendars\/([^/]+)\/events$/.exec(url.pathname)
+      if (other && other[1] !== 'primary' && req.method() === 'GET') {
+        const cal = this.otherCalendars.find((c) => c.id === decodeURIComponent(other[1]))
+        const day2 = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const from2 = new Date(url.searchParams.get('timeMin')!).getTime()
+        const to2 = new Date(url.searchParams.get('timeMax')!).getTime()
+        return json({ items: (cal?.events ?? []).filter((e) => e.end.getTime() > from2 && e.begin.getTime() < to2).map((e, i) => ({
+          id: `${other[1]}-${i}`, summary: e.title,
+          start: e.allDay ? { date: day2(e.begin) } : { dateTime: e.begin.toISOString() },
+          end: e.allDay ? { date: day2(e.end) } : { dateTime: e.end.toISOString() },
+        })) })
       }
       if (url.pathname === '/calendar/v3/calendars/primary/events') {
         const from = new Date(url.searchParams.get('timeMin')!).getTime()
