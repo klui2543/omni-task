@@ -18,6 +18,11 @@ export class FakeDrive {
   signIns: string[] = []
   /** Makes Google refuse quiet renewals, as when the owner has signed out of Google meanwhile. */
   refuseQuiet = false
+  /** Google Calendar: the events one calendar holds, and whether the Calendar API is switched off for the project. */
+  events: { title: string; begin: Date; end: Date; allDay?: boolean }[] = []
+  calendarOff = false
+  /** Whether the owner has agreed to read the calendar; set by the sign-in page when it is asked for. */
+  calendarGranted = false
   /** Runs once, right after the app's next read of a file, to play someone else editing it. */
   afterNextRead: ((n: Node) => void) | null = null
 
@@ -51,8 +56,11 @@ export class FakeDrive {
       const q = new URL(route.request().url()).searchParams
       this.signIns.push(q.get('prompt') ?? '')
       const back = new URLSearchParams({ state: q.get('state') ?? '' })
+      if (q.get('scope')?.includes('calendar.readonly')) this.calendarGranted = true
       if (q.get('prompt') === 'none' && this.refuseQuiet) back.set('error', 'interaction_required')
       else {
+        // The token covers what was agreed to before as well, as Google does with include_granted_scopes.
+        back.set('scope', 'https://www.googleapis.com/auth/drive' + (this.calendarGranted ? ' https://www.googleapis.com/auth/calendar.readonly' : ''))
         back.set('access_token', 'fake-token')
         back.set('token_type', 'Bearer')
         back.set('expires_in', '3600')
@@ -65,6 +73,24 @@ export class FakeDrive {
       this.requests.push(`${req.method()} ${url.pathname}${url.search}`)
       const json = (body: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
       if (req.headers()['authorization'] !== 'Bearer fake-token') return route.fulfill({ status: 401, body: 'no' })
+
+      if (url.pathname === '/calendar/v3/users/me/calendarList') {
+        if (this.calendarOff) return route.fulfill({ status: 403, body: 'accessNotConfigured: Google Calendar API has not been used in project' })
+        return json({ items: [{ id: 'primary', selected: true }] })
+      }
+      if (url.pathname === '/calendar/v3/calendars/primary/events') {
+        const from = new Date(url.searchParams.get('timeMin')!).getTime()
+        const to = new Date(url.searchParams.get('timeMax')!).getTime()
+        const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const items = this.events
+          .filter((e) => e.end.getTime() > from && e.begin.getTime() < to)
+          .map((e, i) => ({
+            id: `e${i}`, summary: e.title,
+            start: e.allDay ? { date: day(e.begin) } : { dateTime: e.begin.toISOString() },
+            end: e.allDay ? { date: day(e.end) } : { dateTime: e.end.toISOString() },
+          }))
+        return json({ items })
+      }
 
       const m = /\/files\/?([^/?]*)$/.exec(url.pathname)
       const id = m?.[1]

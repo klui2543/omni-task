@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { Auth } from './auth'
+import { Auth, CALENDAR_SCOPE } from './auth'
 import { config } from './config'
 import { AuthExpired, Drive, DriveFile } from './drive'
 import { Main } from './Home'
@@ -59,6 +59,7 @@ export function App({ authError }: { authError: string | null }) {
       drive={drive!}
       vaultId={vaultId!}
       onSignIn={signIn}
+      onConnectCalendar={() => auth!.signIn('select_account', CALENDAR_SCOPE)}
       onSignOut={() => { auth!.signOut(); setSignedIn(false); location.reload() }}
       onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
     />

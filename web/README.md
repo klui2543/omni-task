@@ -28,6 +28,18 @@ The app asks for the `drive` scope, which lets it find the vault folder by name.
 back, not a popup, since popups are often blocked in an app added to the iPad home screen. The access token is kept
 on the device for its hour; after that one quiet round trip to Google renews it. Nothing passes through a server of ours.
 
+## Google Calendar on the Focus page (optional)
+
+The Focus page can read your Google Calendar (events and shifts in the day plan, free time, the night's sleep). It is
+off until you press "อนุญาต" on the Focus page, which asks Google for the read-only `calendar.readonly` scope on top
+of `drive`. For it to work:
+
+1. In the same Google Cloud project, enable the Google Calendar API (APIs & Services > Library).
+2. On the consent screen (Data access), add the `.../auth/calendar.readonly` scope.
+
+If step 1 is missing, the Focus page says so instead of showing events. The tests use a stand-in for Google Calendar;
+the real service has not been tried yet.
+
 ## On a computer
 
 The same address works in any desktop browser. Chrome and Edge can also install it as an app (the install icon in

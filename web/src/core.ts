@@ -1,6 +1,6 @@
 // The vault logic shared with the Android app, compiled from Kotlin (see ../scripts/sync-core.mjs).
 import { WebApi } from './kotlin/OmniTask-shared.mjs'
-import type { EditOp, EditResult, Query, Task, TaskList } from './types'
+import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList } from './types'
 
 const api = WebApi.getInstance()
 
@@ -15,6 +15,10 @@ export const loadTasks = (fileKey: string, path: string, text: string): Task[] =
 /** The list as Android shows it for [query]: groups of task keys, plus each parent's subtask progress. */
 export const listTasks = (fileKey: string, path: string, text: string, query: Query): TaskList =>
   JSON.parse(api.list(fileKey, path, text, today(), JSON.stringify(query)))
+
+/** The Focus page for the note: brief, day plan, suggestions and review queue, from what this device chose. */
+export const focus = (fileKey: string, path: string, text: string, state: FocusIn): FocusOut =>
+  JSON.parse(api.focus(fileKey, path, text, JSON.stringify(state)))
 
 const result = (json: string): EditResult => JSON.parse(json)
 

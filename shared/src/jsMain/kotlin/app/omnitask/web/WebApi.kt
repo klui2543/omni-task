@@ -15,6 +15,8 @@ object WebApi {
 
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String = WebCore.list(fileKey, path, text, today, query)
 
+    fun focus(fileKey: String, path: String, text: String, state: String): String = WebFocus.build(fileKey, path, text, state)
+
     fun toggle(text: String, raw: String, lineIndex: Int, today: String, withSubtasks: Boolean): String =
         WebCore.guarded { WebCore.toggle(text, raw, lineIndex, today, withSubtasks) }
 

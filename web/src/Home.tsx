@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { config } from './config'
 import { AuthExpired, Drive } from './drive'
+import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
 import { SoonPage } from './pages/Soon'
 import { TasksPage } from './pages/Tasks'
+import { readEvents } from './calendar'
 import { Shell, TABS, usePage } from './Shell'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
@@ -38,7 +40,7 @@ const offersFinish = (t: Task, tasks: Task[], withSubtasks: boolean) => {
   return withSubtasks ? below(t.key).every((c) => !c.open || c.parent === t.key) : below(t.key).every((c) => !c.open)
 }
 
-export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onSignOut: () => void; onChangeVault: () => void }) {
+export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onConnectCalendar: () => void; onSignOut: () => void; onChangeVault: () => void }) {
   const vault = useMemo(() => new Vault(p.drive, p.vaultId, config.taskFileId), [p.drive, p.vaultId])
   const [page, navigate] = usePage()
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
@@ -154,7 +156,17 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         </div>
       )}
 
-      {page === 'tasks' ? <TasksPage {...props} />
+      {page === 'focus' ? (
+        <FocusPage
+          {...props}
+          onConnectCalendar={p.onConnectCalendar}
+          onReload={reload}
+          onChangeVault={p.onChangeVault}
+          onNavigate={navigate}
+          readCalendar={(from, to) => readEvents(p.drive, from, to)}
+        />
+      )
+        : page === 'tasks' ? <TasksPage {...props} />
         : page === 'settings' ? <SettingsPage busy={busy} onReload={reload} onChangeVault={p.onChangeVault} onSignOut={p.onSignOut} />
         : <SoonPage title={title} onTasks={() => navigate('tasks')} />}
 
