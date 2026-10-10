@@ -100,6 +100,17 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/omni-release.jks"
           echo "OMNI_KEYSTORE_FILE=$RUNNER_TEMP/omni-release.jks" >> "$GITHUB_ENV"
 
+      # The Android OAuth client for Google Drive (Google Cloud Console > Credentials) needs this fingerprint.
+      # It is public: it identifies the signing certificate, not the key.
+      - name: Release key fingerprint
+        env:
+          OMNI_KEYSTORE_PASSWORD: ${{ secrets.OMNI_KEYSTORE_PASSWORD }}
+          OMNI_KEY_ALIAS: ${{ secrets.OMNI_KEY_ALIAS }}
+        run: |
+          sha1=$(keytool -list -v -keystore "$OMNI_KEYSTORE_FILE" -storepass "$OMNI_KEYSTORE_PASSWORD" -alias "$OMNI_KEY_ALIAS" | grep -E '^\s*SHA1:' | sed 's/.*SHA1: *//')
+          echo "Release key SHA-1: $sha1"
+          echo "Release key SHA-1 (for the Android OAuth client): \`$sha1\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build signed release
         env:
           OMNI_KEYSTORE_PASSWORD: ${{ secrets.OMNI_KEYSTORE_PASSWORD }}
@@ -114,8 +125,10 @@ jobs:
           name: omni-task
           path: dist/*.apk
 
-      # Obtainium on the phone watches these releases and offers each update.
+      # Obtainium on the phone watches these releases and offers each update. Only main publishes, so a run on
+      # a branch (started by hand) tests and builds without offering an unmerged build to the phone.
       - name: Publish GitHub release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
