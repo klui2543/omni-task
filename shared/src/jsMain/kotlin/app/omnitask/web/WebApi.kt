@@ -43,4 +43,33 @@ object WebApi {
 
     /** The vault path of the live task file. */
     fun taskFile(): String = app.omnitask.data.VaultText.TASK_FILE
+
+    // ---- Projects and lists ----
+
+    fun projects(fileKey: String, path: String, text: String, notes: String, state: String, today: String): String =
+        WebProjects.build(fileKey, path, text, notes, state, today)
+
+    fun projectRenameTag(text: String, old: String, new: String): String = WebProjects.renameTag(text, old, new)
+
+    fun projectCleanName(name: String): String = WebProjects.cleanProjectName(name)
+
+    fun projectAddTagged(text: String, tag: String, title: String, today: String): String = WebProjects.addTagged(text, tag, title, today)
+
+    fun projectChain(text: String, ordered: String, on: Boolean): String = WebProjects.chain(text, ordered, on)
+
+    fun projectBranchChange(fileKey: String, path: String, text: String, states: String, op: String): String =
+        WebProjects.branchChange(fileKey, path, text, states, op)
+
+    fun listStarters(): String = WebProjects.starters()
+
+    fun listIconThemes(): String = WebProjects.iconThemes()
+
+    fun listCreate(name: String, icon: String, categories: String): String = WebProjects.createList(name, icon, categories)
+
+    fun listUpdate(text: String, path: String, icon: String, categories: String): String = WebProjects.updateList(text, path, icon, categories)
+
+    fun listAddItem(text: String, path: String, title: String, category: String?, today: String): String =
+        WebProjects.addListItem(text, path, title, category, today)
+
+    fun listInclude(text: String, tasks: String, tag: String, category: String?): String = WebProjects.includeInList(text, tasks, tag, category)
 }
