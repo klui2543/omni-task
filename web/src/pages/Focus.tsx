@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Auth, CALENDAR_SCOPE } from '../auth'
 import { CalendarError, localIso } from '../calendar'
 import { today } from '../core'
+import { customKindTags, kindsStore } from '../kinds'
 import { skippedToday, useFocusLocal } from '../focusState'
 import type { PageProps } from '../Home'
 import type { EditOp, FocusIn, FocusOut, PlanItem, Task } from '../types'
@@ -82,9 +83,13 @@ export function FocusPage(p: PageProps) {
       })()
     : null
 
+  const hiddenKinds = kindsStore.get().hidden
+  const showWaiting = !hiddenKinds.includes('WAITING')
+  const showFuture = !hiddenKinds.includes('FUTURE')
+
   const markReviewed = (t: Task) => setLocal((s) => ({ ...s, reviewed: { ...s.reviewed, [t.title]: today() } }))
   const change = (t: Task, op: EditOp) => p.run(() => p.vault.change(p.fresh(t), op))
-  const setKind = (t: Task, kind: 'NORMAL' | 'FUTURE' | 'SOMEDAY') => { markReviewed(t); change(t, { op: 'kind', value: kind }) }
+  const setKind = (t: Task, kind: 'NORMAL' | 'FUTURE' | 'SOMEDAY') => { markReviewed(t); change(t, { op: 'kind', value: kind, custom: customKindTags() }) }
 
   const accept = (s: FocusOut['suggestions'][number]) => {
     const t = task(s.key)
@@ -269,8 +274,9 @@ export function FocusPage(p: PageProps) {
                 </section>
               )}
 
-              <div class="pair">
-                <section class="fcard sidecard">
+              {/* Either card goes when its kind is hidden in Settings; the other then takes the row. */}
+              {(showWaiting || showFuture) && <div class="pair">
+                {showWaiting && <section class="fcard sidecard">
                   <div class="side-head"><span class="strong grow">คนรออยู่</span><span class="count">{f.waiting.length}</span></div>
                   {f.waiting.length === 0 && <span class="muted small">ติด #รอ/ชื่อ ให้งานที่มีคนรอ</span>}
                   {f.waiting.map((w) => {
@@ -285,9 +291,9 @@ export function FocusPage(p: PageProps) {
                       </div>
                     )
                   })}
-                </section>
+                </section>}
 
-                <section class="fcard sidecard">
+                {showFuture && <section class="fcard sidecard">
                   <div class="side-head"><span class="strong grow">ลงทุนอนาคต</span></div>
                   {f.future.length === 0 && <span class="muted small">เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์</span>}
                   {f.future.map((k) => {
@@ -311,8 +317,8 @@ export function FocusPage(p: PageProps) {
                     <span class="stepn" aria-live="polite">{local.futureCount}</span>
                     <button class="round" aria-label="เพิ่ม" onClick={() => setLocal((x) => ({ ...x, futureCount: Math.min(5, x.futureCount + 1) }))}>+</button>
                   </div>
-                </section>
-              </div>
+                </section>}
+              </div>}
             </div>
           </div>
         )}

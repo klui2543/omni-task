@@ -116,7 +116,9 @@ test('what only Android can do is said so, with no switches that do nothing', as
   // English is shown but cannot be picked: the web is Thai only.
   await expect(page.getByRole('radio', { name: 'English' })).toBeDisabled()
   await expect(page.getByRole('radio', { name: 'ไทย' })).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByText('ประเภทที่ตั้งเองและการซ่อนประเภท')).toBeVisible()
+  // Task kinds are managed here on the web (see kinds.spec.ts), so they are not on the Android-only list.
+  await expect(page.getByRole('region', { name: 'ประเภทงาน' })).toBeVisible()
+  await expect(page.getByText('ประเภทที่ตั้งเองและการซ่อนประเภท')).toHaveCount(0)
 })
 
 test('Google Calendar is read only, and says so', async ({ page }) => {

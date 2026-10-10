@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { profileApply, profileOf } from '../assistantCore'
+import { applyKindTags, kindsAdd, kindsRemove, kindsToggleHidden, kindsView } from '../core'
+import { customKindTags, firstGlyph, kindsStore } from '../kinds'
 import { Auth, CALENDAR_SCOPE } from '../auth'
 import { askOnDone, type PageProps } from '../Home'
 import { URGENT_RULES, urgentRule } from '../settings'
@@ -136,6 +138,8 @@ export function SettingsPage(p: PageProps) {
             </div>
           </section>
 
+          <KindsCard />
+
           <section class="set-card">
             <h2>บัญชีและข้อมูล</h2>
             <div class="set-row">
@@ -166,13 +170,6 @@ export function SettingsPage(p: PageProps) {
                   onClick={() => { urgentRule.set(rule); setUrgent(rule) }}>{label}</button>
               ))}
             </div>
-            <div class="set-row">
-              <span class="grow">
-                <span>ประเภทงาน</span>
-                <span class="set-note">ปกติ, มีคนรอ, ลงทุนอนาคต, พักไว้ก่อน ส่วนประเภทที่ตั้งเองและการซ่อนประเภท ตั้งได้ในแอป Android</span>
-              </span>
-              <span class="set-android">ใช้ได้ในแอป Android</span>
-            </div>
           </section>
 
           <section class="set-card" aria-label="การแจ้งเตือน">
@@ -188,5 +185,55 @@ export function SettingsPage(p: PageProps) {
         </div>
       </div>
     </main>
+  )
+}
+
+/**
+ * Android's "ประเภทงาน" manager: hide the built-in kinds that are not used (their card on Focus goes too) and make
+ * kinds of your own, each a name, an emoji and the tag that marks it. Kept on this device.
+ */
+function KindsCard() {
+  const [view, setView] = useState(() => kindsView(kindsStore.get()))
+  const [name, setName] = useState('')
+  const [emoji, setEmoji] = useState('')
+  const [error, setError] = useState('')
+  const keep = (v: typeof view) => { kindsStore.set(v.state); setView(v); applyKindTags(customKindTags(v.state)) }
+  const tag = name.trim() ? kindsAdd(view.state, name, '').tag : ''
+  const add = (e: Event) => {
+    e.preventDefault()
+    const r = kindsAdd(view.state, name, firstGlyph(emoji))
+    if (!r.ok) { setError(r.error === 'taken' ? 'มีประเภทนี้อยู่แล้ว' : 'ใส่ชื่อประเภท'); return }
+    keep(r.view); setName(''); setEmoji(''); setError('')
+  }
+  return (
+    <section class="set-card" aria-label="ประเภทงาน">
+      <h2>ประเภทงาน</h2>
+      <span class="set-note">ประเภทที่มากับแอป</span>
+      {view.builtin.filter((b) => b.id !== 'NORMAL').map((b) => (
+        <div key={b.id} class="set-row">
+          <span class={`grow${b.hidden ? ' faint' : ''}`}>
+            <span>{b.label}</span>
+            <span class="set-note">{b.tag ? '#' + b.tag : ''}</span>
+          </span>
+          <button class="pillbtn" aria-label={`${b.hidden ? 'แสดง' : 'ซ่อน'} ${b.label}`} onClick={() => keep(kindsToggleHidden(view.state, b.id))}>{b.hidden ? 'แสดง' : 'ซ่อน'}</button>
+        </div>
+      ))}
+      <span class="set-note">ซ่อนแล้วการ์ดของประเภทนั้นในหน้าโฟกัสจะหายไปด้วย</span>
+      <span class="set-note kinds-sub">ประเภทของคุณ</span>
+      {view.custom.length === 0 && <span class="set-note">ยังไม่มี</span>}
+      {view.custom.map((c) => (
+        <div key={c.tag} class="set-row">
+          <span class="grow"><span>{c.label}</span><span class="set-note">#{c.tag}</span></span>
+          <button class="pillbtn danger" aria-label={`ลบ ${c.label}`} onClick={() => keep(kindsRemove(view.state, c.tag))}>ลบ</button>
+        </div>
+      ))}
+      <form class="kind-add" onSubmit={add}>
+        <input class="field kind-emoji" aria-label="อีโมจิของประเภท" placeholder="🏷️" value={emoji} onInput={(e) => setEmoji(firstGlyph(e.currentTarget.value))} />
+        <input class="field grow" aria-label="ชื่อประเภทใหม่" placeholder="ชื่อประเภทใหม่" value={name} onInput={(e) => { setName(e.currentTarget.value); setError('') }} />
+        <button class="pillbtn" disabled={!name.trim()}>เพิ่ม</button>
+      </form>
+      {tag && <span class="set-note">จะติดแท็ก #{tag}</span>}
+      {error && <span class="error" role="alert">{error}</span>}
+    </section>
   )
 }

@@ -77,7 +77,8 @@ export type EditOp =
   | { op: 'reminder'; value: string | null; on: 'DUE' | 'SCHEDULED' }
   | { op: 'addTag' | 'removeTag'; value: string }
   | { op: 'status'; value: Task['status'] }
-  | { op: 'kind'; value: Kind }
+  | { op: 'kind'; value: Kind; who?: string; custom?: string[] }
+  | { op: 'customKind'; value: string; custom: string[] }
   | { op: 'describe'; value: string }
   | { op: 'subtask'; value: string }
   | { op: 'quadrant'; value: Quadrant; field: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK' }
@@ -173,6 +174,8 @@ export interface ProjectsIn {
   branches: string[]
   taskOrder: Record<string, string[]>
   strict: string[]
+  /** Tags of the owner's own task kinds, which never name a project. */
+  kindTags?: string[]
 }
 
 export type BranchState = 'ACTIVE' | 'TRYING' | 'CHOSEN' | 'PARKED'
@@ -275,3 +278,26 @@ export interface BranchResult {
 }
 
 export type BranchOp = { op: 'set' | 'choose' | 'add' | 'rename' | 'delete' | 'moveProject'; project: string; path?: string; value?: string }
+
+/* ---------- Task kinds ---------- */
+
+/** What this device keeps about kinds, in Android's form; see WebKinds.StateIn. */
+export interface KindsState {
+  /** The owner's own kinds as "name\temoji\ttag". */
+  custom: string[]
+  /** Built-in kinds (TaskKind names) hidden from the choices and from Focus. */
+  hidden: string[]
+}
+
+export interface KindBuiltin { id: Kind; label: string; tag: string | null; hidden: boolean }
+export interface KindCustom { name: string; emoji: string; tag: string; label: string }
+export interface KindsView { state: KindsState; builtin: KindBuiltin[]; custom: KindCustom[] }
+export interface KindsAdd { ok: boolean; error?: 'empty' | 'taken' | null; tag: string; view: KindsView }
+export interface KindPicker {
+  current: Kind
+  customTag: string | null
+  who: string | null
+  hint: string | null
+  builtin: KindBuiltin[]
+  custom: KindCustom[]
+}

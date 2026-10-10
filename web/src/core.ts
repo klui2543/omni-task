@@ -1,5 +1,6 @@
 // The vault logic shared with the Android app, compiled from Kotlin (see ../scripts/sync-core.mjs).
 import { WebApi } from './kotlin/OmniTask-shared.mjs'
+import { customKindTags } from './kinds'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 
 const api = WebApi.getInstance()
@@ -85,14 +86,15 @@ export const setIgnoredTags = (tags: string[]) => {
 }
 try {
   const saved = JSON.parse(localStorage.getItem(TAGS_KEY) ?? '[]')
-  if (Array.isArray(saved) && saved.length) api.projectIgnoreTags(JSON.stringify(saved))
+  const kinds = customKindTags()
+  if (Array.isArray(saved) && saved.length + kinds.length) api.projectIgnoreTags(JSON.stringify([...saved, ...kinds]))
 } catch { /* start without them */ }
 
 const edited = (json: string): ProjectEditResult => JSON.parse(json)
 
 /** Projects, branches and lists from the TaskForge note, the list notes and what this device chose. */
 export const projects = (fileKey: string, path: string, text: string, notes: { key: string; path: string; text: string }[], state: ProjectsIn): ProjectsOut =>
-  JSON.parse(api.projects(fileKey, path, text, JSON.stringify(notes), JSON.stringify(state), today()))
+  JSON.parse(api.projects(fileKey, path, text, JSON.stringify(notes), JSON.stringify({ ...state, kindTags: customKindTags() }), today()))
 
 /** A project or branch tag renamed in every task line of [text]; `changed` counts the lines. */
 export const renameTag = (text: string, old: string, name: string) => edited(api.projectRenameTag(text, old, name))
@@ -112,3 +114,21 @@ export const addListItem = (text: string, path: string, title: string, category:
   edited(api.listAddItem(text, path, title, category ?? undefined, today()))
 export const includeInList = (text: string, tasks: Task[], tag: string, category: string | null) =>
   edited(api.listInclude(text, JSON.stringify(tasks.map((t) => ({ raw: t.raw, lineIndex: t.lineIndex }))), tag, category ?? undefined))
+
+/* ---------- Task kinds ---------- */
+
+import type { KindPicker, KindsAdd, KindsState, KindsView } from './types'
+
+export const kindsView = (state: KindsState): KindsView => JSON.parse(api.kindsView(JSON.stringify(state)))
+export const kindsAdd = (state: KindsState, name: string, emoji: string): KindsAdd => JSON.parse(api.kindsAdd(JSON.stringify(state), name, emoji))
+export const kindsRemove = (state: KindsState, tag: string): KindsView => JSON.parse(api.kindsRemove(JSON.stringify(state), tag))
+export const kindsToggleHidden = (state: KindsState, kind: string): KindsView => JSON.parse(api.kindsToggleHidden(JSON.stringify(state), kind))
+/** The kinds the edit panel offers for the task line [raw], and the one it has. */
+export const kindPicker = (state: KindsState, raw: string): KindPicker => JSON.parse(api.kindsPicker(JSON.stringify(state), raw))
+
+/** Applies the owner's own kinds to the project logic right away (the Projects page also passes them on each build). */
+export const applyKindTags = (kinds: string[]) => {
+  let saved: unknown = []
+  try { saved = JSON.parse(localStorage.getItem(TAGS_KEY) ?? '[]') } catch { /* none */ }
+  api.projectIgnoreTags(JSON.stringify([...(Array.isArray(saved) ? saved : []), ...kinds]))
+}

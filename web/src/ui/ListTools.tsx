@@ -1,5 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
+import { kindsView } from '../core'
+import { kindsStore } from '../kinds'
 import {
   BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, PRIORITY_DOT, SORTS, STATUSES, SavedFilter, savedFilters, toggleIn,
 } from '../query'
@@ -34,7 +36,11 @@ export function FilterPanel(p: {
   const set = (patch: Partial<ListQuery>) => p.onChange({ ...q, ...patch })
   const keep = (list: SavedFilter[]) => { savedFilters.set(list); setSaved(list) }
 
-  const section = <T extends string>(title: string, pairs: [T, string][], on: T[], key: keyof ListQuery, dot?: (k: T) => string) => (
+  // The owner's own kinds are tags that mark a kind, so they are chips beside the built-in kinds and not in the Tag list.
+  const ownKinds = kindsView(kindsStore.get()).custom
+  const plainTags = p.tags.filter((g) => !ownKinds.some((c) => c.tag.toLowerCase() === g.toLowerCase()))
+
+  const section = <T extends string>(title: string, pairs: [T, string][], on: T[], key: keyof ListQuery, dot?: (k: T) => string, extra?: ComponentChildren) => (
     <div class="filter-section" role="group" aria-label={title}>
       <span class="muted small">{title}</span>
       <div class="chips">
@@ -43,6 +49,7 @@ export function FilterPanel(p: {
             {dot && <span class="dot-mark" style={{ background: dot(k) }} />}{label}
           </button>
         ))}
+        {extra}
       </div>
     </div>
   )
@@ -67,11 +74,13 @@ export function FilterPanel(p: {
         </div>
       )}
       <div class="panel-body">
-        {section('ประเภทงาน', KINDS, q.kinds, 'kinds')}
+        {section('ประเภทงาน', KINDS, q.kinds, 'kinds', undefined, ownKinds.map((c) => (
+          <button key={c.tag} class={`chip${q.tags.includes(c.tag) ? ' on' : ''}`} aria-pressed={q.tags.includes(c.tag)} onClick={() => set({ tags: toggleIn(q.tags, c.tag) })}>{c.label}</button>
+        )))}
         {section('วันที่', BUCKETS, q.buckets, 'buckets')}
         {section('ความสำคัญ', PRIORITIES, q.priorities, 'priorities', (k) => PRIORITY_DOT[k])}
         {section('สถานะ', STATUSES, q.statuses, 'statuses')}
-        {p.tags.length > 0 && section('Tag', p.tags.map((t): [string, string] => [t, '#' + t]), q.tags, 'tags')}
+        {plainTags.length > 0 && section('Tag', plainTags.map((t): [string, string] => [t, '#' + t]), q.tags, 'tags')}
         {p.hideDone && (
           <label class="setting hide-done">
             <span class="stack">
