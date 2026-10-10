@@ -73,12 +73,20 @@ export async function readEvents(drive: Drive, from: Date, to: Date): Promise<Fo
     const cals = await calendarsOf(drive)
     const out: FocusIn['events'] = []
     const params = new URLSearchParams({
-      timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
+      timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '2500',
     })
-    // Every calendar is asked at the same time, not one after the other.
-    const lists = await Promise.all(cals.map(async (cal) => ({
-      cal, items: ((await drive.json(`${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}`)).items ?? []) as GoogleEvent[],
-    })))
+    // Every calendar is asked at the same time, not one after the other; a long range may come in more than one page.
+    const pages = async (cal: CalendarInfo) => {
+      const items: GoogleEvent[] = []
+      let token: string | undefined
+      do {
+        const page = await drive.json(`${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}${token ? `&pageToken=${encodeURIComponent(token)}` : ''}`)
+        items.push(...((page.items ?? []) as GoogleEvent[]))
+        token = page.nextPageToken
+      } while (token && items.length < 10_000)
+      return items
+    }
+    const lists = await Promise.all(cals.map(async (cal) => ({ cal, items: await pages(cal) })))
     for (const { cal, items } of lists) {
       for (const e of items) {
         if (e.status === 'cancelled' || e.attendees?.some((a) => a.self && a.responseStatus === 'declined')) continue

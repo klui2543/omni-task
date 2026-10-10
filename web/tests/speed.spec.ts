@@ -52,3 +52,25 @@ test('a list note changed by an edit here is read again', async ({ page }) => {
   await page.getByRole('button', { name: /Bucket list/ }).click()
   await expect(page.locator('.pj-item', { hasText: 'ไปดูแสงเหนือ' }).getByRole('checkbox')).toBeChecked()
 })
+
+test('the Gantt, the month and the Projects page opened first after Focus show what was read ahead, without asking again', async ({ page }) => {
+  const { drive } = await open(page, {
+    now: at(9, 20), granted: true,
+    events: [{ title: 'ประชุมทีม', begin: new Date(2026, 9, 8, 13), end: new Date(2026, 9, 8, 14) }],
+  })
+  drive.omniNote('Bucket list.md', BUCKET)
+  // The weeks around today and the list notes are read once, behind the first page.
+  await expect.poll(() => drive.requests.filter((r) => r.includes('/events?')).length).toBeGreaterThan(0)
+  await page.waitForTimeout(500)
+  const before = drive.requests.length
+
+  await visit(page, 'views')
+  await page.getByRole('tab', { name: 'Gantt' }).click()
+  await expect(page.getByText('ประชุมทีม')).toBeVisible()
+  await page.getByRole('tab', { name: 'ปฏิทิน' }).click()
+  await expect(page.getByText('ตุลาคม 2026')).toBeVisible()
+  await visit(page, 'projects')
+  await expect(page.getByRole('button', { name: /Bucket list/ })).toBeVisible()
+  const again = drive.requests.slice(before)
+  expect(again.filter((r) => r.includes('/calendar/v3/') || r.includes('alt=media')), again.join('\n')).toEqual([])
+})

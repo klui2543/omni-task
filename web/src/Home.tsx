@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { Auth, CALENDAR_SCOPE } from './auth'
 import { config } from './config'
 import { AuthExpired, Drive } from './drive'
 import { FocusPage } from './pages/Focus'
@@ -153,7 +154,12 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
 
   // Once a day finished tasks move to the archive note (Settings: archive days); the note is read again only if some moved.
   useEffect(() => {
-    reload()
+    // Once the note is read, the list notes and the calendar weeks around today are read behind it, so the
+    // Projects page and the calendar views have them when first opened.
+    reload().then(() => {
+      vault.lists().catch(() => {})
+      if (Auth.granted(CALENDAR_SCOPE)) calendar.warm()
+    })
     sweepIfDue(vault).then((moved) => { if (moved.length > 0) run(async () => ({ ok: true, notice: sweptNotice(moved.length) })) }, () => {})
   }, [vault])
 
