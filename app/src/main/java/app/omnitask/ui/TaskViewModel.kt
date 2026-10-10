@@ -321,6 +321,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             // Settings saved from another phone (or before the app was cleared) come in first.
             val imported = withContext(Dispatchers.IO) {
                 runCatching {
+                    SettingsSync.tidy(repo, vault)
                     SettingsSync.load(getApplication(), repo, vault).also { loaded ->
                         // First run with this vault: start the file from what this phone has.
                         if (!loaded && repo.readPath(vault, SettingsSync.PATH) == null) SettingsSync.save(getApplication(), repo, vault)

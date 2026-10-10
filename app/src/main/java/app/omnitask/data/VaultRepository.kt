@@ -192,10 +192,29 @@ class VaultRepository(private val context: Context) {
             DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
         val name = path.substringAfterLast('/')
         val existing = childOf(treeUri, DocumentsContract.getDocumentId(dir), name)?.first
-        val file = existing ?: DocumentsContract.createDocument(context.contentResolver, dir, "text/markdown", name)
+        // The type must match the name's extension, or the provider adds its own: a .json made as text/markdown
+        // came out as "x.json.md", was never found again, and every save made one more copy.
+        val mime = if (name.endsWith(".json", ignoreCase = true)) "application/json" else "text/markdown"
+        val file = existing ?: DocumentsContract.createDocument(context.contentResolver, dir, mime, name)
             ?: throw java.io.IOException("Cannot create $path")
         context.contentResolver.openOutputStream(file, "wt")?.use { it.write(text.toByteArray()) }
             ?: throw java.io.IOException("Cannot write $path")
+    }
+
+    /** Names of the files directly in a vault folder; empty when the folder is missing. */
+    fun namesIn(treeUri: Uri, dir: String): List<String> {
+        val dirId = findDirId(treeUri, dir) ?: return emptyList()
+        val out = ArrayList<String>()
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
+        context.contentResolver.query(children, arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+            while (c.moveToNext()) c.getString(0)?.let { out += it }
+        }
+        return out
+    }
+
+    fun deletePath(treeUri: Uri, path: String) {
+        val dirId = findDirId(treeUri, path.substringBeforeLast('/')) ?: return
+        childOf(treeUri, dirId, path.substringAfterLast('/'))?.let { DocumentsContract.deleteDocument(context.contentResolver, it.first) }
     }
 
     /** Adds a task line at the end of a file, keeping its line endings. */
