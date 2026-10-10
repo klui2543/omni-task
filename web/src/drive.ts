@@ -82,8 +82,13 @@ export class Drive {
    * listing rather than with Drive's exact name search, which misses a name whose emoji was written differently.
    */
   async child(parentId: string, name: string): Promise<DriveFile | null> {
-    const found = await this.list(`${quote(parentId)} in parents and trashed = false`)
+    const found = await this.children(parentId)
     return found.find((f) => sameName(f.name, name)) ?? null
+  }
+
+  /** Everything directly inside [parentId]. */
+  children(parentId: string): Promise<DriveFile[]> {
+    return this.list(`${quote(parentId)} in parents and trashed = false`)
   }
 
   /** Follows a path of folders and a file name down from [rootId]; null when any step is missing. */

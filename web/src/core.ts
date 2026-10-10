@@ -9,6 +9,9 @@ export const today = () => new Date().toLocaleDateString('en-CA')
 
 export const taskFilePath: string = api.taskFile()
 
+/** Whether a file name is a copy a sync app left after a clash, e.g. `TaskForge (conflict 2026-10-09-05-55-31).md`. */
+export const isConflictCopy = (name: string): boolean => api.isConflictCopy(name)
+
 export const loadTasks = (fileKey: string, path: string, text: string): Task[] =>
   JSON.parse(api.loadTasks(fileKey, path, text, today()))
 

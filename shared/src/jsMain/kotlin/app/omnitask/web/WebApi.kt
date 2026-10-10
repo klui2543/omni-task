@@ -22,6 +22,9 @@ object WebApi {
 
     fun addTask(text: String, sentence: String, today: String): String = WebCore.addTask(text, sentence, today)
 
+    /** Whether a file name is a copy a sync app left after a clash. */
+    fun isConflictCopy(path: String): Boolean = app.omnitask.data.VaultText.isConflictCopy(path)
+
     /** The vault path of the live task file. */
     fun taskFile(): String = app.omnitask.data.VaultText.TASK_FILE
 }

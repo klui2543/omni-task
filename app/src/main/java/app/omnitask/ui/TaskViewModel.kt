@@ -465,6 +465,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val days = prefs.getInt(KEY_ARCHIVE_DAYS, DEFAULT_ARCHIVE_DAYS)
         val today = LocalDate.now()
         if (days <= 0 || prefs.getString(KEY_ARCHIVE_SWEPT, null) == today.toString()) return emptyList()
+        // A conflict copy means the phone may hold an older note than Drive; the sweep waits (and tries again next open).
+        if (repo.hasTaskConflict(vault)) return emptyList()
         val moved = repo.sweepDone(vault, today.minusDays(days.toLong()), today) { Projects.projectOf(it) != null }
         prefs.edit().putString(KEY_ARCHIVE_SWEPT, today.toString()).apply()
         return moved

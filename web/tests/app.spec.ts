@@ -227,3 +227,13 @@ test('the menu moves between pages and the page stays after a reload', async ({ 
   await page.getByRole('button', { name: 'ตั้งค่า' }).first().click()
   await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
 })
+
+test('a conflict copy beside the note is named, and its tasks are not read', async ({ page }) => {
+  const { drive, file } = await setup(page)
+  drive.add('TaskForge (conflict 2026-10-09-05-55-31).md', file.parent, '- [ ] งานจากไฟล์ซ้ำ\n')
+  await signInAndPick(page)
+
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('มีไฟล์ซ้ำจากการ sync: TaskForge (conflict 2026-10-09-05-55-31).md')
+  await expect(page.getByText('งานจากไฟล์ซ้ำ')).toHaveCount(0)
+})

@@ -145,6 +145,19 @@ class VaultRepository(private val context: Context) {
     }
 
     /**
+     * Whether a sync app left a conflict copy beside the live task note (the archive sits in the same folder).
+     * Until the owner sorts it out, writes the owner did not ask for are better left undone.
+     */
+    fun hasTaskConflict(treeUri: Uri): Boolean {
+        val dirId = findDirId(treeUri, TASK_FILE.substringBeforeLast('/')) ?: return false
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
+        context.contentResolver.query(children, arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+            while (c.moveToNext()) if (VaultText.isConflictCopy(c.getString(0) ?: continue)) return true
+        }
+        return false
+    }
+
+    /**
      * Renames a project in every task line of the given files: `#old` and `#old/branch` become `#new...`.
      * Each file is read and written once. Returns how many lines changed.
      */

@@ -75,6 +75,13 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         </div>
       )}
       {message && <div class="banner" role="alert">{message}</div>}
+      {snapshot?.conflicts.map((name) => (
+        <div key={name} class="banner" role="alert">
+          มีไฟล์ซ้ำจากการ sync: {name}
+          <br />
+          แอปไม่อ่านไฟล์นี้ ดูว่ามีอะไรที่ไฟล์หลักไม่มีไหม แล้วลบทิ้ง
+        </div>
+      ))}
 
       {page === 'tasks' ? <TasksPage {...props} />
         : page === 'settings' ? <SettingsPage busy={busy} onReload={reload} onChangeVault={p.onChangeVault} onSignOut={p.onSignOut} />

@@ -1,4 +1,4 @@
-import { addTask, listTasks, loadTasks, taskFilePath, toggle } from './core'
+import { addTask, isConflictCopy, listTasks, loadTasks, taskFilePath, toggle } from './core'
 import { Drive, DriveFile, sameName } from './drive'
 import type { EditResult, Query, Task, TaskList } from './types'
 
@@ -22,8 +22,17 @@ export class Vault {
 
   async load(): Promise<Snapshot> {
     const id = await this.file()
-    const { text } = await this.drive.readText(id)
-    return new Snapshot(id, text, loadTasks(id, taskFilePath, text))
+    const [{ text }, conflicts] = await Promise.all([this.drive.readText(id), this.conflicts(id)])
+    return new Snapshot(id, text, loadTasks(id, taskFilePath, text), conflicts)
+  }
+
+  private folderId: string | null = null
+
+  /** Names of the copies a sync app left beside the note after a clash, as Android shows them in Focus. */
+  private async conflicts(fileId: string): Promise<string[]> {
+    this.folderId ??= (await this.drive.get(fileId, 'parents')).parents?.[0] ?? null
+    if (!this.folderId) return []
+    return (await this.drive.children(this.folderId)).map((f) => f.name).filter(isConflictCopy)
   }
 
   /**
@@ -57,7 +66,7 @@ export class Vault {
 export class Snapshot {
   readonly byKey: Map<string, Task>
 
-  constructor(private fileId: string, private text: string, readonly tasks: Task[]) {
+  constructor(private fileId: string, private text: string, readonly tasks: Task[], readonly conflicts: string[] = []) {
     this.byKey = new Map(tasks.map((t) => [t.key, t]))
   }
 
