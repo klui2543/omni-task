@@ -44,14 +44,14 @@ export class Vault {
     // A remembered id can stop being the task note: after a sync clash DriveSync renames the old file to
     // "Omni note (older, before conflict ...).md" and makes a new Omni note.md, and Obsidian may move a file to its
     // .trash. Reading both would show every task twice, so an id whose file is no longer the note is dropped.
-    if (this.fileId && !(await this.stillTheNote(this.fileId))) {
+    const name = this.fileId ? await this.noteName(this.fileId) : null
+    if (this.fileId && !name) {
       this.fileId = null
       config.taskFileId = null
     }
-    if (this.fileId) {
+    if (this.fileId && name) {
       // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
       // an Omni note.md once the owner has made one in the new place.
-      const name = (await this.drive.get(this.fileId, 'name')).name
       this.notePath = sameName(name, 'TaskForge.md') ? legacyTaskFilePath : taskFilePath
       if (this.notePath === legacyTaskFilePath) {
         const fresh = await this.drive.resolve(this.rootId, taskFilePath)
@@ -73,18 +73,17 @@ export class Vault {
     return this.fileId!
   }
 
-  /** Whether the file [id] is still a task note: named like one, inside its folder, not in Drive's trash. */
-  private async stillTheNote(id: string): Promise<boolean> {
+  /** The name of the file [id] while it is still a task note (named like one, inside its folder, not in Drive's trash); else null. */
+  private async noteName(id: string): Promise<string | null> {
     try {
       const f = await this.drive.get(id, 'name,parents,trashed')
-      if (f.trashed) return false
+      if (f.trashed) return null
       const [path] = [taskFilePath, legacyTaskFilePath].filter((p) => sameName(f.name, p.split('/').pop()!))
-      if (!path) return false
       const parent = f.parents?.[0]
-      const folder = path.split('/').slice(-2)[0]
-      return !!parent && sameName((await this.drive.get(parent, 'name')).name, folder)
+      if (!path || !parent) return null
+      return sameName((await this.drive.get(parent, 'name')).name, path.split('/').slice(-2)[0]) ? f.name : null
     } catch {
-      return false
+      return null
     }
   }
 
