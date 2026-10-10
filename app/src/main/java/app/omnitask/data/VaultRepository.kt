@@ -35,7 +35,7 @@ class VaultRepository(private val context: Context) {
         val lists = ArrayList<OmniList>()
         val tasks = files.flatMap { file ->
             // The archive keeps finished work for Obsidian; the app leaves it unread so Done stays short.
-            if (file.path == Archive.FILE) return@flatMap emptyList<Task>()
+            if (Archive.isArchive(file.path)) return@flatMap emptyList<Task>()
             val text = readText(file.uri)
             // Lines in a list note (Bucket list, Watch list...) are marked with the list's name.
             val list = OmniList.parse(file.path, text)?.also { lists += it }

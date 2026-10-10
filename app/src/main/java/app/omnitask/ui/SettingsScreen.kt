@@ -119,8 +119,8 @@ fun SettingsScreen(
                     }
                     Text(
                         tr(
-                            "ย้ายวันละครั้งไปที่ TaskForge Archive.md ข้างไฟล์ TaskForge งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม",
-                            "Once a day, to TaskForge Archive.md next to the TaskForge note. Project tasks stay ticked where they are.",
+                            "ย้ายวันละครั้งไปที่ Omni note Archive.md ข้างไฟล์ Omni note งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม",
+                            "Once a day, to Omni note Archive.md next to the Omni note. Project tasks stay ticked where they are.",
                         ),
                         color = C.muted, fontSize = TS.caption,
                     )

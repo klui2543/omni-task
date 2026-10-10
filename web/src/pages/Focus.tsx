@@ -1,24 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Auth, CALENDAR_SCOPE } from '../auth'
-import { CalendarError, localIso, readEvents } from '../calendar'
+import { CalendarError, localIso } from '../calendar'
 import { today } from '../core'
+import { customKindTags, kindsStore } from '../kinds'
 import { skippedToday, useFocusLocal } from '../focusState'
 import type { PageProps } from '../Home'
 import type { EditOp, FocusIn, FocusOut, PlanItem, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
 import { BedtimeDialog, CountdownDialog, FutureDialog, ReviewAction, ReviewDialog } from '../ui/FocusDialogs'
+import { URGENT_RULES, urgentRule } from '../settings'
 import { Check } from '../ui/TaskRow'
+import { evLink, evTag } from '../ui/views/dates'
 import { QuickAdd } from './Tasks'
-
-/** What the Focus page needs beyond the note: the calendar, the menu and a way to other pages. */
-export interface FocusExtras {
-  onConnectCalendar: () => void
-  onReload: () => void
-  onChangeVault: () => void
-  onNavigate: (page: 'assistant' | 'settings') => void
-  /** Reads Google Calendar for the page; undefined when there is no sign-in to read with. */
-  readCalendar: (from: Date, to: Date) => ReturnType<typeof readEvents>
-}
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} ชม.` : `${m} นาที`)
@@ -30,7 +23,7 @@ const greeting = (d: Date) => (d.getHours() < 12 ? 'สวัสดีตอน�
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
 
-export function FocusPage(p: PageProps & FocusExtras) {
+export function FocusPage(p: PageProps) {
   const [local, setLocal] = useFocusLocal()
   const [profile, setProfile] = useState<string | null>(null)
   const [events, setEvents] = useState<FocusIn['events']>([])
@@ -42,6 +35,7 @@ export function FocusPage(p: PageProps & FocusExtras) {
   const [hidden, setHidden] = useState<string[]>([])
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
   const [adding, setAdding] = useState(false)
+  const [urgent, setUrgent] = useState(urgentRule.get)
   const connected = Auth.granted(CALENDAR_SCOPE)
 
   // The red "now" line and the greeting follow the clock.
@@ -90,9 +84,13 @@ export function FocusPage(p: PageProps & FocusExtras) {
       })()
     : null
 
+  const hiddenKinds = kindsStore.get().hidden
+  const showWaiting = !hiddenKinds.includes('WAITING')
+  const showFuture = !hiddenKinds.includes('FUTURE')
+
   const markReviewed = (t: Task) => setLocal((s) => ({ ...s, reviewed: { ...s.reviewed, [t.title]: today() } }))
   const change = (t: Task, op: EditOp) => p.run(() => p.vault.change(p.fresh(t), op))
-  const setKind = (t: Task, kind: 'NORMAL' | 'FUTURE' | 'SOMEDAY') => { markReviewed(t); change(t, { op: 'kind', value: kind }) }
+  const setKind = (t: Task, kind: 'NORMAL' | 'FUTURE' | 'SOMEDAY') => { markReviewed(t); change(t, { op: 'kind', value: kind, custom: customKindTags() }) }
 
   const accept = (s: FocusOut['suggestions'][number]) => {
     const t = task(s.key)
@@ -126,10 +124,11 @@ export function FocusPage(p: PageProps & FocusExtras) {
       )
     }
     if (it.type === 'event') {
+      const Box = evTag(it.link, 'div')
       return (
         <div key={`ev${i}`} class="prow event">
           <span class="ptime">{it.time}</span>
-          <div class="ebox"><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></div>
+          <Box class="ebox" {...evLink(it.link)}><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></Box>
         </div>
       )
     }
@@ -163,6 +162,10 @@ export function FocusPage(p: PageProps & FocusExtras) {
                 <div class="menu-scrim" onClick={() => setMenu(false)} />
                 <div class="popmenu" role="menu">
                   <button role="menuitem" onClick={() => { setMenu(false); p.onReload() }}>โหลดใหม่</button>
+                  {URGENT_RULES.map(([rule, label]) => (
+                    <button key={rule} role="menuitemradio" aria-checked={urgent === rule} class={urgent === rule ? 'on' : ''}
+                      onClick={() => { urgentRule.set(rule); setUrgent(rule); setMenu(false) }}>ด่วน = {label}</button>
+                  ))}
                   <button role="menuitem" onClick={() => { setMenu(false); p.onChangeVault() }}>เปลี่ยน vault</button>
                   <button role="menuitem" onClick={() => { setMenu(false); p.onNavigate('settings') }}>ตั้งค่า</button>
                 </div>
@@ -273,8 +276,9 @@ export function FocusPage(p: PageProps & FocusExtras) {
                 </section>
               )}
 
-              <div class="pair">
-                <section class="fcard sidecard">
+              {/* Either card goes when its kind is hidden in Settings; the other then takes the row. */}
+              {(showWaiting || showFuture) && <div class="pair">
+                {showWaiting && <section class="fcard sidecard">
                   <div class="side-head"><span class="strong grow">คนรออยู่</span><span class="count">{f.waiting.length}</span></div>
                   {f.waiting.length === 0 && <span class="muted small">ติด #รอ/ชื่อ ให้งานที่มีคนรอ</span>}
                   {f.waiting.map((w) => {
@@ -289,9 +293,9 @@ export function FocusPage(p: PageProps & FocusExtras) {
                       </div>
                     )
                   })}
-                </section>
+                </section>}
 
-                <section class="fcard sidecard">
+                {showFuture && <section class="fcard sidecard">
                   <div class="side-head"><span class="strong grow">ลงทุนอนาคต</span></div>
                   {f.future.length === 0 && <span class="muted small">เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์</span>}
                   {f.future.map((k) => {
@@ -315,8 +319,8 @@ export function FocusPage(p: PageProps & FocusExtras) {
                     <span class="stepn" aria-live="polite">{local.futureCount}</span>
                     <button class="round" aria-label="เพิ่ม" onClick={() => setLocal((x) => ({ ...x, futureCount: Math.min(5, x.futureCount + 1) }))}>+</button>
                   </div>
-                </section>
-              </div>
+                </section>}
+              </div>}
             </div>
           </div>
         )}

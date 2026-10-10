@@ -18,6 +18,14 @@ export interface DriveFile {
   parents?: string[]
   version?: string
   modifiedTime?: string
+  trashed?: boolean
+}
+
+/** One entry of Drive's change log: a file that was added, changed, moved or removed. */
+export interface DriveChange {
+  fileId: string
+  removed?: boolean
+  file?: DriveFile
 }
 
 /**
@@ -45,6 +53,11 @@ export class Drive {
   /** A GET of any Google API with the owner's token (used for Calendar), answered as JSON. */
   async json(url: string): Promise<any> {
     return (await this.call(url)).json()
+  }
+
+  /** A POST of a JSON body to any Google API with the owner's token (used for Calendar), answered as JSON. */
+  async postJson(url: string, body: unknown): Promise<any> {
+    return (await this.call(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json()
   }
 
   /** Every match, following Drive's pages (a folder like Attachments can hold hundreds of files). */
@@ -145,5 +158,50 @@ export class Drive {
       headers: { 'Content-Type': 'text/markdown; charset=UTF-8' },
       body: text,
     })
+  }
+
+  /** A new folder in [parentId]; returns its id. */
+  async createFolder(parentId: string, name: string): Promise<string> {
+    const res = await this.call(`${API}/files?supportsAllDrives=true&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parents: [parentId], mimeType: FOLDER }),
+    })
+    return (await res.json()).id
+  }
+
+  /* ---------- Reading the whole vault (see noteIndex.ts) ---------- */
+
+  /** Everything directly inside any of [parentIds] (a few dozen at a time), with what the vault walk needs. */
+  childrenOfMany(parentIds: string[]): Promise<DriveFile[]> {
+    const q = `(${parentIds.map((id) => `${quote(id)} in parents`).join(' or ')}) and trashed = false`
+    return this.list(q, 'files(id,name,mimeType,parents,version)')
+  }
+
+  /** A file's text alone, for a note whose version is already known from a listing. */
+  async media(id: string): Promise<string> {
+    return (await this.call(`${API}/files/${id}?alt=media&supportsAllDrives=true`)).text()
+  }
+
+  /** Where Drive's change log stands now; changes after it are read with [changes]. */
+  async startPageToken(): Promise<string> {
+    return (await (await this.call(`${API}/changes/startPageToken?supportsAllDrives=true`)).json()).startPageToken
+  }
+
+  /** What changed in the owner's Drive since [token], and the token to ask from next time. */
+  async changes(token: string): Promise<{ changes: DriveChange[]; token: string }> {
+    const out: DriveChange[] = []
+    let page = token
+    for (;;) {
+      const params = new URLSearchParams({
+        pageToken: page, pageSize: '1000', spaces: 'drive', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+        fields: 'nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,parents,trashed,version))',
+      })
+      const res = await (await this.call(`${API}/changes?${params}`)).json()
+      out.push(...(res.changes ?? []))
+      if (res.newStartPageToken) return { changes: out, token: res.newStartPageToken }
+      if (!res.nextPageToken) return { changes: out, token: page }
+      page = res.nextPageToken
+    }
   }
 }

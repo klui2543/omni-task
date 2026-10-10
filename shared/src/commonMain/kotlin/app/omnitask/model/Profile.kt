@@ -7,7 +7,7 @@ import kotlinx.datetime.isoDayNumber
 import app.omnitask.time.*
 
 /**
- * What the assistant knows about the owner, kept as a plain note in the vault (`Omni/โปรไฟล์.md`)
+ * What the assistant knows about the owner, kept as a plain note in the vault (`หลังบ้าน/Omni/โปรไฟล์.md`)
  * so it can be read and corrected in Obsidian. Lines are `- key: value`; unknown lines are kept.
  */
 data class Profile(
@@ -45,7 +45,10 @@ data class Profile(
     }
 
     companion object {
-        const val PATH = "Omni/โปรไฟล์.md"
+        const val PATH = "📁 Folder/หลังบ้าน/Omni/โปรไฟล์.md"
+
+        /** Where the profile was kept before the Omni folder moved into the back-office folder; read when the new one is not there. */
+        const val LEGACY_PATH = "Omni/โปรไฟล์.md"
         /** Day names as written in the profile note; always Thai, since the note is parsed back. */
         val DAY_NAMES = listOf("จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์", "อาทิตย์")
 

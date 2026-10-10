@@ -36,7 +36,11 @@ object WebFocus {
     private val json = Json { encodeDefaults = true; explicitNulls = false; ignoreUnknownKeys = true }
 
     @Serializable
-    data class EventIn(val id: Long = 0, val title: String, val begin: String, val end: String, val allDay: Boolean = false)
+    data class EventIn(
+        val id: Long = 0, val title: String, val begin: String, val end: String, val allDay: Boolean = false,
+        /** The event's page in Google Calendar (`htmlLink`), or empty. [id] must be unique among the events given. */
+        val link: String = "",
+    )
 
     /** Tonight's bedtime when it differs from the usual one: the evening it starts on and the time. */
     @Serializable
@@ -56,6 +60,8 @@ object WebFocus {
         /** The text of the profile note (`Omni/โปรไฟล์.md`), when the vault has one. */
         val profile: String? = null,
         val events: List<EventIn> = emptyList(),
+        /** Branch states as Android saves them; tasks in a parked branch are left out. */
+        val branches: List<String> = emptyList(),
     )
 
     @Serializable
@@ -70,6 +76,8 @@ object WebFocus {
         val extra: String? = null,
         val blocked: Boolean = false,
         val range: String? = null,
+        /** For an event: its page in Google Calendar. */
+        val link: String? = null,
     )
 
     @Serializable
@@ -128,7 +136,7 @@ object WebFocus {
         val s = json.decodeFromString<StateIn>(stateJson)
         val now = LocalDateTime.parse(s.now)
         val today = now.date
-        val tasks = VaultText.parseFile(fileKey, path, text)
+        val tasks = WebCore.withoutParked(WebNotes.tasks(fileKey, path, text), s.branches)
         val profile = Profile.parse(s.profile)
         val events = s.events.map { CalendarEvent(it.id, it.title, LocalDateTime.parse(it.begin), LocalDateTime.parse(it.end), it.allDay) }
         val todayEvents = events.filter { it.begin.date <= today && it.end.date >= today && it.end > today.atTime(0, 0) }
@@ -171,7 +179,7 @@ object WebFocus {
                 third = third,
                 countdown = countdown,
                 notices = brief.warnings,
-                plan = planOut(plan, today, now, blocked, progress),
+                plan = planOut(plan, today, now, blocked, progress, s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }),
                 suggestions = brief.suggestions.map { SuggestionOut(it.id, it.task.key, it.kind.name, it.task.title, it.text) },
                 waiting = brief.waiting.map { WaitingOut(it.key, Focus.waitingFor(it), Focus.ageDays(it, today)) },
                 future = brief.future.map { it.key },
@@ -199,6 +207,7 @@ object WebFocus {
     /** The day plan with its red "now" line placed where Android puts it. */
     private fun planOut(
         plan: List<DayPlan.Section>, today: LocalDate, now: LocalDateTime, blocked: Set<Task>, progress: Map<String, Pair<Int, Int>>,
+        links: Map<Long, String> = emptyMap(),
     ): List<Section> {
         val nowTime = now.time
         // The line sits before the first timed item still to come, or after the evening when none is.
@@ -216,7 +225,7 @@ object WebFocus {
                     is DayPlan.Item.EventItem -> {
                         val e = item.event
                         val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${hm(e.begin.time)} ถึง ${hm(e.end.time)}", "${hm(e.begin.time)} to ${hm(e.end.time)}")
-                        PlanItem("event", item.time?.let { hm(it) }, title = e.title, range = "$range, Google Calendar")
+                        PlanItem("event", item.time?.let { hm(it) }, title = e.title, range = "$range, Google Calendar", link = links[e.id])
                     }
                 }
             }

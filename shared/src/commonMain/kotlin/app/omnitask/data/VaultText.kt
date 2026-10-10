@@ -14,14 +14,23 @@ object VaultText {
     /** Where the owner's Obsidian keeps attachments, relative to the vault root. */
     const val ATTACHMENT_DIR = "📁 Folder/หลังบ้าน/Attachments"
 
-    /** The live TaskForge file, where new tasks are added. */
-    const val TASK_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge.md"
+    /** The folder of the app's own notes (tasks, archive, profile, lists, settings), inside the owner's back-office folder. */
+    const val OMNI_DIR = "📁 Folder/หลังบ้าน/Omni"
+
+    /** The live task note, where new tasks are added. */
+    const val TASK_FILE = "$OMNI_DIR/Omni note.md"
+
+    /** Where the task note lived before it moved into [OMNI_DIR]; still read when the new one is not there yet. */
+    const val LEGACY_TASK_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge.md"
+
+    /** The app folder at the vault root, where profile, lists and settings were kept before they moved into [OMNI_DIR]. */
+    const val LEGACY_OMNI_DIR = "Omni"
 
     private val CONFLICT_COPY = Regex("""\((?:conflict|conflicted copy)\b[^)]*\)|\.sync-conflict-""", RegexOption.IGNORE_CASE)
 
     /**
      * A second copy a sync app leaves when a note changed on two sides at once, e.g.
-     * `TaskForge (conflict 2026-10-09-05-55-31).md`. Its tasks are the same tasks again, so it is not read.
+     * `Omni note (conflict 2026-10-09-05-55-31).md`. Its tasks are the same tasks again, so it is not read.
      */
     fun isConflictCopy(path: String): Boolean = CONFLICT_COPY.containsMatchIn(path.substringAfterLast('/'))
 

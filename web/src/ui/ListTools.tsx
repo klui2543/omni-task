@@ -1,5 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
+import { kindsView } from '../core'
+import { kindsStore } from '../kinds'
 import {
   BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, PRIORITY_DOT, SORTS, STATUSES, SavedFilter, savedFilters, toggleIn,
 } from '../query'
@@ -19,14 +21,26 @@ function Overlay(p: { label: string; side?: boolean; onClose: () => void; childr
  * Filters by kind, date, priority, status and tag, applied as they are tapped. The button at the foot says how
  * many tasks are left; filters can be saved by name, as on Android.
  */
-export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number; onChange: (q: ListQuery) => void; onClose: () => void }) {
+export function FilterPanel(p: {
+  query: ListQuery
+  tags: string[]
+  shown: number
+  onChange: (q: ListQuery) => void
+  onClose: () => void
+  /** Android's "hide done" switch, which only the views honour; both the Tasks and Views pages show it (one shared choice). */
+  hideDone?: { on: boolean; set: (on: boolean) => void }
+}) {
   const q = p.query
   const [saved, setSaved] = useState(savedFilters.get)
   const [naming, setNaming] = useState<string | null>(null)
   const set = (patch: Partial<ListQuery>) => p.onChange({ ...q, ...patch })
   const keep = (list: SavedFilter[]) => { savedFilters.set(list); setSaved(list) }
 
-  const section = <T extends string>(title: string, pairs: [T, string][], on: T[], key: keyof ListQuery, dot?: (k: T) => string) => (
+  // The owner's own kinds are tags that mark a kind, so they are chips beside the built-in kinds and not in the Tag list.
+  const ownKinds = kindsView(kindsStore.get()).custom
+  const plainTags = p.tags.filter((g) => !ownKinds.some((c) => c.tag.toLowerCase() === g.toLowerCase()))
+
+  const section = <T extends string>(title: string, pairs: [T, string][], on: T[], key: keyof ListQuery, dot?: (k: T) => string, extra?: ComponentChildren) => (
     <div class="filter-section" role="group" aria-label={title}>
       <span class="muted small">{title}</span>
       <div class="chips">
@@ -35,6 +49,7 @@ export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number
             {dot && <span class="dot-mark" style={{ background: dot(k) }} />}{label}
           </button>
         ))}
+        {extra}
       </div>
     </div>
   )
@@ -59,11 +74,22 @@ export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number
         </div>
       )}
       <div class="panel-body">
-        {section('ประเภทงาน', KINDS, q.kinds, 'kinds')}
+        {section('ประเภทงาน', KINDS, q.kinds, 'kinds', undefined, ownKinds.map((c) => (
+          <button key={c.tag} class={`chip${q.tags.includes(c.tag) ? ' on' : ''}`} aria-pressed={q.tags.includes(c.tag)} onClick={() => set({ tags: toggleIn(q.tags, c.tag) })}>{c.label}</button>
+        )))}
         {section('วันที่', BUCKETS, q.buckets, 'buckets')}
         {section('ความสำคัญ', PRIORITIES, q.priorities, 'priorities', (k) => PRIORITY_DOT[k])}
         {section('สถานะ', STATUSES, q.statuses, 'statuses')}
-        {p.tags.length > 0 && section('Tag', p.tags.map((t): [string, string] => [t, '#' + t]), q.tags, 'tags')}
+        {plainTags.length > 0 && section('Tag', plainTags.map((t): [string, string] => [t, '#' + t]), q.tags, 'tags')}
+        {p.hideDone && (
+          <label class="setting hide-done">
+            <span class="stack">
+              <span>ซ่อนงานที่เสร็จและยกเลิก</span>
+              <span class="muted small">ในมุมมอง Kanban, Matrix, Gantt และปฏิทิน</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" aria-label="ซ่อนงานที่เสร็จและยกเลิก" checked={p.hideDone.on} onChange={(e) => p.hideDone!.set(e.currentTarget.checked)} />
+          </label>
+        )}
       </div>
       {naming !== null ? (
         <form class="panel-foot" onSubmit={(e) => { e.preventDefault(); if (naming.trim()) { keep([...saved.filter((s) => s.name !== naming.trim()), { name: naming.trim(), query: q }]); setNaming(null) } }}>
@@ -81,7 +107,7 @@ export function FilterPanel(p: { query: ListQuery; tags: string[]; shown: number
 }
 
 /** Grouping and up to three sort levels in one box, as on Android. */
-export function SortDialog(p: { query: ListQuery; onChange: (q: ListQuery) => void; onClose: () => void }) {
+export function SortDialog(p: { query: ListQuery; onChange: (q: ListQuery) => void; onClose: () => void; /** Views have no grouping. */ noGroup?: boolean }) {
   const q = p.query
   const sorts = q.sorts.length ? q.sorts : DEFAULT_QUERY.sorts
   const setSorts = (s: ListQuery['sorts']) => p.onChange({ ...q, sorts: s })
@@ -89,14 +115,14 @@ export function SortDialog(p: { query: ListQuery; onChange: (q: ListQuery) => vo
   return (
     <Overlay label="จัดกลุ่มและเรียงลำดับ" onClose={p.onClose}>
       <div class="sort-cols">
-        <div class="sort-groups" role="radiogroup" aria-label="จัดกลุ่มตาม">
+        {!p.noGroup && <div class="sort-groups" role="radiogroup" aria-label="จัดกลุ่มตาม">
           <h2>จัดกลุ่มตาม</h2>
           {GROUPS.map(([k, label]) => (
             <button key={k} class="option" role="radio" aria-checked={q.groupBy === k} onClick={() => p.onChange({ ...q, groupBy: k })}>
               <span>{label}</span><span class="accent-text">{q.groupBy === k ? '✓' : ''}</span>
             </button>
           ))}
-        </div>
+        </div>}
         <div class="sort-levels">
           <h2>เรียงลำดับ</h2>
           {sorts.map((s, i) => (

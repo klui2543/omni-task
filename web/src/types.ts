@@ -29,6 +29,8 @@ export interface Task {
   reminderOn: 'DUE' | 'SCHEDULED' | null
   linkNames: string[]
   attachmentNames: string[]
+  /** The vault path of the note the task is in. */
+  note?: string | null
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
@@ -41,6 +43,8 @@ export interface Query {
   text?: string
   groupBy?: 'DATE' | 'NOTE' | 'PRIORITY' | 'TAG' | 'STATUS' | 'NONE'
   sorts?: { by: string; ascending: boolean }[]
+  /** Branch states ("project\tpath\tSTATE"): tasks in a parked branch are left out. */
+  branches?: string[]
 }
 
 export interface Group {
@@ -75,9 +79,11 @@ export type EditOp =
   | { op: 'reminder'; value: string | null; on: 'DUE' | 'SCHEDULED' }
   | { op: 'addTag' | 'removeTag'; value: string }
   | { op: 'status'; value: Task['status'] }
-  | { op: 'kind'; value: Kind }
+  | { op: 'kind'; value: Kind; who?: string; custom?: string[] }
+  | { op: 'customKind'; value: string; custom: string[] }
   | { op: 'describe'; value: string }
   | { op: 'subtask'; value: string }
+  | { op: 'quadrant'; value: Quadrant; field: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK' }
 
 export type Kind = 'NORMAL' | 'WAITING' | 'FUTURE' | 'SOMEDAY'
 
@@ -91,7 +97,8 @@ export interface FocusIn {
   countdown: string | null
   tonightBed: { evening: string; time: string } | null
   profile: string | null
-  events: { id: number; title: string; begin: string; end: string; allDay: boolean }[]
+  events: { id: number; title: string; begin: string; end: string; allDay: boolean; link?: string }[]
+  branches?: string[]
 }
 
 export interface PlanItem {
@@ -104,6 +111,8 @@ export interface PlanItem {
   extra?: string
   blocked: boolean
   range?: string
+  /** For an event: its page in Google Calendar. */
+  link?: string
 }
 
 export interface Pick {
@@ -130,4 +139,169 @@ export interface FocusOut {
   bedtime: string
   evening: string
   softDate: string
+}
+
+/* ---------- Views ---------- */
+
+export type Quadrant = 'DO' | 'PLAN' | 'QUICK' | 'LATER'
+
+/** What the Views page asks of the shared logic; see WebViews.In. */
+export interface ViewsIn {
+  today: string
+  query: Query
+  hideDone: boolean
+  urgent: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK'
+  /** First day of the Gantt range. */
+  ganttFirst: string
+}
+
+/** Task keys by column, quadrant, calendar day and Gantt bar; see WebViews.Out. */
+export interface ViewsOut {
+  shown: number
+  kanban: { status: Task['status']; keys: string[] }[]
+  matrix: { id: Quadrant; label: string; urgent: boolean; important: boolean; keys: string[] }[]
+  /** What to say when a task is dragged across the urgent line. */
+  sideways: string
+  /** Tasks on the calendar; [at] is when the reminder fires (yyyy-MM-ddTHH:mm). */
+  calendar: { key: string; at?: string }[]
+  gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string }[] }[]
+  progress: Record<string, { done: number; total: number }>
+}
+
+/* ---------- Projects ---------- */
+
+/** What was chosen on this device for the Projects page; see WebProjects.StateIn. */
+export interface ProjectsIn {
+  order: string[]
+  starred: string[]
+  /** Branch states as Android saves them: "project\tpath\tSTATE". */
+  branches: string[]
+  taskOrder: Record<string, string[]>
+  strict: string[]
+  /** Tags of the owner's own task kinds, which never name a project. */
+  kindTags?: string[]
+}
+
+export type BranchState = 'ACTIVE' | 'TRYING' | 'CHOSEN' | 'PARKED'
+
+export interface BranchOut {
+  path: string
+  name: string
+  tag: string
+  depth: number
+  parentPath: string
+  state: BranchState
+  done: number
+  count: number
+  /** The tasks tagged exactly with this branch, by key. */
+  own: string[]
+  /** The paths of the sub-branches. */
+  children: string[]
+}
+
+export interface OrderOut {
+  key: string
+  pos: number
+  next: boolean
+  locked: boolean
+  /** Which line goes under the title: waits for task [pos], waits for [waitingOn], or next, date and subtasks. */
+  meta: 'strict' | 'waiting' | 'plain'
+  waitingOn?: string
+  date?: string
+  subDone?: number
+  subTotal?: number
+}
+
+export interface ProjectOut {
+  name: string
+  total: number
+  done: number
+  pct: number
+  overdue: number
+  blocked: string[]
+  next?: { key: string; title: string }
+  starred: boolean
+  strict: boolean
+  renameLines: number
+  renameFiles: number
+  branches: BranchOut[]
+  order: OrderOut[]
+  finished: string[]
+}
+
+export interface ListItemOut {
+  key: string
+  done: boolean
+  tags: string[]
+  sub: string
+}
+
+export interface ListOut {
+  /** The list note's file id. */
+  key: string
+  name: string
+  path: string
+  icon: string
+  emoji: string
+  categories: string[]
+  tag: string
+  done: number
+  total: number
+  items: ListItemOut[]
+}
+
+/** The Projects page as the shared logic builds it; see WebProjects.Out. */
+export interface ProjectsOut {
+  projects: ProjectOut[]
+  lists: ListOut[]
+  noteTasks: Task[]
+  parked: string[]
+  ignored: string[]
+}
+
+/** A list note read from Drive: its id, path in the vault and text. */
+export interface ListNote {
+  id: string
+  path: string
+  text: string
+}
+
+export interface ProjectEditResult extends Omit<EditResult, "error"> {
+  error?: string | null
+  changed?: number
+  path?: string | null
+}
+
+export interface BranchResult {
+  ok: boolean
+  states: string[]
+  error?: 'missing' | 'empty' | 'hasTasks' | 'unknown' | null
+  oldTag?: string | null
+  newTag?: string | null
+  path?: string | null
+}
+
+export type BranchOp = { op: 'set' | 'choose' | 'add' | 'rename' | 'delete' | 'moveProject'; project: string; path?: string; value?: string }
+
+/* ---------- Task kinds ---------- */
+
+/** What this device keeps about kinds, in Android's form; see WebKinds.StateIn. */
+export interface KindsState {
+  /** The owner's own kinds as "name\temoji\ttag". */
+  custom: string[]
+  /** Built-in kinds (TaskKind names) hidden from the choices and from Focus. */
+  hidden: string[]
+}
+
+export interface KindBuiltin { id: Kind; label: string; tag: string | null; hidden: boolean }
+export interface KindCustom { name: string; emoji: string; tag: string; label: string }
+export interface KindsView { state: KindsState; builtin: KindBuiltin[]; custom: KindCustom[] }
+export interface KindsAdd { ok: boolean; error?: 'empty' | 'taken' | null; tag: string; view: KindsView }
+export interface KindPicker {
+  current: Kind
+  customTag: string | null
+  who: string | null
+  hint: string | null
+  builtin: KindBuiltin[]
+  custom: KindCustom[]
 }

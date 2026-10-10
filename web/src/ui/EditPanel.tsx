@@ -1,9 +1,10 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { describeRule, today } from '../core'
+import { describeRule, kindPicker, today } from '../core'
+import { customKindTags, kindsStore } from '../kinds'
 import type { PageProps } from '../Home'
 import { PRIORITIES, STATUSES, labelOf } from '../query'
-import type { EditOp, Task } from '../types'
+import type { EditOp, KindPicker, Task } from '../types'
 import { Check, metaOf } from './TaskRow'
 
 /** A date [days] after [iso], as YYYY-MM-DD. */
@@ -37,14 +38,14 @@ const REPEATS: [string, string][] = [
 ]
 const TIMES = ['08:00', '12:00', '17:30', '20:00']
 
-type Chip = 'DUE' | 'SCHEDULED' | 'REMIND' | 'REPEAT' | 'PRIORITY' | 'TAG'
+type Chip = 'DUE' | 'SCHEDULED' | 'REMIND' | 'REPEAT' | 'PRIORITY' | 'KIND' | 'TAG'
 
 /**
  * Everything about one task, as in Android's edit sheet: status, dates, reminder, repeat, priority, tags,
  * the description and the subtasks. A pane beside the list on wide screens, a sheet from the bottom on narrow ones.
  * Each change is written to the note at once.
  */
-export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void; onClose: () => void }) {
+export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void; onClose: () => void; /** The file name of the list note the task is an item of, when opened from a list. */ noteName?: string }) {
   const t = p.task
   const [open, setOpen] = useState<Chip | null>(null)
   const [folds, setFolds] = useState<Record<string, boolean>>({})
@@ -60,7 +61,13 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const parent = t.parent ? all.find((c) => c.key === t.parent) : null
   const doneSubs = subs.filter((c) => c.status === 'DONE').length
   const tagsInUse = [...new Set(all.flatMap((c) => c.tags))].filter((g) => !g.startsWith('remind-at-') && !t.tags.includes(g)).slice(0, 10)
-  const ownTags = t.tags.filter((g) => !g.startsWith('remind-at-'))
+
+  // The kinds on offer come from this device's choices (hidden ones are left out unless the task has that kind).
+  const kinds = kindPicker(kindsStore.get(), t.raw)
+  const kindLabel = kinds.customTag
+    ? kinds.custom.find((c) => c.tag === kinds.customTag)?.label ?? ''
+    : kinds.current === 'NORMAL' ? '' : kinds.builtin.find((b) => b.id === kinds.current)?.label ?? ''
+  const ownTags = t.tags.filter((g) => !g.startsWith('remind-at-') && !isKindTag(g, kinds.customTag))
 
   const chips: [Chip, string, string][] = [
     ['DUE', 'ครบกำหนด', dayLabel(t.due)],
@@ -68,15 +75,18 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
     ['REMIND', 'เตือน', t.reminder ?? ''],
     ['REPEAT', 'วนซ้ำ', t.repeatText ?? ''],
     ['PRIORITY', 'ความสำคัญ', t.priority === 'NONE' ? '' : labelOf(PRIORITIES, t.priority)],
+    ['KIND', 'ประเภท', kindLabel],
     ['TAG', 'Tag', ownTags.length ? ownTags.map((g) => '#' + g).join(' ') : ''],
   ]
 
+  // The note the task is in: the task note, or a list note.
+  const noteLabel = t.note ? t.note.split('/').pop() : p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : p.noteName ?? 'โน้ตลิสต์'
   const saveDesc = () => { if (desc.trim() !== t.description.trim()) change({ op: 'describe', value: desc }) }
 
   return (
     <div class="edit">
       <div class="edit-top">
-        <span class="muted small">TaskForge.md บรรทัด {t.lineIndex + 1}</span>
+        <span class="muted small">{noteLabel} บรรทัด {t.lineIndex + 1}</span>
         <div class="row-gap">
           <button class="ghost small-btn danger" onClick={() => setAskDelete(true)}>ลบงาน</button>
           <button class="ghost small-btn" onClick={p.onClose}>ปิด</button>
@@ -141,6 +151,9 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
                 ))}
               </div>
             </>
+          )}
+          {open === 'KIND' && (
+            <KindPick picker={kinds} task={t} busy={p.busy} onChange={change} onManage={() => p.onNavigate('settings')} />
           )}
           {open === 'TAG' && <TagPick own={ownTags} suggest={tagsInUse} busy={p.busy} onAdd={(g) => change({ op: 'addTag', value: g })} onRemove={(g) => change({ op: 'removeTag', value: g })} />}
         </div>
@@ -282,6 +295,45 @@ function RepeatPick(p: { rule: string | null; busy: boolean; onPick: (v: string 
           <div class="dialog-actions"><button class="primary" disabled={!words}>บันทึก</button></div>
         </form>
       )}
+    </>
+  )
+}
+
+/** Kind tags (#รอ, #อนาคต, #สักวัน, #รอ/name and the owner's own) are shown by the kind field, not as plain tags. */
+const isKindTag = (tag: string, own: string | null) =>
+  ['รอ', 'อนาคต', 'สักวัน'].some((k) => tag === k || tag.startsWith(k + '/')) || (!!own && tag.toLowerCase() === own.toLowerCase())
+
+/** The "ประเภท" field of Android's edit sheet: a choice stored as a tag, waiting asks who, and the kinds are managed in Settings. */
+function KindPick(p: { picker: KindPicker; task: Task; busy: boolean; onChange: (op: EditOp) => void; onManage: () => void }) {
+  const k = p.picker
+  const [asking, setAsking] = useState(false)
+  const [who, setWho] = useState(k.who ?? '')
+  const custom = customKindTags()
+  useEffect(() => { setAsking(false); setWho(k.who ?? '') }, [p.task.key, k.current])
+  return (
+    <>
+      <span class="muted small">ประเภทงาน</span>
+      <div class="chips" role="group" aria-label="ประเภทงาน">
+        {k.builtin.map((b) => {
+          const on = !k.customTag && k.current === b.id
+          return (
+            <button key={b.id} class={`chip${on ? ' on' : ''}`} aria-pressed={on} disabled={p.busy}
+              onClick={() => { if (b.id === 'WAITING') setAsking(true); else if (!on) { setAsking(false); p.onChange({ op: 'kind', value: b.id, custom }) } }}>{b.label}</button>
+          )
+        })}
+        {k.custom.map((c) => (
+          <button key={c.tag} class={`chip${k.customTag === c.tag ? ' on' : ''}`} aria-pressed={k.customTag === c.tag} disabled={p.busy}
+            onClick={() => { if (k.customTag !== c.tag) { setAsking(false); p.onChange({ op: 'customKind', value: c.tag, custom }) } }}>{c.label}</button>
+        ))}
+        <button class="chip" onClick={p.onManage}>จัดการประเภท</button>
+      </div>
+      {asking && (
+        <form class="row-gap" onSubmit={(e) => { e.preventDefault(); setAsking(false); p.onChange({ op: 'kind', value: 'WAITING', who: who.trim(), custom }) }}>
+          <input class="field grow" aria-label="ใครรองานนี้" placeholder="ชื่อ (เว้นว่างได้)" value={who} onInput={(e) => setWho(e.currentTarget.value)} autoFocus />
+          <button class="primary" disabled={p.busy}>ตั้งเป็นมีคนรอ</button>
+        </form>
+      )}
+      {k.hint && <span class="muted small">{k.hint}</span>}
     </>
   )
 }

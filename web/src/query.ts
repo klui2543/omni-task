@@ -1,7 +1,7 @@
 import type { Bucket, Query, Task } from './types'
 
 /** The list's filters, grouping and sorting as the Tasks page keeps them; the search box is added on top. */
-export type ListQuery = Required<Omit<Query, 'text'>>
+export type ListQuery = Required<Omit<Query, 'text' | 'branches'>>
 
 export const DEFAULT_QUERY: ListQuery = {
   statuses: ['TODO', 'IN_PROGRESS'],

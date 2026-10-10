@@ -71,6 +71,14 @@ class WebFocusTest {
     }
 
     @Test
+    fun anEventCarriesItsGoogleCalendarLinkIntoThePlan() {
+        val events = ""","events":[{"id":7,"title":"ประชุมทีม","begin":"2026-10-08T13:00","end":"2026-10-08T14:30","link":"https://www.google.com/calendar/event?eid=abc"},{"id":8,"title":"ไม่มีลิงก์","begin":"2026-10-08T16:00","end":"2026-10-08T17:00"}]"""
+        val r = focus(events)
+        assertTrue(r.contains("\"range\":\"13:00 ถึง 14:30, Google Calendar\",\"link\":\"https://www.google.com/calendar/event?eid=abc\""), r)
+        assertTrue(r.contains("\"range\":\"16:00 ถึง 17:00, Google Calendar\"}"), r)
+    }
+
+    @Test
     fun theEveningShowsTheNightAndTonightsBedtimeCanBeMoved() {
         val usual = focus(now = "2026-10-08T20:00")
         assertTrue(usual.contains("\"third\":{\"kind\":\"night\""), usual)
@@ -97,5 +105,15 @@ class WebFocusTest {
         assertTrue(r.contains("- [ ] ทำเว็บ #peddose #อนาคต"), r)
         val back = WebCore.editTask(line, line, 0, "2026-10-08", """{"op":"kind","value":"NORMAL"}""")
         assertTrue(back.contains("- [ ] ทำเว็บ #peddose\""), back)
+    }
+
+    @Test
+    fun tasksInAParkedBranchAreLeftOutOfFocus() {
+        val note = "- [ ] ทำเว็บ #peddose/แอป 📅 2026-10-08\n- [ ] เขียนรายงาน #peddose 📅 2026-10-08"
+        val plain = WebFocus.build("f", "TaskForge.md", note, state())
+        assertTrue(plain.contains("f#0") && plain.contains("f#1"), plain)
+        val parked = WebFocus.build("f", "TaskForge.md", note, state(""","branches":["peddose\tแอป\tPARKED"]"""))
+        assertFalse(parked.contains("f#0"), parked)
+        assertTrue(parked.contains("f#1"), parked)
     }
 }

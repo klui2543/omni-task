@@ -68,7 +68,7 @@ class ArchiveTest {
     fun appendGroupsByMonthAndRemoveUndoes() {
         val block = listOf("    - [x] ซื้อของ ✅ 2026-09-20", "        - นม ไข่")
         val first = Archive.append(null, listOf(block), d("2026-10-08"))
-        assertEquals("# TaskForge Archive\n\n## 2026-10\n\n- [x] ซื้อของ ✅ 2026-09-20\n    - นม ไข่\n", first)
+        assertEquals("# Omni note Archive\n\n## 2026-10\n\n- [x] ซื้อของ ✅ 2026-09-20\n    - นม ไข่\n", first)
         val second = Archive.append(first, listOf(listOf("- [x] อีกงาน ✅ 2026-10-08")), d("2026-10-09"))
         assertEquals(first + "- [x] อีกงาน ✅ 2026-10-08\n", second)
         val nextMonth = Archive.append(second, listOf(listOf("- [x] พฤศจิกา ✅ 2026-11-01")), d("2026-11-02"))

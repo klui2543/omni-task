@@ -15,6 +15,7 @@ import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.Projects
+import app.omnitask.model.quadrant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import app.omnitask.model.ReminderOn
@@ -63,6 +64,8 @@ object WebCore {
         /** Linked note names, for the edit panel. */
         val linkNames: List<String> = emptyList(),
         val attachmentNames: List<String> = emptyList(),
+        /** The vault path of the note the task is in. */
+        val note: String? = null,
     )
 
     @Serializable
@@ -87,12 +90,20 @@ object WebCore {
         attachments = t.attachments.size, links = t.links.size,
         start = t.start?.toString(), reminderOn = t.reminderOn?.name,
         linkNames = t.links, attachmentNames = t.attachments,
+        note = t.filePath.ifEmpty { null },
     )
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String {
         val day = LocalDate.parse(today)
-        return json.encodeToString(VaultText.parseFile(fileKey, path, text).map { dto(it, day) })
+        return json.encodeToString(WebNotes.tasks(fileKey, path, text).map { dto(it, day) })
+    }
+
+    /** The tasks without those in a parked branch, which every page but Projects leaves out (as on Android). */
+    internal fun withoutParked(tasks: List<Task>, branches: List<String>): List<Task> {
+        if (branches.isEmpty()) return tasks
+        val states = app.omnitask.model.Branches.parse(branches.toSet())
+        return tasks.filter { !app.omnitask.model.Branches.isParked(it, states) }
     }
 
     /** The task list's filters, grouping and sorting, named as in [TaskQuery]; empty sets mean no filter. */
@@ -107,6 +118,8 @@ object WebCore {
         val groupBy: String = "DATE",
         /** Sort levels in order, each a [SortBy] name and whether it runs ascending. */
         val sorts: List<SortDto> = listOf(SortDto("DUE", true)),
+        /** Branch states as Android saves them ("project\tpath\tSTATE"); tasks in a parked branch are left out. */
+        val branches: List<String> = emptyList(),
     )
 
     @Serializable
@@ -126,8 +139,8 @@ object WebCore {
     /** The task list as Android shows it: [TaskQuery] run over the note, plus each parent's subtask progress. */
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
         val day = LocalDate.parse(today)
-        val tasks = VaultText.parseFile(fileKey, path, text)
         val q = json.decodeFromString<QueryDto>(query)
+        val tasks = withoutParked(WebNotes.tasks(fileKey, path, text), q.branches)
         fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
         val sorts = q.sorts.mapNotNull { s -> SortBy.entries.firstOrNull { it.name == s.by }?.let { it to s.ascending } }
         val main = sorts.firstOrNull() ?: (SortBy.DUE to true)
@@ -208,6 +221,9 @@ object WebCore {
         val field: String? = null,
         val value: String? = null,
         val on: String? = null,
+        /** For a kind change: who is waiting (the "kind" op) and the tags of the owner's own kinds, which are swapped out too. */
+        val who: String? = null,
+        val custom: List<String> = emptyList(),
     )
 
     /**
@@ -243,16 +259,27 @@ object WebCore {
             // The kind tag (#รอ, #อนาคต, #สักวัน) is swapped for the new one, as Android's kind picker does.
             "kind" -> {
                 val kind = TaskKind.valueOf(op.value!!)
-                line { raw ->
-                    val cleared = TaskKind.kindTags(task).fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
-                    kind.tag?.let { TaskLine.addTag(cleared, it) } ?: cleared
-                }
+                line { raw -> WebKinds.withKind(task, raw, kind, op.who, op.custom) }
+            }
+            // One of the owner's own kinds (see WebKinds): its tag replaces any other kind's.
+            "customKind" -> {
+                val tag = value ?: return fail("empty")
+                line { raw -> WebKinds.withCustomKind(task, raw, tag, op.custom) }
             }
             "describe" -> VaultText.edit(text, task) { lines, i -> VaultText.describe(lines, i, op.value.orEmpty()) }
             "subtask" -> {
                 val draft = QuickAdd.parse(value ?: return fail("empty"), day)
                 if (draft.title.isBlank()) return fail("empty")
                 VaultText.edit(text, task) { lines, i -> VaultText.insertSubtask(lines, i, draft.line(day)) }
+            }
+            // Moved between Matrix quadrants (see WebViews): importance changes, urgency comes from the dates.
+            "quadrant" -> {
+                val to = app.omnitask.model.Quadrant.valueOf(op.value!!)
+                val rule = app.omnitask.model.UrgentRule.entries.firstOrNull { it.name == op.field } ?: app.omnitask.model.UrgentRule.THIS_WEEK
+                val from = task.quadrant(day, rule)
+                if (from == to) return ok(text)
+                if (from.urgent != to.urgent) return fail("sideways", WebViews.SIDEWAYS)
+                line { TaskLine.setPriority(it, WebViews.priorityFor(to)) }
             }
             else -> return fail("unknown")
         }
