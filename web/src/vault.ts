@@ -2,9 +2,10 @@ import {
   addTask, focus, archiveAppend, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
-import { Drive, DriveFile, FOLDER, sameName } from './drive'
+import { Drive, DriveError, DriveFile, FOLDER, sameName } from './drive'
 import { branchStates } from './ui/projects/projectState'
 import { config } from './config'
+import { customKindTags } from './kinds'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 import {
   addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
@@ -40,10 +41,12 @@ export class Vault {
 
   private async file(): Promise<string> {
     if (this.located && this.fileId) return this.fileId
-    if (this.fileId) {
+    // Only the name here, as one request; load() checks the folder too, beside its reads.
+    const name = this.fileId ? await this.nameIfStillTheNote(this.fileId, false) : null
+    if (this.fileId && name === null) this.forget()
+    if (this.fileId && name !== null) {
       // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
       // an Omni note.md once the owner has made one in the new place.
-      const name = (await this.drive.get(this.fileId, 'name')).name
       this.notePath = sameName(name, 'TaskForge.md') ? legacyTaskFilePath : taskFilePath
       if (this.notePath === legacyTaskFilePath) {
         const fresh = await this.drive.resolve(this.rootId, taskFilePath)
@@ -63,6 +66,32 @@ export class Vault {
     }
     this.located = true
     return this.fileId!
+  }
+
+  /** Drops the remembered task note, so it is looked up again by its path. */
+  private forget() {
+    this.fileId = null
+    this.folderId = null
+    this.located = false
+    config.taskFileId = null
+  }
+
+  /**
+   * The remembered file's name while it is still the task note, else null. When a sync app finds the note changed on
+   * two sides, it renames this file (e.g. "Omni note (older, before conflict ...).md") and makes a new one under the
+   * note's name; Obsidian moves a deleted note to .trash. Writing to the old file then would go to a copy.
+   */
+  private async nameIfStillTheNote(id: string, withFolder = true): Promise<string | null> {
+    try {
+      const f = await this.drive.get(id, 'name,parents,trashed')
+      if (f.trashed || !['Omni note.md', 'TaskForge.md'].some((n) => sameName(f.name, n))) return null
+      const parent = f.parents?.[0]
+      if (withFolder && parent && (await this.drive.get(parent, 'name')).name.startsWith('.')) return null
+      return f.name
+    } catch (e) {
+      if (e instanceof DriveError && e.status === 404) return null
+      throw e
+    }
   }
 
   /** The note's name with the part that conflict copies and the archive start with. */
@@ -88,8 +117,12 @@ export class Vault {
    * The note, and the names of conflict copies a sync app left beside it (e.g. "TaskForge (conflict ...).md"):
    * those mean two versions met, so the owner should compare them before going on.
    */
-  async load(): Promise<Snapshot> {
+  async load(again = false): Promise<Snapshot> {
     const id = await this.file()
+    // Checked again on every load, beside the reads so it costs no wait: a sync app may have set the file aside
+    // since the page was opened, or Obsidian moved it to .trash.
+    // A failed check is not a reason to fail the load; the next load checks again.
+    const still = this.nameIfStillTheNote(id).catch(() => '')
     const index = this.index()
     index.skip = id
     // Once the vault has been walked (now or on an earlier visit), a reload reads only what changed and waits for it.
@@ -101,6 +134,10 @@ export class Vault {
       this.folder().then((f) => this.drive.children(f)),
       quick ? index.refresh() : null,
     ])
+    if ((await still) === null && !again) {
+      this.forget()
+      return this.load(true)
+    }
     const base = this.isLegacy ? 'TaskForge' : 'Omni note'
     const beside = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
     const conflicts = quick ? [...new Set([...beside, ...index.conflicts()])] : beside
@@ -535,7 +572,8 @@ export class Snapshot {
   /** The Projects page: projects, branches and lists, from every note, the list notes and what this device chose. */
   projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
     const s = this.source()
-    return this.memoed('projects', { state, notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }, () =>
+    // The kinds of your own are read by projects() from this device's settings, so they are part of the key.
+    return this.memoed('projects', { state, kindTags: customKindTags(), notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }, () =>
       projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state))
   }
 

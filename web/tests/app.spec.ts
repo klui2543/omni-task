@@ -238,6 +238,28 @@ test('a sync conflict copy beside the note is pointed out', async ({ page }) => 
   await expect(page.getByText('ส่งรายงาน')).toHaveCount(1)
 })
 
+test('when the sync app sets the note aside and makes a new one, edits go to the new note', async ({ page }) => {
+  const { drive, file } = await setup(page)
+  await signInAndPick(page)
+  await expect(page.getByText('ส่งรายงาน')).toBeVisible()
+
+  // A clash: the file the page remembers is renamed, and a new note takes the note's name in the same folder.
+  file.name = 'Omni note (older, before conflict 2026-10-10-18-43-58).md'
+  const fresh = drive.add('Omni note.md', file.parent, TASKS.replace('- [ ] อ่านหนังสือ', '- [ ] อ่านหนังสือ #อนาคต'))
+  await page.reload()
+
+  await expect(page.getByRole('alert')).toContainText('Omni note (older, before conflict 2026-10-10-18-43-58).md')
+  // The set-aside copy is not read, so no task shows twice.
+  await expect(page.getByText('ส่งรายงาน')).toHaveCount(1)
+  expect(await page.evaluate(() => localStorage.getItem('omni.taskFileId'))).not.toBe(file.id)
+
+  const before = file.text
+  await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ส่งรายงาน/ }).click()
+  await expect.poll(() => fresh.text).toContain('- [x] ส่งรายงาน')
+  expect(fresh.text).toContain('อ่านหนังสือ #อนาคต')
+  expect(file.text).toBe(before)
+})
+
 test('the edit panel changes dates, priority, repeat, tags and the description', async ({ page }) => {
   const { file } = await setup(page)
   await signInAndPick(page)
