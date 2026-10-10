@@ -11,6 +11,7 @@ import {
 } from './core'
 import type { BranchOp, BranchResult, ListNote, ProjectEditResult, ProjectsIn, ProjectsOut } from './types'
 import { MANY, NoteIndex, NoteText, samePath } from './noteIndex'
+import { customKindTags } from './kinds'
 import { WebNotesApi } from './kotlin/OmniTask-shared.mjs'
 
 /** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
@@ -40,6 +41,13 @@ export class Vault {
 
   private async file(): Promise<string> {
     if (this.located && this.fileId) return this.fileId
+    // A remembered id can stop being the task note: after a sync clash DriveSync renames the old file to
+    // "Omni note (older, before conflict ...).md" and makes a new Omni note.md, and Obsidian may move a file to its
+    // .trash. Reading both would show every task twice, so an id whose file is no longer the note is dropped.
+    if (this.fileId && !(await this.stillTheNote(this.fileId))) {
+      this.fileId = null
+      config.taskFileId = null
+    }
     if (this.fileId) {
       // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
       // an Omni note.md once the owner has made one in the new place.
@@ -63,6 +71,21 @@ export class Vault {
     }
     this.located = true
     return this.fileId!
+  }
+
+  /** Whether the file [id] is still a task note: named like one, inside its folder, not in Drive's trash. */
+  private async stillTheNote(id: string): Promise<boolean> {
+    try {
+      const f = await this.drive.get(id, 'name,parents,trashed')
+      if (f.trashed) return false
+      const [path] = [taskFilePath, legacyTaskFilePath].filter((p) => sameName(f.name, p.split('/').pop()!))
+      if (!path) return false
+      const parent = f.parents?.[0]
+      const folder = path.split('/').slice(-2)[0]
+      return !!parent && sameName((await this.drive.get(parent, 'name')).name, folder)
+    } catch {
+      return false
+    }
   }
 
   /** The note's name with the part that conflict copies and the archive start with. */
@@ -535,7 +558,9 @@ export class Snapshot {
   /** The Projects page: projects, branches and lists, from every note, the list notes and what this device chose. */
   projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
     const s = this.source()
-    return this.memoed('projects', { state, notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }, () =>
+    // The kinds of your own are part of the answer (their tags are not projects), so they are part of the key.
+    const key = { state, kinds: customKindTags(), notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }
+    return this.memoed('projects', key, () =>
       projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state))
   }
 
