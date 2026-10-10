@@ -1,7 +1,8 @@
 # Omni Task web
 
-The iPad version of Omni Task. It runs in the browser, signs in with Google and reads and writes the same
-`Omni note.md` (`📁 Folder/หลังบ้าน/Omni/`, or the old `TaskForge.md` until it is moved) in the owner's Obsidian vault on Google Drive. The task line format, queries and recurrence come
+The iPad version of Omni Task. It runs in the browser, signs in with Google and reads and writes the checkbox tasks of
+every note in the owner's Obsidian vault on Google Drive, as the Android app does. New tasks go to `Omni note.md`
+(`📁 Folder/หลังบ้าน/Omni/`, or the old `TaskForge.md` until it is moved). The task line format, queries and recurrence come
 from `../shared` (Kotlin compiled to JavaScript), so a line is read and written exactly as the Android app does.
 
 ## Run
@@ -50,15 +51,38 @@ the address bar).
 
 Open the site in Safari, Share > Add to Home Screen.
 
+## Every note in the vault
+
+Focus, Tasks, Views, Projects and the Assistant show the tasks of every `.md` note in the vault together, as Android
+does. Left out: the archive notes (`Omni note Archive.md`, the old `TaskForge Archive.md`), a sync app's conflict copies
+(pointed out in a banner instead), hidden folders such as `.trash` and `.obsidian`, the Attachments folder, list
+notes (their items belong to their list on the Projects page) and the old `TaskForge.md` once an `Omni note.md` is in
+the new place. Each task's key starts with its note's Drive id, so ticking, editing, deleting, archiving, scheduling
+from the Assistant, "do in order" and pulling into a list are written to the note the task is in. New tasks (quick
+add, Kanban, a project's "+") still go to `Omni note.md`.
+
+How the notes are read (`src/noteIndex.ts`):
+
+- The first time, the task note is shown at once while the vault is walked in the background, level by level with
+  many folders per Drive question; the notes are then read six at a time and the page fills in when they are done.
+- After that a reload asks Drive's change log what changed since the last read and reads only those notes (a folder
+  made, moved or renamed starts a new walk). `Omni note.md` itself is always read fresh.
+- What was read is kept on the device (IndexedDB, only the notes with a checkbox line), so the next visit starts from
+  it and asks only for the changes. Signing out forgets it.
+
+The page builders in `shared/.../web` take one note as (key, path, text); with the key `WebNotes.MANY` the text is a
+JSON list of notes instead, so every page reads one note or all of them with the same code.
+
 ## How a write stays safe
 
 Every edit reads the note again, lets the shared code change just the one line, checks the file's version in Drive
 right before writing and starts over on the new text if it moved. If the line itself changed elsewhere, nothing is
-written and the app says so.
+written and the app says so. "Do in order" across several notes reads them all again and writes only when none of
+them moved.
 
 ## Projects and lists
 
-The "โปรเจกต์/ลิสต์" page reads the task note and the list notes in the vault's Omni folder (`หลังบ้าน/Omni/`, or the old `Omni/` at the vault root until it is moved; the notes whose
+The "โปรเจกต์/ลิสต์" page reads the tasks of every note and the list notes in the vault's Omni folder (`หลังบ้าน/Omni/`, or the old `Omni/` at the vault root until it is moved; the notes whose
 header says `omni-list: true`, found only directly in that folder). Every text change (renaming a project or
 a branch, adding to a list, pulling tasks into a list, "do in order" with 🆔 and ⛔, a new list note) is made by
 `shared/.../web/WebProjects.kt`, the same code paths Android uses, and written with the same version check.
