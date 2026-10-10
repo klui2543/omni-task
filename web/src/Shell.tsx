@@ -15,7 +15,7 @@ const PAGES: Page[] = [...TABS.map(([p]) => p), 'settings']
 
 const pageOf = (hash: string): Page => {
   const name = hash.replace(/^#\/?/, '') as Page
-  return PAGES.includes(name) ? name : 'tasks'
+  return PAGES.includes(name) ? name : 'focus'
 }
 
 /** The open page, kept in the address (#/tasks) so reloading and the back button stay on it. */
@@ -24,6 +24,8 @@ export function usePage(): [Page, (p: Page) => void] {
   useEffect(() => {
     const onHash = () => setPage(pageOf(location.hash))
     addEventListener('hashchange', onHash)
+    // A change made between the first render and this listener would otherwise be missed.
+    onHash()
     return () => removeEventListener('hashchange', onHash)
   }, [])
   return [page, (p) => { location.hash = '/' + p }]

@@ -240,6 +240,14 @@ object WebCore {
             }
             "removeTag" -> line { TaskLine.removeTag(it, op.value!!) }
             "status" -> line { TaskLine.setStatus(it, Status.valueOf(op.value!!), day) }
+            // The kind tag (#รอ, #อนาคต, #สักวัน) is swapped for the new one, as Android's kind picker does.
+            "kind" -> {
+                val kind = TaskKind.valueOf(op.value!!)
+                line { raw ->
+                    val cleared = TaskKind.kindTags(task).fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
+                    kind.tag?.let { TaskLine.addTag(cleared, it) } ?: cleared
+                }
+            }
             "describe" -> VaultText.edit(text, task) { lines, i -> VaultText.describe(lines, i, op.value.orEmpty()) }
             "subtask" -> {
                 val draft = QuickAdd.parse(value ?: return fail("empty"), day)

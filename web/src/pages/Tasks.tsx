@@ -191,7 +191,7 @@ export function TasksPage(p: PageProps) {
 }
 
 /** A sentence in, a TaskForge line out: dates, times, tags and priority are read from the words, as on Android. */
-function QuickAdd(p: PageProps & { onClose: () => void }) {
+export function QuickAdd(p: PageProps & { onClose: () => void }) {
   // The draft survives the trip to Google when the sign-in runs out while typing.
   const [sentence, setSentenceState] = useState(() => read(() => sessionStorage, DRAFT_KEY))
   const setSentence = (v: string) => { setSentenceState(v); write(() => sessionStorage, DRAFT_KEY, v) }

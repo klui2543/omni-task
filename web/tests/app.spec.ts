@@ -15,6 +15,8 @@ async function signInAndPick(page: Page) {
   await page.goto('/')
   await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
   await page.getByRole('button', { name: /ObsidianVault/ }).click()
+  // The app opens on Focus, as Android does; most of these tests are about the task list.
+  await page.evaluate(() => { location.hash = '/tasks' })
 }
 
 test('signs in, finds the vault by its TaskForge note and shows tasks by when they are due', async ({ page }) => {

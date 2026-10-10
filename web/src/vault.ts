@@ -1,9 +1,9 @@
 import {
-  addTask, archiveAppend, archiveFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
+  addTask, focus, archiveAppend, archiveFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle,
 } from './core'
 import { Drive, DriveFile, sameName } from './drive'
-import type { EditOp, EditResult, Query, Task, TaskList } from './types'
+import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList } from './types'
 
 /** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
 export interface Cut {
@@ -121,6 +121,12 @@ export class Vault {
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
   }
 
+  /** The profile note the assistant keeps (wake and sleep times...), or null when the vault has none. */
+  async profile(): Promise<string | null> {
+    const file = await this.drive.resolve(this.rootId, 'Omni/โปรไฟล์.md')
+    return file ? (await this.drive.readText(file.id)).text : null
+  }
+
   /** Puts a deleted or archived task back where it was (and takes it out of the archive note). */
   async undo(cut: Cut): Promise<EditResult> {
     const res = await this.edit((text) => restoreBlock(text, cut.index, cut.lines))
@@ -143,6 +149,10 @@ export class Snapshot {
 
   list(query: Query): TaskList {
     return listTasks(this.fileId, taskFilePath, this.text, query)
+  }
+
+  focus(state: FocusIn): FocusOut {
+    return focus(this.fileId, taskFilePath, this.text, state)
   }
 }
 

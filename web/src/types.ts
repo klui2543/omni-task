@@ -75,5 +75,59 @@ export type EditOp =
   | { op: 'reminder'; value: string | null; on: 'DUE' | 'SCHEDULED' }
   | { op: 'addTag' | 'removeTag'; value: string }
   | { op: 'status'; value: Task['status'] }
+  | { op: 'kind'; value: Kind }
   | { op: 'describe'; value: string }
   | { op: 'subtask'; value: string }
+
+export type Kind = 'NORMAL' | 'WAITING' | 'FUTURE' | 'SOMEDAY'
+
+/** What was chosen on this device and what the calendar holds, for the Focus page; see WebFocus.StateIn. */
+export interface FocusIn {
+  now: string
+  skippedToday: string[]
+  dismissed: string[]
+  reviewed: Record<string, string>
+  futureCount: number
+  countdown: string | null
+  tonightBed: { evening: string; time: string } | null
+  profile: string | null
+  events: { id: number; title: string; begin: string; end: string; allDay: boolean }[]
+}
+
+export interface PlanItem {
+  type: 'task' | 'event' | 'now'
+  time?: string
+  key?: string
+  title?: string
+  lead?: string
+  late: boolean
+  extra?: string
+  blocked: boolean
+  range?: string
+}
+
+export interface Pick {
+  key: string
+  title: string
+  sub: string
+}
+
+/** The Focus page as the shared logic builds it; see WebFocus.Out. */
+export interface FocusOut {
+  ring: { done: number; total: number; overdue: number; events: number }
+  third: { kind: 'night' | 'free'; minutes: number; night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string } }
+  countdown?: { key: string; title: string; text: string; late: boolean }
+  notices: string[]
+  plan: { label: string; late: boolean; tasks: number; items: PlanItem[] }[]
+  suggestions: { id: string; key: string; kind: 'RAISE_PRIORITY' | 'SOFT_DATE' | 'MARK_FUTURE'; title: string; text: string }[]
+  waiting: { key: string; who?: string; age?: number }[]
+  future: string[]
+  futureAge: Record<string, number>
+  futureChosen: Pick[]
+  futureCandidates: Pick[]
+  review: { key: string; kind: Kind; age?: number; last?: string }[]
+  countdownChoices: Pick[]
+  bedtime: string
+  evening: string
+  softDate: string
+}

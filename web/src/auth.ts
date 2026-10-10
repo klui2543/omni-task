@@ -6,11 +6,14 @@
 const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 const REVOKE = 'https://oauth2.googleapis.com/revoke'
 export const SCOPE = 'https://www.googleapis.com/auth/drive'
+/** Asked for only when the owner connects Google Calendar on the Focus page. */
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
 
 const TOKEN_KEY = 'omni.token'
 const STATE_KEY = 'omni.oauthState'
 const SILENT_KEY = 'omni.silentTried'
 const SIGNED_IN_BEFORE = 'omni.signedInBefore'
+const SCOPES_KEY = 'omni.scopes'
 
 interface Stored {
   token: string
@@ -57,6 +60,8 @@ export class Auth {
     const stored: Stored = { token, expiresAt: Date.now() + Number(p.get('expires_in') ?? 3600) * 1000 }
     store.set(localStorage, TOKEN_KEY, JSON.stringify(stored))
     store.set(localStorage, SIGNED_IN_BEFORE, '1')
+    // What Google says the token covers; a renewal keeps what was granted before.
+    if (p.get('scope')) store.set(localStorage, SCOPES_KEY, p.get('scope'))
     store.set(sessionStorage, SILENT_KEY, null)
     return null
   }
@@ -81,8 +86,16 @@ export class Auth {
     return this.token === null && store.get(localStorage, SIGNED_IN_BEFORE) === '1' && store.get(sessionStorage, SILENT_KEY) !== '1'
   }
 
-  /** Leaves the page for Google. [prompt] 'none' renews without showing anything when Google allows it. */
-  signIn(prompt: 'none' | 'select_account' = 'select_account') {
+  /** Whether the owner has agreed to [scope] on this device. */
+  static granted(scope: string): boolean {
+    return (store.get(localStorage, SCOPES_KEY) ?? '').split(/[\s,]+/).includes(scope)
+  }
+
+  /**
+   * Leaves the page for Google. [prompt] 'none' renews without showing anything when Google allows it.
+   * [extra] asks for one more permission on top of what was granted (Google Calendar, from the Focus page).
+   */
+  signIn(prompt: 'none' | 'select_account' = 'select_account', extra?: string) {
     const state = crypto.randomUUID()
     store.set(sessionStorage, STATE_KEY, state)
     if (prompt === 'none') store.set(sessionStorage, SILENT_KEY, '1')
@@ -90,7 +103,7 @@ export class Auth {
       client_id: this.clientId,
       redirect_uri: redirectUri(),
       response_type: 'token',
-      scope: SCOPE,
+      scope: extra ? `${SCOPE} ${extra}` : SCOPE,
       include_granted_scopes: 'true',
       state,
       prompt,
@@ -103,5 +116,6 @@ export class Auth {
     if (token) fetch(`${REVOKE}?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
     store.set(localStorage, TOKEN_KEY, null)
     store.set(localStorage, SIGNED_IN_BEFORE, null)
+    store.set(localStorage, SCOPES_KEY, null)
   }
 }
