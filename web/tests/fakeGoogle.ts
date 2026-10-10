@@ -42,6 +42,20 @@ export class FakeDrive {
     return { root, file }
   }
 
+  /* ---------- Projects ---------- */
+
+  /** A note in the vault's Omni folder (made when missing), e.g. a list note; returns it so a test can read its text later. */
+  omniNote(name: string, text: string, vaultName = 'ObsidianVault') {
+    const root = this.nodes.find((n) => n.name === vaultName && n.folder)!
+    const omni = this.nodes.find((n) => n.name === 'Omni' && n.parent === root.id) ?? this.add('Omni', root.id)
+    return this.add(name, omni.id, text)
+  }
+
+  /** The text of the note called [name], or null when there is none. */
+  textOf(name: string) {
+    return this.nodes.find((n) => n.name === name && !n.folder)?.text ?? null
+  }
+
   private find(q: string) {
     const name = /name = '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1')
     const parent = /'([^']+)' in parents/.exec(q)?.[1]
@@ -94,6 +108,11 @@ export class FakeDrive {
 
       const m = /\/files\/?([^/?]*)$/.exec(url.pathname)
       const id = m?.[1]
+      // A new folder is a plain JSON post (a new note is a multipart upload).
+      if (req.method() === 'POST' && !id && (req.headers()['content-type'] ?? '').startsWith('application/json')) {
+        const meta = JSON.parse(req.postData() ?? '{}')
+        return json({ id: this.add(meta.name, meta.parents[0]).id })
+      }
       if (req.method() === 'POST' && !id) {
         // A multipart upload: the metadata part, then the text.
         const body = req.postData() ?? ''

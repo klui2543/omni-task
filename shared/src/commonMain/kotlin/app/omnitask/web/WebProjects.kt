@@ -255,6 +255,11 @@ object WebProjects {
     private fun indexOf(lines: List<String>, ref: TaskRef): Int =
         if (lines.getOrNull(ref.lineIndex) == ref.raw) ref.lineIndex else lines.indexOf(ref.raw)
 
+    /** Tags that name a list or one of its categories, which never name a project (kept from the last time the lists were read). */
+    fun ignoreTags(tagsJson: String) {
+        Projects.ignoredTags = json.decodeFromString<List<String>>(tagsJson).toSet()
+    }
+
     /** A project (or a branch, by its full tag) renamed in every task line: `#old` and `#old/x` become `#new...`. */
     fun renameTag(text: String, old: String, new: String): String {
         val (out, n) = VaultText.renameProject(text, old, new)

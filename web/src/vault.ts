@@ -2,8 +2,12 @@ import {
   addTask, focus, archiveAppend, archiveFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle,
 } from './core'
-import { Drive, DriveFile, sameName } from './drive'
+import { Drive, DriveFile, FOLDER, sameName } from './drive'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList } from './types'
+import {
+  addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
+} from './core'
+import type { BranchOp, BranchResult, ListNote, ProjectEditResult, ProjectsIn, ProjectsOut } from './types'
 
 /** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
 export interface Cut {
@@ -11,6 +15,8 @@ export interface Cut {
   index: number
   lines: string[]
   archived: boolean
+  /** The note the block was cut from, when it was not TaskForge (an item of a list note). */
+  fileId?: string
 }
 
 export class VaultError extends Error {
@@ -57,12 +63,15 @@ export class Vault {
    * before writing: if the sync app or Obsidian changed it meanwhile, the edit starts over on the new text,
    * so a change made elsewhere is never overwritten.
    */
-  private async edit(op: (text: string) => EditResult): Promise<EditResult> {
-    const id = await this.file()
+  private async edit(op: (text: string) => EditResult, fileId?: string): Promise<EditResult> {
+    // A task of a list note carries that note's id in its key, so it is edited in its own note.
+    const id = fileId ?? (await this.file())
     for (let attempt = 0; attempt < 3; attempt++) {
       const { text, version } = await this.drive.readText(id)
       const result = op(text)
       if (!result.ok) return result
+      // Nothing to change (e.g. a rename that touched no line of this note): nothing is written.
+      if (result.text === text) return result
       if ((await this.drive.version(id)) !== version) continue
       await this.drive.writeText(id, result.text!)
       return result
@@ -71,7 +80,7 @@ export class Vault {
   }
 
   toggle(task: Task, withSubtasks = false) {
-    return this.edit((text) => toggle(text, task, withSubtasks))
+    return this.edit((text) => toggle(text, task, withSubtasks), noteOf(task))
   }
 
   add(sentence: string) {
@@ -79,13 +88,13 @@ export class Vault {
   }
 
   change(task: Task, op: EditOp) {
-    return this.edit((text) => editTask(text, task, op))
+    return this.edit((text) => editTask(text, task, op), noteOf(task))
   }
 
   /** Deletes the task with its description and subtasks; the cut is kept for undo. */
   async remove(task: Task): Promise<EditResult & { cut?: Cut }> {
-    const res = await this.edit((text) => cutTask(text, task))
-    return res.ok ? { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: false } } : res
+    const res = await this.edit((text) => cutTask(text, task), noteOf(task))
+    return res.ok ? { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: false, fileId: noteOf(task) } } : res
   }
 
   private async archiveNote(): Promise<{ id: string | null; text: string; version: string }> {
@@ -129,7 +138,7 @@ export class Vault {
 
   /** Puts a deleted or archived task back where it was (and takes it out of the archive note). */
   async undo(cut: Cut): Promise<EditResult> {
-    const res = await this.edit((text) => restoreBlock(text, cut.index, cut.lines))
+    const res = await this.edit((text) => restoreBlock(text, cut.index, cut.lines), cut.fileId)
     if (res.ok && cut.archived) {
       const archive = await this.archiveNote()
       const back = archive.id ? archiveRemove(archive.text, cut.lines) : null
@@ -137,7 +146,103 @@ export class Vault {
     }
     return res
   }
+
+  /* ---------- Projects ---------- */
+
+  private omniId: string | null = null
+
+  /** The vault's Omni folder, which holds the list notes; made when [create] is set and it is missing. */
+  private async omni(create = false): Promise<string | null> {
+    if (this.omniId) return this.omniId
+    const found = await this.drive.child(this.rootId, 'Omni')
+    if (found) return (this.omniId = found.id)
+    return create ? (this.omniId = await this.drive.createFolder(this.rootId, 'Omni')) : null
+  }
+
+  /** The list notes (Bucket list, Watch list...) in the Omni folder, with their text. */
+  async lists(): Promise<ListNote[]> {
+    const folder = await this.omni()
+    if (!folder) return []
+    const files = (await this.drive.children(folder)).filter((f) => f.mimeType !== FOLDER && /\.md$/i.test(f.name) && !isConflictCopy(f.name))
+    const read = await Promise.all(files.map(async (f) => ({ id: f.id, path: `Omni/${f.name}`, text: (await this.drive.readText(f.id)).text })))
+    // The shared code decides what is a list; this only leaves out the notes that cannot be one.
+    return read.filter((n) => n.text.startsWith('---') && n.text.includes('omni-list'))
+  }
+
+  /** Writes the starter lists (Bucket list, Watch list) that are not in the Omni folder yet. */
+  async seedLists(): Promise<void> {
+    const folder = (await this.omni(true))!
+    for (const s of listStarters()) {
+      const name = s.path.split('/').pop()!
+      if (!(await this.drive.child(folder, name))) await this.drive.createText(folder, name, s.text)
+    }
+  }
+
+  /** A new list note in the Omni folder, unless one with that name is there already. */
+  async createList(name: string, icon: string, categories: string[]): Promise<ProjectEditResult> {
+    const made = createListNote(name, icon, categories)
+    if (!made.ok) return made
+    const folder = (await this.omni(true))!
+    const file = made.path!.split('/').pop()!
+    if (await this.drive.child(folder, file)) return { ok: false, error: 'exists' }
+    await this.drive.createText(folder, file, made.text!)
+    return made
+  }
+
+  private editProject(op: (text: string) => ProjectEditResult, fileId?: string): Promise<ProjectEditResult> {
+    return this.edit(op as (text: string) => EditResult, fileId) as Promise<ProjectEditResult>
+  }
+
+  updateList(note: ListNote, icon: string, categories: string[]) {
+    return this.editProject((text) => updateListNote(text, note.path, icon, categories), note.id)
+  }
+
+  addListItem(note: ListNote, title: string, category: string | null) {
+    return this.editProject((text) => addListItem(text, note.path, title, category), note.id)
+  }
+
+  /** Tags tasks of TaskForge with a list's tag (and category), so they show in the list where they are. */
+  includeInList(tasks: Task[], tag: string, category: string | null) {
+    return this.editProject((text) => includeInList(text, tasks, tag, category))
+  }
+
+  /** A task in a project or branch: the title is read like quick add and gets the tag. */
+  addTagged(tag: string, title: string) {
+    return this.editProject((text) => addTagged(text, tag, title))
+  }
+
+  /** "Do in order" on or off for the project's open tasks, written as 🆔 and ⛔ in the note. */
+  chain(ordered: Task[], on: boolean) {
+    return this.editProject((text) => chainTasks(text, ordered, on))
+  }
+
+  /**
+   * Renames a project or branch tag in TaskForge and in every list note, each read again and checked before it
+   * is written. Answers how many lines changed.
+   */
+  async renameTag(old: string, name: string): Promise<ProjectEditResult> {
+    let changed = 0
+    const main = await this.editProject((text) => {
+      const r = renameTag(text, old, name)
+      changed = r.changed ?? 0
+      return r
+    })
+    if (!main.ok) return main
+    let total = changed
+    for (const note of await this.lists()) {
+      await this.editProject((text) => {
+        const r = renameTag(text, old, name)
+        changed = r.changed ?? 0
+        return r
+      }, note.id)
+      total += changed
+    }
+    return { ...main, changed: total }
+  }
 }
+
+/** The id of the note a task lives in: its key is the note's id and the line (see Task.key). */
+const noteOf = (task: Task) => task.key.slice(0, task.key.lastIndexOf('#'))
 
 /** The note as last read: its tasks, and the text the shared logic groups and sorts them from. */
 export class Snapshot {
@@ -153,6 +258,16 @@ export class Snapshot {
 
   focus(state: FocusIn): FocusOut {
     return focus(this.fileId, taskFilePath, this.text, state)
+  }
+
+  /** The Projects page: projects, branches and lists, from this note, the list notes and what this device chose. */
+  projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
+    return projects(this.fileId, taskFilePath, this.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state)
+  }
+
+  /** What the shared code does to the branch states of a project, from the tasks as they stand. */
+  branchChange(states: string[], op: BranchOp): BranchResult {
+    return branchChange(this.fileId, taskFilePath, this.text, states, op)
   }
 }
 
