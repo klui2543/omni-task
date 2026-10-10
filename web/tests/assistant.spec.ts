@@ -20,7 +20,7 @@ const ask = async (page: Page, text: string) => {
 test('the first visit is the interview, saved to the profile note in a new Omni folder', async ({ page }) => {
   const { drive } = await openAssistant(page)
   await expect(page.getByText('ขอรู้จักกันก่อน')).toBeVisible()
-  await expect(page.getByText('คำตอบจะเก็บใน Omni/โปรไฟล์.md')).toBeVisible()
+  await expect(page.getByText('คำตอบจะเก็บใน หลังบ้าน/Omni/โปรไฟล์.md')).toBeVisible()
   expect(profileText(drive)).toBeNull()
 
   await page.getByRole('radio', { name: '05:30', exact: true }).click()

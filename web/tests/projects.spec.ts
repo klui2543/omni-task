@@ -294,7 +294,7 @@ test('a list shows its items with categories, ticks into its own note and adds n
   await expect(items.first()).toContainText('จองตั๋วไปเชียงใหม่')
   await expect(items.first()).toContainText('เที่ยว, Omni note')
   await expect(items.last()).toContainText('ปีนภูกระดึง')
-  await expect(page.getByText('เก็บใน Omni/Bucket list.md และงานที่ติด #bucketlist')).toBeVisible()
+  await expect(page.getByText('เก็บใน 📁 Folder/หลังบ้าน/Omni/Bucket list.md และงานที่ติด #bucketlist')).toBeVisible()
 
   await page.getByRole('button', { name: 'เรียนรู้' }).click()
   await expect(items).toHaveCount(0)

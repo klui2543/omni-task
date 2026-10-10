@@ -12,6 +12,7 @@ test('the new layout: Omni note.md, its archive and conflict copies sit together
   await expect.poll(() => file.text).toContain('- [x] ทบทวนเคส')
   await expect(page.getByText('เสร็จแล้ว: ทบทวนเคส')).toBeVisible()
   await page.getByRole('button', { name: 'เก็บเข้าคลัง' }).click()
+  await expect(page.getByText('ย้าย "ทบทวนเคส" เข้าคลังแล้ว')).toBeVisible()
   const archive = drive.nodes.find((n) => n.name === 'Omni note Archive.md')!
   expect(archive.parent).toBe(file.parent)
   expect(archive.text).toContain('# Omni note Archive')
@@ -32,6 +33,7 @@ test('before the move: TaskForge.md and the Omni folder at the vault root still 
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
   await expect.poll(() => file.text).toContain('- [x] ทบทวนเคส')
   await page.getByRole('button', { name: 'เก็บเข้าคลัง' }).click()
+  await expect(page.getByText('ย้าย "ทบทวนเคส" เข้าคลังแล้ว')).toBeVisible()
   // The archive keeps its old name beside the old note.
   expect(drive.nodes.find((n) => n.name === 'TaskForge Archive.md')?.parent).toBe(file.parent)
   expect(drive.nodes.some((n) => n.name === 'Omni note Archive.md')).toBe(false)
