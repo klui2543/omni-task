@@ -11,12 +11,18 @@ Where the conflict question stands, for the next session.
 - Obsidian Sync merges Markdown with diff-match-patch and can still duplicate text; its files are not in Drive, so the web could not read them.
 - An Android Drive login under an OAuth app in "Testing" status gets refresh tokens that expire after 7 days.
 
+## Update (2026-10-10 evening)
+- Second conflict: `Omni note (older, before conflict 2026-10-10-18-43-58).md`, in `.trash`. This naming answers the open question: the newer version keeps the original name, the older one is renamed. The current `Omni note.md` is a new Drive file (created 5 s after the conflict); the old file id (since 2026-09-29) is now the conflict copy. The web finds notes by name and skips trashed files, so it is not affected.
+- What it lost: the older side had "ปรับระบบให้เป็นระบบ "ป้าย"" ticked done (✅ 2026-10-10); the newer side (Routine moved to 10-10, `#อนาคต` added) won, so that tick is gone. No duplicated lines in this conflict.
+- The nine `Routine ... ✅ 2026-10-08` lines in the archive did not come from sync. They are one done copy per tick, which is how Omni before v0.3 (`e813b26`, in-place repeats), the Tasks plugin and TaskForge complete a repeating task; their order (newest on top) matches. Omni now moves the line in place. The owner now ticks only in Omni, so these copies should not come back.
+- Owner's sync app settings (screen recording): DriveSync Ultimate 7.7.4 (MetaCtrl, the Autosync family). **"Enable autosync" (monitor folders and sync in background) is off**; the schedule shows "Every 2 hours" greyed out. So the phone only syncs when the owner syncs by hand, and its copy can be hours old: this is the most likely cause of both conflicts.
+- No "Automation" section (secret code for the documented `syncNow` broadcast, package `com.ttxapps.autosync`, class `com.ttxapps.autosync.Automation`) appears in Settings, Synchronization or Security in this version, so Omni cannot ask it to sync. Could be asked of drivesync@metactrl.com.
+
 ## Not known
-- Which version keeps the original name in a conflict.
-- What caused the one conflict (suspected: a web or PC edit not yet downloaded to the phone, then a phone-side write).
+- Whether conflicts stop once background sync is on.
 
 ## Agreed direction (proportional, step by step)
-0. Owner: in Autosync turn on Instant upload, shortest acceptable interval, exempt it from battery optimisation, and sync manually before editing on the phone right after using the web. Owner may send screenshots of the Autosync settings.
+0. Owner: in Autosync turn on Instant upload, shortest acceptable interval, exempt it from battery optimisation, and sync manually before editing on the phone right after using the web. Owner may send screenshots of the Autosync settings. (2026-10-10 evening: background sync found off; owner asked to turn on "Enable autosync", pick the shortest schedule, turn on "Try again automatically", and set the app's battery use to Unrestricted. Then measure a week.)
 1. Small code change (suggested Opus 5.5 medium): the web warns when a conflict copy exists (done 2026-10-10: a notice above every page names the copy); Android skips the daily archive sweep while a conflict copy exists (still to do).
 2. Measure for one week, then decide.
 3. Only if conflicts keep happening (suggested Opus 5.5 high): a conflict review screen comparing the two versions task by task, the owner confirms each choice, and the conflict copy moves to `.trash` instead of being deleted.
