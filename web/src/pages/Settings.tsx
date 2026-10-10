@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { profileApply, profileOf } from '../assistantCore'
 import { Auth, CALENDAR_SCOPE } from '../auth'
-import { taskFilePath } from '../core'
 import { askOnDone, type PageProps } from '../Home'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { ARCHIVE_DAYS, archiveDays, sweepIfDue } from '../settingsDevice'
@@ -20,7 +19,7 @@ function Segmented<T extends string | number>(p: { label: string; options: [T, s
 
 /**
  * What Android's Settings and Notifications screens hold that makes sense on the web. The choices here stay on this
- * device (Android syncs its own through Omni/omni-settings.json, which the web does not read yet); the sleep times are
+ * device (Android syncs its own through omni-settings.json in the Omni folder, which the web does not read yet); the sleep times are
  * written to the profile note in the vault, which the assistant and Focus read.
  */
 export function SettingsPage(p: PageProps) {
@@ -81,7 +80,7 @@ export function SettingsPage(p: PageProps) {
               <input class="set-time" type="time" aria-label="เวลาตื่นประจำ" value={sleep.wake} disabled={profile === undefined}
                 onChange={(e) => saveTimes({ wake: e.currentTarget.value })} />
             </label>
-            <span class="set-note">เก็บในโปรไฟล์ Omni/โปรไฟล์.md ผู้ช่วยกับหน้าโฟกัสอ่านจากที่เดียวกัน หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้</span>
+            <span class="set-note">เก็บในโปรไฟล์ หลังบ้าน/Omni/โปรไฟล์.md ผู้ช่วยกับหน้าโฟกัสอ่านจากที่เดียวกัน หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้</span>
           </section>
 
           <section class="set-card">
@@ -93,7 +92,7 @@ export function SettingsPage(p: PageProps) {
                   onClick={() => { archiveDays.set(d); setDays(d); p.run(() => sweepIfDue(p.vault)) }}>{d === 0 ? 'ไม่ย้าย' : `${d} วัน`}</button>
               ))}
             </div>
-            <span class="set-note">ย้ายวันละครั้งไปที่ TaskForge Archive.md ข้างไฟล์ TaskForge งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม</span>
+            <span class="set-note">ย้ายวันละครั้งไปที่ Omni note Archive.md ข้างไฟล์ Omni note งานโปรเจกต์ไม่ถูกย้าย ยังติ๊กเสร็จอยู่ที่เดิม</span>
             <label class="set-row">
               <span class="grow">
                 <span>ถามเมื่อติ๊กเสร็จ</span>
@@ -140,7 +139,7 @@ export function SettingsPage(p: PageProps) {
           <section class="set-card">
             <h2>บัญชีและข้อมูล</h2>
             <div class="set-row">
-              <span class="grow"><span>Vault ใน Google Drive</span><span class="set-note">{taskFilePath}</span></span>
+              <span class="grow"><span>Vault ใน Google Drive</span><span class="set-note">{p.snapshot?.path ?? ''}</span></span>
               <button class="pillbtn" disabled={p.busy} onClick={p.onReload}>โหลดใหม่</button>
             </div>
             <div class="set-row">

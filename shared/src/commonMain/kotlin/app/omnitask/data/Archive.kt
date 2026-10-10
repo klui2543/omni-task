@@ -5,13 +5,19 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
 
 /**
- * Finished tasks leave the live TaskForge note for one archive note beside it, each with its whole block
+ * Finished tasks leave the live task note for one archive note beside it, each with its whole block
  * (description, links, subtasks), under a heading for the month it was moved. The app does not read the
  * archive, so the Done filter only holds recent work; Obsidian still finds everything there.
  */
 object Archive {
 
-    const val FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge Archive.md"
+    const val FILE = "${VaultText.OMNI_DIR}/Omni note Archive.md"
+
+    /** The archive of the days when the task note was still TaskForge.md; still left unread. */
+    const val LEGACY_FILE = "📁 Folder/หลังบ้าน/TaskForge/TaskForge Archive.md"
+
+    /** Whether the note at [path] is an archive, which the app does not read. */
+    fun isArchive(path: String) = path == FILE || path == LEGACY_FILE
 
     private val CANCELLED_ON = Regex("""❌️?\s*(\d{4}-\d{2}-\d{2})""")
 
@@ -29,7 +35,7 @@ object Archive {
     fun append(archive: String?, blocks: List<List<String>>, today: LocalDate): String {
         val existing = archive?.takeIf { it.isNotBlank() }
         val separator = existing?.let { VaultText.separatorOf(it) } ?: "\n"
-        val lines = existing?.trimEnd('\r', '\n')?.split(separator)?.toMutableList() ?: mutableListOf("# TaskForge Archive")
+        val lines = existing?.trimEnd('\r', '\n')?.split(separator)?.toMutableList() ?: mutableListOf("# Omni note Archive")
         val heading = "## ${today.toString().take(7)}"
         if (lines.lastOrNull { it.startsWith("## ") } != heading) {
             lines += ""

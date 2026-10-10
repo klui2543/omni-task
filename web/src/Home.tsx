@@ -170,7 +170,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         <div class="banner" role="alert">
           พบสำเนาจากการซิงก์ชนกัน: {snapshot.conflicts.join(', ')}
           <br />
-          <span class="small">เปิดเทียบกับ TaskForge.md ใน Obsidian แล้วลบสำเนาทิ้ง ระหว่างนี้แอปอ่านแค่ไฟล์หลัก</span>
+          <span class="small">เปิดเทียบกับไฟล์งานใน Obsidian แล้วลบสำเนาทิ้ง ระหว่างนี้แอปอ่านแค่ไฟล์หลัก</span>
         </div>
       )}
 

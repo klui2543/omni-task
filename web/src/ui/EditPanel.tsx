@@ -71,12 +71,14 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
     ['TAG', 'Tag', ownTags.length ? ownTags.map((g) => '#' + g).join(' ') : ''],
   ]
 
+  // The note the task is in: the task note, or a list note.
+  const noteLabel = p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : 'โน้ตลิสต์'
   const saveDesc = () => { if (desc.trim() !== t.description.trim()) change({ op: 'describe', value: desc }) }
 
   return (
     <div class="edit">
       <div class="edit-top">
-        <span class="muted small">TaskForge.md บรรทัด {t.lineIndex + 1}</span>
+        <span class="muted small">{noteLabel} บรรทัด {t.lineIndex + 1}</span>
         <div class="row-gap">
           <button class="ghost small-btn danger" onClick={() => setAskDelete(true)}>ลบงาน</button>
           <button class="ghost small-btn" onClick={p.onClose}>ปิด</button>

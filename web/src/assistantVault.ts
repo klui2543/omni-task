@@ -1,7 +1,7 @@
 // What the Assistant and Settings pages add to the vault: the profile note, task lines added or dated in one write,
 // and the archive sweep. Added from outside the classes (declaration merging) so vault.ts is left as it is; import
 // this file for its effect before calling any of the methods below.
-import { archiveFilePath } from './core'
+import { legacyProfileFilePath, omniDirPath, profileFilePath } from './core'
 import { Drive } from './drive'
 import type { EditResult } from './types'
 import { Snapshot, Vault, VaultError } from './vault'
@@ -52,13 +52,12 @@ Snapshot.prototype.noteKey = function (this: any) {
 }
 
 Vault.prototype.changeProfile = async function (this: any, change: (text: string | null) => string): Promise<string> {
-  const path = 'Omni/โปรไฟล์.md'
   for (let attempt = 0; attempt < 3; attempt++) {
-    const file = await this.drive.resolve(this.rootId, path)
+    // The profile in the Omni folder, or the old place at the vault root until the folder is moved.
+    const file = (await this.drive.resolve(this.rootId, profileFilePath)) ?? (await this.drive.resolve(this.rootId, legacyProfileFilePath))
     if (!file) {
       const text = change(null)
-      const omni = (await this.drive.child(this.rootId, 'Omni')) ?? { id: await this.drive.createFolder(this.rootId, 'Omni') }
-      await this.drive.createText(omni.id, 'โปรไฟล์.md', text)
+      await this.drive.createText(await this.ensureFolders(omniDirPath), profileFilePath.split('/').pop()!, text)
       return text
     }
     const { text: current, version } = await this.drive.readText(file.id)
@@ -84,7 +83,7 @@ Vault.prototype.sweep = async function (
     const archive = await this.archiveNote()
     const res = sweepOp(text, archive.text)
     if (!res) return []
-    const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), archiveFilePath.split('/').pop()!, res.archive))
+    const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), this.archiveName(), res.archive))
     if (archive.id) await this.drive.writeText(archive.id, res.archive)
     if ((await this.drive.version(id)) !== version) {
       // The note moved on meanwhile: put the archive back as it was and start over on the new text.

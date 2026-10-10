@@ -224,7 +224,7 @@ class WebAssistantTest {
         ).joinToString("\n")
         val r = WebAssistant.sweep(live, "", 7, "2026-10-08")
         assertTrue(r.contains("\"titles\":[\"เสร็จเมื่อสองสัปดาห์ก่อน\"]"), r)
-        assertTrue(r.contains("# TaskForge Archive\\n\\n## 2026-10\\n\\n- [x] เสร็จเมื่อสองสัปดาห์ก่อน ✅ 2026-09-20"), r)
+        assertTrue(r.contains("# Omni note Archive\\n\\n## 2026-10\\n\\n- [x] เสร็จเมื่อสองสัปดาห์ก่อน ✅ 2026-09-20"), r)
         assertFalse(r.contains("\"text\":\"- [x] เสร็จเมื่อสองสัปดาห์ก่อน"), r)
         assertTrue(r.contains("งานโปรเจกต์"), r)
         assertEquals("null", WebAssistant.sweep("- [ ] ยังไม่เสร็จ\n", "", 7, "2026-10-08"))

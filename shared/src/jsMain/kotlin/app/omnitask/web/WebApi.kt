@@ -44,6 +44,20 @@ object WebApi {
     /** The vault path of the live task file. */
     fun taskFile(): String = app.omnitask.data.VaultText.TASK_FILE
 
+    /** The task note's old place, still used until the note is moved. */
+    fun legacyTaskFile(): String = app.omnitask.data.VaultText.LEGACY_TASK_FILE
+
+    /** The folder of the app's notes, and where it was before. */
+    fun omniDir(): String = app.omnitask.data.VaultText.OMNI_DIR
+
+    fun legacyOmniDir(): String = app.omnitask.data.VaultText.LEGACY_OMNI_DIR
+
+    fun profileFile(): String = app.omnitask.model.Profile.PATH
+
+    fun legacyProfileFile(): String = app.omnitask.model.Profile.LEGACY_PATH
+
+    fun legacyArchiveFile(): String = app.omnitask.data.Archive.LEGACY_FILE
+
     /* ---------- Views ---------- */
 
     fun views(fileKey: String, path: String, text: String, state: String): String = WebViews.build(fileKey, path, text, state)

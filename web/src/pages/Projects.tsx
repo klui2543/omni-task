@@ -40,7 +40,7 @@ export function ProjectsPage(p: PageProps) {
   const [adding, setAdding] = useState(false)
   const [mapSelect, setMapSelect] = useState<string | undefined>()
 
-  // The list notes are read again whenever the TaskForge note is (every action reloads it).
+  // The list notes are read again whenever the task note is (every action reloads it).
   useEffect(() => {
     if (!p.snapshot) return
     let live = true

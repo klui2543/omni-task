@@ -1,9 +1,10 @@
 import {
-  addTask, focus, archiveAppend, archiveFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
+  addTask, focus, archiveAppend, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
 import { Drive, DriveFile, FOLDER, sameName } from './drive'
 import { branchStates } from './ui/projects/projectState'
+import { config } from './config'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 import {
   addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
@@ -26,25 +27,58 @@ export class VaultError extends Error {
   }
 }
 
-/** The owner's Obsidian vault in Google Drive, reduced to the live TaskForge note. */
+/** The owner's Obsidian vault in Google Drive, reduced to the live task note (Omni note.md, or TaskForge.md until it is moved). */
 export class Vault {
-  /** [fileId] is the TaskForge note when it was found directly; otherwise it is looked up under [rootId]. */
+  /** [fileId] is the task note when it was found directly; otherwise it is looked up under [rootId]. */
   constructor(private drive: Drive, private rootId: string, private fileId: string | null = null) {}
 
+  /** The task note's path in the vault as found: the new place, or the old TaskForge.md until it is moved. */
+  private notePath = taskFilePath
+  private located = false
+
   private async file(): Promise<string> {
-    if (this.fileId) return this.fileId
-    const file = await this.drive.resolve(this.rootId, taskFilePath)
-    if (!file) throw new VaultError('notfound', `ไม่พบ ${taskFilePath} ในโฟลเดอร์ที่เลือก`)
-    return (this.fileId = file.id)
+    if (this.located && this.fileId) return this.fileId
+    if (this.fileId) {
+      // Found by a search or remembered: its name says which layout it is in. An old TaskForge.md gives way to
+      // an Omni note.md once the owner has made one in the new place.
+      const name = (await this.drive.get(this.fileId, 'name')).name
+      this.notePath = sameName(name, 'TaskForge.md') ? legacyTaskFilePath : taskFilePath
+      if (this.notePath === legacyTaskFilePath) {
+        const fresh = await this.drive.resolve(this.rootId, taskFilePath)
+        if (fresh) {
+          this.fileId = fresh.id
+          this.notePath = taskFilePath
+          config.taskFileId = fresh.id
+        }
+      }
+    } else {
+      const fresh = await this.drive.resolve(this.rootId, taskFilePath)
+      const old = fresh ? null : await this.drive.resolve(this.rootId, legacyTaskFilePath)
+      const file = fresh ?? old
+      if (!file) throw new VaultError('notfound', `ไม่พบ ${taskFilePath} ในโฟลเดอร์ที่เลือก`)
+      this.notePath = fresh ? taskFilePath : legacyTaskFilePath
+      this.fileId = file.id
+    }
+    this.located = true
+    return this.fileId!
+  }
+
+  /** The note's name with the part that conflict copies and the archive start with. */
+  private get isLegacy() {
+    return this.notePath === legacyTaskFilePath
+  }
+
+  private archiveName() {
+    return (this.isLegacy ? legacyArchiveFilePath : archiveFilePath).split('/').pop()!
   }
 
   private folderId: string | null = null
 
-  /** The TaskForge folder, which also holds the archive note and any conflict copies. */
+  /** The note's own folder, which also holds the archive note and any conflict copies. */
   private async folder(): Promise<string> {
     if (this.folderId) return this.folderId
     const parent = (await this.drive.get(await this.file(), 'parents')).parents?.[0]
-    if (!parent) throw new VaultError('notfound', 'ไม่พบโฟลเดอร์ของ TaskForge.md')
+    if (!parent) throw new VaultError('notfound', 'ไม่พบโฟลเดอร์ของไฟล์งาน')
     return (this.folderId = parent)
   }
 
@@ -55,8 +89,9 @@ export class Vault {
   async load(): Promise<Snapshot> {
     const id = await this.file()
     const [{ text }, files] = await Promise.all([this.drive.readText(id), this.folder().then((f) => this.drive.children(f))])
-    const conflicts = files.map((f) => f.name).filter((n) => n.startsWith('TaskForge') && isConflictCopy(n))
-    return new Snapshot(id, text, loadTasks(id, taskFilePath, text), conflicts)
+    const base = this.isLegacy ? 'TaskForge' : 'Omni note'
+    const conflicts = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
+    return new Snapshot(id, text, loadTasks(id, this.notePath, text), conflicts, this.notePath)
   }
 
   /**
@@ -104,8 +139,7 @@ export class Vault {
   }
 
   private async archiveNote(): Promise<{ id: string | null; text: string; version: string }> {
-    const name = archiveFilePath.split('/').pop()!
-    const file = await this.drive.child(await this.folder(), name)
+    const file = await this.drive.child(await this.folder(), this.archiveName())
     if (!file) return { id: null, text: '', version: '' }
     return { id: file.id, ...(await this.drive.readText(file.id)) }
   }
@@ -123,7 +157,7 @@ export class Vault {
       if (!res.ok) return res
       const archive = await this.archiveNote()
       const next = archiveAppend(archive.text, res.cutLines!)
-      const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), archiveFilePath.split('/').pop()!, next))
+      const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), this.archiveName(), next))
       if (archive.id) await this.drive.writeText(archive.id, next)
       if ((await this.drive.version(id)) !== version) {
         if (archive.id) await this.drive.writeText(archive.id, archive.text)
@@ -138,7 +172,7 @@ export class Vault {
 
   /** The profile note the assistant keeps (wake and sleep times...), or null when the vault has none. */
   async profile(): Promise<string | null> {
-    const file = await this.drive.resolve(this.rootId, 'Omni/โปรไฟล์.md')
+    const file = (await this.drive.resolve(this.rootId, profileFilePath)) ?? (await this.drive.resolve(this.rootId, legacyProfileFilePath))
     return file ? (await this.drive.readText(file.id)).text : null
   }
 
@@ -155,22 +189,46 @@ export class Vault {
 
   /* ---------- Projects ---------- */
 
-  private omniId: string | null = null
+  private omniCache: { id: string; path: string }[] | null = null
 
-  /** The vault's Omni folder, which holds the list notes; made when [create] is set and it is missing. */
-  private async omni(create = false): Promise<string | null> {
-    if (this.omniId) return this.omniId
-    const found = await this.drive.child(this.rootId, 'Omni')
-    if (found) return (this.omniId = found.id)
-    return create ? (this.omniId = await this.drive.createFolder(this.rootId, 'Omni')) : null
+  /** Creates the folders of [path] under the vault root where they are missing (names matched loosely); returns the last one. */
+  async ensureFolders(path: string): Promise<string> {
+    let current = this.rootId
+    for (const part of path.split('/')) current = (await this.drive.child(current, part))?.id ?? (await this.drive.createFolder(current, part))
+    return current
   }
 
-  /** The list notes (Bucket list, Watch list...) in the Omni folder, with their text. */
+  /** The Omni folders that exist: the one inside the back-office folder, and the old one at the vault root until it is moved. */
+  private async omniFolders(): Promise<{ id: string; path: string }[]> {
+    if (this.omniCache) return this.omniCache
+    const found: { id: string; path: string }[] = []
+    for (const path of [omniDirPath, legacyOmniDirPath]) {
+      const folder = await this.drive.resolve(this.rootId, path)
+      if (folder && folder.mimeType !== 'text/markdown') found.push({ id: folder.id, path })
+    }
+    return (this.omniCache = found)
+  }
+
+  /** The Omni folder new notes go in; made (in the back-office folder) when [create] is set and there is none. */
+  private async omni(create = false): Promise<string | null> {
+    const first = (await this.omniFolders())[0]
+    if (first) return first.id
+    if (!create) return null
+    const id = await this.ensureFolders(omniDirPath)
+    this.omniCache = [{ id, path: omniDirPath }]
+    return id
+  }
+
+  /** The list notes (Bucket list, Watch list...) in the Omni folder (or the old one), with their text. */
   async lists(): Promise<ListNote[]> {
-    const folder = await this.omni()
-    if (!folder) return []
-    const files = (await this.drive.children(folder)).filter((f) => f.mimeType !== FOLDER && /\.md$/i.test(f.name) && !isConflictCopy(f.name))
-    const read = await Promise.all(files.map(async (f) => ({ id: f.id, path: `Omni/${f.name}`, text: (await this.drive.readText(f.id)).text })))
+    const read: ListNote[] = []
+    const seen = new Set<string>()
+    for (const folder of await this.omniFolders()) {
+      const files = (await this.drive.children(folder.id)).filter((f) => f.mimeType !== FOLDER && /\.md$/i.test(f.name) && !isConflictCopy(f.name) && !seen.has(f.name))
+      files.forEach((f) => seen.add(f.name))
+      const notes = await Promise.all(files.map(async (f) => ({ id: f.id, path: `${folder.path}/${f.name}`, text: (await this.drive.readText(f.id)).text })))
+      read.push(...notes)
+    }
     // The shared code decides what is a list; this only leaves out the notes that cannot be one.
     return read.filter((n) => n.text.startsWith('---') && n.text.includes('omni-list'))
   }
@@ -254,35 +312,35 @@ const noteOf = (task: Task) => task.key.slice(0, task.key.lastIndexOf('#'))
 export class Snapshot {
   readonly byKey: Map<string, Task>
 
-  constructor(private fileId: string, private text: string, readonly tasks: Task[], readonly conflicts: string[] = []) {
+  constructor(readonly fileId: string, private text: string, readonly tasks: Task[], readonly conflicts: string[] = [], readonly path: string = taskFilePath) {
     this.byKey = new Map(tasks.map((t) => [t.key, t]))
   }
 
   list(query: Query): TaskList {
-    return listTasks(this.fileId, taskFilePath, this.text, { ...query, branches: branchStates() })
+    return listTasks(this.fileId, this.path, this.text, { ...query, branches: branchStates() })
   }
 
   focus(state: FocusIn): FocusOut {
-    return focus(this.fileId, taskFilePath, this.text, { ...state, branches: branchStates() })
+    return focus(this.fileId, this.path, this.text, { ...state, branches: branchStates() })
   }
 
   /** The Views page: Kanban, Matrix, Gantt and calendar tasks under the list's filters. */
   views(state: ViewsIn): ViewsOut {
-    return views(this.fileId, taskFilePath, this.text, { ...state, query: { ...state.query, branches: branchStates() } })
+    return views(this.fileId, this.path, this.text, { ...state, query: { ...state.query, branches: branchStates() } })
   }
 
   /** The Projects page: projects, branches and lists, from this note, the list notes and what this device chose. */
   projects(notes: ListNote[], state: ProjectsIn): ProjectsOut {
-    return projects(this.fileId, taskFilePath, this.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state)
+    return projects(this.fileId, this.path, this.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state)
   }
 
   /** What the shared code does to the branch states of a project, from the tasks as they stand. */
   branchChange(states: string[], op: BranchOp): BranchResult {
-    return branchChange(this.fileId, taskFilePath, this.text, states, op)
+    return branchChange(this.fileId, this.path, this.text, states, op)
   }
 }
 
-/** A vault found in Drive by its TaskForge note: where the note is, and the vault folder above it. */
+/** A vault found in Drive by its task note: where the note is, and the vault folder above it. */
 export interface FoundVault {
   fileId: string
   rootId: string
@@ -292,34 +350,40 @@ export interface FoundVault {
 }
 
 /**
- * Looks for TaskForge.md anywhere in Drive and climbs from each to its vault folder (the folder that holds
- * `📁 Folder/หลังบ้าน/TaskForge/`). Copies outside that layout are still offered, under their own folder.
+ * Looks for Omni note.md (and the old TaskForge.md) anywhere in Drive and climbs from each to its vault folder
+ * (the folder that holds `📁 Folder/หลังบ้าน/Omni/`, or `📁 Folder/หลังบ้าน/TaskForge/` for the old one). Copies outside
+ * that layout are still offered, under their own folder.
  */
 export async function findVaults(drive: Drive): Promise<FoundVault[]> {
-  const name = taskFilePath.split('/').pop()!
-  const folders = taskFilePath.split('/').slice(0, -1)
-  const files = await drive.findFiles(name)
-  const found = await Promise.all(
-    files.map(async (file) => {
-      const chain: DriveFile[] = []
-      let parentId = file.parents?.[0]
-      // Up through the expected folders and one more, the vault itself.
-      for (let i = 0; i <= folders.length && parentId; i++) {
-        const parent = await drive.get(parentId, 'id,name,parents').catch(() => null)
-        if (!parent) break
-        chain.unshift(parent)
-        parentId = parent.parents?.[0]
-      }
-      const inLayout =
-        chain.length === folders.length + 1 && folders.every((f, i) => sameName(chain[i + 1].name, f))
-      const root = inLayout ? chain[0] : chain[chain.length - 1]
-      if (!root) return null
-      return { fileId: file.id, rootId: root.id, rootName: root.name, path: chain.map((c) => c.name).join(' / '), inLayout }
-    }),
-  )
-  // Notes in the expected layout first: those are live vaults, the rest are copies or backups.
+  const found = (
+    await Promise.all(
+      [taskFilePath, legacyTaskFilePath].map(async (layout) => {
+        const name = layout.split('/').pop()!
+        const folders = layout.split('/').slice(0, -1)
+        const files = await drive.findFiles(name)
+        return Promise.all(
+          files.map(async (file) => {
+            const chain: DriveFile[] = []
+            let parentId = file.parents?.[0]
+            // Up through the expected folders and one more, the vault itself.
+            for (let i = 0; i <= folders.length && parentId; i++) {
+              const parent = await drive.get(parentId, 'id,name,parents').catch(() => null)
+              if (!parent) break
+              chain.unshift(parent)
+              parentId = parent.parents?.[0]
+            }
+            const inLayout = chain.length === folders.length + 1 && folders.every((f, i) => sameName(chain[i + 1].name, f))
+            const root = inLayout ? chain[0] : chain[chain.length - 1]
+            if (!root) return null
+            return { fileId: file.id, rootId: root.id, rootName: root.name, path: chain.map((c) => c.name).join(' / '), inLayout, current: layout === taskFilePath }
+          }),
+        )
+      }),
+    )
+  ).flat()
+  // Notes in the expected layout first, the new place before the old: those are live vaults, the rest are copies or backups.
   return found
-    .filter((v): v is FoundVault & { inLayout: boolean } => v !== null)
-    .sort((a, b) => Number(b.inLayout) - Number(a.inLayout))
-    .map(({ inLayout: _, ...v }) => v)
+    .filter((v): v is FoundVault & { inLayout: boolean; current: boolean } => v !== null)
+    .sort((a, b) => Number(b.inLayout) - Number(a.inLayout) || Number(b.current) - Number(a.current))
+    .map(({ inLayout: _, current: __, ...v }) => v)
 }

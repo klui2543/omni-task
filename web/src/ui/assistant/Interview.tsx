@@ -82,7 +82,7 @@ export function Interview(p: { current: ProfileOut; first: boolean; busy: boolea
 
   return (
     <AskCard title={p.first ? 'ขอรู้จักกันก่อน' : 'ปรับโปรไฟล์'} badge="4 ข้อ">
-      <span class="as-note">คำตอบจะเก็บใน Omni/โปรไฟล์.md แก้ใน Obsidian ได้ และผู้ช่วยจะถามใหม่ทุกเดือนเพราะชีวิตเปลี่ยนได้</span>
+      <span class="as-note">คำตอบจะเก็บใน หลังบ้าน/Omni/โปรไฟล์.md แก้ใน Obsidian ได้ และผู้ช่วยจะถามใหม่ทุกเดือนเพราะชีวิตเปลี่ยนได้</span>
       <Question title="ปกติตื่นกี่โมง" options={['05:30', '06:00', '06:30', '07:00', '08:00']} selected={wake} other={others['ตื่น']}
         hint="พิมพ์เวลา เช่น 05:45 หรือเล่าเอง เช่น แล้วแต่เวร" onPick={setWake} onOther={(v) => setOther('ตื่น', v)} />
       <Question title="เข้านอนกี่โมง" options={['21:30', '22:00', '22:30', '23:00', '23:30']} selected={sleep} other={others['นอน']}

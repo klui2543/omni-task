@@ -46,8 +46,8 @@ test('archive days: a new choice moves old finished tasks to the archive note', 
 
   await page.getByRole('radio', { name: '7 วัน' }).click()
   await expect.poll(() => file.text).not.toContain('เก่ามาก')
-  const archive = drive.nodes.find((n) => n.name === 'TaskForge Archive.md')!
-  expect(archive.text).toBe('# TaskForge Archive\n\n## 2026-10\n\n- [x] เก่ามาก ✅ 2026-09-01\n')
+  const archive = drive.nodes.find((n) => n.name === 'Omni note Archive.md')!
+  expect(archive.text).toBe('# Omni note Archive\n\n## 2026-10\n\n- [x] เก่ามาก ✅ 2026-09-01\n')
   // A recent one and project work stay where they are.
   expect(file.text).toContain('- [x] เพิ่งเสร็จ ✅ 2026-10-07')
   expect(file.text).toContain('- [x] งานโปรเจกต์ #เว็บ ✅ 2026-09-01')

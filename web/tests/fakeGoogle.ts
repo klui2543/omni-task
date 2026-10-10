@@ -32,14 +32,25 @@ export class FakeDrive {
     return n
   }
 
-  /** Builds a vault folder with the TaskForge note where the app looks for it. */
+  /** Where the vault keeps its notes: the Omni folder inside หลังบ้าน (new), or TaskForge.md and a root Omni folder (before the move). */
+  layout: 'new' | 'legacy' = 'new'
+
+  /** Builds a vault folder with the task note where the app looks for it. */
   vault(taskText: string, vaultName = 'ObsidianVault', folderName = '📁 Folder') {
     const root = this.add(vaultName, 'root')
     const a = this.add(folderName, root.id)
     const b = this.add('หลังบ้าน', a.id)
-    const c = this.add('TaskForge', b.id)
-    const file = this.add('TaskForge.md', c.id, taskText)
-    return { root, file }
+    const legacy = this.layout === 'legacy'
+    const c = this.add(legacy ? 'TaskForge' : 'Omni', b.id)
+    const file = this.add(legacy ? 'TaskForge.md' : 'Omni note.md', c.id, taskText)
+    return { root, file, folder: c }
+  }
+
+  /** The folder the app's own notes (profile, lists, settings) are in: Omni inside หลังบ้าน, or Omni at the vault root (made when missing). */
+  omniFolder(root: { id: string }) {
+    if (this.layout === 'legacy') return this.nodes.find((n) => n.name === 'Omni' && n.parent === root.id) ?? this.add('Omni', root.id)
+    const back = this.nodes.find((n) => n.name === 'หลังบ้าน' && this.nodes.some((m) => m.id === n.parent && m.parent === root.id))!
+    return this.nodes.find((n) => n.name === 'Omni' && n.parent === back.id) ?? this.add('Omni', back.id)
   }
 
   /* ---------- Projects ---------- */
@@ -47,8 +58,7 @@ export class FakeDrive {
   /** A note in the vault's Omni folder (made when missing), e.g. a list note; returns it so a test can read its text later. */
   omniNote(name: string, text: string, vaultName = 'ObsidianVault') {
     const root = this.nodes.find((n) => n.name === vaultName && n.folder)!
-    const omni = this.nodes.find((n) => n.name === 'Omni' && n.parent === root.id) ?? this.add('Omni', root.id)
-    return this.add(name, omni.id, text)
+    return this.add(name, this.omniFolder(root).id, text)
   }
 
   /** The text of the note called [name], or null when there is none. */

@@ -46,6 +46,15 @@ export const isConflictCopy = (name: string): boolean => api.isConflictCopy(name
 
 export const archiveFilePath: string = api.archiveFile()
 
+// Where the app's notes live, and where they lived before the Omni folder moved into the back-office folder.
+// Until the owner moves them, the old places are still read.
+export const legacyTaskFilePath: string = api.legacyTaskFile()
+export const legacyArchiveFilePath: string = api.legacyArchiveFile()
+export const omniDirPath: string = api.omniDir()
+export const legacyOmniDirPath: string = api.legacyOmniDir()
+export const profileFilePath: string = api.profileFile()
+export const legacyProfileFilePath: string = api.legacyProfileFile()
+
 /** The archive note with an archived block taken back out; null when it is no longer there. */
 export const archiveRemove = (archive: string, lines: string[]): string | null =>
   api.archiveRemove(archive, JSON.stringify(lines)) ?? null

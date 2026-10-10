@@ -1,7 +1,7 @@
 # Omni Task web
 
 The iPad version of Omni Task. It runs in the browser, signs in with Google and reads and writes the same
-`TaskForge.md` in the owner's Obsidian vault on Google Drive. The task line format, queries and recurrence come
+`Omni note.md` (`📁 Folder/หลังบ้าน/Omni/`, or the old `TaskForge.md` until it is moved) in the owner's Obsidian vault on Google Drive. The task line format, queries and recurrence come
 from `../shared` (Kotlin compiled to JavaScript), so a line is read and written exactly as the Android app does.
 
 ## Run
@@ -58,8 +58,8 @@ written and the app says so.
 
 ## Projects and lists
 
-The "โปรเจกต์/ลิสต์" page reads `TaskForge.md` and the list notes in the vault's `Omni/` folder (the notes whose
-header says `omni-list: true`; the app finds only those directly in `Omni/`). Every text change (renaming a project or
+The "โปรเจกต์/ลิสต์" page reads the task note and the list notes in the vault's Omni folder (`หลังบ้าน/Omni/`, or the old `Omni/` at the vault root until it is moved; the notes whose
+header says `omni-list: true`, found only directly in that folder). Every text change (renaming a project or
 a branch, adding to a list, pulling tasks into a list, "do in order" with 🆔 and ⛔, a new list note) is made by
 `shared/.../web/WebProjects.kt`, the same code paths Android uses, and written with the same version check.
 

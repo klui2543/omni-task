@@ -292,7 +292,7 @@ test('a list shows its items with categories, ticks into its own note and adds n
   // Open first, done after; the task tagged in TaskForge says where it lives.
   await expect(items).toHaveCount(4)
   await expect(items.first()).toContainText('จองตั๋วไปเชียงใหม่')
-  await expect(items.first()).toContainText('เที่ยว, TaskForge')
+  await expect(items.first()).toContainText('เที่ยว, Omni note')
   await expect(items.last()).toContainText('ปีนภูกระดึง')
   await expect(page.getByText('เก็บใน Omni/Bucket list.md และงานที่ติด #bucketlist')).toBeVisible()
 
@@ -352,7 +352,7 @@ test('pulling existing tasks into a list tags them where they are', async ({ pag
   await expect.poll(() => file.text).toContain('- [ ] ซื้อนม #bucketlist #เที่ยว')
   expect(file.text).toContain('- [ ] ทบทวนเคสก่อนราวด์ #Siriraj #bucketlist #เที่ยว 📅 2026-10-08')
   await expect(page.getByText('เพิ่ม 2 งานเข้า Bucket list แล้ว')).toBeVisible()
-  await expect(page.locator('.pj-item', { hasText: 'ซื้อนม' })).toContainText('เที่ยว, TaskForge')
+  await expect(page.locator('.pj-item', { hasText: 'ซื้อนม' })).toContainText('เที่ยว, Omni note')
 })
 
 test('a list gets a new icon, and a new list is made with its categories', async ({ page }) => {

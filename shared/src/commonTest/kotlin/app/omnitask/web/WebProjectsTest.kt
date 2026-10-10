@@ -216,7 +216,7 @@ class WebProjectsTest {
     fun aNewListIsANoteWithAHeader() {
         val r = json.decodeFromString<WebProjects.EditOut>(WebProjects.createList("หนังสือ/ที่อยากอ่าน", "📚", """["นิยาย"," ธุรกิจ",""]"""))
         assertTrue(r.ok)
-        assertEquals("Omni/หนังสือ ที่อยากอ่าน.md", r.path)
+        assertEquals("📁 Folder/หลังบ้าน/Omni/หนังสือ ที่อยากอ่าน.md", r.path)
         assertTrue(r.text!!.startsWith("---\nomni-list: true\nicon: 📚\ncategories: นิยาย, ธุรกิจ\ntag: "), r.text)
         assertFalse(json.decodeFromString<WebProjects.EditOut>(WebProjects.createList("  ", "📚", "[]")).ok)
     }
@@ -257,7 +257,7 @@ class WebProjectsTest {
 
     @Test
     fun startersAndEmojiAreOffered() {
-        assertTrue(WebProjects.starters().contains("Omni/Bucket list.md") && WebProjects.starters().contains("Omni/Watch list.md"))
+        assertTrue(WebProjects.starters().contains("📁 Folder/หลังบ้าน/Omni/Bucket list.md") && WebProjects.starters().contains("📁 Folder/หลังบ้าน/Omni/Watch list.md"))
         val themes = json.decodeFromString<List<WebProjects.IconTheme>>(WebProjects.iconThemes())
         assertEquals(4, themes.size)
         assertNotNull(themes.first().emoji.firstOrNull())

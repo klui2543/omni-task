@@ -100,7 +100,7 @@ test('says so when the vault has no TaskForge note', async ({ page }) => {
   await drive.install(page)
   await page.goto('/')
   await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
-  await expect(page.getByText('ไม่พบ TaskForge.md ใน Drive')).toBeVisible()
+  await expect(page.getByText('ไม่พบ Omni note.md')).toBeVisible()
   await page.getByRole('button', { name: 'เลือกโฟลเดอร์ vault เอง' }).click()
   await page.getByRole('button', { name: '📁 ObsidianVault' }).click()
   await page.getByRole('button', { name: 'ใช้โฟลเดอร์ "ObsidianVault" เป็น vault' }).click()
@@ -163,7 +163,7 @@ test('finds the note when Drive stores the folder emoji another way', async ({ p
   await drive.install(page)
   await page.goto('/')
   await page.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }).click()
-  await expect(page.getByText('ObsidianVault / 📁\uFE0F Folder / หลังบ้าน / TaskForge')).toBeVisible()
+  await expect(page.getByText('ObsidianVault / 📁\uFE0F Folder / หลังบ้าน / Omni')).toBeVisible()
   await page.getByRole('button', { name: /ObsidianVault/ }).click()
   await expect(page.getByText('ส่งรายงาน')).toBeVisible()
 
@@ -232,9 +232,9 @@ test('the menu moves between pages and the page stays after a reload', async ({ 
 
 test('a sync conflict copy beside the note is pointed out', async ({ page }) => {
   const { drive, file } = await setup(page)
-  drive.add('TaskForge (conflict 2026-10-09-05-55-31).md', file.parent, TASKS)
+  drive.add('Omni note (conflict 2026-10-09-05-55-31).md', file.parent, TASKS)
   await signInAndPick(page)
-  await expect(page.getByRole('alert')).toContainText('TaskForge (conflict 2026-10-09-05-55-31).md')
+  await expect(page.getByRole('alert')).toContainText('Omni note (conflict 2026-10-09-05-55-31).md')
   await expect(page.getByText('ส่งรายงาน')).toHaveCount(1)
 })
 
@@ -285,9 +285,9 @@ test('a finished task can go to the archive, and come back with undo', async ({ 
   await page.getByRole('button', { name: 'เก็บเข้าคลัง' }).click()
   await expect(page.getByText('ย้าย "อ่านหนังสือ" เข้าคลังแล้ว')).toBeVisible()
   expect(file.text).not.toContain('อ่านหนังสือ')
-  const archive = drive.nodes.find((n) => n.name === 'TaskForge Archive.md')!
+  const archive = drive.nodes.find((n) => n.name === 'Omni note Archive.md')!
   expect(archive.parent).toBe(file.parent)
-  expect(archive.text).toBe('# TaskForge Archive\n\n## 2026-10\n\n- [x] อ่านหนังสือ ✅ 2026-10-08\n')
+  expect(archive.text).toBe('# Omni note Archive\n\n## 2026-10\n\n- [x] อ่านหนังสือ ✅ 2026-10-08\n')
 
   await page.getByRole('button', { name: 'เลิกทำ' }).click()
   await expect.poll(() => file.text).toContain('- [x] อ่านหนังสือ ✅ 2026-10-08\n- [x] เสร็จแล้วเมื่อวาน')

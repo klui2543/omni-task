@@ -19,10 +19,11 @@ export const NOTE = [
 ].join('\n')
 
 /** Signs in and picks the vault; the app opens on Focus. [granted] has the calendar already allowed. */
-export async function open(page: Page, opts: { now?: Date; note?: string; profile?: string; events?: FakeDrive['events']; granted?: boolean } = {}) {
+export async function open(page: Page, opts: { now?: Date; note?: string; profile?: string; events?: FakeDrive['events']; granted?: boolean; layout?: FakeDrive['layout'] } = {}) {
   const drive = new FakeDrive()
+  if (opts.layout) drive.layout = opts.layout
   const { root, file } = drive.vault(opts.note ?? NOTE)
-  if (opts.profile) drive.add('โปรไฟล์.md', drive.add('Omni', root.id).id, opts.profile)
+  if (opts.profile) drive.add('โปรไฟล์.md', drive.omniFolder(root).id, opts.profile)
   drive.events = opts.events ?? []
   if (opts.granted) {
     drive.calendarGranted = true
