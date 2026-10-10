@@ -33,6 +33,16 @@ export function DurationCard(p: { item: Extract<Chat, { t: 'duration' }>; onAnsw
   )
 }
 
+/** "Also add to Google Calendar", as on Android's plan card; turning it on the first time explains and asks Google (see the Assistant page). */
+export function CalendarSwitch(p: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label class="as-switch">
+      <span class="grow">ลง Google Calendar ด้วย</span>
+      <input type="checkbox" role="switch" class="switch" aria-label="ลง Google Calendar ด้วย" checked={p.on} onChange={(e) => p.onChange(e.currentTarget.checked)} />
+    </label>
+  )
+}
+
 /** Three suggested times with their reasons, then the ways to put the task in the note. */
 export function SlotsCard(p: {
   item: Extract<Chat, { t: 'slots' }>
@@ -43,6 +53,7 @@ export function SlotsCard(p: {
   onConfirm: () => void
   onCustom: (allDay: boolean) => void
   onClaude: () => void
+  onCalendar: (on: boolean) => void
 }) {
   const { plan, page, picked, title, done } = p.item
   const first = page * 3
@@ -80,7 +91,7 @@ export function SlotsCard(p: {
       )}
       {done === undefined && (
         <>
-          {shown.length > 0 && <span class="muted small">เว็บอ่านปฏิทินได้อย่างเดียว จึงใส่วันและเวลาไว้ในงานในโน้ต ไม่ได้ลงปฏิทินให้</span>}
+          <CalendarSwitch on={!!p.item.toCalendar} onChange={p.onCalendar} />
           <div class="as-more">
             <span class="muted small">{shown.length === 0 ? 'ลงตารางแบบไหนดี' : 'ไม่ใช่ช่วงไหนเลย'}</span>
             <button class="chip" disabled={!title.trim() || p.busy} onClick={() => p.onCustom(true)}>ลงทั้งวัน</button>
@@ -152,6 +163,8 @@ export function RangeCard(p: {
   proposals: Proposal[]
   accepted: number[]
   busy: boolean
+  toCalendar: boolean
+  onCalendar: (on: boolean) => void
   onAccept: (which: number[]) => void
   onOpen: (key: string) => void
 }) {
@@ -179,9 +192,10 @@ export function RangeCard(p: {
       })}
       {p.proposals.length > 0 && (
         <>
+          <CalendarSwitch on={p.toCalendar} onChange={p.onCalendar} />
           <button class="primary" disabled={p.busy || left.length === 0} style={left.length === 0 ? { background: 'var(--lime)' } : undefined}
             onClick={() => p.onAccept(left)}>{left.length === 0 ? 'ลงแผนครบแล้ว' : `ลงแผนทั้งหมด ${left.length} งาน`}</button>
-          <span class="muted small">ลงแผน = ตั้งวันนัดทำและเวลาเตือนให้งานนั้นในโน้ต เว็บยังไม่ได้ลง Google Calendar ให้</span>
+          <span class="muted small">ลงแผน = ตั้งวันนัดทำและเวลาเตือนให้งานนั้นในโน้ต</span>
         </>
       )}
     </section>

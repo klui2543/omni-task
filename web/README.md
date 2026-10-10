@@ -37,6 +37,14 @@ of `drive`. For it to work:
 1. In the same Google Cloud project, enable the Google Calendar API (APIs & Services > Library).
 2. On the consent screen (Data access), add the `.../auth/calendar.readonly` scope.
 
+Tapping an event (in the Focus plan, Views or the assistant's agenda) opens its page in Google Calendar.
+
+The assistant can also add events, as it does on Android: the switch "ลง Google Calendar ด้วย" on a plan card, and a
+chosen time added from a suggestion (on by default once allowed). The first time it is turned on, the page explains
+and then asks Google for the `calendar.events` scope (together with `calendar.readonly`, since `calendar.events`
+cannot list calendars); nothing is asked at sign-in. Add that scope on the consent screen too. The page keeps the
+conversation through the trip to Google and returns to the same page. Events go to the primary calendar.
+
 The Views page (Gantt, month and 7, 3 or 1 day calendars) reads the same calendar with the same permission. If
 step 1 is missing, the Focus page says so instead of showing events. The tests use a stand-in for Google Calendar;
 the real service has not been tried yet.

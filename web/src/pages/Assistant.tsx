@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import * as A from '../assistantCore'
-import { declined, doneLog, useChat, type Chat } from '../assistantState'
-import { Auth, CALENDAR_SCOPE } from '../auth'
-import { CalendarError, localIso } from '../calendar'
+import { declined, doneLog, keepChatForReturn, useChat, type Chat } from '../assistantState'
+import { Auth, CALENDAR_SCOPE, CALENDAR_WRITE_SCOPE } from '../auth'
+import { CalendarError, localIso, type NewEvent } from '../calendar'
 import { today } from '../core'
 import { useFocusLocal } from '../focusState'
 import type { PageProps } from '../Home'
 import { EditPanel } from '../ui/EditPanel'
-import { CustomTimeDialog, RangeDialog } from '../ui/assistant/AssistantDialogs'
+import { CalendarWriteDialog, CustomTimeDialog, RangeDialog } from '../ui/assistant/AssistantDialogs'
 import { AgendaCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, ReviewCard, SlotsCard, dayShort } from '../ui/assistant/Cards'
 import { AskCard, Interview } from '../ui/assistant/Interview'
 
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
 const CALENDAR_DENIED = 'Google ยังไม่อนุญาตให้อ่านปฏิทิน กดอนุญาตอีกครั้ง'
+const WRITE_DENIED = 'Google ยังไม่อนุญาตให้ลงนัดในปฏิทิน เปิดสวิตช์ ลง Google Calendar ด้วย เพื่ออนุญาตอีกครั้ง'
 
 const EXAMPLES = ['อยากไปวิ่งสัปดาห์นี้ ควรไปตอนไหนดี', 'อยากเขียน proposal 2 ชม. ควรทำตอนไหน', 'ต้องไปธนาคาร พรุ่งนี้ตอนไหนดี']
 const CLAUDE_QUESTION = 'ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน'
@@ -35,7 +36,7 @@ const thisMonth = (): [string, string] => {
   return [iso(d), iso(new Date(d.getFullYear(), d.getMonth() + 1, 0))]
 }
 
-type Dialog = { kind: 'custom'; index: number; allDay: boolean } | { kind: 'range' } | null
+type Dialog = { kind: 'custom'; index: number; allDay: boolean } | { kind: 'range' } | { kind: 'write'; index: number } | null
 
 export function AssistantPage(p: PageProps) {
   const [chat, setChat] = useChat()
@@ -50,6 +51,7 @@ export function AssistantPage(p: PageProps) {
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
   const [answered, setAnswered] = useState(0)
   const connected = Auth.granted(CALENDAR_SCOPE)
+  const canWrite = Auth.granted(CALENDAR_WRITE_SCOPE)
   const end = useRef<HTMLDivElement>(null)
 
   // The profile note: the answers of the interview, read again whenever the page opens.
@@ -59,14 +61,17 @@ export function AssistantPage(p: PageProps) {
 
   // The next five weeks of the calendar, for finding time; a plan for a farther range reads its own.
   const lastRead = useRef(0)
-  useEffect(() => {
-    if (!connected || !p.snapshot || Date.now() - lastRead.current < 60_000) return
+  const readEvents = () => {
     lastRead.current = Date.now()
     const from = new Date(); from.setHours(0, 0, 0, 0)
-    p.readCalendar(addDays(from, -1), addDays(from, 36)).then(
+    return p.readCalendar(addDays(from, -1), addDays(from, 36)).then(
       (e) => setEvents(e),
       (e) => { lastRead.current = 0; setNote(calendarNote(e)) },
     )
+  }
+  useEffect(() => {
+    if (!connected || !p.snapshot || Date.now() - lastRead.current < 60_000) return
+    readEvents()
   }, [connected, p.snapshot])
 
   const profile = useMemo(() => (profileText === undefined ? null : A.profileOf(profileText)), [profileText])
@@ -142,7 +147,8 @@ export function AssistantPage(p: PageProps) {
     else if (r.kind === 'slots') push({ t: 'asked', text }, slotsItem(A.slots(snap, state(), text, 0)))
     else push({ t: 'asked', text }, { t: 'duration', request: text })
   }
-  const slotsItem = (plan: A.PlanOut): Chat => ({ t: 'slots', plan, page: 0, picked: 0, title: plan.title })
+  // As on Android, a chosen time also goes on the calendar whenever the web may write to it.
+  const slotsItem = (plan: A.PlanOut): Chat => ({ t: 'slots', plan, page: 0, picked: 0, title: plan.title, toCalendar: canWrite })
 
   const answerDuration = (index: number, minutes: number) => {
     const item = chat[index]
@@ -170,7 +176,7 @@ export function AssistantPage(p: PageProps) {
   const planRange = async ([from, to]: [string, string], asked: string) => {
     if (!snap) return
     const st = state({ events: await eventsFor(from, to) })
-    push({ t: 'asked', text: asked }, { t: 'range', title: rangeTitle(from, to), proposals: A.planRange(snap, st, from, to), accepted: [] })
+    push({ t: 'asked', text: asked }, { t: 'range', title: rangeTitle(from, to), proposals: A.planRange(snap, st, from, to), accepted: [], toCalendar: false })
   }
 
   /** Adds task lines to the note in one write; true when they were written. */
@@ -184,22 +190,64 @@ export function AssistantPage(p: PageProps) {
     return ok
   }
 
+  const noteForWrite = (e: unknown) =>
+    e instanceof CalendarError ? (e.code === 'off' ? CALENDAR_OFF : WRITE_DENIED) : 'ลงนัดใน Google Calendar ไม่ได้ ลองอีกครั้ง'
+
+  /** Puts events on the calendar; how many of [list] Google took, from the first. */
+  const addEvents = async (list: NewEvent[]): Promise<number> => {
+    let took = 0
+    let failure: unknown = null
+    for (const e of list) {
+      try {
+        await p.addCalendarEvent(e)
+        took++
+      } catch (err) {
+        failure = err
+        break
+      }
+    }
+    if (took > 0) readEvents()
+    setNote(failure ? noteForWrite(failure) : '')
+    return took
+  }
+
+  const minutesBetween = (a: string, b: string) => (+b.slice(0, 2) * 60 + +b.slice(3, 5)) - (+a.slice(0, 2) * 60 + +a.slice(3, 5))
+
+  /** The note line first, then (when asked) the event, and what happened in the words Android uses. */
+  const addTask = async (index: number, item: Extract<Chat, { t: 'slots' }>, day: string, start: string | null, minutes: number) => {
+    if (!(await writeLines([A.slotLine(item.title, day, start)]))) return
+    if (!item.toCalendar) {
+      patch(index, 'slots', (c) => ({ ...c, done: 'เพิ่มงานแล้ว (วันและเวลาอยู่ในโน้ต)' }))
+      return
+    }
+    const took = await addEvents([{ title: item.title, day, start, minutes }])
+    patch(index, 'slots', (c) => ({ ...c, done: took > 0 ? 'เพิ่มงาน + ลงปฏิทินแล้ว' : 'เพิ่มงานแล้ว (ยังลงปฏิทินไม่ได้)' }))
+  }
+
   const confirmSlot = async (index: number) => {
     const item = chat[index]
     if (item?.t !== 'slots') return
     const slot = item.plan.slots[item.picked]
     if (!slot || !item.title.trim()) return
-    if (await writeLines([A.slotLine(item.title, slot.day, slot.start)])) {
-      patch(index, 'slots', (c) => ({ ...c, done: 'เพิ่มงานแล้ว (วันและเวลาอยู่ในโน้ต)' }))
-    }
+    if (item.toCalendar && !canWrite) return setDialog({ kind: 'write', index })
+    await addTask(index, item, slot.day, slot.start, minutesBetween(slot.start, slot.end) || item.plan.minutes)
   }
   const confirmCustom = async (index: number, day: string, time: string | null) => {
     const item = chat[index]
     setDialog(null)
     if (item?.t !== 'slots') return
-    if (await writeLines([A.slotLine(item.title, day, time)])) {
-      patch(index, 'slots', (c) => ({ ...c, done: 'เพิ่มงานแล้ว (วันและเวลาอยู่ในโน้ต)' }))
-    }
+    if (item.toCalendar && !canWrite) return setDialog({ kind: 'write', index })
+    await addTask(index, item, day, time, item.plan.minutes)
+  }
+
+  /** The switch "ลง Google Calendar ด้วย": the first time it is turned on, say what Google will ask before leaving for it. */
+  const setCalendar = (index: number, t: 'slots' | 'range', on: boolean) => {
+    patch(index, t, (c) => ({ ...c, toCalendar: on }))
+    if (on && !canWrite) setDialog({ kind: 'write', index })
+  }
+  const allowWrite = () => {
+    keepChatForReturn()
+    p.onAllowCalendarWrite()
   }
 
   /** "ลงแผน": the day and the reminder time go on each accepted task. */
@@ -208,6 +256,7 @@ export function AssistantPage(p: PageProps) {
     if (item?.t !== 'range') return
     const todo = which.filter((i) => !item.accepted.includes(i))
     if (todo.length === 0) return
+    if (item.toCalendar && !canWrite) return setDialog({ kind: 'write', index })
     const items = todo.map((i) => ({ raw: item.proposals[i].raw, lineIndex: item.proposals[i].lineIndex, day: item.proposals[i].day, time: item.proposals[i].start }))
     let done: boolean[] = []
     await p.run(async () => {
@@ -217,7 +266,13 @@ export function AssistantPage(p: PageProps) {
     })
     const ok = todo.filter((_, i) => done[i])
     patch(index, 'range', (c) => ({ ...c, accepted: [...c.accepted, ...ok] }))
-    setNote(ok.length < todo.length ? 'บางงานบันทึกไม่ได้ ไฟล์อาจถูกแก้จากที่อื่น' : '')
+    const saved = ok.length < todo.length ? 'บางงานบันทึกไม่ได้ ไฟล์อาจถูกแก้จากที่อื่น' : ''
+    setNote(saved)
+    if (item.toCalendar && ok.length > 0) {
+      const took = await addEvents(ok.map((i) => ({ title: item.proposals[i].title, day: item.proposals[i].day, start: item.proposals[i].start, minutes: item.proposals[i].minutes })))
+      if (saved && took === ok.length) setNote(saved)
+      else if (saved) setNote((n) => [saved, n].filter(Boolean).join(' '))
+    }
   }
 
   /** Hands the picture of the day to Claude: a new tab on claude.ai with the same text Android sends to its app. */
@@ -341,6 +396,7 @@ export function AssistantPage(p: PageProps) {
                     onTitle={(title) => patch(i, 'slots', (x) => ({ ...x, title }))}
                     onConfirm={() => confirmSlot(i)}
                     onCustom={(allDay) => setDialog({ kind: 'custom', index: i, allDay })}
+                    onCalendar={(on) => setCalendar(i, 'slots', on)}
                     onClaude={() => askClaude(c.plan.request)} />
                 )
               case 'today':
@@ -351,7 +407,7 @@ export function AssistantPage(p: PageProps) {
               case 'review': return <ReviewCard key={i} title={c.title} lines={c.lines} />
               case 'agenda': return <AgendaCard key={i} title={c.title} summary={c.summary} data={c.data} today={t0} onOpen={openTask} />
               case 'range':
-                return <RangeCard key={i} title={c.title} proposals={c.proposals} accepted={c.accepted} busy={p.busy} onAccept={(w) => acceptProposals(i, w)} onOpen={openTask} />
+                return <RangeCard key={i} title={c.title} proposals={c.proposals} accepted={c.accepted} busy={p.busy} toCalendar={!!c.toCalendar} onCalendar={(on) => setCalendar(i, 'range', on)} onAccept={(w) => acceptProposals(i, w)} onOpen={openTask} />
             }
           })}
           <div ref={end} />
@@ -377,6 +433,14 @@ export function AssistantPage(p: PageProps) {
               onSet={(day, time) => confirmCustom(dialog.index, day, time)} onClose={() => setDialog(null)} />
           )
         })()}
+        {dialog?.kind === 'write' && (
+          <CalendarWriteDialog onGo={allowWrite} onClose={() => {
+            // Not now: the switch goes back off, so nothing waits on a permission that was not given.
+            const { index } = dialog
+            setChat((c) => c.map((x, i) => (i === index && (x.t === 'slots' || x.t === 'range') ? { ...x, toCalendar: false } : x)))
+            setDialog(null)
+          }} />
+        )}
         {dialog?.kind === 'range' && (
           <RangeDialog from={t0} onClose={() => setDialog(null)}
             onAgenda={(from, to) => { setDialog(null); showAgenda([from, to], 'ช่วงนี้มีอะไรบ้าง') }}

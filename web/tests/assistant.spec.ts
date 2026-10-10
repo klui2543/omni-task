@@ -121,7 +121,8 @@ test('plan next week: undated work is placed in free time, and "ลงแผน"
   await page.getByRole('button', { name: /^ลงแผนทั้งหมด \d+ งาน$/ }).click()
   await expect(page.getByRole('button', { name: 'ลงแผนครบแล้ว' })).toBeVisible()
   expect(file.text!.match(/⏳ 2026-10-1[2-8]/g)!.length).toBe(n)
-  await expect(page.getByText('เว็บยังไม่ได้ลง Google Calendar ให้')).toBeVisible()
+  // Nothing goes on the calendar unless the owner turns that on (see calendarWrite.spec.ts).
+  await expect(page.getByRole('switch', { name: 'ลง Google Calendar ด้วย' })).not.toBeChecked()
 })
 
 test('what is on next week shows events and tasks by day', async ({ page }) => {

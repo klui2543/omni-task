@@ -17,6 +17,7 @@ export const CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.ev
 const TOKEN_KEY = 'omni.token'
 const STATE_KEY = 'omni.oauthState'
 const SILENT_KEY = 'omni.silentTried'
+const RETURN_KEY = 'omni.returnTo'
 const SIGNED_IN_BEFORE = 'omni.signedInBefore'
 const SCOPES_KEY = 'omni.scopes'
 
@@ -56,7 +57,10 @@ export class Auth {
   static consumeRedirect(): string | null {
     if (!location.hash.includes('state=')) return null
     const p = new URLSearchParams(location.hash.slice(1))
-    history.replaceState(null, '', location.pathname + location.search)
+    // Back to the page the owner left (the hash is the page, as #/assistant), not the first one.
+    const back = store.get(sessionStorage, RETURN_KEY) ?? ''
+    store.set(sessionStorage, RETURN_KEY, null)
+    history.replaceState(null, '', location.pathname + location.search + (/^#\/\w+$/.test(back) ? back : ''))
     const expected = store.get(sessionStorage, STATE_KEY)
     store.set(sessionStorage, STATE_KEY, null)
     if (!expected || p.get('state') !== expected) return 'state_mismatch'
@@ -103,6 +107,7 @@ export class Auth {
   signIn(prompt: 'none' | 'select_account' = 'select_account', extra?: string) {
     const state = crypto.randomUUID()
     store.set(sessionStorage, STATE_KEY, state)
+    store.set(sessionStorage, RETURN_KEY, location.hash)
     if (prompt === 'none') store.set(sessionStorage, SILENT_KEY, '1')
     const params = new URLSearchParams({
       client_id: this.clientId,
