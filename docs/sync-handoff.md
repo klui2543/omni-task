@@ -27,4 +27,10 @@ Not now: building our own full-vault sync ("Omni Sync") or moving to Obsidian Sy
 - Infographic (private to the owner): https://claude.ai/artifact/Un9qtBRbX9xivzsTdiuzGr
 - Web UI mockups: https://claude.ai/artifact/YaAv8JPuGSW4dcCQkAAuSi
 - Web UI done 2026-10-10: edit panel (status, dates, reminder, repeat, priority, tags, description, subtasks, delete), filter panel with saved filters, group and sort, archive-or-delete prompt on done with undo. The web does no daily archive sweep of its own.
-- Web UI still to do: Focus, Views (Kanban, Matrix, Gantt, calendar), Projects/Lists, assistant; in the edit panel the kind, note links and images (shown read-only for now) and dragging subtasks into order.
+- Web UI done 2026-10-10 (PR #9): Focus, Views, Projects/Lists, assistant, Settings, task kinds manager, calendar links and calendar write, every note in the vault, the Omni folder move (`หลังบ้าน/Omni/Omni note.md`, old places still read). Still to do in the edit panel: note links and images (read-only), dragging subtasks into order.
+
+## Open for the next session (owner deferred all three on 2026-10-10)
+1. What "Omni setting เพียบเลย" means: too many files in the Omni folder, too many options in the Settings screen, or something else. Ask the owner; nothing was changed for it.
+2. Settings sync: should the web read and write `Omni/omni-settings.json` (Android's synced settings)? Today the web keeps its choices in localStorage and never touches that file.
+3. Sync and conflict work above (steps 0 to 3).
+Also pending on the owner's side: move the files in Obsidian (Omni folder into `หลังบ้าน`, `TaskForge.md` to `Omni/Omni note.md`), add the `calendar.events` scope on the OAuth consent screen, and check CI on main after the PR #9 merge (Build APK emulator tests failed on the two runs before it).

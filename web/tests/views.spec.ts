@@ -89,11 +89,15 @@ test('Kanban: a finger drags after a hold, and a quick swipe on a card leaves th
   await expect(page.locator('.vghost')).toHaveCount(0)
   expect(lineOf(file.text, 'ทบทวนเคส')).toMatch(/^- \[ \]/)
 
-  // Held for half a second, the card follows the finger and drops where it is lifted.
-  await touch('touchStart', from.x, from.y)
+  // Held for half a second, the card follows the finger and drops where it is lifted. The swipe above may have
+  // scrolled the page, so the card and the column are measured again.
+  await card(page, 'ทบทวนเคส').scrollIntoViewIfNeeded()
+  const from2 = await centre(card(page, 'ทบทวนเคส'))
+  const target2 = await centre(column(page, 'กำลังทำ'))
+  await touch('touchStart', from2.x, from2.y)
   await page.waitForTimeout(600)
-  await touch('touchMove', from.x + 20, from.y + 20)
-  await touch('touchMove', target.x, target.y)
+  await touch('touchMove', from2.x + 20, from2.y + 20)
+  await touch('touchMove', target2.x, target2.y)
   await expect(page.locator('.vghost')).toBeVisible()
   await expect(column(page, 'กำลังทำ')).toHaveClass(/over/)
   await touch('touchEnd', 0, 0)
