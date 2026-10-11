@@ -221,8 +221,9 @@ test('ticking a task logs when it was done, for the next pattern', async ({ page
   await open(page, { profile: Profile })
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
   await expect(page.getByRole('img', { name: 'เสร็จแล้ว 1 จาก 4' })).toBeVisible()
+  // Logged once the tick is written, which may be just after the page shows it.
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('omni.doneLog') ?? '[]').length)).toBe(1)
   const log = await page.evaluate(() => JSON.parse(localStorage.getItem('omni.doneLog') ?? '[]'))
-  expect(log).toHaveLength(1)
   expect(log[0]).toMatch(/^2026-10-08T09:20:\d\d\|(DEEP|GENERAL|QUICK|MOVE|ERRAND)$/)
 })
 

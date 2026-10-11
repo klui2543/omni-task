@@ -190,6 +190,8 @@ export interface ProjectsIn {
   strict: string[]
   /** Tags of the owner's own task kinds, which never name a project. */
   kindTags?: string[]
+  /** List tags as last read, used only while the list notes are read again. */
+  listTags?: string[]
 }
 
 export type BranchState = 'ACTIVE' | 'TRYING' | 'CHOSEN' | 'PARKED'
@@ -344,7 +346,7 @@ export interface BranchResult {
   path?: string | null
 }
 
-export type BranchOp = { op: 'set' | 'choose' | 'add' | 'rename' | 'delete' | 'moveProject'; project: string; path?: string; value?: string }
+export type BranchOp = { op: 'set' | 'choose' | 'add' | 'rename' | 'delete' | 'moveProject' | 'graft'; project: string; path?: string; value?: string }
 
 /* ---------- Task kinds ---------- */
 

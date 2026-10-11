@@ -108,4 +108,22 @@ class YgdrasilTest {
         val tree = Ygdrasil.grow(moved, states, today, Ygdrasil.Filter())
         assertEquals(setOf("ส่งเอกสาร", "ลองหน้าเว็บ"), tree.worlds.first { it.node.project == "Siriraj" }.tasks.map { it.title }.toSet())
     }
+
+    @Test
+    fun aProjectOrBranchDroppedOnAnotherGoesUnderIt() {
+        assertEquals("Siriraj/peddose", Branches.graftTag("peddose", "Siriraj"))
+        assertEquals("Siriraj/สอน/แอป", Branches.graftTag("peddose/แอป", "Siriraj/สอน"))
+        assertEquals("แอป", Branches.graftTag("peddose/แอป", ""))
+        // Not into itself, and nowhere when it would stay put.
+        assertEquals(null, Branches.graftTag("peddose", "peddose/แอป"))
+        assertEquals(null, Branches.graftTag("peddose", "peddose"))
+        assertEquals(null, Branches.graftTag("peddose", ""))
+        // Its branches' states go along, across projects.
+        val states = mapOf(("peddose" to "แอป") to Branches.State.TRYING, ("peddose" to "") to Branches.State.ACTIVE, ("Siriraj" to "x") to Branches.State.PARKED)
+        assertEquals(
+            mapOf(("Siriraj" to "peddose/แอป") to Branches.State.TRYING, ("Siriraj" to "peddose") to Branches.State.ACTIVE, ("Siriraj" to "x") to Branches.State.PARKED),
+            Branches.moveTag(states, "peddose", "Siriraj/peddose"),
+        )
+        assertEquals("- [ ] ทำ #Siriraj/peddose/แอป 📅 2026-10-12", Branches.renameInLine("- [ ] ทำ #peddose/แอป 📅 2026-10-12", "peddose", "Siriraj/peddose"))
+    }
 }

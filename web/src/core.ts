@@ -84,6 +84,14 @@ const TAGS_KEY = 'omni.ignoredTags'
 export const setIgnoredTags = (tags: string[]) => {
   try { localStorage.setItem(TAGS_KEY, JSON.stringify(tags)) } catch { /* just not kept */ }
 }
+
+/** The list tags as last read, so the Projects page can show before the list notes are read again. */
+export const keptListTags = (): string[] => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TAGS_KEY) ?? '[]')
+    return Array.isArray(saved) ? saved : []
+  } catch { return [] }
+}
 try {
   const saved = JSON.parse(localStorage.getItem(TAGS_KEY) ?? '[]')
   const kinds = customKindTags()
@@ -101,7 +109,7 @@ export const ygdrasil = (
   fileKey: string, path: string, text: string, notes: { key: string; path: string; text: string }[], state: ProjectsIn, filter: YgFilter, folded: string[],
 ): YgOut =>
   JSON.parse(api.ygdrasil(
-    fileKey, path, text, JSON.stringify(notes), JSON.stringify({ ...state, kindTags: customKindTags() }), JSON.stringify(filter), JSON.stringify(folded), today(),
+    fileKey, path, text, JSON.stringify(notes), JSON.stringify({ ...state, kindTags: customKindTags()}), JSON.stringify(filter), JSON.stringify(folded), today(),
   ))
 
 /** A project or branch tag renamed in every task line of [text]; `changed` counts the lines. */

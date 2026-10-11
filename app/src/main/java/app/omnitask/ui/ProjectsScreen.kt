@@ -80,11 +80,16 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var world by rememberSaveable { mutableStateOf(false) }
     var ygFilter by rememberSaveable { mutableStateOf("") }
     var ygFolded by rememberSaveable { mutableStateOf("") }
+    // A project opened from Ygdrasil: back goes back to the tree, not to the project cards.
+    var fromWorld by rememberSaveable { mutableStateOf(false) }
+    fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; world = true }
     BackHandler(enabled = open != null || openList != null || world) {
         when {
             world -> world = false
+            mapping && fromWorld -> backToWorld()
             mapping -> mapping = false
             projectView != null -> projectView = null
+            fromWorld -> backToWorld()
             else -> { openName = null; openListPath = null; listCategory = null }
         }
     }
@@ -115,13 +120,13 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             filter = Ygdrasil.Filter.decode(ygFilter), onFilter = { ygFilter = it.encode() },
             folded = ygFolded.split('\n').filter { it.isNotEmpty() }.toSet(), onFolded = { ygFolded = it.joinToString("\n") },
             onOpen = onOpen,
-            onOpenProject = { name -> world = false; openName = name; projectView = null; mapping = true },
+            onOpenProject = { name -> world = false; fromWorld = true; openName = name; projectView = null; mapping = true },
             onBack = { world = false },
         )
         return
     }
     if (open != null && mapping) {
-        MindMapScreen(Branches.tree(open.name, projectTasks, state.branchStates), vm, onOpen) { mapping = false }
+        MindMapScreen(Branches.tree(open.name, projectTasks, state.branchStates), vm, onOpen) { if (fromWorld) backToWorld() else mapping = false }
         return
     }
     val view = projectView
@@ -151,7 +156,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (open != null || openList != null) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false })
+                    SquareButton(Ic.back, tr("กลับ", "Back"), { if (fromWorld) backToWorld() else { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false } })
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {

@@ -150,3 +150,45 @@ test('a task held and dragged onto another project moves there, tag and all', as
   await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' })).toBeVisible()
   expect(file.text).toContain('- [ ] ทำหน้าคำนวณ #peddose/แอป/มือถือ')
 })
+
+test('an edit shows at once on a slow connection, and is written after', async ({ page }) => {
+  const { drive, file } = await start(page)
+  drive.latency = 1500
+  const writes = () => drive.requests.filter((r) => r.startsWith('PATCH')).length
+  const before = writes()
+  await task(page, 'ทำหน้าเว็บ').click()
+  // Ticked on the page (so it leaves the tree of open tasks) well before Drive has answered even the first read.
+  await expect(task(page, 'ทำหน้าเว็บ')).toHaveCount(0, { timeout: 1000 })
+  expect(writes()).toBe(before)
+  await expect.poll(() => file.text, { timeout: 20_000 }).toContain('- [x] ทำหน้าเว็บ #peddose/แอป/เว็บ ✅ 2026-10-08')
+})
+
+test('a whole project held and dropped on another becomes its branch, and the trunk takes it back out', async ({ page }) => {
+  const { file } = await start(page)
+  const drag = async (from: string, to: import('@playwright/test').Locator) => {
+    const a = (await limb(page, from).first().boundingBox())!
+    const b = (await to.boundingBox())!
+    await page.mouse.move(a.x + 30, a.y + a.height / 2)
+    await page.mouse.down()
+    await page.waitForTimeout(400)
+    await page.mouse.move(b.x + 40, b.y + b.height / 2, { steps: 8 })
+    await page.mouse.up()
+  }
+  await drag('#Siriraj', limb(page, '#peddose'))
+  await expect.poll(() => file.text).toContain('- [ ] ทบทวนเคสก่อนราวด์ #peddose/Siriraj ⛔ aa 📅 2026-10-10')
+  await expect(page.getByRole('status')).toContainText('ย้าย #Siriraj ไปไว้ใต้ #peddose แล้ว')
+  await expect(limb(page, '#Siriraj')).toHaveCount(0)
+
+  await drag('Siriraj', page.locator('.pj-node.yg-trunk'))
+  await expect.poll(() => file.text).toContain('- [ ] ทบทวนเคสก่อนราวด์ #Siriraj ⛔ aa 📅 2026-10-10')
+  await expect(limb(page, '#Siriraj')).toBeVisible()
+})
+
+test('a project opened from the tree comes back to the tree', async ({ page }) => {
+  await start(page)
+  await limb(page, '#peddose').click()
+  await page.getByRole('region', { name: 'กิ่งที่เลือก' }).getByRole('button', { name: 'เปิด Mind map' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '#peddose' })).toBeVisible()
+  await page.getByRole('button', { name: '‹ กลับ' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Project Ygdrasil' })).toBeVisible()
+})

@@ -23,7 +23,8 @@ test('ticking from Focus writes the note and moves the ring', async ({ page }) =
   const { file } = await open(page)
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
   await expect(page.getByRole('img', { name: 'เสร็จแล้ว 1 จาก 4' })).toBeVisible()
-  expect(file.text).toContain('- [x] ทบทวนเคส 🔺 ➕ 2026-10-01 📅 2026-10-08 ✅ 2026-10-08')
+  // The page shows the tick at once; the note is written right after.
+  await expect.poll(() => file.text).toContain('- [x] ทบทวนเคส 🔺 ➕ 2026-10-01 📅 2026-10-08 ✅ 2026-10-08')
 })
 
 test('accepting a suggestion changes the task', async ({ page }) => {

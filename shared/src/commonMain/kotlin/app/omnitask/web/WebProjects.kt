@@ -45,6 +45,8 @@ object WebProjects {
         val strict: List<String> = emptyList(),
         /** Tags of the owner's own task kinds, which never name a project either. */
         val kindTags: List<String> = emptyList(),
+        /** List tags remembered from the last time the list notes were read, while they are read again. */
+        val listTags: List<String> = emptyList(),
     )
 
     @Serializable
@@ -153,7 +155,7 @@ object WebProjects {
         lists.sortBy { it.name.lowercase() }
         // Lists, their categories: tags that are not projects. Set before any project is read.
         val ignored = lists.flatMap { listOf(it.tag) + it.categories }.toSet()
-        Projects.ignoredTags = ignored + st.kindTags
+        Projects.ignoredTags = ignored + st.kindTags + st.listTags
 
         val states = Branches.parse(st.branches.toSet())
         val everything = WebNotes.tasks(fileKey, path, text)
@@ -373,7 +375,7 @@ object WebProjects {
 
     @Serializable
     data class BranchOp(
-        /** `set`, `choose`, `add`, `rename`, `delete` or `moveProject`. */
+        /** `set`, `choose`, `add`, `rename`, `delete`, `moveProject` or `graft` (value: the tag it goes under). */
         val op: String,
         val project: String,
         val path: String = "",
@@ -403,6 +405,12 @@ object WebProjects {
         val states = Branches.parse(saved)
         fun done(next: Map<Pair<String, String>, Branches.State>, extra: BranchResult = BranchResult(true)) =
             json.encodeToString(extra.copy(ok = true, states = Branches.encode(next).sorted()))
+        // A project or branch dropped on another one (or on the trunk, [value] empty) in Project Ygdrasil.
+        if (op.op == "graft") {
+            val old = if (op.path.isEmpty()) op.project else "${op.project}/${op.path}"
+            val new = Branches.graftTag(old, op.value) ?: return json.encodeToString(BranchResult(false, error = "same"))
+            return done(Branches.moveTag(states, old, new), BranchResult(true, oldTag = old, newTag = new))
+        }
         if (op.op == "moveProject") {
             val name = op.value
             return done(states.mapKeys { (k, _) -> if (k.first == op.project) name to k.second else k })

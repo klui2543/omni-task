@@ -41,7 +41,8 @@ test('ticking a task changes only its line in the note', async ({ page }) => {
 
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ส่งรายงาน/ }).click()
   await expect(page.getByText('ส่งรายงาน')).toHaveCount(0)
-  expect(file.text).toBe(TASKS.replace('📅 2026-10-07', '📅 2026-10-07 ✅ 2026-10-08').replace('- [ ] ส่งรายงาน', '- [x] ส่งรายงาน'))
+  // The page shows the tick at once; the note is written right after.
+  await expect.poll(() => file.text).toBe(TASKS.replace('📅 2026-10-07', '📅 2026-10-07 ✅ 2026-10-08').replace('- [ ] ส่งรายงาน', '- [x] ส่งรายงาน'))
 })
 
 test('a repeating task moves on instead of being ticked', async ({ page }) => {
@@ -61,7 +62,7 @@ test('quick add writes a task line in TaskForge order', async ({ page }) => {
   await page.getByLabel('งานใหม่').fill('จองตั๋ว พรุ่งนี้ 9:00 #เดินทาง')
   await page.getByRole('button', { name: 'เพิ่ม', exact: true }).click()
   await expect(page.getByText('จองตั๋ว')).toBeVisible()
-  expect(file.text).toContain('- [ ] จองตั๋ว #เดินทาง #remind-at-due ⏰ 09:00 ➕ 2026-10-08 📅 2026-10-09')
+  await expect.poll(() => file.text).toContain('- [ ] จองตั๋ว #เดินทาง #remind-at-due ⏰ 09:00 ➕ 2026-10-08 📅 2026-10-09')
   expect(file.text!.startsWith(TASKS.trimEnd())).toBe(true)
 })
 
@@ -316,7 +317,7 @@ test('the edit panel changes dates, priority, repeat, tags and the description',
   await panel.getByLabel('เพิ่มงานย่อย').fill('เขียนบทสรุป')
   await panel.getByLabel('เพิ่มงานย่อย').press('Enter')
   await expect(panel.getByText('เขียนบทสรุป')).toBeVisible()
-  expect(file.text).toContain('    - ส่งอาจารย์ก่อนเที่ยง\n    - [ ] เขียนบทสรุป ➕ 2026-10-08\n')
+  await expect.poll(() => file.text).toContain('    - ส่งอาจารย์ก่อนเที่ยง\n    - [ ] เขียนบทสรุป ➕ 2026-10-08\n')
 })
 
 test('a finished task can go to the archive, and come back with undo', async ({ page }) => {

@@ -72,7 +72,6 @@ export function ProjectHome(p: {
       {p.projects.length === 0 && <section class="group empty">ยังไม่มีงานที่ติด Tag</section>}
       {p.projects.length > 0 && !p.arranging && (
         <button class="yg-entry" onClick={p.onYgdrasil}>
-          <span class="pj-tile" aria-hidden="true">🌳</span>
           <span class="grow stack">
             <span class="strong">Project Ygdrasil</span>
             <span class="small muted">ทุกโปรเจกต์ในต้นไม้เดียว กรองงานได้ เห็นงานที่รอกันข้ามโปรเจกต์</span>

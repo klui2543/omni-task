@@ -412,7 +412,13 @@ test('a project has its own Kanban, Matrix, Gantt and calendar over just its tas
   await page.locator('.pj-card', { hasText: 'peddose' }).click()
   const tabs = page.getByRole('tablist', { name: 'มุมมองของโปรเจกต์' })
   await expect(tabs.getByRole('tab', { name: 'ภาพรวม' })).toHaveAttribute('aria-selected', 'true')
+  // The switch sits in the header beside the title, where the views have it too.
+  const head = page.locator('header.head', { has: page.getByRole('heading', { level: 1, name: 'peddose' }) })
+  await expect(head.getByRole('tablist', { name: 'มุมมองของโปรเจกต์' })).toBeVisible()
+  const y0 = (await tabs.boundingBox())!.y
   await tabs.getByRole('tab', { name: 'Kanban' }).click()
+  const y1 = (await page.getByRole('tablist', { name: 'ชนิดมุมมอง' }).boundingBox())!.y
+  expect(Math.abs(y1 - y0)).toBeLessThan(4)
 
   // Only peddose work, branches included; the other projects' tasks stay out.
   await expect(page.getByRole('heading', { level: 1, name: 'peddose' })).toBeVisible()

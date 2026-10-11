@@ -138,7 +138,8 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
             : res.error === 'empty' ? 'พิมพ์ชื่องานก่อน' : 'ทำรายการไม่สำเร็จ',
         )
       }
-      const loaded = await vault.load()
+      // After an edit of the task note alone, the note as written is shown without reading Drive again.
+      const loaded = vault.takeWritten() ?? await vault.load()
       latest.current = loaded
       setSnapshot(loaded)
       const status = vault.status()
@@ -161,6 +162,12 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   // A reload asks Drive and Google for everything again; the pages keep showing what they have until it is read.
   const reload = () => { vault.clearCaches(); calendar.stale(); pullSettings(); return run(async () => undefined) }
+
+  // An edit shows at once, on the note as last read, while it is written to Drive.
+  useEffect(() => {
+    vault.onPreview = (s) => { latest.current = s; setSnapshot(s) }
+    return () => { vault.onPreview = null }
+  }, [vault])
 
   // The first walk of the vault ends in the background: its notes join the task note as last read, without a
   // spinner, a message cleared or the task note read again.

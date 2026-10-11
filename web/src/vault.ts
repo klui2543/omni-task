@@ -135,6 +135,32 @@ export class Vault {
     }
   }
 
+  /* ---------- Showing an edit at once ---------- */
+
+  /** Called with the note as it will be once an edit is written, before Drive is reached (see [edit]). */
+  onPreview: ((s: Snapshot) => void) | null = null
+  /** What the writes since the last read left: the task note's text, or that something else was written too. */
+  private written: { text: string | null; other: boolean } = { text: null, other: false }
+  private lastConflicts: string[] = []
+  private lastFullRead = 0
+
+  /** Something other than the task note was written (an archive, a new note): the next read must ask Drive. */
+  private wroteOther() {
+    this.written.other = true
+  }
+
+  /**
+   * The note as the edits since the last read left it, without asking Drive again: an edit reads the note just before
+   * writing it, so what it wrote is what Drive holds. Null when anything else was written, nothing was, or the last
+   * full read is older than a minute (so changes from the phone still come in).
+   */
+  takeWritten(): Snapshot | null {
+    const w = this.written
+    this.written = { text: null, other: false }
+    if (w.other || w.text === null || !this.fileId || Date.now() - this.lastFullRead > 60_000) return null
+    return this.snapshotOf(this.fileId, w.text, this.notes, this.lastConflicts)
+  }
+
   private async loadOnline(): Promise<Snapshot> {
     const id = await this.file()
     const index = this.index()
@@ -152,6 +178,9 @@ export class Vault {
     const beside = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
     const conflicts = quick ? [...new Set([...beside, ...index.conflicts()])] : beside
     offlineStore.setNote(this.rootId, { id, path: this.notePath, text })
+    this.lastConflicts = conflicts
+    this.lastFullRead = Date.now()
+    this.written = { text: null, other: false }
     return this.snapshotOf(id, text, quick ? this.otherNotes(index) : [], conflicts)
   }
 
@@ -226,6 +255,7 @@ export class Vault {
         if (merged.text !== remote.text) {
           if ((await this.drive.version(id)) !== remote.version) continue
           merged.lost.push(...(await writeChecked(this.drive, id, remote, merged.text)))
+          this.wroteOther()
         }
         clashes.add(id, edit.path, merged.lost)
         offlineStore.setPending(this.rootId, id, null)
@@ -280,6 +310,7 @@ export class Vault {
     try {
       // A task of a list note carries that note's id in its key, so it is edited in its own note.
       const id = fileId ?? (await this.file())
+      this.preview(op, id)
       // Edits made offline go first, so this one works on the note as it now stands.
       await this.flush()
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -304,7 +335,34 @@ export class Vault {
 
   /** Writes a note read as [base] (version just checked), keeping a write that landed in the same moment; see safeWrite.ts. */
   private async write(id: string, base: Versioned, text: string): Promise<void> {
-    clashes.add(id, this.pathOf(id), await writeChecked(this.drive, id, base, text))
+    const lost = await writeChecked(this.drive, id, base, text)
+    clashes.add(id, this.pathOf(id), lost)
+    if (id === this.fileId && lost.length === 0) {
+      this.written.text = text
+      offlineStore.setNote(this.rootId, { id, path: this.notePath, text })
+    } else {
+      this.wroteOther()
+    }
+  }
+
+  /**
+   * Shows the edit at once on the task note as this device last read it (with the edits that wait), before Drive is
+   * read and written; the page then settles on what was really written.
+   */
+  private preview(op: (text: string) => EditResult, id: string) {
+    if (!this.onPreview || id !== this.fileId) return
+    const base = offlineStore.pending(this.rootId)[id]?.text ?? (offlineStore.note(this.rootId)?.id === id ? offlineStore.note(this.rootId)!.text : null)
+    if (base === null) return
+    try {
+      const r = op(base)
+      if (!r.ok || r.text == null || r.text === base) return
+      const shown = this.notes.map((n) => {
+        const w = offlineStore.pending(this.rootId)[n.key]
+        return w ? { ...n, text: w.text } : n
+      })
+      const src = sourceOf(id, this.notePath, r.text, shown)
+      this.onPreview(new Snapshot(id, r.text, loadTasks(src.key, src.path, src.text), this.lastConflicts, this.notePath, shown))
+    } catch { /* the real edit says what went wrong */ }
   }
 
   toggle(task: Task, withSubtasks = false) {
@@ -350,6 +408,7 @@ export class Vault {
       if (!res.ok) return res
       const archive = await this.archiveNote()
       const next = archiveAppend(archive.text, res.cutLines!)
+      this.wroteOther()
       const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), this.archiveName(), next))
       if (archive.id) await this.write(archive.id, archive, next)
       if ((await this.drive.version(id)) !== read.version) {
@@ -490,6 +549,7 @@ export class Vault {
     const folder = (await this.omni(true))!
     for (const s of listStarters()) {
       const name = s.path.split('/').pop()!
+      this.wroteOther()
       if (!(await this.drive.child(folder, name))) await this.drive.createText(folder, name, s.text)
     }
     this.staleLists()
@@ -502,6 +562,7 @@ export class Vault {
     const folder = (await this.omni(true))!
     const file = made.path!.split('/').pop()!
     if (await this.drive.child(folder, file)) return { ok: false, error: 'exists' }
+    this.wroteOther()
     await this.drive.createText(folder, file, made.text!)
     this.staleLists()
     return made
