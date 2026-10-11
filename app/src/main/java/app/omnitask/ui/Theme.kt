@@ -42,8 +42,13 @@ class Palette(
     val teal: Color, val tealText: Color, val tealSoft: Color, val tealChip: Color, val eventText: Color,
     /** The floating nav bar, a little see-through over the content. */
     val navBg: Color,
-    /** Card corners: soft in the first look, tighter in the Linear one. */
+    /** Card corners: soft in the first look, tighter in the graphite one. */
     val radius: Dp,
+    /**
+     * The quiet look: one grey ring for every open task with the priority as a small dot after the title, events as
+     * a line at the side without a fill, and grey buttons. Colour is kept for what is late or urgent.
+     */
+    val calm: Boolean = false,
 )
 
 object Palettes {
@@ -61,40 +66,40 @@ object Palettes {
         navBg = Color(0xF0171A23), radius = 18.dp,
     )
 
-    /** Linear-like, dark: near-black greys with a cool tint, one blue accent, thin lines instead of tinted boxes. */
-    val linearDark = Palette(
+    /** Graphite, dark: a flat grey page, one muted blue-grey accent, colour only for what is late or urgent. */
+    val graphiteDark = Palette(
         dark = true,
-        bg = Color(0xFF0B0D10), card = Color(0xFF13161B), cardBorder = Color(0xFF232830), raised = Color(0xFF1B2027),
-        sunken = Color(0xFF0F1216), divider = Color(0xFF1F242B), control = Color(0xFF303843),
-        text = Color(0xFFE9EDF2), text2 = Color(0xFFC5CCD6), muted = Color(0xFF97A0AD), faint = Color(0xFF78818F),
-        accent = Color(0xFF4C9AFF), accentSoft = Color(0xFF14243D), accentDeep = Color(0xFF101C30), accentText = Color(0xFF8CC0FF),
-        accentLine = Color(0xFF24456F), onAccent = Color(0xFF06101C),
-        lime = Color(0xFF4CB782), limeSoft = Color(0xFF17291F), red = Color(0xFFF2555A), redSoft = Color(0xFF3A1D1F),
-        amber = Color(0xFFF2C94C), amberSoft = Color(0xFF2E2814), blue = Color(0xFF60A5FA),
-        teal = Color(0xFF3FB8AE), tealText = Color(0xFF8FD3CB), tealSoft = Color(0xFF142B29), tealChip = Color(0xFF5FCFC3), eventText = Color(0xFFD6F2EE),
-        navBg = Color(0xF013161B), radius = 12.dp,
+        bg = Color(0xFF0E0E10), card = Color(0xFF161618), cardBorder = Color(0xFF26262A), raised = Color(0xFF1E1E22),
+        sunken = Color(0xFF121214), divider = Color(0xFF212125), control = Color(0xFF34343A),
+        text = Color(0xFFECECEE), text2 = Color(0xFFC4C4C9), muted = Color(0xFF8E8E96), faint = Color(0xFF7A7A83),
+        accent = Color(0xFF9DB4D3), accentSoft = Color(0xFF1D2330), accentDeep = Color(0xFF171B24), accentText = Color(0xFFB4C6DF),
+        accentLine = Color(0xFF2F3A4E), onAccent = Color(0xFF0E1118),
+        lime = Color(0xFF7FAE93), limeSoft = Color(0xFF1A2620), red = Color(0xFFD9726C), redSoft = Color(0xFF2D1B1A),
+        amber = Color(0xFFC4A56A), amberSoft = Color(0xFF1A1A1D), blue = Color(0xFF8FA6C4),
+        teal = Color(0xFF7D8794), tealText = Color(0xFF8E8E96), tealSoft = Color.Transparent, tealChip = Color(0xFF86A6A0), eventText = Color(0xFFECECEE),
+        navBg = Color(0xF0161618), radius = 12.dp, calm = true,
     )
 
-    /** Linear-like, light: white cards on a soft cool-grey page. */
-    val linearLight = Palette(
+    /** Graphite, light: white cards on a soft grey page, an ink blue-grey accent. */
+    val graphiteLight = Palette(
         dark = false,
-        bg = Color(0xFFF4F6F9), card = Color(0xFFFFFFFF), cardBorder = Color(0xFFDFE4EB), raised = Color(0xFFEDF0F5),
-        sunken = Color(0xFFECEFF4), divider = Color(0xFFE8ECF1), control = Color(0xFFCDD4DD),
-        text = Color(0xFF15191F), text2 = Color(0xFF363D48), muted = Color(0xFF566070), faint = Color(0xFF667080),
-        accent = Color(0xFF1F6FEB), accentSoft = Color(0xFFE6F0FE), accentDeep = Color(0xFFF0F6FF), accentText = Color(0xFF1858C4),
-        accentLine = Color(0xFFB9D3FA), onAccent = Color(0xFFFFFFFF),
-        lime = Color(0xFF26A269), limeSoft = Color(0xFFE3F4EA), red = Color(0xFFE5484D), redSoft = Color(0xFFFCE8E8),
-        amber = Color(0xFFB8730C), amberSoft = Color(0xFFFBF0DC), blue = Color(0xFF3B82F6),
-        teal = Color(0xFF2F9E95), tealText = Color(0xFF1E7C74), tealSoft = Color(0xFFE2F3F1), tealChip = Color(0xFF2F9E95), eventText = Color(0xFF134E4A),
-        navBg = Color(0xF2FFFFFF), radius = 12.dp,
+        bg = Color(0xFFF2F3F5), card = Color(0xFFFFFFFF), cardBorder = Color(0xFFE1E3E8), raised = Color(0xFFECEEF1),
+        sunken = Color(0xFFEBEDF0), divider = Color(0xFFE8EAEE), control = Color(0xFFCDD2DA),
+        text = Color(0xFF1B1E23), text2 = Color(0xFF3C424C), muted = Color(0xFF667080), faint = Color(0xFF6B7482),
+        accent = Color(0xFF3D4F6E), accentSoft = Color(0xFFE6EAF1), accentDeep = Color(0xFFEFF2F7), accentText = Color(0xFF33445F),
+        accentLine = Color(0xFFC5CCD9), onAccent = Color(0xFFFFFFFF),
+        lime = Color(0xFF4C8566), limeSoft = Color(0xFFE3F0E9), red = Color(0xFFBF4B47), redSoft = Color(0xFFFBE9E8),
+        amber = Color(0xFF9A6A12), amberSoft = Color(0xFFF5F1E6), blue = Color(0xFF5A6F94),
+        teal = Color(0xFF8893A3), tealText = Color(0xFF667080), tealSoft = Color.Transparent, tealChip = Color(0xFF5E8C86), eventText = Color(0xFF1B1E23),
+        navBg = Color(0xF2FFFFFF), radius = 12.dp, calm = true,
     )
 
     /** The palette for the owner's choice and, in "follow the system" mode, the phone's dark setting. */
     val current: Palette
         get() = when {
             Appearance.palette == PaletteChoice.MIDNIGHT -> midnight
-            Appearance.dark -> linearDark
-            else -> linearLight
+            Appearance.dark -> graphiteDark
+            else -> graphiteLight
         }
 }
 
@@ -138,6 +143,7 @@ object C {
     val eventText get() = p.eventText
     val navBg get() = p.navBg
     val radius get() = p.radius
+    val calm get() = p.calm
 }
 
 /** Sarabun: the open redesign of TH Sarabun New, the face the owner reads every day. */
@@ -272,6 +278,14 @@ val Priority.tint: Color
         Priority.HIGH -> C.amber
         Priority.MEDIUM -> C.blue
         Priority.NONE, Priority.LOW, Priority.LOWEST -> C.faint
+    }
+
+/** The small dot after the title in the quiet look: only for work that matters more than usual, else none. */
+val Priority.dot: Color?
+    get() = when (this) {
+        Priority.HIGHEST -> C.red
+        Priority.HIGH -> C.amber
+        else -> null
     }
 
 val Quadrant.accent: Color

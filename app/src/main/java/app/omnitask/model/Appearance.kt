@@ -29,9 +29,12 @@ enum class ThemeMode(private val th: String, private val en: String) {
     val label get() = tr(th, en)
 }
 
-/** The colour set: the Linear look (light and dark), or the first violet one (dark only). */
+/**
+ * The colour set: the calm graphite look (light and dark), or the first violet one (dark only). The graphite one is
+ * stored as LINEAR, the name the choice had when it was the blue Linear look, so saved settings keep working.
+ */
 enum class PaletteChoice(private val th: String, private val en: String) {
-    LINEAR("Linear", "Linear"), MIDNIGHT("สีเดิม (มืดเท่านั้น)", "Original (dark only)");
+    LINEAR("สงบ (Graphite)", "Calm (Graphite)"), MIDNIGHT("สีเดิม (มืดเท่านั้น)", "Original (dark only)");
 
     val label get() = tr(th, en)
 }

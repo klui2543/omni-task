@@ -36,8 +36,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.omnitask.model.Appearance
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
@@ -48,6 +50,7 @@ import app.omnitask.model.tr
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
@@ -212,8 +215,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             nowShown = true
                         }
                         when (item) {
-                            is DayPlan.Item.TaskItem -> TimelineTask(item, state, vm, onOpen, item.task in blocked)
-                            is DayPlan.Item.EventItem -> TimelineEvent(item, now)
+                            is DayPlan.Item.TaskItem -> TimelineTask(item, state, vm, onOpen, item.task in blocked, railed = true)
+                            is DayPlan.Item.EventItem -> TimelineEvent(item, now, railed = true)
                         }
                     }
                     if (!nowShown && section.part == DayPlan.Part.EVENING) {
@@ -400,32 +403,70 @@ private fun PlanHead(title: String, color: Color, count: Int) {
     }
 }
 
+/**
+ * The timeline's axis: a task or event with a time shows it in a column at the left, with a hairline and a dot
+ * beside it; rows without a time (and all-day events) start at the left edge. The column grows with the text size.
+ */
+private val RAIL_START = 6.dp
+private val RAIL_COL = 14.dp
+private val timeColumn: Dp @Composable get() = (40f * Appearance.factor).dp
+
+/** The hairline down a timed row and its dot, level with the row's first line. */
+@Composable
+private fun Modifier.rail(): Modifier {
+    val x = RAIL_START + timeColumn + RAIL_COL / 2
+    val line = C.cardBorder
+    val dot = C.faint
+    return drawBehind {
+        drawLine(line, Offset(x.toPx(), 0f), Offset(x.toPx(), size.height), strokeWidth = 1.dp.toPx())
+        drawCircle(dot, 3.dp.toPx(), Offset(x.toPx(), 20.dp.toPx()))
+    }
+}
+
+/** A row's time in the column: right-aligned, level with the row's first line, then the rail's width left empty. */
+@Composable
+private fun TimeColumn(time: LocalTime, color: Color = C.muted) {
+    Box(Modifier.width(timeColumn).height(36.dp), contentAlignment = Alignment.CenterEnd) {
+        Text(time.format(HM), color = color, fontSize = TS.caption, textAlign = TextAlign.End, maxLines = 1, softWrap = false)
+    }
+    Spacer(Modifier.width(RAIL_COL))
+}
+
+/** Where the clock stands: its time in the time column, a dot on the rail and a line across. */
 @Composable
 private fun NowLine(now: LocalTime) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(C.red))
-        Text(now.format(HM), Modifier.padding(horizontal = 6.dp), color = C.red, fontSize = TS.micro, fontWeight = FontWeight.SemiBold)
+    Row(Modifier.fillMaxWidth().padding(start = RAIL_START, end = 12.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(now.format(HM), Modifier.width(timeColumn), color = C.red, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End, maxLines = 1, softWrap = false)
+        Box(Modifier.width(RAIL_COL), contentAlignment = Alignment.Center) { Box(Modifier.size(7.dp).clip(CircleShape).background(C.red)) }
         Box(Modifier.weight(1f).height(1.5.dp).background(C.red.copy(alpha = 0.7f)))
     }
 }
 
 @Composable
-private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, isBlocked: Boolean) {
+private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, isBlocked: Boolean, railed: Boolean = false) {
     val t = item.task
     val today = state.today
     val late = t.isLate(today)
     // A task already ticked off stays on the timeline, greyed out.
     val done = t.status == Status.DONE
+    // On the day's timeline the time sits in the column; elsewhere (the overdue card) it leads the second line.
+    val timed = if (railed) item.time else null
     Row(
-        Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 6.dp, end = 10.dp, top = 2.dp, bottom = 2.dp),
+        Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }
+            .then(if (timed != null) Modifier.rail() else Modifier)
+            .padding(start = RAIL_START, end = 10.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.Top,
     ) {
+        if (timed != null) TimeColumn(timed)
         TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 36.dp)
         Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
-            Text(
-                t.title, color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
-                textDecoration = if (done) TextDecoration.LineThrough else null,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    t.title, Modifier.weight(1f, fill = false), color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
+                    textDecoration = if (done) TextDecoration.LineThrough else null,
+                )
+                PriorityDot(t)
+            }
             // Every row here is today's, so "due today" would only repeat. A finished task is one line.
             val lateText = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
             val rest = if (done) "" else listOfNotNull(
@@ -433,7 +474,7 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                 Projects.projectOf(t),
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
             ).joinToString(", ")
-            val clock = if (done) null else item.time
+            val clock = if (done || timed != null) null else item.time
             if (clock != null || lateText != null || rest.isNotEmpty()) {
                 Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The time leads the line as a small clock label, as the reminder does on the Tasks page.
@@ -454,19 +495,30 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
  * crosses the card at how far into the event it is, with the part already gone tinted darker.
  */
 @Composable
-private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
+private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, railed: Boolean = false) {
     val e = item.event
+    // A timed event shows its start in the time column, so its own text only says when it ends.
+    val timed = if (railed && !e.allDay) item.time else null
     val phase = DayPlan.phase(e, now)
     val past = phase == DayPlan.Phase.PAST
     val running = phase == DayPlan.Phase.ACTIVE
     val fraction = if (running) DayPlan.progress(e, now) else 0f
-    val bg = if (past) C.raised else C.tealSoft
+    val bg = if (past && !C.calm) C.raised else C.tealSoft
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
     // Every event here is from the phone's calendar and on today's page, so neither needs saying.
-    val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")
+    val range = when {
+        e.allDay -> tr("ทั้งวัน", "All day")
+        timed != null -> tr("ถึง ${e.end.format(HM)}", "to ${e.end.format(HM)}")
+        else -> tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")
+    }
     val left = ChronoUnit.MINUTES.between(now, e.end)
-    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
+    Row(
+        Modifier.fillMaxWidth().then(if (timed != null) Modifier.rail() else Modifier)
+            .padding(start = if (timed != null) RAIL_START else 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (timed != null) TimeColumn(timed, if (past) C.faint else C.muted)
         Row(
             Modifier.weight(1f).heightIn(min = if (running) 0.dp else 36.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
                 .drawBehind {

@@ -148,6 +148,8 @@ fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp, touch: Dp = 44.
     val ring = when {
         done -> C.lime
         task.status == Status.CANCELLED -> C.faint
+        // The quiet look keeps every open ring grey; the priority is a dot after the title ([PriorityDot]).
+        C.calm -> C.faint
         else -> task.priority.tint
     }
     Box(
@@ -163,6 +165,13 @@ fun TaskCheck(task: Task, onClick: () -> Unit, size: Dp = 20.dp, touch: Dp = 44.
             if (done) Icon(Ic.check, tr("เสร็จแล้ว", "Done"), tint = C.onAccent, modifier = Modifier.size(size * 0.6f))
         }
     }
+}
+
+/** In the quiet look, a small dot after an open task's title when its priority is high; nothing otherwise. */
+@Composable
+fun PriorityDot(task: Task) {
+    val color = if (C.calm && task.isOpen) task.priority.dot else null
+    if (color != null) Box(Modifier.padding(start = 8.dp).size(6.dp).clip(CircleShape).background(color))
 }
 
 /** Text turned to read bottom to top, for folded Kanban columns; it takes the space it needs on its side. */
@@ -336,14 +345,18 @@ fun TaskRow(
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.Top) {
         TaskCheck(task, onToggle)
         Column(Modifier.weight(1f).clickable(onClick = onOpen).padding(top = 11.dp, bottom = 10.dp)) {
-            Text(
-                task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (done || blockedBy != null) C.muted else C.text,
-                textDecoration = if (done) TextDecoration.LineThrough else null,
-                maxLines = if (compact) 2 else 4,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    task.title,
+                    Modifier.weight(1f, fill = false),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (done || blockedBy != null) C.muted else C.text,
+                    textDecoration = if (done) TextDecoration.LineThrough else null,
+                    maxLines = if (compact) 2 else 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                PriorityDot(task)
+            }
             // The details, one quiet line; the full text is in the task sheet.
             task.descriptionPreview?.let { Text(it, Modifier.padding(top = 1.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             val meta = metaOf(task, today, blockedBy, compact, progress)

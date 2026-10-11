@@ -94,9 +94,9 @@ private fun open(context: Context, action: String? = null) = actionStartActivity
  */
 private fun cp(pick: (Palette) -> Color): ColorProvider = when {
     Appearance.palette == PaletteChoice.MIDNIGHT -> ColorProvider(pick(Palettes.midnight))
-    Appearance.themeMode == ThemeMode.LIGHT -> ColorProvider(pick(Palettes.linearLight))
-    Appearance.themeMode == ThemeMode.DARK -> ColorProvider(pick(Palettes.linearDark))
-    else -> ColorProvider(day = pick(Palettes.linearLight), night = pick(Palettes.linearDark))
+    Appearance.themeMode == ThemeMode.LIGHT -> ColorProvider(pick(Palettes.graphiteLight))
+    Appearance.themeMode == ThemeMode.DARK -> ColorProvider(pick(Palettes.graphiteDark))
+    else -> ColorProvider(day = pick(Palettes.graphiteLight), night = pick(Palettes.graphiteDark))
 }
 
 @Composable

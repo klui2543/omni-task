@@ -212,8 +212,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
     val assistantButton: @Composable (Modifier) -> Unit = { m ->
         if (screen != Screen.AI && assistantHidden.intValue == 0) {
             Box(
-                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accentSoft)
-                    .border(1.dp, C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
+                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(if (C.calm) C.raised else C.accentSoft)
+                    .border(1.dp, if (C.calm) C.control else C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.spark, tr("ผู้ช่วย", "Assistant"), tint = C.accentText, modifier = Modifier.size(24.dp)) }
         }
@@ -333,19 +333,22 @@ private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> U
         ) {
             // Adding a task, where the bottom bar of a phone has it in the middle.
             Box(
-                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable(onClick = onAdd),
+                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             Screen.entries.filter { it != Screen.MORE }.forEach { s ->
                 val on = s == selected
+                // The quiet look marks the current place softly, as the bottom bar does, instead of a filled pill.
+                val onBg = if (C.calm) C.accentSoft else C.accent
+                val onFg = if (C.calm) C.accentText else C.onAccent
                 Column(
                     Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp))
-                        .background(if (on) C.accent else Color.Transparent).clickable { onSelect(s) },
+                        .background(if (on) onBg else Color.Transparent).clickable { onSelect(s) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(s.icon, null, tint = if (on) C.onAccent else C.muted, modifier = Modifier.size(20.dp))
-                    Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
+                    Icon(s.icon, null, tint = if (on) onFg else C.muted, modifier = Modifier.size(20.dp))
+                    Text(s.label, fontSize = TS.micro, color = if (on) onFg else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
                 }
             }
         }
@@ -375,9 +378,9 @@ private fun DockNav(
             DockItem(Screen.TASKS.icon, Screen.TASKS.label, selected == Screen.TASKS && !moreSelected, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 Box(
-                    Modifier.size(width = 60.dp, height = 42.dp).clip(RoundedCornerShape(16.dp)).background(C.accent).clickable(onClick = onAdd),
+                    Modifier.size(width = 60.dp, height = 42.dp).clip(RoundedCornerShape(16.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             }
             DockItem(Screen.PROJECTS.icon, tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS && !moreSelected, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
             DockItem(Ic.grid, tr("เพิ่มเติม", "More"), moreSelected, onMore, Modifier.weight(1f))
