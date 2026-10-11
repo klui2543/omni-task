@@ -50,13 +50,14 @@ test('future work: skip for today, change how many a day, and pick which tasks c
   await page.reload()
   await expect(page.getByText('เลือกงานที่สำคัญต่ออนาคต')).toBeVisible()
 
-  // On the narrow layout the bottom bar floats over the page's foot, so bring the stepper to the middle first.
-  const more = page.getByRole('button', { name: 'เพิ่ม', exact: true })
-  await more.evaluate((el) => el.scrollIntoView({ block: 'center' }))
-  await more.click()
-  await expect(page.getByText('2', { exact: true })).toBeVisible()
+  // The stepper and "pick" live in the card's dialog, which the head opens.
+  await page.getByRole('button', { name: /^ลงทุนอนาคต/ }).click()
+  const all = page.getByRole('dialog', { name: 'ลงทุนอนาคต ทั้งหมด' })
+  await all.getByRole('button', { name: 'เพิ่ม', exact: true }).click()
+  await expect(all.getByText('2', { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'เลือกงาน' }).click()
+  await all.getByRole('button', { name: /เลือกงาน/ }).click()
+  await expect(all).toHaveCount(0)
   const dialog = page.getByRole('dialog', { name: 'เลือกงานลงทุนอนาคต' })
   await dialog.getByRole('checkbox', { name: /ทำเว็บคำนวณยา/ }).click()
   await expect.poll(() => file.text).toContain('- [ ] ทำเว็บคำนวณยา #อนาคต ➕ 2026-08-01')

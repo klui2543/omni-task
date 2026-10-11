@@ -3,7 +3,7 @@ import type { Kind, Pick } from '../types'
 import { KIND_LABEL } from '../focusState'
 
 /** The shell every Focus dialog shares: centred on wide screens, a sheet from the bottom on narrow ones. */
-function Sheet(p: { title: string; onClose: () => void; children: preact.ComponentChildren }) {
+export function Sheet(p: { title: string; onClose: () => void; children: preact.ComponentChildren }) {
   return (
     <div class="scrim sheet-scrim" onClick={p.onClose} onKeyDown={(e) => e.key === 'Escape' && p.onClose()}>
       <section class="dialog tall" role="dialog" aria-modal="true" aria-label={p.title} onClick={(e) => e.stopPropagation()}>
