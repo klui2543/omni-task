@@ -27,7 +27,7 @@ import app.omnitask.model.UrgentRule
 import app.omnitask.model.tr
 
 /**
- * The bottom bar's "More": a page like Settings, with what no tab holds: the lists, the assistant, notifications,
+ * The bottom bar's "More": a page like Settings, with what no tab holds: the assistant, notifications,
  * settings, reloading the note, the vault folder and what counts as urgent.
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -49,8 +49,6 @@ fun MoreScreen(
         item { Text(tr("เพิ่มเติม", "More"), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.headlineSmall, color = C.text) }
         item {
             Card {
-                MoreRow(Ic.folder, Screen.PROJECTS.label) { onScreen(Screen.PROJECTS) }
-                Divider(start = 64.dp)
                 MoreRow(Ic.spark, Screen.AI.label) { onScreen(Screen.AI) }
             }
         }

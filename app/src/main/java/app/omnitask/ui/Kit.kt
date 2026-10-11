@@ -81,6 +81,7 @@ object Ic {
     val spark = icon("spark", "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z")
     val plus = icon("plus", "M12 5v14M5 12h14", width = 2.2f)
     val search = icon("search", "M11 4.5a6.5 6.5 0 1 0 0.01 0Z", "M16 16l4 4")
+    val sort = icon("sort", "M8 5v14M8 19l-3-3M8 19l3-3", "M16 19V5M16 5l-3 3M16 5l3 3")
     val filter = icon("filter", "M4 5h16l-6 7.5V19l-4-2v-4.5Z")
     val camera = icon("camera", "M4 8h3l2-2.5h6L17 8h3v11H4Z", "M12 9.5a3.5 3.5 0 1 0 0.01 0Z")
     val image = icon("image", "M3.5 5h17v14h-17Z", "M3.5 16l5-5 4 4 3-3 5 5")

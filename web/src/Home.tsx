@@ -9,8 +9,8 @@ import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
 import { AssistantPage } from './pages/Assistant'
 import { ProjectsPage } from './pages/Projects'
-import { ViewsPage } from './pages/Views'
-import { TasksPage } from './pages/Tasks'
+import { MorePage } from './pages/More'
+import { QuickAdd, TasksPage } from './pages/Tasks'
 import { createEvent, readEvents, type NewEvent } from './calendar'
 import { calendarCache } from './calendarCache'
 import { listCalendars } from './calendar'
@@ -92,6 +92,8 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   const [settingsRev, setSettingsRev] = useState(0)
   const pullSettings = () => settings.pull().then((changed) => { if (changed) setSettingsRev((r) => r + 1) }, () => {})
   useEffect(() => settingsBus.listen(() => { settings.push().catch(() => {}) }), [settings])
+  // The add button in the middle of the bottom bar: a new task from any page.
+  const [adding, setAdding] = useState(false)
 
   // The done prompt waits ten seconds, the undo bar six, as on Android.
   useEffect(() => {
@@ -238,7 +240,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
 
   return (
-    <Shell page={page} onNavigate={navigate} sync={{ state: needSignIn ? 'off' : busy ? 'busy' : offline ? 'offline' : 'ok', at: syncedAt, waiting }} onReload={reload}>
+    <Shell page={page} onNavigate={navigate} onAdd={() => setAdding(true)} sync={{ state: needSignIn ? 'off' : busy ? 'busy' : offline ? 'offline' : 'ok', at: syncedAt, waiting }} onReload={reload}>
       {needSignIn && (
         <div class="banner" role="alert">
           หมดเวลาเข้าสู่ระบบ <button class="link" onClick={p.onSignIn}>เข้าสู่ระบบอีกครั้ง</button>
@@ -271,10 +273,12 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
 
       {page === 'focus' ? <FocusPage key={settingsRev} {...props} />
         : page === 'tasks' ? <TasksPage key={settingsRev} {...props} />
-        : page === 'views' ? <ViewsPage key={settingsRev} {...props} />
         : page === 'projects' ? <ProjectsPage key={settingsRev} {...props} />
+        : page === 'more' ? <MorePage key={settingsRev} {...props} />
         : page === 'assistant' ? <AssistantPage key={settingsRev} {...props} />
         : <SettingsPage key={settingsRev} {...props} />}
+
+      {adding && <QuickAdd {...props} onClose={() => setAdding(false)} />}
 
       {closing && (
         <div class="scrim" onClick={() => setClosing(null)}>

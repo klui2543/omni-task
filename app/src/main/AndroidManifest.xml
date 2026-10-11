@@ -51,6 +51,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Wakes when Google Calendar syncs into the phone, so the widgets show a new event at once. -->
+        <service
+            android:name=".widget.CalendarWatchService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name=".widget.QuickAddWidgetReceiver"
             android:exported="true"

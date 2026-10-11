@@ -1,10 +1,13 @@
 package app.omnitask.data
 
 import android.Manifest
+import android.accounts.Account
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Bundle
 import android.provider.CalendarContract
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
@@ -44,6 +47,25 @@ object CalendarReader {
 
     fun canWrite(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+
+    private var lastSync = 0L
+
+    /**
+     * Asks Android to pull Google Calendar now. Left to itself the sync runs every few hours, so an event made on
+     * another device took that long to show up here. At most once a minute; call it off the main thread.
+     */
+    fun requestSync(context: Context) {
+        val now = System.currentTimeMillis()
+        if (!hasPermission(context) || now - lastSync < 60_000) return
+        lastSync = now
+        val extras = Bundle().apply {
+            putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
+            putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+        }
+        calendars(context).filter { it.isGoogle }.map { it.account }.distinct().forEach { name ->
+            runCatching { ContentResolver.requestSync(Account(name, "com.google"), CalendarContract.AUTHORITY, extras) }
+        }
+    }
 
     /** One calendar on the phone. Google accounts show up with [isGoogle] once calendar sync is on. */
     data class Calendar(val id: Long, val name: String, val account: String, val isGoogle: Boolean, val visible: Boolean, val writable: Boolean)

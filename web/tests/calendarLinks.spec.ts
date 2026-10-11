@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 
 import { Profile } from './assistantHelpers'
-import { NOTE, at, open } from './helpers'
+import { NOTE, at, goTo, open } from './helpers'
 
 // A tap on a Google Calendar event opens its page in Google Calendar (the event's htmlLink), as on Android.
 
@@ -14,7 +14,7 @@ async function views(page: Page, mode: string) {
   await page.addInitScript((m) => localStorage.setItem('omni.viewMode', m), mode)
   const opened = await open(page, { note: NOTE, granted: true, events: events() })
   await page.evaluate(() => { location.hash = '/views' })
-  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
   return opened
 }
 
@@ -51,7 +51,7 @@ test('Gantt: tapping an event bar opens its page in a new tab', async ({ page, c
 
 test('Assistant: an event in what is coming links to Google Calendar', async ({ page }) => {
   await open(page, { profile: Profile, granted: true, events: [{ title: 'ประชุมทีม', begin: at(10, 0, 12), end: at(11, 0, 12), link: 'https://www.google.com/calendar/event?eid=team' }] })
-  await page.getByRole('navigation', { name: 'เมนูหลัก' }).getByRole('button', { name: 'ผู้ช่วย', exact: true }).click()
+  await goTo(page, 'ผู้ช่วย')
   await page.getByRole('button', { name: /^สัปดาห์หน้ามีอะไร/ }).click()
   await expect(page.getByRole('link', { name: /ประชุมทีม/ })).toHaveAttribute('href', 'https://www.google.com/calendar/event?eid=team')
 })
