@@ -57,6 +57,8 @@ object WebFocus {
         val futureCount: Int = 1,
         val countdown: String? = null,
         val tonightBed: BedIn? = null,
+        /** Tonight's wake time when it is not the usual one (a morning event no longer moves it). */
+        val tonightWake: BedIn? = null,
         /** The text of the profile note (`Omni/โปรไฟล์.md`), when the vault has one. */
         val profile: String? = null,
         val events: List<EventIn> = emptyList(),
@@ -93,7 +95,17 @@ object WebFocus {
     data class Ring(val done: Int, val total: Int, val overdue: Int, val events: Int)
 
     @Serializable
-    data class Night(val bedAt: String, val wakeAt: String, val toBed: Long, val sleep: Long, val because: String?)
+    data class Night(
+        val bedAt: String,
+        val wakeAt: String,
+        val toBed: Long,
+        val sleep: Long,
+        val because: String?,
+        /** When the event that pulls the wake time earlier begins, `HH:mm`. */
+        val becauseAt: String? = null,
+        /** The wake time was picked for tonight. */
+        val wakePicked: Boolean = false,
+    )
 
     @Serializable
     data class Third(val kind: String, val minutes: Long, val night: Night? = null)
@@ -131,6 +143,8 @@ object WebFocus {
         /** The usual bedtime or tonight's pick, as `HH:mm`, and the evening it counts for. */
         val bedtime: String,
         val evening: String,
+        /** The usual wake time or tonight's pick, `HH:mm`. */
+        val wake: String = "",
         /** The coming Saturday: where neglected future work and "do this Saturday" are scheduled. */
         val softDate: String,
     )
@@ -163,11 +177,15 @@ object WebFocus {
         val eve = if (now.time >= LocalTime.of(18, 0)) today else today.minusDays(1)
         val picked = s.tonightBed?.takeIf { it.evening == eve.toString() }?.let { runCatching { LocalTime.parse(it.time) }.getOrNull() }
         val bedtime = picked ?: profile.sleep
-        val night = DayPlan.night(events, profile, now, bedtime)
+        val pickedWake = s.tonightWake?.takeIf { it.evening == eve.toString() }?.let { runCatching { LocalTime.parse(it.time) }.getOrNull() }
+        val night = DayPlan.night(events, profile, now, bedtime, pickedWake)
         val third = if (night != null) {
             Third(
                 "night", night.toBed,
-                Night(hm(night.bedAt.time), hm(night.wakeAt.time), night.toBed, night.sleep, night.because?.title),
+                Night(
+                    hm(night.bedAt.time), hm(night.wakeAt.time), night.toBed, night.sleep, night.because?.title,
+                    night.because?.let { hm(it.begin.time) }, pickedWake != null,
+                ),
             )
         } else {
             Third("free", DayPlan.freeMinutesLeft(events, now, profile.wake, profile.sleep))
@@ -200,6 +218,7 @@ object WebFocus {
                     .map { Pick(it.key, it.title, Countdown.text(it, now) ?: "") },
                 bedtime = hm(bedtime),
                 evening = eve.toString(),
+                wake = hm(pickedWake ?: profile.wake),
                 softDate = Focus.softDate(today).toString(),
             ),
         )

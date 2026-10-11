@@ -17,6 +17,8 @@ export interface FocusLocal {
   countdown: string | null
   /** Tonight's bedtime when it is not the usual one. */
   tonightBed: { evening: string; time: string } | null
+  /** Tonight's wake time when it is not the usual one (a morning event no longer moves it). */
+  tonightWake?: { evening: string; time: string } | null
 }
 
 const EMPTY: FocusLocal = { skipped: [], dismissed: [], reviewed: {}, futureCount: 1, countdown: null, tonightBed: null }

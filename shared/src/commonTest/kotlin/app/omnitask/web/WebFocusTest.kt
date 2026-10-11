@@ -93,6 +93,19 @@ class WebFocusTest {
     }
 
     @Test
+    fun tonightsWakeTimeCanBeMovedAndAMorningEventNoLongerPullsItEarlier() {
+        val early = ""","events":[{"id":1,"title":"ราวด์เช้า","begin":"2026-10-09T06:00","end":"2026-10-09T08:00"}]"""
+        val usual = focus(early, now = "2026-10-08T20:00")
+        assertTrue(usual.contains("\"wakeAt\":\"05:00\"") && usual.contains("\"because\":\"ราวด์เช้า\",\"becauseAt\":\"06:00\",\"wakePicked\":false"), usual)
+        val picked = focus(early + ""","tonightWake":{"evening":"2026-10-08","time":"07:15"}""", now = "2026-10-08T20:00")
+        assertTrue(picked.contains("\"wakeAt\":\"07:15\"") && picked.contains("\"wakePicked\":true"), picked)
+        assertTrue(picked.contains("\"wake\":\"07:15\""), picked)
+        // A pick for another evening is ignored.
+        val old = focus(""","tonightWake":{"evening":"2026-10-07","time":"07:15"}""", now = "2026-10-08T20:00")
+        assertTrue(old.contains("\"wakePicked\":false"), old)
+    }
+
+    @Test
     fun theProfileNoteSetsTheUsualSleepTimes() {
         val profile = "# โปรไฟล์\\n- ตื่น: 06:00\\n- นอน: 23:00\\n"
         val r = focus(""","profile":"$profile"""", now = "2026-10-08T20:00")

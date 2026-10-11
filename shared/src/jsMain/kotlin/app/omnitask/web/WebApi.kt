@@ -13,6 +13,8 @@ object WebApi {
 
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String = WebCore.loadTasks(fileKey, path, text, today)
 
+    fun loadListItems(fileKey: String, text: String, today: String): String = WebCore.loadListItems(fileKey, text, today)
+
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String = WebCore.list(fileKey, path, text, today, query)
 
     fun focus(fileKey: String, path: String, text: String, state: String): String = WebFocus.build(fileKey, path, text, state)
@@ -82,6 +84,8 @@ object WebApi {
     fun projectIgnoreTags(tags: String) = WebProjects.ignoreTags(tags)
 
     fun projectRenameTag(text: String, old: String, new: String): String = WebProjects.renameTag(text, old, new)
+
+    fun projectDropTag(text: String, tag: String): String = WebProjects.dropTag(text, tag)
 
     fun projectCleanName(name: String): String = WebProjects.cleanProjectName(name)
 

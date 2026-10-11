@@ -153,6 +153,30 @@ class WebCoreTest {
     }
 
     @Test
+    fun theListCanBeNarrowedToNotesAndToListNotesItems() {
+        val bucket = "---\nomni-list: true\nicon: target\ncategories: เที่ยว\ntag: bucket\n---\n# Bucket list\n\n- [ ] ไปญี่ปุ่น #bucket\n"
+        val notes = Json.encodeToString(
+            listOf(
+                WebNotes.Note("t", "Omni note.md", "- [ ] ส่งรายงาน\n- [ ] ดูหนัง #bucket\n"),
+                WebNotes.Note("p", "Projects/วิจัย.md", "- [ ] เขียน paper\n"),
+                WebNotes.Note("b", "Omni/Bucket list.md", bucket),
+            ),
+        )
+        fun keys(q: String) = Regex("\"keys\":\\[([^\\]]*)\\]").findAll(WebCore.list(WebNotes.MANY, "", notes, "2026-10-08", q)).flatMap { m ->
+            Regex("\"([^\"]+)\"").findAll(m.groupValues[1]).map { it.groupValues[1] }
+        }.toSet()
+        // A list's items stay out until the list is chosen.
+        assertEquals(setOf("t#0", "t#1", "p#0"), keys("""{"groupBy":"NONE"}"""))
+        assertEquals(setOf("p#0"), keys("""{"groupBy":"NONE","notes":["วิจัย"]}"""))
+        assertEquals(setOf("b#8"), keys("""{"groupBy":"NONE","lists":["Bucket list"]}"""))
+        val items = WebCore.loadListItems(WebNotes.MANY, notes, "2026-10-08")
+        assertTrue(items.contains("\"list\":\"Bucket list\""), items)
+        // A deleted list's tag comes off the lines that carry it.
+        val dropped = WebProjects.dropTag("- [ ] ดูหนัง #bucket #เที่ยว\n- [ ] อื่น\n", "bucket")
+        assertTrue(dropped.contains(Json.encodeToString("- [ ] ดูหนัง #เที่ยว\n- [ ] อื่น\n")) && dropped.contains("\"changed\":1"), dropped)
+    }
+
+    @Test
     fun cutRestoreAndArchive() {
         val withSub = "- [ ] สไลด์\n    - [ ] โครง\n- [ ] อื่น\n"
         val cut = result(WebCore.cut(withSub, "- [ ] สไลด์", 0))

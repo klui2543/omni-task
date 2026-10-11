@@ -119,19 +119,37 @@ function PickRow(p: { pick: Pick; on: boolean; busy: boolean; onClick: () => voi
   )
 }
 
-/** Tonight's bedtime, when it is not the usual one; the usual one is in the profile note. */
-export function BedtimeDialog(p: { time: string; onSave: (time: string) => void; onClose: () => void }) {
+/**
+ * Tonight's bedtime and wake time, when they are not the usual ones (those are in the profile note). A wake time picked
+ * here stays as it is: a morning event no longer pulls it earlier, as on Android.
+ */
+export function BedtimeDialog(p: {
+  time: string
+  wake: string
+  wakePicked: boolean
+  /** [wake]: the time picked, null to go back to the usual one, undefined to leave it as it was. */
+  onSave: (time: string, wake: string | null | undefined) => void
+  onClose: () => void
+}) {
   const [time, setTime] = useState(p.time)
+  const [wake, setWake] = useState(p.wake)
+  const moved = wake !== p.wake
   return (
-    <Sheet title="เวลานอนคืนนี้" onClose={p.onClose}>
+    <Sheet title="คืนนี้" onClose={p.onClose}>
       <label class="field">
         <span class="muted small">นอนกี่โมง</span>
         <input type="time" aria-label="เวลานอน" value={time} onInput={(e) => setTime(e.currentTarget.value)} />
       </label>
-      <p class="muted small">ใช้แค่คืนนี้ พรุ่งนี้กลับเป็นเวลาปกติ</p>
+      <label class="field">
+        <span class="muted small">ตื่นกี่โมง</span>
+        <input type="time" aria-label="เวลาตื่น" value={wake} onInput={(e) => setWake(e.currentTarget.value)} />
+      </label>
+      <p class="muted small">ใช้แค่คืนนี้ พรุ่งนี้กลับเป็นเวลาปกติ{p.wakePicked ? '' : ' เวลาตื่นที่ตั้งเองจะไม่ขยับตามนัดตอนเช้า'}</p>
       <div class="dialog-actions">
+        {p.wakePicked && <button class="link" onClick={() => { p.onSave(time, null); p.onClose() }}>ใช้เวลาตื่นปกติ</button>}
+        <span class="grow" />
         <button class="ghost" onClick={p.onClose}>ยกเลิก</button>
-        <button class="primary" disabled={!time} onClick={() => { p.onSave(time); p.onClose() }}>บันทึก</button>
+        <button class="primary" disabled={!time || !wake} onClick={() => { p.onSave(time, moved ? wake : undefined); p.onClose() }}>บันทึก</button>
       </div>
     </Sheet>
   )

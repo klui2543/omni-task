@@ -91,6 +91,8 @@ object WebViews {
             tags = q.tags.toSet(),
             buckets = pick(q.buckets, DateBucket.entries.toTypedArray()),
             kinds = pick(q.kinds, TaskKind.entries.toTypedArray()),
+            notes = q.notes.toSet(),
+            lists = q.lists.toSet(),
             hideDone = hideDone,
             text = q.text,
             groupBy = GroupBy.entries.firstOrNull { it.name == q.groupBy } ?: GroupBy.DATE,
@@ -104,7 +106,7 @@ object WebViews {
         val s = json.decodeFromString<In>(stateJson)
         val today = LocalDate.parse(s.today)
         val rule = UrgentRule.entries.firstOrNull { it.name == s.urgent } ?: UrgentRule.THIS_WEEK
-        val all = WebCore.withoutParked(WebNotes.tasks(fileKey, path, text, today), s.query.branches)
+        val all = WebCore.pool(fileKey, path, text, today, s.query)
         val q = queryOf(s.query, s.hideDone)
 
         // Every view uses the list's filters without the status filter; Kanban shows all statuses as columns,

@@ -27,6 +27,9 @@ export function FilterPanel(p: {
   shown: number
   onChange: (q: ListQuery) => void
   onClose: () => void
+  /** The notes with tasks (by name) and the list notes to choose from, as on Android's filter sheet. */
+  notes?: string[]
+  lists?: string[]
   /** Android's "hide done" switch, which only the views honour; both the Tasks and Views pages show it (one shared choice). */
   hideDone?: { on: boolean; set: (on: boolean) => void }
 }) {
@@ -81,6 +84,8 @@ export function FilterPanel(p: {
         {section('ความสำคัญ', PRIORITIES, q.priorities, 'priorities', (k) => PRIORITY_DOT[k])}
         {section('สถานะ', STATUSES, q.statuses, 'statuses')}
         {plainTags.length > 0 && section('Tag', plainTags.map((t): [string, string] => [t, '#' + t]), q.tags, 'tags')}
+        {p.lists && p.lists.length > 0 && section('ลิสต์', p.lists.map((l): [string, string] => [l, l]), q.lists, 'lists')}
+        {p.notes && p.notes.length > 1 && section('โน้ต', p.notes.map((n): [string, string] => [n, n]), q.notes, 'notes')}
         {p.hideDone && (
           <label class="setting hide-done">
             <span class="stack">

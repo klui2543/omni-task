@@ -270,6 +270,14 @@ object WebProjects {
         return ok(out, n)
     }
 
+    /** Takes the tag [tag] off every task line of [text] (a deleted list's items pulled in from other notes keep only their own tags). */
+    fun dropTag(text: String, tag: String): String {
+        var n = 0
+        val separator = VaultText.separatorOf(text)
+        val out = text.split(separator).map { l -> if (TaskLine.isTask(l)) TaskLine.removeTag(l, tag).also { if (it != l) n++ } else l }
+        return ok(out.joinToString(separator), n)
+    }
+
     /** Whether [name] can name a project, and its clean form: no spaces, no leading #, no slash. */
     fun cleanProjectName(name: String): String = name.trim().removePrefix("#").replace(Regex("""\s+"""), "-")
 
