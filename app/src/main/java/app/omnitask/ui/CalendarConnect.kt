@@ -29,9 +29,8 @@ import app.omnitask.model.tr
 fun CalendarConnect(state: UiState, vm: TaskViewModel, modifier: Modifier = Modifier) {
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.calendarChanged() }
     val sync = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { vm.calendarChanged() }
-    val access = state.calendarAccess ?: return
-    val google = state.calendars.filter { it.isGoogle }
-    if (access && google.isNotEmpty()) return
+    if (!calendarConnectShows(state)) return
+    val access = state.calendarAccess == true
 
     Card(modifier, color = C.accentDeep, border = C.accentLine) {
         Column(Modifier.padding(14.dp)) {
@@ -70,4 +69,10 @@ fun CalendarConnect(state: UiState, vm: TaskViewModel, modifier: Modifier = Modi
             }
         }
     }
+}
+
+/** Whether [CalendarConnect] has something to say: calendar access not given yet, or given but no Google calendar found. */
+fun calendarConnectShows(state: UiState): Boolean {
+    val access = state.calendarAccess ?: return false
+    return !(access && state.calendars.any { it.isGoogle })
 }

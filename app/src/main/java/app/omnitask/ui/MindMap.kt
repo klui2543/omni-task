@@ -145,9 +145,9 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     naming?.let { (title, done) -> NameDialog(title, { done(it); naming = null }) { naming = null } }
 
-    // The map is a whole page: its buttons stay above the bottom bar, and the round assistant button leaves the corner.
+    // The map takes the whole screen: the bottom bar and the round assistant button step aside while it shows.
     val dock = LocalDockClearance.current
-    HideAssistantButton()
+    FullPage()
     Column(Modifier.fillMaxSize().padding(bottom = dock)) {
         Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             SquareButton(Ic.back, tr("กลับ", "Back"), onBack)

@@ -59,6 +59,7 @@ import app.omnitask.widget.OmniWidgets
 import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -679,8 +680,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Completes a repeating task by moving its line on to the next occurrence; no copy is added. */
     private fun completeRecurring(task: Task) {
         logDone(task)
+        TaskLine.advanceRecurring(task.raw, LocalDate.now(), task.todayCopy)?.let { showEdited(task, it) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } }
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } } }
             val text = result.fold(
                 { made ->
                     if (made) {
@@ -702,7 +704,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 },
             )
             text?.let { t -> _state.update { it.copy(message = t) } }
-            reload()
+            if (result.getOrNull() == true) reloadNote(task) else reload()
         }
     }
 
@@ -1122,18 +1124,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(closingParent = null) }
         if (withSubtasks == null) return
         val open = if (withSubtasks) _state.value.subtasksOf(parent).filter { it.isOpen } else emptyList()
+        val day = LocalDate.now()
+        open.forEach { child -> showEdited(child, TaskLine.setDone(child.raw, true, day)) }
+        if (parent.recurrence == null) showEdited(parent, TaskLine.setDone(parent.raw, true, day))
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) {
                 runCatching {
                     val today = LocalDate.now()
                     open.forEach { child -> repo.rewriteLine(child) { TaskLine.setDone(it, true, today) } }
                     if (parent.recurrence != null) repo.completeRecurring(parent, today) else repo.rewriteLine(parent) { TaskLine.setDone(it, true, today) }
                 }
-            }
+            } }
             logDone(parent)
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ", "Could not save: ") + e.message) } }
             if (result.isSuccess) offerFinish(parent, TaskLine.setDone(parent.raw, true, LocalDate.now()), open.map { it.key }.toSet())
-            reload()
+            if (result.isSuccess) reloadNote(parent) else reload()
         }
     }
 
@@ -1679,9 +1684,27 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putStringSet(KEY_DONE_LOG, (kept + entry).toSet()).apply()
     }
 
+    /** One write to the vault at a time, so a second quick edit finds the line the first one wrote. */
+    private val writeLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Shows the edited line at once (the screen does not wait for the write, which on Drive takes a few round trips),
+     * then writes it and reads the note back. A failed write reloads everything, which puts the old line back.
+     */
+    private fun showEdited(task: Task, raw: String) {
+        if (task.todayCopy) return
+        val parsed = TaskLine.parse(raw) ?: return
+        val edited = parsed.copy(
+            filePath = task.filePath, fileUri = task.fileUri, lineIndex = task.lineIndex, notes = task.notes, parent = task.parent, list = task.list,
+        )
+        fun List<Task>.swap() = map { if (it.key == task.key) edited else it }
+        _state.update { it.copy(tasks = it.tasks.swap(), parked = it.parked.swap(), listItems = it.listItems.swap()) }
+    }
+
     private fun edit(task: Task, onSaved: (() -> Unit)? = null, transform: (String) -> String) {
+        runCatching { transform(task.raw) }.getOrNull()?.let { showEdited(task, it) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } }
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } } }
             if (result.isSuccess) onSaved?.invoke()
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
