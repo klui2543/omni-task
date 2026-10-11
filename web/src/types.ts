@@ -379,3 +379,31 @@ export interface KindPicker {
   builtin: KindBuiltin[]
   custom: KindCustom[]
 }
+
+/** A list a quick-add "#word" can send the task to; see WebQuickAdd. */
+export interface QuickList {
+  path: string
+  name: string
+  emoji: string
+  categories: string[]
+}
+
+/** One choice for the "#word" being typed: a list (and one of its categories) or a tag in use. */
+export interface QuickPick {
+  list?: QuickList | null
+  category?: string | null
+  tag?: string | null
+}
+
+/** What a quick-add sentence is read as, shown before it is saved. */
+export interface QuickPreview {
+  title: string
+  due?: string | null
+  time?: string | null
+  tags: string[]
+  priority: Task['priority']
+  priorityLabel?: string | null
+  /** The "#word" being typed, without the #. */
+  token?: string | null
+  picks: QuickPick[]
+}

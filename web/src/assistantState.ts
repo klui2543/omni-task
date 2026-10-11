@@ -81,3 +81,11 @@ export function useChat(): [Chat[], (change: (c: Chat[]) => Chat[]) => void] {
   }, [])
   return [chat, (change) => { chat = change(chat); listeners.forEach((l) => l()) }]
 }
+
+let pending: string | null = null
+
+/** A question handed over from elsewhere (quick add's "ask the assistant"), asked once the assistant opens. */
+export const pendingQuestion = {
+  set: (text: string) => { pending = text },
+  take: (): string | null => { const t = pending; pending = null; return t },
+}

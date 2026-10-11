@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import * as A from '../assistantCore'
-import { declined, doneLog, keepChatForReturn, useChat, type Chat } from '../assistantState'
+import { declined, doneLog, keepChatForReturn, pendingQuestion, useChat, type Chat } from '../assistantState'
 import { Auth, CALENDAR_SCOPE, CALENDAR_WRITE_SCOPE } from '../auth'
 import { CalendarError, localIso, type NewEvent } from '../calendar'
 import { today } from '../core'
@@ -151,6 +151,12 @@ export function AssistantPage(p: PageProps) {
     else if (r.kind === 'slots') push({ t: 'asked', text }, slotsItem(A.slots(snap, state(), text, 0)))
     else push({ t: 'asked', text }, { t: 'duration', request: text })
   }
+  // A question sent from quick add is asked as soon as the tasks are there.
+  useEffect(() => {
+    if (!snap) return
+    const q = pendingQuestion.take()
+    if (q) ask(q)
+  }, [snap])
   // As on Android, a chosen time also goes on the calendar whenever the web may write to it.
   const slotsItem = (plan: A.PlanOut): Chat => ({ t: 'slots', plan, page: 0, picked: 0, title: plan.title, toCalendar: canWrite })
 
