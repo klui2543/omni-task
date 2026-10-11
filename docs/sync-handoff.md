@@ -47,9 +47,10 @@ Also pending on the owner's side: move the files in Obsidian (Omni folder into `
 
 ## Update (2026-10-11): the ecosystem review, all items
 Review of the whole sync design, then everything it suggested, in one change:
-1. Owner's side (no code): in DriveSync, make the Omni folder download-only (or leave it out), and do not edit the
-   files in `หลังบ้าน/Omni/` in Obsidian on the phone. With Drive connected in Omni, those phone copies are no longer
-   written by Omni, so this removes the last second writer to them.
+1. Owner's side (no code): do not edit the files in `หลังบ้าน/Omni/` in Obsidian on the phone (tick in Omni). With
+   Drive connected in Omni, those phone copies are no longer written by Omni, so Obsidian on the phone is the last
+   second writer to them. DriveSync has no way to exclude a folder (owner, 2026-10-11), so the copies stay synced;
+   with no edits on the phone side, a sync only downloads them and makes no conflict.
 2. Both apps check the revision before their own right after each write and join back a write that landed between
    the version check and theirs (`OmniDrive.settle`, `web/src/safeWrite.ts`).
 3. Android reads the Omni folder through Drive's change log instead of walking it on every load, walks it in full
