@@ -59,6 +59,7 @@ import app.omnitask.widget.OmniWidgets
 import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -1655,9 +1656,27 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putStringSet(KEY_DONE_LOG, (kept + entry).toSet()).apply()
     }
 
+    /** One write to the vault at a time, so a second quick edit finds the line the first one wrote. */
+    private val writeLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Shows the edited line at once (the screen does not wait for the write, which on Drive takes a few round trips),
+     * then writes it and reads the note back. A failed write reloads everything, which puts the old line back.
+     */
+    private fun showEdited(task: Task, raw: String) {
+        if (task.todayCopy) return
+        val parsed = TaskLine.parse(raw) ?: return
+        val edited = parsed.copy(
+            filePath = task.filePath, fileUri = task.fileUri, lineIndex = task.lineIndex, notes = task.notes, parent = task.parent, list = task.list,
+        )
+        fun List<Task>.swap() = map { if (it.key == task.key) edited else it }
+        _state.update { it.copy(tasks = it.tasks.swap(), parked = it.parked.swap(), listItems = it.listItems.swap()) }
+    }
+
     private fun edit(task: Task, onSaved: (() -> Unit)? = null, transform: (String) -> String) {
+        runCatching { transform(task.raw) }.getOrNull()?.let { showEdited(task, it) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } }
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } } }
             if (result.isSuccess) onSaved?.invoke()
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
