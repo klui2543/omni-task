@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,6 +47,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -171,35 +175,42 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val editing = state.allTasks.firstOrNull { it.key == editingKey } ?: state.parked.firstOrNull { it.key == editingKey }
 
+    val assistantHidden = remember { mutableIntStateOf(0) }
+    // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
+    val dock = if (wide) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     val content: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            if (state.loading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = C.accent, trackColor = C.bg)
-            } else {
-                Box(Modifier.height(2.dp))
-            }
-            // On wide screens reading columns stay a comfortable width; the views (Kanban, Gantt, calendar) use it all.
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
-                Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
-                when (screen) {
-                    Screen.FOCUS -> FocusScreen(state, vm, open, menu)
-                    Screen.TASKS -> TasksScreen(state, vm, open)
-                    Screen.PROJECTS -> ProjectsScreen(state, vm, open)
-                    Screen.AI -> AssistantScreen(state, vm, open)
-                    Screen.MORE -> MoreScreen(
-                        urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
-                        onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
-                        onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
-                    )
+        CompositionLocalProvider(LocalAssistantHidden provides assistantHidden, LocalDockClearance provides dock) {
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                if (state.loading) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = C.accent, trackColor = C.bg)
+                } else {
+                    Box(Modifier.height(2.dp))
                 }
+                // On wide screens reading columns stay a comfortable width; the views (Kanban, Gantt, calendar) use it all.
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
+                    Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
+                    when (screen) {
+                        Screen.FOCUS -> FocusScreen(state, vm, open, menu)
+                        Screen.TASKS -> TasksScreen(state, vm, open)
+                        Screen.PROJECTS -> ProjectsScreen(state, vm, open)
+                        Screen.AI -> AssistantScreen(state, vm, open)
+                        Screen.MORE -> MoreScreen(
+                            urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
+                            onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
+                            onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
+                        )
+                    }
+                    }
                 }
             }
         }
     }
     // The assistant floats where the add button used to; adding a task is the middle of the bottom bar (the top of the side rail when wide).
+    // A page that needs the whole corner (the project mind map) asks it to step aside ([HideAssistantButton]).
     val assistantButton: @Composable (Modifier) -> Unit = { m ->
-        if (screen != Screen.AI) {
+        if (screen != Screen.AI && assistantHidden.intValue == 0) {
             Box(
                 m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accentSoft)
                     .border(1.dp, C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
@@ -208,7 +219,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
     // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
-    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI) 84.dp else 12.dp
+    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI && assistantHidden.intValue == 0) 84.dp else 12.dp
 
     if (wide) {
         // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
@@ -427,6 +438,21 @@ private fun Welcome(onPick: () -> Unit) {
             color = C.muted,
         )
         PrimaryButton(tr("เลือกโฟลเดอร์ตู้โน้ต", "Choose vault folder"), onPick, Modifier.fillMaxWidth())
+    }
+}
+
+/** Height the bottom bar covers when it floats over the page (nothing beside the side rail), for pages that fill the screen. */
+val LocalDockClearance = staticCompositionLocalOf { 0.dp }
+
+/** Lets a page ask the floating assistant button to step aside while it shows (a counter, so pages can nest). */
+val LocalAssistantHidden = staticCompositionLocalOf<MutableIntState?> { null }
+
+@Composable
+fun HideAssistantButton() {
+    val hidden = LocalAssistantHidden.current ?: return
+    DisposableEffect(hidden) {
+        hidden.intValue++
+        onDispose { hidden.intValue-- }
     }
 }
 

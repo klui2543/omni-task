@@ -958,8 +958,47 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching(write) }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")) } }
-            reload()
+            if (result.isSuccess) reloadNote(task) else reload()
         }
+    }
+
+    private var settleJob: Job? = null
+
+    /**
+     * After a write to the one note [task] sits in: reads that note back and swaps its tasks into the state, instead of
+     * walking and parsing every note in the vault (and asking the calendar, the profile and Drive again), which made
+     * each edit wait seconds. The reminders and the widgets catch up a moment later, in the background.
+     */
+    private suspend fun reloadNote(task: Task) {
+        val fresh = withContext(Dispatchers.IO) { runCatching { repo.loadNote(task) }.getOrNull() }
+        if (fresh == null) {
+            reload()
+            return
+        }
+        _state.update { s ->
+            val here = fresh.filter { it.list == null }
+            val tasks = swapNote(s.tasks, task.fileUri, here.filterNot { Branches.isParked(it, s.branchStates) })
+            val parked = swapNote(s.parked, task.fileUri, here.filter { Branches.isParked(it, s.branchStates) })
+            val items = swapNote(s.listItems, task.fileUri, fresh.filter { it.list != null })
+            s.copy(tasks = tasks, parked = parked, listItems = items, insight = Insight.next(tasks + parked + items, doneLog(), s.profile, LocalDate.now(), declined()))
+        }
+        settleJob?.cancel()
+        settleJob = viewModelScope.launch {
+            delay(800)
+            val app = getApplication<Application>()
+            withContext(Dispatchers.IO) {
+                val s = _state.value
+                runCatching { Scheduler.reschedule(app, (s.tasks + s.listItems).filterNot { Branches.isParked(it, s.branchStates) }) }
+            }
+            runCatching { OmniWidgets.refresh(app) }
+        }
+    }
+
+    /** [old] with the tasks of the note [fileUri] replaced by [fresh], in the place the note's tasks had (file order). */
+    private fun swapNote(old: List<Task>, fileUri: String, fresh: List<Task>): List<Task> {
+        val at = old.indexOfFirst { it.fileUri == fileUri }
+        val rest = old.filterNot { it.fileUri == fileUri }
+        return if (at < 0) rest + fresh else rest.subList(0, at) + fresh + rest.subList(at, rest.size)
     }
 
     fun addTag(task: Task, tag: String) = edit(task) { TaskLine.addTag(it, tag) }
@@ -1628,7 +1667,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _state.update { it.copy(message = text) }
             }
-            reload()
+            if (result.isSuccess) reloadNote(task) else reload()
         }
     }
 
