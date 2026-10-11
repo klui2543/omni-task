@@ -1,5 +1,6 @@
 package app.omnitask.model
 
+import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -90,5 +91,21 @@ class YgdrasilTest {
         assertEquals(f, Ygdrasil.Filter.decode(f.encode()))
         assertEquals(Ygdrasil.Filter(), Ygdrasil.Filter.decode(null))
         assertEquals(6, f.changed)
+    }
+
+    @Test
+    fun movingATaskSwapsItsProjectTagWhereItStands() {
+        // Into another project's branch: the tag changes in place, the rest of the line stays.
+        assertEquals(
+            "- [ ] ทำหน้าคำนวณ #Siriraj/สอน #งานด่วน 🆔 calc 📅 2026-10-09",
+            TaskLine.retag("- [ ] ทำหน้าคำนวณ #peddose/แอป/มือถือ #งานด่วน 🆔 calc 📅 2026-10-09", "peddose/แอป/มือถือ", "Siriraj/สอน"),
+        )
+        // A task with no project gets one; a tag already on the line is kept once.
+        assertEquals("- [ ] ซื้อนม #บ้าน", TaskLine.retag("- [ ] ซื้อนม", null, "บ้าน"))
+        assertEquals("- [ ] งาน #peddose 📅 2026-10-09", TaskLine.retag("- [ ] งาน #Siriraj #peddose 📅 2026-10-09", "Siriraj", "peddose"))
+        // Moved, it grows on its new world.
+        val moved = tasks.map { if (it.title == "ลองหน้าเว็บ") TaskLine.parse(TaskLine.retag(it.raw, "peddose/แอป/เว็บ", "Siriraj"))!! else it }
+        val tree = Ygdrasil.grow(moved, states, today, Ygdrasil.Filter())
+        assertEquals(setOf("ส่งเอกสาร", "ลองหน้าเว็บ"), tree.worlds.first { it.node.project == "Siriraj" }.tasks.map { it.title }.toSet())
     }
 }

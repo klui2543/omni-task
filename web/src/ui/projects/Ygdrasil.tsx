@@ -1,6 +1,6 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Task, YgFilter, YgOut, YgSpot } from '../../types'
-import { RingMark, useTapOrHold } from './bits'
+import { RingMark } from './bits'
 import { STATE_COLOR, STATE_LABEL } from './MindMap'
 import { usePanZoom } from './panZoom'
 
@@ -14,12 +14,33 @@ const PRIORITIES: [string, string][] = [['HIGHEST', 'สูงสุด'], ['HIG
 export const filterChanges = (f: YgFilter) =>
   [f.show !== 'OPEN', f.dates !== 'ANY', f.priorities.length > 0, f.blockedOnly, f.starredOnly, f.parked, !f.links, f.text.trim() !== ''].filter(Boolean).length
 
-function TaskSpot(p: { task: Task; spot: YgSpot; busy: boolean; onTick: () => void; onOpen: () => void }) {
-  const hold = useTapOrHold(p.onTick, p.onOpen)
+/**
+ * A task on the tree: a tap ticks it, a right click opens it. Pressed and held, it lifts: drag it onto another
+ * project or branch to move it there, or let go where it is to open it.
+ */
+function TaskSpot(p: { task: Task; spot: YgSpot; busy: boolean; onTick: () => void; onOpen: () => void; onLift: (x: number, y: number) => void }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const start = useRef({ x: 0, y: 0 })
+  const lifted = useRef(false)
+  const mouse = useRef(false)
+  const clear = () => { if (timer.current) clearTimeout(timer.current); timer.current = null }
   const done = p.task.status === 'DONE'
   return (
     <div class="pj-mtask-wrap" style={{ left: `${p.spot.x}px`, top: `${p.spot.y - p.spot.h / 2}px`, width: `${p.spot.w}px`, height: `${p.spot.h}px` }}>
-      <button class={`pj-mtask${done ? ' done' : ''}`} disabled={p.busy} aria-label={`${done ? 'ยกเลิกการติ๊ก' : 'ติ๊กเสร็จ'} ${p.task.title}`} {...hold}>
+      <button class={`pj-mtask${done ? ' done' : ''}`} disabled={p.busy} aria-label={`${done ? 'ยกเลิกการติ๊ก' : 'ติ๊กเสร็จ'} ${p.task.title}`}
+        onPointerDown={(e) => {
+          if (e.button) return
+          mouse.current = e.pointerType === 'mouse'
+          lifted.current = false
+          start.current = { x: e.clientX, y: e.clientY }
+          clear()
+          const { clientX, clientY } = e
+          timer.current = setTimeout(() => { timer.current = null; lifted.current = true; p.onLift(clientX, clientY) }, 450)
+        }}
+        onPointerMove={(e) => { if (Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 6) clear() }}
+        onPointerUp={clear} onPointerCancel={clear}
+        onContextMenu={(e) => { e.preventDefault(); if (mouse.current && !lifted.current) { clear(); p.onOpen() } }}
+        onClick={(e) => { if (lifted.current) { lifted.current = false; e.preventDefault(); return } p.onTick() }}>
         <RingMark task={p.task} />
         <span class="ellipsis">{p.task.title}</span>
       </button>
@@ -85,6 +106,8 @@ export function Ygdrasil(p: {
   onAddTask: (tag: string, name: string) => void
   onAddBranch: (project: string, path: string, name: string) => void
   onOpenProject: (project: string) => void
+  /** The task dropped on another project or branch: [tag] is where it goes, [from] the tag it had. */
+  onMove: (t: Task, from: string, tag: string) => void
 }) {
   const [selTag, setSelTag] = useState('')
   const [filtering, setFiltering] = useState(false)
@@ -93,6 +116,42 @@ export function Ygdrasil(p: {
   const trunk = p.out.spots.find((s) => s.kind === 'TRUNK')!
   const changes = filterChanges(p.filter)
   const fold = (tag: string) => p.onFolded(p.folded.includes(tag) ? p.folded.filter((t) => t !== tag) : [...p.folded, tag])
+  // A task being carried to another branch: where the pointer is, and the branch under it.
+  const [carry, setCarry] = useState<{ task: Task; from: string; x: number; y: number; moved: boolean } | null>(null)
+  const [dropTag, setDropTag] = useState<string | null>(null)
+  const carrying = useRef(carry)
+  carrying.current = carry
+  const dropping = useRef(dropTag)
+  dropping.current = dropTag
+  useEffect(() => {
+    if (!carry) return
+    map.freeze(true)
+    const move = (e: PointerEvent) => {
+      const c = carrying.current!
+      const moved = c.moved || Math.hypot(e.clientX - c.x, e.clientY - c.y) > 6
+      setCarry({ ...c, x: e.clientX, y: e.clientY, moved })
+      const under = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-yg-tag]')
+      setDropTag(under?.getAttribute('data-yg-tag') ?? null)
+    }
+    const up = () => {
+      const c = carrying.current!
+      const to = dropping.current
+      if (to && to !== c.from) p.onMove(c.task, c.from, to)
+      else if (!c.moved) p.onOpen(c.task)
+      setCarry(null)
+      setDropTag(null)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      map.freeze(false)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [carry !== null])
+
   // Zoomed far out, tasks show as their rings only.
   const far = map.scale < 0.45
 
@@ -137,7 +196,8 @@ export function Ygdrasil(p: {
             if (s.kind === 'LIMB') {
               const world = s.path === ''
               return (
-                <button key={`l${s.tag}`} class={`pj-node${world ? ' yg-world' : ''}${s.tag === selTag ? ' sel' : ''}${s.state === 'PARKED' ? ' parked' : ''}`}
+                <button key={`l${s.tag}`} data-yg-tag={s.tag}
+                  class={`pj-node${world ? ' yg-world' : ''}${s.tag === selTag ? ' sel' : ''}${s.state === 'PARKED' ? ' parked' : ''}${carry && s.tag === dropTag ? ' yg-drop' : ''}`}
                   aria-pressed={s.tag === selTag} aria-label={world ? `#${s.name}` : s.name}
                   style={{ left: `${s.x}px`, top: `${s.y - s.h / 2}px`, width: `${s.w}px`, height: `${s.h}px` }} onClick={() => setSelTag(s.tag!)}>
                   {!world && <span class="pj-dot" style={{ background: STATE_COLOR[s.state ?? 'ACTIVE'] }} />}
@@ -148,7 +208,10 @@ export function Ygdrasil(p: {
             }
             if (s.kind === 'TASK') {
               const t = p.task(s.key!)
-              return t ? <TaskSpot key={`t${s.key}`} task={t} spot={s} busy={p.busy} onTick={() => p.onTick(t)} onOpen={() => p.onOpen(t)} /> : null
+              return t ? (
+                <TaskSpot key={`t${s.key}`} task={t} spot={s} busy={p.busy} onTick={() => p.onTick(t)} onOpen={() => p.onOpen(t)}
+                  onLift={(x, y) => setCarry({ task: t, from: s.tag!, x, y, moved: false })} />
+              ) : null
             }
             return <span key={`m${i}`} class="pj-more small faint" style={{ left: `${s.x + 6}px`, top: `${s.y - 9}px` }}>และอีก {s.count} งาน</span>
           })}
@@ -160,6 +223,13 @@ export function Ygdrasil(p: {
         </div>
         {p.out.worlds === 0 && <p class="yg-empty muted">ไม่มีงานตรงกับตัวกรอง</p>}
       </div>
+
+      {carry && (
+        <div class="yg-ghost" aria-hidden="true" style={{ left: `${carry.x + 14}px`, top: `${carry.y + 10}px` }}>
+          {carry.task.title}
+          <span class="small">{dropTag && dropTag !== carry.from ? `ย้ายไป #${dropTag}` : 'ลากไปวางบนกิ่ง'}</span>
+        </div>
+      )}
 
       <section class="pj-sel" aria-label="กิ่งที่เลือก">
         {!sel ? (
@@ -187,7 +257,7 @@ export function Ygdrasil(p: {
               <button class="ghost small-btn" onClick={() => fold(sel.tag!)}>{sel.folded ? 'กาง' : 'พับ'}</button>
               <button class="ghost small-btn" onClick={() => p.onOpenProject(sel.project!)}>เปิด Mind map</button>
             </div>
-            <span class="small muted">แตะงานเพื่อติ๊ก กดค้างเพื่อเปิด</span>
+            <span class="small muted">แตะงานเพื่อติ๊ก กดค้างแล้วลากไปวางบนโปรเจกต์หรือกิ่งอื่นเพื่อย้าย ปล่อยที่เดิมเพื่อเปิด</span>
           </>
         )}
       </section>

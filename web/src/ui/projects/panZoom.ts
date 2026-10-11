@@ -58,6 +58,8 @@ export function usePanZoom(width: number, height: number, minScale = 0.3) {
   }, [])
   useLayoutEffect(() => { if (!touched.current) fitRef.current() }, [width, height])
 
+  // While something on the map is being carried (a task dragged to another branch), the map holds still.
+  const frozen = useRef(false)
   const pointers = useRef(new Map<number, { x: number; y: number; sx: number; sy: number }>())
   const moved = useRef(false)
   const pinch = useRef(0)
@@ -72,7 +74,7 @@ export function usePanZoom(width: number, height: number, minScale = 0.3) {
   }
   const move = (e: PointerEvent) => {
     const cur = pointers.current.get(e.pointerId)
-    if (!cur) return
+    if (!cur || frozen.current) return
     const r = box.current!.getBoundingClientRect()
     const dx = e.clientX - cur.x
     const dy = e.clientY - cur.y
@@ -101,6 +103,7 @@ export function usePanZoom(width: number, height: number, minScale = 0.3) {
     scale,
     zoomBy,
     fit,
+    freeze: (on: boolean) => { frozen.current = on },
     /** Spread on the box that holds the map. */
     boxProps: {
       ref: box,

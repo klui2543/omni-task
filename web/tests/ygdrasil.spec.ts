@@ -108,3 +108,27 @@ test('the tree zooms with its buttons and fits again', async ({ page }) => {
   await page.getByRole('button', { name: 'พอดีจอ' }).click()
   expect(Math.abs((await scale()) - fitted)).toBeLessThan(0.01)
 })
+
+test('a task held and dragged onto another project moves there, tag and all', async ({ page }) => {
+  const { file } = await start(page)
+  const from = (await task(page, 'ทำหน้าเว็บ').boundingBox())!
+  const to = (await limb(page, '#Siriraj').boundingBox())!
+  await page.mouse.move(from.x + 30, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(700)
+  await expect(page.locator('.yg-ghost')).toContainText('ทำหน้าเว็บ')
+  await page.mouse.move(to.x + 40, to.y + to.height / 2, { steps: 8 })
+  await expect(limb(page, '#Siriraj')).toHaveClass(/yg-drop/)
+  await expect(page.locator('.yg-ghost')).toContainText('ย้ายไป #Siriraj')
+  await page.mouse.up()
+  await expect.poll(() => file.text).toContain('- [ ] ทำหน้าเว็บ #Siriraj\n')
+  await expect(page.getByRole('status')).toContainText('ย้าย "ทำหน้าเว็บ" ไป #Siriraj แล้ว')
+  // Held and let go where it is, it opens instead, and nothing is ticked.
+  const box = (await task(page, 'ทำหน้าคำนวณ').boundingBox())!
+  await page.mouse.move(box.x + 30, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(700)
+  await page.mouse.up()
+  await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' })).toBeVisible()
+  expect(file.text).toContain('- [ ] ทำหน้าคำนวณ #peddose/แอป/มือถือ')
+})

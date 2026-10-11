@@ -5,7 +5,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -116,6 +118,23 @@ fun YgdrasilScreen(
     LaunchedEffect(layout.width, layout.height, box) { if (!touched) fit() }
     // Zoomed far out, tasks show as their rings only.
     val far by remember { derivedStateOf { scale < 0.45f } }
+
+    // A task carried to another project or branch (held, then dragged): where it is on the tree, in dp, and the
+    // project or branch under it. Let go on one to move the task there; let go where it was to open it.
+    var carry by remember { mutableStateOf<Pair<Task, String>?>(null) }
+    var carryAt by remember { mutableStateOf(Offset.Zero) }
+    var carryMoved by remember { mutableStateOf(false) }
+    val spots by rememberUpdatedState(layout.spots)
+    fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
+        s.kind == Ygdrasil.Kind.LIMB && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
+    }?.limb?.node?.tag
+    val dropTag = carry?.let { targetAt(carryAt) }
+    fun drop() {
+        val (task, from) = carry ?: return
+        val to = targetAt(carryAt)
+        if (to != null && to != from) vm.moveTask(task, to) else if (!carryMoved) onOpen(task)
+        carry = null
+    }
 
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     naming?.let { (title, done) -> MapNameDialog(title, { done(it); naming = null }) { naming = null } }
@@ -212,10 +231,14 @@ fun YgdrasilScreen(
                             val n = s.limb!!.node
                             val world = n.path.isEmpty()
                             val picked = sel === s
+                            val target = carry != null && dropTag == n.tag && n.tag != carry?.second
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
-                                    .clip(RoundedCornerShape(10.dp)).background(if (world) C.accentSoft else C.card)
-                                    .border(if (picked) 2.dp else 1.dp, if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(10.dp)).background(if (target) C.amberSoft else if (world) C.accentSoft else C.card)
+                                    .border(
+                                        if (picked || target) 2.dp else 1.dp,
+                                        if (target) C.amber else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
+                                    )
                                     .clickable { selTag = n.tag }.alpha(if (n.state == Branches.State.PARKED) 0.5f else 1f)
                                     .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -235,10 +258,31 @@ fun YgdrasilScreen(
                         }
                         Ygdrasil.Kind.TASK -> {
                             val t = s.task!!
+                            val from = s.limb!!.node.tag
                             val done = t.status == Status.DONE
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .combinedClickable(onClick = { vm.toggleDone(t) }, onLongClick = { onOpen(t) }).padding(horizontal = 6.dp),
+                                    .alpha(if (carry?.first == t) 0.35f else 1f)
+                                    // A tap ticks; held, the task lifts and follows the finger (the drag consumes the
+                                    // touch, so neither the tap nor the map's own drag sees it).
+                                    .pointerInput(t) { detectTapGestures(onTap = { vm.toggleDone(t) }) }
+                                    .pointerInput(t, from, s.x, s.y) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { o ->
+                                                carry = t to from
+                                                carryMoved = false
+                                                carryAt = Offset(s.x + o.x / density, s.y - s.h / 2 + o.y / density)
+                                            },
+                                            onDrag = { change, amount ->
+                                                change.consume()
+                                                carryAt += Offset(amount.x / density, amount.y / density)
+                                                if (amount.getDistance() > 0f) carryMoved = true
+                                            },
+                                            onDragEnd = { drop() },
+                                            onDragCancel = { carry = null },
+                                        )
+                                    }
+                                    .padding(horizontal = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Box(
@@ -254,6 +298,19 @@ fun YgdrasilScreen(
                         Ygdrasil.Kind.MORE -> if (!far) Text(
                             tr("และอีก ${s.count} งาน", "and ${s.count} more"),
                             Modifier.offset((s.x + 6).dp, (s.y - 9).dp), color = C.faint, fontSize = TS.caption,
+                        )
+                    }
+                }
+                // The carried task, under the finger, saying where it would go.
+                carry?.let { (task, from) ->
+                    Column(
+                        Modifier.offset((carryAt.x + 10).dp, (carryAt.y + 10).dp).width(200.dp).clip(RoundedCornerShape(10.dp))
+                            .background(C.card).border(1.5.dp, C.accent, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(task.title, color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            if (dropTag != null && dropTag != from) tr("ย้ายไป #$dropTag", "Move to #$dropTag") else tr("ลากไปวางบนกิ่ง", "Drop it on a branch"),
+                            color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -303,7 +360,7 @@ fun YgdrasilScreen(
                     MapButton(if (node.tag in folded) tr("กาง", "Unfold") else tr("พับ", "Fold")) { onFolded(if (node.tag in folded) folded - node.tag else folded + node.tag) }
                     MapButton(tr("เปิด Mind map", "Open mind map")) { onOpenProject(node.project) }
                 }
-                Text(tr("แตะงานเพื่อติ๊ก กดค้างเพื่อเปิด", "Tap a task to tick it, long-press to open it"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
+                Text(tr("แตะงานเพื่อติ๊ก กดค้างแล้วลากไปวางบนโปรเจกต์หรือกิ่งอื่นเพื่อย้าย ปล่อยที่เดิมเพื่อเปิด", "Tap a task to tick it. Hold and drag it onto another project or branch to move it, or let go to open it"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
             }
         }
     }

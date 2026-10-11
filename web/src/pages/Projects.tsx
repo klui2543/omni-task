@@ -113,6 +113,12 @@ export function ProjectsPage(p: PageProps) {
         if (r.ok) setLocal((s) => ({ ...s, branches: r.states }))
       },
     })
+  const ygMove = (t: Task, from: string, tag: string) =>
+    p.run(async () => {
+      const res = await p.vault.change(p.fresh(t), { op: 'moveTo', value: tag, field: from })
+      if (res.ok) say(`ย้าย "${t.title}" ไป #${tag} แล้ว`)
+      return res
+    })
   const ygOpenProject = (name: string) => { setWorld(false); setOpenName(name); setMapSelect(''); setMapping(true) }
   const noteOf = (l: { path: string }) => notes?.find((n) => n.path === l.path)
 
@@ -239,7 +245,7 @@ export function ProjectsPage(p: PageProps) {
       out={tree} task={task} busy={p.busy} filter={yg.filter} folded={yg.folded}
       onFilter={(filter) => setYg({ filter })} onFolded={(folded) => setYg({ folded })}
       onBack={home} onTick={p.tick} onOpen={openTask}
-      onAddTask={ygAddTask} onAddBranch={ygAddBranch} onOpenProject={ygOpenProject}
+      onAddTask={ygAddTask} onAddBranch={ygAddBranch} onOpenProject={ygOpenProject} onMove={ygMove}
     />
   ) : project && mapping ? (
     <MindMap

@@ -80,6 +80,8 @@ export type EditOp =
   | { op: 'recurrence'; value: string | null }
   | { op: 'reminder'; value: string | null; on: 'DUE' | 'SCHEDULED' }
   | { op: 'addTag' | 'removeTag'; value: string }
+  /** To another project or branch: [field] is the tag the task had. */
+  | { op: 'moveTo'; value: string; field: string }
   | { op: 'status'; value: Task['status'] }
   | { op: 'kind'; value: Kind; who?: string; custom?: string[] }
   | { op: 'customKind'; value: string; custom: string[] }
