@@ -1181,7 +1181,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** A long description moves to its own note in the vault, linked under the task. */
     fun moveDescriptionToNote(task: Task, text: String) {
         val vault = _state.value.vault ?: return
-        val name = task.title.replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").replace(Regex("""\s+"""), " ").trim().take(80).ifEmpty { "Task" }
+        val name = NoteLinks.nameFor(task.title)
         val path = "${OmniList.FOLDER}/Notes/$name.md"
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {

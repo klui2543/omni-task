@@ -5,6 +5,8 @@ import { customKindTags, kindsStore } from '../kinds'
 import type { PageProps } from '../Home'
 import { PRIORITIES, STATUSES, labelOf } from '../query'
 import type { EditOp, KindPicker, Task } from '../types'
+import { fileName, needsChoice, NotWebp, prepare, sizeLabel, type Prepared } from '../image'
+import { linkText, searchNotes } from '../vault'
 import { Check, metaOf } from './TaskRow'
 
 /** A date [days] after [iso], as YYYY-MM-DD. */
@@ -68,6 +70,8 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const subs = all.filter((c) => c.parent === t.key)
   const parent = t.parent ? all.find((c) => c.key === t.parent) : null
   const doneSubs = subs.filter((c) => c.status === 'DONE').length
+  // The first open task this one waits on (⛔), as Android's "waits on" field.
+  const waitsOn = t.dependsOn?.length ? all.find((c) => c.id && c.open && t.dependsOn!.includes(c.id))?.title ?? null : null
   const tagsInUse = [...new Set(all.flatMap((c) => c.tags))].filter((g) => !g.startsWith('remind-at-') && !t.tags.includes(g)).slice(0, 10)
 
   // The kinds on offer come from this device's choices (hidden ones are left out unless the task has that kind).
@@ -96,6 +100,7 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
       <div class="edit-top">
         <span class="muted small">{noteLabel} บรรทัด {t.lineIndex + 1}</span>
         <div class="row-gap">
+          <button class="ghost small-btn" onClick={() => { p.onClose(); p.archive(t) }}>เก็บเข้าคลัง</button>
           <button class="ghost small-btn danger" onClick={() => setAskDelete(true)}>ลบงาน</button>
           <button class="ghost small-btn" onClick={p.onClose}>ปิด</button>
         </div>
@@ -127,6 +132,15 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
           onBlur={saveDesc}
         />
       </label>
+      {desc.trim() && (
+        <button class="link quiet small to-note" onClick={() => {
+          const text = desc
+          p.run(async () => {
+            const r = await p.vault.moveDescription(p.fresh(t), text)
+            return r.ok ? { ...r, notice: `ย้ายรายละเอียดไปที่ ${r.path} แล้ว` } : r
+          })
+        }}>ย้ายรายละเอียดไปเป็นโน้ต</button>
+      )}
 
       <div class="segmented" role="radiogroup" aria-label="สถานะ">
         {STATUSES.map(([s, label]) => (
@@ -172,18 +186,8 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
           <span>งานย่อย{subs.length ? ` ${doneSubs}/${subs.length}` : ''}</span>
           {subs.length > 0 && <span class="bar-track"><span class="bar-fill" style={{ width: `${(doneSubs / subs.length) * 100}%` }} /></span>}
         </div>
-        <ul class="plain">
-          {subs.map((c) => (
-            <li key={c.key} class={`sub-row${c.open ? '' : ' done'}`}>
-              <Check task={c} onToggle={() => p.tick(c)} />
-              <button class="sub-body" onClick={() => p.onOpen(c)}>
-                <span class="ttitle">{c.title}</span>
-                {metaOf(c).length > 0 && <span class="muted small">{metaOf(c).map((m) => m.text).join(', ')}</span>}
-              </button>
-              <span class="faint" aria-hidden="true">›</span>
-            </li>
-          ))}
-        </ul>
+        <SubtaskList subs={subs} onOpen={p.onOpen} onTick={p.tick}
+          onOrder={(order) => change({ op: 'order', value: JSON.stringify(order.map((c) => p.fresh(c).raw)) })} />
         <form class="sub-add" onSubmit={(e) => { e.preventDefault(); if (sub.trim()) { const v = sub; setSub(''); change({ op: 'subtask', value: v }) } }}>
           <span class="accent-text" aria-hidden="true">+</span>
           <input aria-label="เพิ่มงานย่อย" placeholder="เพิ่มงานย่อย (พรุ่งนี้ 9:00 #tag ได้)" value={sub} onInput={(e) => setSub(e.currentTarget.value)} />
@@ -192,12 +196,10 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
 
       <div class="folds">
         <Fold label="โน้ตที่เกี่ยวข้อง" summary={t.linkNames.length ? `${t.linkNames.length} โน้ต` : ''} open={!!folds.notes} onToggle={() => setFolds({ ...folds, notes: !folds.notes })}>
-          {t.linkNames.length ? t.linkNames.map((n) => <div key={n} class="fold-row accent-text">{n}</div>) : <div class="muted small">ยังไม่มี</div>}
-          <div class="muted small">เพิ่มหรือเอาลิงก์ออกได้ในแอป Android</div>
+          <LinkedNotes {...p} task={t} onChange={change} />
         </Fold>
         <Fold label="รูปแนบ" summary={t.attachmentNames.length ? `${t.attachmentNames.length} รูป` : ''} open={!!folds.images} onToggle={() => setFolds({ ...folds, images: !folds.images })}>
-          {t.attachmentNames.length ? t.attachmentNames.map((n) => <div key={n} class="fold-row">{n}</div>) : <div class="muted small">ยังไม่มี</div>}
-          <div class="muted small">แนบรูปได้ในแอป Android</div>
+          <Images {...p} task={t} />
         </Fold>
         <Fold label="รายละเอียดอื่น" summary={t.created ? `สร้าง ${shortDate(t.created)}` : ''} open={!!folds.more} onToggle={() => setFolds({ ...folds, more: !folds.more })}>
           <label class="fold-row">
@@ -207,9 +209,221 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
           </label>
           <div class="fold-row"><span class="fold-label">วันที่สร้าง</span><span class="muted">{t.created ? shortDate(t.created) : 'ไม่มี'}</span></div>
           <div class="fold-row"><span class="fold-label">โปรเจกต์</span><span class="muted">{t.project ?? 'ไม่มี'}</span></div>
+          <div class="fold-row"><span class="fold-label">ต้องรอ</span><span class="muted">{waitsOn ?? 'ไม่มี'}</span></div>
         </Fold>
       </div>
     </div>
+  )
+}
+
+/**
+ * The direct subtasks; each can be dragged by its handle (or moved with the arrow keys on it) into a new order,
+ * which is written when let go, as Android's drag in the edit sheet.
+ */
+function SubtaskList(p: { subs: Task[]; onOpen: (t: Task) => void; onTick: (t: Task) => void; onOrder: (order: Task[]) => void }) {
+  const [order, setOrder] = useState<Task[] | null>(null)
+  const [held, setHeld] = useState<string | null>(null)
+  const list = useRef<HTMLUListElement>(null)
+  const shown = order ?? p.subs
+  // A new read of the note shows what was written.
+  useEffect(() => setOrder(null), [p.subs.map((c) => c.key + c.raw).join('\n')])
+  const commit = (next: Task[]) => {
+    if (next.some((c, i) => c.key !== p.subs[i]?.key)) p.onOrder(next)
+    else setOrder(null)
+  }
+  const moveTo = (from: Task[], key: string, to: number) => {
+    const next = from.filter((c) => c.key !== key)
+    next.splice(Math.max(0, Math.min(to, next.length)), 0, from.find((c) => c.key === key)!)
+    return next
+  }
+  const at = (y: number) => {
+    const rows = [...(list.current?.children ?? [])] as HTMLElement[]
+    const i = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2 })
+    return i < 0 ? rows.length - 1 : i
+  }
+  return (
+    <ul class="plain" ref={list}>
+      {shown.map((c, i) => (
+        <li key={c.key} class={`sub-row${c.open ? '' : ' done'}${held === c.key ? ' held' : ''}`}>
+          {p.subs.length > 1 && (
+            <button class="sub-handle" aria-label={`ลากเพื่อเรียง ${c.title}`} title="ลากเพื่อเรียง"
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setHeld(c.key); setOrder(shown) }}
+              onPointerMove={(e) => {
+                if (held !== c.key || !order) return
+                const to = at(e.clientY)
+                if (order[to]?.key !== c.key) setOrder(moveTo(order, c.key, to))
+              }}
+              onPointerUp={() => { if (held === c.key && order) commit(order); setHeld(null) }}
+              onPointerCancel={() => { setHeld(null); setOrder(null) }}
+              onKeyDown={(e) => {
+                const step = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
+                if (!step || i + step < 0 || i + step >= shown.length) return
+                e.preventDefault()
+                const next = moveTo(shown, c.key, i + step)
+                setOrder(next)
+                commit(next)
+              }}>⋮⋮</button>
+          )}
+          <Check task={c} onToggle={() => p.onTick(c)} />
+          <button class="sub-body" onClick={() => p.onOpen(c)}>
+            <span class="ttitle">{c.title}</span>
+            {metaOf(c).length > 0 && <span class="muted small">{metaOf(c).map((m) => m.text).join(', ')}</span>}
+          </button>
+          <span class="faint" aria-hidden="true">›</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The notes linked under the task: each opens in Obsidian, can be taken off, and any note of the vault can be added. */
+function LinkedNotes(p: PageProps & { task: Task; onChange: (op: EditOp) => void }) {
+  const t = p.task
+  const [vaultName, setVaultName] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
+  const [paths, setPaths] = useState<string[] | null>(null)
+  const [query, setQuery] = useState('')
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { p.vault.vaultName().then(setVaultName, () => undefined) }, [p.vault])
+  useEffect(() => {
+    if (!picking || paths) return
+    setFailed(false)
+    p.vault.notePaths().then(setPaths, () => setFailed(true))
+  }, [picking])
+  const href = (name: string) =>
+    `obsidian://open?${vaultName ? `vault=${encodeURIComponent(vaultName)}&` : ''}file=${encodeURIComponent(name)}`
+  const linked = new Set(t.linkNames)
+  const matches = paths ? searchNotes(query, paths).filter((path) => !linked.has(linkText(path, paths))) : []
+  return (
+    <>
+      {t.linkNames.length ? t.linkNames.map((n) => (
+        <div key={n} class="fold-row link-row">
+          <a class="grow accent-text ellipsis" href={href(n)} title="เปิดใน Obsidian">{n}</a>
+          <button class="chip-x" aria-label={`เอาลิงก์ ${n} ออก`} onClick={() => p.onChange({ op: 'unlink', value: n })}>×</button>
+        </div>
+      )) : <div class="muted small">ยังไม่มี</div>}
+      {!picking ? (
+        <button class="link" onClick={() => setPicking(true)}>+ ลิงก์โน้ต</button>
+      ) : (
+        <div class="note-pick" role="group" aria-label="เลือกโน้ต">
+          <div class="row-gap">
+            <input class="field grow" type="search" aria-label="ค้นหาโน้ต" placeholder="ค้นหาโน้ตใน Vault" value={query} autoFocus onInput={(e) => setQuery(e.currentTarget.value)} />
+            <button class="ghost" onClick={() => { setPicking(false); setQuery('') }}>ปิด</button>
+          </div>
+          {failed ? <div class="error small">อ่านรายชื่อโน้ตไม่ได้ ลองอีกครั้ง</div>
+            : !paths ? <div class="muted small">กำลังอ่านโน้ตใน Vault</div>
+            : matches.length === 0 ? <div class="muted small">ไม่พบโน้ต</div>
+            : (
+              <ul class="plain note-results">
+                {matches.map((path) => (
+                  <li key={path}>
+                    <button class="note-result" onClick={() => { p.onChange({ op: 'link', value: linkText(path, paths) }); setPicking(false); setQuery('') }}>
+                      <span class="ellipsis">{path.split('/').pop()!.replace(/\.md$/i, '')}</span>
+                      <span class="faint small ellipsis">{path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : 'ราก Vault'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** One attached image, read from the Attachments folder. */
+function Thumb(p: PageProps & { name: string; onView: () => void }) {
+  const [src, setSrc] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    p.vault.image(p.name).then((u) => live && setSrc(u), () => live && setSrc(null))
+    return () => { live = false }
+  }, [p.name])
+  return (
+    <button class="thumb" aria-label={`ดูรูป ${p.name}`} onClick={p.onView}>
+      {src ? <img src={src} alt="" /> : <span class="faint small">{src === null ? 'ไม่พบไฟล์' : '...'}</span>}
+    </button>
+  )
+}
+
+/** The images under the task: shown small, opened large, taken off (the file goes to Drive's trash), and new ones attached as WebP. */
+function Images(p: PageProps & { task: Task }) {
+  const t = p.task
+  const [viewing, setViewing] = useState<string | null>(null)
+  const [full, setFull] = useState<string | null>(null)
+  const [askRemove, setAskRemove] = useState(false)
+  const [choice, setChoice] = useState<Prepared | null>(null)
+  const [error, setError] = useState('')
+  const [reading, setReading] = useState(false)
+  useEffect(() => {
+    setFull(null)
+    setAskRemove(false)
+    if (viewing) p.vault.image(viewing).then(setFull, () => undefined)
+  }, [viewing])
+  const save = (blob: Blob) => {
+    setChoice(null)
+    const name = fileName()
+    p.run(async () => {
+      const r = await p.vault.attach(p.fresh(t), name, blob)
+      return r.ok ? { ...r, notice: `แนบรูปแล้ว (${name}, ${sizeLabel(blob.size)})` } : r
+    })
+  }
+  const pick = async (file: File | undefined) => {
+    if (!file) return
+    setError('')
+    setReading(true)
+    try {
+      const prepared = await prepare(file)
+      if (needsChoice(prepared)) setChoice(prepared)
+      else save(prepared.full)
+    } catch (e) {
+      setError(e instanceof NotWebp ? 'เบราว์เซอร์นี้บันทึกรูปเป็น WebP ไม่ได้ ลองใน Chrome หรือแอป Android' : 'อ่านรูปนี้ไม่ได้')
+    } finally {
+      setReading(false)
+    }
+  }
+  return (
+    <>
+      {t.attachmentNames.length > 0 && (
+        <div class="thumbs">
+          {t.attachmentNames.map((n) => <Thumb key={n} {...p} name={n} onView={() => setViewing(n)} />)}
+        </div>
+      )}
+      <label class="link attach">
+        <input type="file" accept="image/*" aria-label="แนบรูป" class="sr-only" onChange={(e) => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; pick(f) }} />
+        {reading ? 'กำลังเตรียมรูป' : '+ แนบรูป'}
+      </label>
+      <div class="muted small">บันทึกเป็น WebP ในโฟลเดอร์ Attachments</div>
+      {error && <div class="error small">{error}</div>}
+      {choice && (
+        <div class="confirm img-choice" role="alertdialog" aria-label="ขนาดรูป">
+          <span class="grow">รูปนี้ใหญ่ ({choice.width} x {choice.height}) จะเก็บแบบไหน?</span>
+          <button class="link" onClick={() => save(choice.reduced!)}>ย่อ ({sizeLabel(choice.reduced!.size)})</button>
+          <button class="link quiet" onClick={() => save(choice.full)}>เต็ม ({sizeLabel(choice.full.size)})</button>
+          <button class="link quiet" onClick={() => setChoice(null)}>ยกเลิก</button>
+        </div>
+      )}
+      {viewing && (
+        <div class="viewer" role="dialog" aria-label={`รูป ${viewing}`} onClick={(e) => { if (e.target === e.currentTarget) setViewing(null) }}>
+          <div class="viewer-box">
+            {full ? <img src={full} alt={viewing} /> : <span class="muted">กำลังโหลดรูป</span>}
+            <div class="viewer-bar">
+              <span class="muted small grow ellipsis">{viewing}</span>
+              {askRemove ? (
+                <>
+                  <span class="small">ลบรูปนี้?</span>
+                  <button class="link quiet" onClick={() => setAskRemove(false)}>ยกเลิก</button>
+                  <button class="link danger" onClick={() => { const n = viewing; setViewing(null); p.run(() => p.vault.detach(p.fresh(t), n)) }}>ลบ</button>
+                </>
+              ) : (
+                <button class="link danger" onClick={() => setAskRemove(true)}>ลบรูป</button>
+              )}
+              <button class="link" onClick={() => setViewing(null)}>ปิด</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

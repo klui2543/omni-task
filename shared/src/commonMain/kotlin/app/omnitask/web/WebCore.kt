@@ -68,6 +68,9 @@ object WebCore {
         val note: String? = null,
         /** Today's round of a repeating task whose earlier round is still open; it ticks the same line past today. */
         val todayCopy: Boolean = false,
+        /** The task's `🆔` and the ids it waits on (`⛔`), for the "waits on" field. */
+        val id: String? = null,
+        val dependsOn: List<String> = emptyList(),
     )
 
     @Serializable
@@ -93,6 +96,7 @@ object WebCore {
         start = t.start?.toString(), reminderOn = t.reminderOn?.name,
         linkNames = t.links, attachmentNames = t.attachments,
         note = t.filePath.ifEmpty { null }, todayCopy = t.todayCopy,
+        id = t.id, dependsOn = t.dependsOn,
     )
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
@@ -278,6 +282,34 @@ object WebCore {
                 val draft = QuickAdd.parse(value ?: return fail("empty"), day)
                 if (draft.title.isBlank()) return fail("empty")
                 VaultText.edit(text, task) { lines, i -> VaultText.insertSubtask(lines, i, draft.line(day)) }
+            }
+            // A linked note, an attached image (value: the link text or the file name), as Android's edit sheet adds them.
+            "link" -> {
+                val name = value ?: return fail("empty")
+                if (name in task.links) return ok(text)
+                VaultText.edit(text, task) { lines, i -> VaultText.addSubLine(lines, i, "[[$name]]") }
+            }
+            "unlink" -> VaultText.edit(text, task) { lines, i -> VaultText.removeSubLine(lines, i, "[[${op.value!!}") }
+            "image" -> {
+                val name = value ?: return fail("empty")
+                VaultText.edit(text, task) { lines, i -> VaultText.addSubLine(lines, i, "![[$name]]") }
+            }
+            "unimage" -> VaultText.edit(text, task) { lines, i -> VaultText.removeSubLine(lines, i, "![[${op.value!!}") }
+            // The description went to its own note (value: its name): the lines go, a link to it takes their place.
+            "moveDescription" -> {
+                val name = value ?: return fail("empty")
+                VaultText.edit(text, task) { lines, i ->
+                    VaultText.describe(lines, i, "")
+                    if (name !in task.links) VaultText.addSubLine(lines, i, "[[$name]]")
+                }
+            }
+            // The direct subtasks in a new order (value: their lines as a JSON list).
+            "order" -> {
+                val raws = json.decodeFromString<List<String>>(op.value!!)
+                var ordered = true
+                val edited = VaultText.edit(text, task) { lines, i -> ordered = VaultText.orderSubtasks(lines, i, raws) }
+                if (!ordered) return fail("conflict")
+                edited
             }
             // Moved between Matrix quadrants (see WebViews): importance changes, urgency comes from the dates.
             "quadrant" -> {

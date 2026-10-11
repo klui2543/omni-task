@@ -7,6 +7,9 @@ interface Node {
   folder: boolean
   parent: string | null
   text?: string
+  /** A file that is not text (an image): its bytes and type. */
+  bytes?: Uint8Array
+  mime?: string
   version: number
   /** Every text the file held, oldest first, as Drive keeps revisions. */
   revisions?: { id: string; text: string }[]
@@ -240,7 +243,11 @@ export class FakeDrive {
       // A new folder is a plain JSON post (a new note is a multipart upload).
       if (req.method() === 'POST' && !id && (req.headers()['content-type'] ?? '').startsWith('application/json')) {
         const meta = JSON.parse(req.postData() ?? '{}')
-        return json({ id: this.add(meta.name, meta.parents[0]).id })
+        // A file's entry (an image, whose bytes follow) or a folder.
+        const file = meta.mimeType && meta.mimeType !== 'application/vnd.google-apps.folder'
+        const n = this.add(meta.name, meta.parents[0], file ? '' : undefined)
+        if (file) n.mime = meta.mimeType
+        return json({ id: n.id })
       }
       if (req.method() === 'POST' && !id) {
         // A multipart upload: the metadata part, then the text.
@@ -256,6 +263,9 @@ export class FakeDrive {
       }
       const node = this.nodes.find((n) => n.id === id)
       if (!node) return route.fulfill({ status: 404, body: 'not found' })
+      if (req.method() === 'GET' && url.searchParams.get('alt') === 'media' && node.bytes) {
+        return route.fulfill({ contentType: node.mime, body: node.bytes as never }) // a Buffer, as Playwright handed it over
+      }
       if (req.method() === 'GET' && url.searchParams.get('alt') === 'media') {
         const text = node.text!
         const hook = this.afterNextRead
@@ -270,6 +280,11 @@ export class FakeDrive {
       if (req.method() === 'PATCH' && !url.pathname.startsWith('/upload')) {
         if (JSON.parse(req.postData() ?? '{}').trashed) this.nodes = this.nodes.filter((n) => n !== node)
         return json({ id: node.id })
+      }
+      if (req.method() === 'PATCH' && node.mime && !node.mime.startsWith('text/')) {
+        node.bytes = req.postDataBuffer() ?? new Uint8Array()
+        node.version++
+        return json({ id: node.id, version: String(node.version) })
       }
       if (req.method() === 'PATCH') {
         const hook = this.beforeNextWrite

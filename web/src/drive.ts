@@ -169,6 +169,27 @@ export class Drive {
     return (await res.json()).id
   }
 
+  /** A new file of any kind (an image) in [parentId]: its entry first, then its bytes; returns its id. */
+  async createBlob(parentId: string, name: string, blob: Blob): Promise<string> {
+    const res = await this.call(`${API}/files?supportsAllDrives=true&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parents: [parentId], mimeType: blob.type }),
+    })
+    const id: string = (await res.json()).id
+    await this.call(`${UPLOAD}/files/${id}?uploadType=media&supportsAllDrives=true`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': blob.type },
+      body: blob,
+    })
+    return id
+  }
+
+  /** A file's bytes (an image), as a Blob. */
+  async blob(id: string): Promise<Blob> {
+    return (await this.call(`${API}/files/${id}?alt=media&supportsAllDrives=true`)).blob()
+  }
+
   /** Moves a file to Drive's trash, where it can still be restored. */
   async trash(id: string): Promise<void> {
     await this.call(`${API}/files/${id}?supportsAllDrives=true`, {
