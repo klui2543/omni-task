@@ -1,0 +1,14 @@
+/* Omni Ygdrasil's side panel, in Obsidian's own colours so it follows the theme. */
+.omni-yg { display: flex; flex-direction: column; gap: 10px; }
+.omni-yg h4 { margin: 0; }
+.omni-yg h6 { margin: 6px 0 0; color: var(--text-muted); }
+.omni-yg-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 10px; background: var(--background-primary); }
+.omni-yg-ok { color: var(--color-green); }
+.omni-yg-strong { font-weight: 600; }
+.omni-yg-muted { color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.5; }
+.omni-yg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.omni-yg-chip { border-radius: 14px; }
+.omni-yg-chip.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.omni-yg-search { width: 100%; }
+.omni-yg-pick { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.omni-yg-pick button { justify-content: flex-start; }

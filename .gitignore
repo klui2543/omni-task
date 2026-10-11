@@ -8,3 +8,5 @@ node_modules/
 web/src/kotlin/
 web/dist/
 web/test-results/
+obsidian/src/kotlin/
+obsidian/main.js

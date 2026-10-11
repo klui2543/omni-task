@@ -1,0 +1,9 @@
+{
+  "id": "omni-ygdrasil",
+  "name": "Omni Ygdrasil",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Draws every Omni project as one tree in Excalidraw, kept in step with the task note: filter it, tick, move and add tasks, and tie tasks that wait for one another with an arrow.",
+  "author": "klui2543",
+  "isDesktopOnly": false
+}
