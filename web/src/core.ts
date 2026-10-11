@@ -1,7 +1,7 @@
 // The vault logic shared with the Android app, compiled from Kotlin (see ../scripts/sync-core.mjs).
 import { WebApi } from './kotlin/OmniTask-shared.mjs'
 import { customKindTags } from './kinds'
-import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
+import type { EditOp, EditResult, FocusIn, FocusOut, ListNote, Query, QuickPreview, Task, TaskList, ViewsIn, ViewsOut } from './types'
 
 const api = WebApi.getInstance()
 
@@ -26,6 +26,9 @@ const result = (json: string): EditResult => JSON.parse(json)
 export const toggle = (text: string, t: Task, withSubtasks: boolean) =>
   result(api.toggle(text, t.raw, t.lineIndex, today(), withSubtasks, t.todayCopy === true))
 export const addTask = (text: string, sentence: string) => result(api.addTask(text, sentence, today()))
+/** What a quick-add sentence is read as, with the lists ([notes]) and tags ([tags], most used first) a "#word" can become. */
+export const quickPreview = (sentence: string, notes: ListNote[], tags: string[]): QuickPreview =>
+  JSON.parse(api.quickPreview(sentence, today(), JSON.stringify(notes.map((n) => ({ key: n.id, path: n.path, text: n.text }))), JSON.stringify(tags)))
 
 export const editTask = (text: string, t: Task, op: EditOp) =>
   result(api.editTask(text, t.raw, t.lineIndex, today(), JSON.stringify(op)))

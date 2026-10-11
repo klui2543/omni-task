@@ -24,6 +24,9 @@ object WebApi {
 
     fun addTask(text: String, sentence: String, today: String): String = WebCore.addTask(text, sentence, today)
 
+    /** What a quick-add sentence is read as, and the choices for a "#word" being typed; see [WebQuickAdd]. */
+    fun quickPreview(sentence: String, today: String, notes: String, tags: String): String = WebQuickAdd.preview(sentence, today, notes, tags)
+
     fun editTask(text: String, raw: String, lineIndex: Int, today: String, op: String): String = WebCore.editTask(text, raw, lineIndex, today, op)
 
     fun cut(text: String, raw: String, lineIndex: Int): String = WebCore.cut(text, raw, lineIndex)
