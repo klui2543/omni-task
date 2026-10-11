@@ -76,6 +76,15 @@ class CalendarSyncTest {
         error("gave up waiting for $what${detail().let { if (it.isEmpty()) "" else ": $it" }}")
     }
 
+    /** Every row of a provider table as column=value text, for the failure message. */
+    private fun rows(uri: Uri, selection: String?, args: Array<String>?): String = runCatching {
+        buildList {
+            context.contentResolver.query(uri, null, selection, args, null)?.use { c ->
+                while (c.moveToNext()) add((0 until c.columnCount).filter { !c.isNull(it) }.joinToString(",") { "${c.getColumnName(it)}=${c.getString(it)}" }.take(500))
+            }
+        }.toString()
+    }.getOrElse { "error $it" }
+
     private fun addEvent(title: String): Long {
         val begin = LocalDateTime.now().plusHours(1).withMinute(0).withSecond(0).withNano(0)
         return checkNotNull(CalendarReader.insert(context, calendarId, title, begin, begin.plusHours(1))) { "the provider refused the event" }
@@ -93,7 +102,9 @@ class CalendarSyncTest {
             val provider = CalendarReader.events(context, now.minusDays(1), now.plusDays(2))
             "event $id in calendar $calendarId at ${now.plusHours(1)}; app has ${vm.state.value.events.size} events " +
                 "${vm.state.value.events.map { it.title }.take(5)}; provider has ${provider.map { it.title }}, hidden ${CalendarReader.hiddenIds(context)}, " +
-                "zone ${java.time.ZoneId.systemDefault()}"
+                "zone ${java.time.ZoneId.systemDefault()}; calendars ${CalendarReader.calendars(context)}; " +
+                "event row ${rows(CalendarContract.Events.CONTENT_URI, "${CalendarContract.Events._ID} = ?", arrayOf("$id"))}; " +
+                "instances ${rows(CalendarContract.Instances.CONTENT_URI.buildUpon().also { android.content.ContentUris.appendId(it, 0); android.content.ContentUris.appendId(it, Long.MAX_VALUE / 4) }.build(), null, null)}"
         }
         waitFor("the event to reach the app's state", detail = detail) { vm.state.value.events.any { it.title == "Omni sync test" } }
     }
