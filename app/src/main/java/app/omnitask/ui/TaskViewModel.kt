@@ -149,6 +149,9 @@ data class UiState(
     val countdown: String? = null,
     /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
     val tonightBed: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
+    val tonightWake: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
+    /** The wake alarm last handed to the clock app, as the night's evening and the time. */
+    val alarmSet: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
@@ -292,9 +295,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         foldedColumns = prefs.getStringSet(KEY_FOLDED_COLUMNS, emptySet()).orEmpty().toSet(),
         customKinds = CustomKind.parse(prefs.getStringSet(KEY_CUSTOM_KINDS, emptySet()).orEmpty()),
         hiddenKinds = prefs.getStringSet(KEY_HIDDEN_KINDS, emptySet()).orEmpty().mapNotNull { n -> TaskKind.entries.firstOrNull { it.name == n } }.toSet(),
-        tonightBed = prefs.getString(KEY_TONIGHT_BED, null)?.let { v ->
-            runCatching { LocalDate.parse(v.substringBefore(' ')) to kotlinx.datetime.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
-        },
+        tonightBed = nightPref(KEY_TONIGHT_BED),
+        tonightWake = nightPref(KEY_TONIGHT_WAKE),
+        alarmSet = nightPref(KEY_ALARM_SET),
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
@@ -1226,6 +1229,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Deletes a list note with its items. Tasks pulled in from other notes stay where they are and only lose
+     * the list's tag, so they do not turn into a project of their own.
+     */
+    fun deleteList(list: OmniList) {
+        val vault = _state.value.vault ?: return
+        val pulled = _state.value.itemsOf(list).filter { it.list == null }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    pulled.forEach { t -> runCatching { repo.rewriteLine(t) { raw -> TaskLine.removeTag(raw, list.tag) } } }
+                    repo.deletePath(vault, list.path)
+                }
+            }
+            _state.update { it.copy(message = result.exceptionOrNull()?.let { e -> tr("ลบไม่ได้: ", "Cannot delete: ") + e.message } ?: tr("ลบ ${list.name} แล้ว", "Deleted ${list.name}")) }
+            reload()
+        }
+    }
+
     fun addListItem(list: OmniList, title: String, category: String?, link: String? = null) {
         val vault = _state.value.vault ?: return
         if (title.isBlank()) return
@@ -1651,8 +1673,42 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Tonight's bedtime; the usual one comes back tomorrow. [evening] is the date the night starts on. */
     fun setTonightBedtime(evening: LocalDate, time: kotlinx.datetime.LocalTime) {
-        prefs.edit().putString(KEY_TONIGHT_BED, "$evening ${"%02d:%02d".format(time.hour, time.minute)}").apply()
+        prefs.edit().putString(KEY_TONIGHT_BED, nightValue(evening, time)).apply()
         _state.update { it.copy(tonightBed = evening to time) }
+    }
+
+    /** Tonight's wake time, or null to go back to the usual one (or an hour before the morning's first event). */
+    fun setTonightWake(evening: LocalDate, time: kotlinx.datetime.LocalTime?) {
+        prefs.edit().apply { if (time == null) remove(KEY_TONIGHT_WAKE) else putString(KEY_TONIGHT_WAKE, nightValue(evening, time)) }.apply()
+        _state.update { it.copy(tonightWake = time?.let { evening to it }) }
+    }
+
+    /**
+     * Hands the wake alarm to the phone's clock app (Samsung Clock rings it on a paired Galaxy Watch too).
+     * The clock app keeps it, so it rings even if Omni is closed.
+     */
+    fun setWakeAlarm(evening: LocalDate, time: kotlinx.datetime.LocalTime) {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
+            .putExtra(android.provider.AlarmClock.EXTRA_HOUR, time.hour)
+            .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, time.minute)
+            .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, tr("ตื่นนอน (Omni)", "Wake up (Omni)"))
+            .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val ok = runCatching { getApplication<Application>().startActivity(intent) }.isSuccess
+        if (ok) prefs.edit().putString(KEY_ALARM_SET, nightValue(evening, time)).apply()
+        _state.update {
+            it.copy(
+                alarmSet = if (ok) evening to time else it.alarmSet,
+                message = if (ok) tr("ตั้งปลุก ${"%02d:%02d".format(time.hour, time.minute)} ในแอปนาฬิกาแล้ว", "Alarm set for ${"%02d:%02d".format(time.hour, time.minute)} in the Clock app")
+                else tr("ไม่พบแอปนาฬิกาที่ตั้งปลุกได้", "No clock app can set the alarm"),
+            )
+        }
+    }
+
+    private fun nightValue(evening: LocalDate, time: kotlinx.datetime.LocalTime) = "$evening ${"%02d:%02d".format(time.hour, time.minute)}"
+
+    private fun nightPref(key: String): Pair<LocalDate, kotlinx.datetime.LocalTime>? = prefs.getString(key, null)?.let { v ->
+        runCatching { LocalDate.parse(v.substringBefore(' ')) to kotlinx.datetime.LocalTime.parse(v.substringAfter(' ')) }.getOrNull()
     }
 
     /** The usual bedtime and wake time, kept in the profile note the assistant also reads. */
@@ -1738,6 +1794,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_CUSTOM_KINDS = "customKinds"
         const val KEY_HIDDEN_KINDS = "hiddenKinds"
         const val KEY_TONIGHT_BED = "sleep.tonight"
+        const val KEY_TONIGHT_WAKE = "sleep.tonight.wake"
+        const val KEY_ALARM_SET = "sleep.alarm"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"

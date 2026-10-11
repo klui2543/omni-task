@@ -301,6 +301,25 @@ fun IconPickerDialog(selected: String, onPick: (String) -> Unit, onDismiss: () -
     )
 }
 
+/** Asks before a list note goes; [own] items go with it, [pulled] tasks from other notes stay and lose the tag. */
+@Composable
+fun DeleteListDialog(list: OmniList, own: Int, pulled: Int, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("ลบ ${list.name}?", "Delete ${list.name}?")) },
+        text = {
+            Text(
+                tr("ลบไฟล์ ${list.path.substringAfterLast('/')} พร้อม $own รายการในนั้น", "Deletes ${list.path.substringAfterLast('/')} with its $own items") +
+                    (if (pulled > 0) tr("\nงานที่ดึงมาจากโน้ตอื่น $pulled งานจะอยู่ที่เดิม แค่เอา #${list.tag} ออก", "\nThe $pulled tasks pulled in from other notes stay there and only lose #${list.tag}") else ""),
+                color = C.text2,
+            )
+        },
+        confirmButton = { TextButton(onClick = onDelete) { Text(tr("ลบ", "Delete"), color = C.red) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+    )
+}
+
 /** Name, icon and categories for a new list note. */
 @Composable
 fun CreateListDialog(onCreate: (name: String, icon: String, categories: List<String>) -> Unit, onDismiss: () -> Unit) {
