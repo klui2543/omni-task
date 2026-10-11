@@ -279,7 +279,6 @@ export function ProjectsPage(p: PageProps) {
         )}
         {screen}
 
-        {!mapping && <button class="fab narrow-only" aria-label="เพิ่มงาน" onClick={() => setAdding(true)}>+</button>}
         {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
 
         {dialog?.k === 'rename' && project && <RenameProjectDialog project={project} busy={p.busy} onRename={renameProject} onClose={() => setDialog(null)} />}

@@ -1,21 +1,29 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 
-export type Page = 'focus' | 'tasks' | 'views' | 'projects' | 'assistant' | 'settings'
+export type Page = 'focus' | 'tasks' | 'projects' | 'more' | 'assistant' | 'settings'
 
-/** The main pages in Android's tab order; Settings sits apart at the foot of the sidebar. */
+/** The sidebar on wide screens: every destination (the assistant included; there is no More there). Settings sits apart at its foot. */
 export const TABS: [Page, string][] = [
   ['focus', 'โฟกัส'],
   ['tasks', 'งาน'],
-  ['views', 'มุมมอง'],
   ['projects', 'โปรเจกต์/ลิสต์'],
   ['assistant', 'ผู้ช่วย'],
 ]
-const PAGES: Page[] = [...TABS.map(([p]) => p), 'settings']
+/** The bar at the bottom of a narrow screen, as the Android app's: Focus, Tasks, the add button, Projects and More (assistant and settings). */
+const BAR: [Page, string][] = [
+  ['focus', 'โฟกัส'],
+  ['tasks', 'งาน'],
+  ['projects', 'โปรเจกต์'],
+  ['more', 'เพิ่มเติม'],
+]
+const PAGES: Page[] = ['focus', 'tasks', 'projects', 'more', 'assistant', 'settings']
 
 const pageOf = (hash: string): Page => {
-  const name = hash.replace(/^#\/?/, '') as Page
-  return PAGES.includes(name) ? name : 'focus'
+  const name = hash.replace(/^#\/?/, '')
+  // The Views tab was merged into Tasks (its address still opens the tasks, in the last view).
+  if (name === 'views') return 'tasks'
+  return PAGES.includes(name as Page) ? (name as Page) : 'focus'
 }
 
 /** The open page, kept in the address (#/tasks) so reloading and the back button stay on it. */
@@ -37,10 +45,12 @@ const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minut
 
 /**
  * A sidebar on wide screens (computer, iPad across) and a floating bar at the bottom on narrow ones
- * (iPad upright, phone), as in the mockups. Text only, no icons, like the Android app's labels.
+ * (iPad upright, phone), as in the mockups. Text only, no icons, like the Android app's labels. The assistant
+ * is a round button floating at the bottom right of every page; adding a task is the middle of the bar.
  */
-export function Shell(p: { page: Page; onNavigate: (p: Page) => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
+export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
   const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่' : p.sync.state === 'busy' ? 'กำลังซิงก์...' : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
+  const onMore = p.page === 'more' || p.page === 'assistant' || p.page === 'settings'
   return (
     <div class="shell">
       <nav class="side" aria-label="เมนูหลัก">
@@ -59,9 +69,18 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; sync: Sync
         </div>
       </nav>
       <div class="content">{p.children}</div>
+      {p.page !== 'assistant' && (
+        <button class="ai-fab" aria-label="เปิดผู้ช่วย" onClick={() => p.onNavigate('assistant')}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" /></svg>
+        </button>
+      )}
       <nav class="bar" aria-label="เมนูหลัก">
-        {TABS.map(([page, label]) => (
+        {BAR.slice(0, 2).map(([page, label]) => (
           <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
+        ))}
+        <button class="bar-add" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>
+        {BAR.slice(2).map(([page, label]) => (
+          <button key={page} aria-current={(page === 'more' ? onMore : p.page === page) ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
         ))}
       </nav>
     </div>

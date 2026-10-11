@@ -14,11 +14,11 @@ import { StatusQuickAdd } from '../ui/views/StatusQuickAdd'
 import type { ViewCtx } from '../ui/views/ctx'
 import { addDays } from '../ui/views/dates'
 import { useStored } from '../ui/views/hooks'
+import { MODES, MODE_LABEL, type ViewMode } from '../ui/views/modes'
+import { LayoutBar, type Layout } from '../ui/LayoutBar'
 import { QuickAdd } from './Tasks'
 
-export const MODES = ['kanban', 'matrix', 'gantt', 'calendar'] as const
-export type ViewMode = (typeof MODES)[number]
-export const MODE_LABEL: Record<ViewMode, string> = { kanban: 'Kanban', matrix: 'Matrix', gantt: 'Gantt', calendar: 'ปฏิทิน' }
+export { MODES, MODE_LABEL, type ViewMode }
 
 /** A project's own views: the same four over only its tasks, with the way back to its overview (as on Android). */
 export interface ViewsScope {
@@ -32,10 +32,10 @@ export interface ViewsScope {
  * The Views tab: Kanban, Matrix, Gantt and the calendars over the same filters as the task list (the filter and
  * sort are shared with it, as on Android). Every change goes through the shared edit path like the other pages.
  */
-export function ViewsPage(p: PageProps & { scope?: ViewsScope }) {
-  const [storedMode, setStoredMode] = useStored('omni.viewMode', 'kanban', MODES)
-  const mode = p.scope?.mode ?? storedMode
-  const setMode = p.scope?.setMode ?? setStoredMode
+export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; onLayout?: (l: Layout) => void }) {
+  // On the Tasks tab the chosen layout is the mode; inside a project its own switch decides.
+  const mode: ViewMode = p.scope?.mode ?? (p.layout && p.layout !== 'list' ? p.layout : 'kanban')
+  const setMode = p.scope?.setMode ?? (() => {})
   const [hide, setHide] = useStored('omni.hideDone', 'yes', ['yes', 'no'] as const)
   const hideDone = hide === 'yes'
   const [stored, setQueryState] = useState<ListQuery>(storedQuery.get)
@@ -96,40 +96,49 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope }) {
   return (
     <div class={`split${current ? ' with-pane' : ''}`}>
       <main class="page views">
-        <header class="head vhead">
-          {p.scope && <button class="ghost" onClick={p.scope.onOverview}>‹ กลับ</button>}
-          <h1>{p.scope ? p.scope.project : 'มุมมอง'}</h1>
-          <div class="seg big" role="tablist" aria-label="ชนิดมุมมอง">
-            {p.scope && <button role="tab" aria-selected={false} onClick={p.scope.onOverview}>ภาพรวม</button>}
-            {MODES.map((m) => <button key={m} role="tab" aria-selected={m === mode} onClick={() => setMode(m)}>{MODE_LABEL[m]}</button>)}
-          </div>
-          <span class="grow" />
-          <div class="head-tools">
-            <button class={`chip tool${filterCount(query) ? ' on' : ''}`} onClick={() => setOverlay('filter')}>
-              กรอง{filterCount(query) ? ` ${filterCount(query)}` : ''}
-            </button>
-            {mode === 'kanban' && <button class="chip tool" onClick={() => setOverlay('sort')}>เรียง: {sortText}</button>}
-            {mode === 'matrix' && (
-              <div class="menu-wrap">
-                <button class="chip tool" aria-haspopup="menu" aria-expanded={overlay === 'urgent'} onClick={() => setOverlay(overlay === 'urgent' ? null : 'urgent')}>
-                  ด่วน = {URGENT_RULES.find(([k]) => k === urgent)![1]}
-                </button>
-                {overlay === 'urgent' && (
-                  <>
-                    <div class="menu-scrim" onClick={() => setOverlay(null)} />
-                    <div class="popmenu" role="menu">
-                      {URGENT_RULES.map(([rule, label]) => (
-                        <button key={rule} role="menuitemradio" aria-checked={urgent === rule} class={urgent === rule ? 'on' : ''}
-                          onClick={() => { urgentRule.set(rule); setUrgent(rule); setOverlay(null) }}>ด่วน = {label}</button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            <button class="ghost narrow-only" onClick={() => p.onNavigate('settings')}>ตั้งค่า</button>
-          </div>
-        </header>
+        {p.scope ? (
+          <header class="head vhead">
+            <button class="ghost" onClick={p.scope.onOverview}>‹ กลับ</button>
+            <h1>{p.scope.project}</h1>
+            <div class="seg big" role="tablist" aria-label="ชนิดมุมมอง">
+              <button role="tab" aria-selected={false} onClick={p.scope.onOverview}>ภาพรวม</button>
+              {MODES.map((m) => <button key={m} role="tab" aria-selected={m === mode} onClick={() => setMode(m)}>{MODE_LABEL[m]}</button>)}
+            </div>
+            <span class="grow" />
+            <div class="head-tools">
+              <button class={`chip tool${filterCount(query) ? ' on' : ''}`} onClick={() => setOverlay('filter')}>
+                กรอง{filterCount(query) ? ` ${filterCount(query)}` : ''}
+              </button>
+              {mode === 'kanban' && <button class="chip tool" onClick={() => setOverlay('sort')}>เรียง: {sortText}</button>}
+            </div>
+          </header>
+        ) : (
+          <>
+            <header class="head vhead"><h1>งาน</h1></header>
+            <LayoutBar layout={p.layout ?? mode} onLayout={p.onLayout ?? (() => {})} filter={{ count: filterCount(query), onOpen: () => setOverlay('filter') }}
+              end={
+                mode === 'kanban' ? <button class="chip tool" aria-label="เรียงและจัดกลุ่ม" title={`เรียง: ${sortText}`} onClick={() => setOverlay('sort')}>เรียง ⇅</button>
+                : mode === 'matrix' ? (
+                  <div class="menu-wrap">
+                    <button class="chip tool" aria-haspopup="menu" aria-expanded={overlay === 'urgent'} onClick={() => setOverlay(overlay === 'urgent' ? null : 'urgent')}>
+                      ด่วน = {URGENT_RULES.find(([k]) => k === urgent)![1]}
+                    </button>
+                    {overlay === 'urgent' && (
+                      <>
+                        <div class="menu-scrim" onClick={() => setOverlay(null)} />
+                        <div class="popmenu" role="menu">
+                          {URGENT_RULES.map(([rule, label]) => (
+                            <button key={rule} role="menuitemradio" aria-checked={urgent === rule} class={urgent === rule ? 'on' : ''}
+                              onClick={() => { urgentRule.set(rule); setUrgent(rule); setOverlay(null) }}>ด่วน = {label}</button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : undefined
+              } />
+          </>
+        )}
 
         {active.length > 0 && (
           <div class="chips vchips">
@@ -162,7 +171,6 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope }) {
           )}
         </div>
 
-        <button class="fab narrow-only" aria-label="เพิ่มงาน" onClick={() => setAdding({})}>+</button>
         {adding && !adding.status && <QuickAdd {...p} onClose={() => setAdding(null)} />}
         {adding?.status && (
           <StatusQuickAdd {...p} status={adding.status} statusLabel={labelOf(STATUSES, adding.status)} onClose={() => setAdding(null)} />
