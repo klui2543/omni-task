@@ -34,7 +34,7 @@ fun CalendarConnect(state: UiState, vm: TaskViewModel, modifier: Modifier = Modi
     if (access && google.isNotEmpty()) return
 
     Card(modifier, color = C.accentDeep, border = C.accentLine) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Ic.calendar, null, tint = C.accentText, modifier = Modifier.size(18.dp))
                 Text(
