@@ -186,25 +186,25 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
         item { ReviewPrompt(state) { reviewing = true } }
 
-        item {
+        // Overdue work is not part of the day's timeline: it sits in its own card below it.
+        val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
+        val daySections = plan.filter { it.part != DayPlan.Part.LATE }
+        if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
-                if (plan.isEmpty()) {
+                if (daySections.isEmpty()) {
                     Text(tr("วันนี้ยังไม่มีงานหรือนัด", "Nothing due or booked today"), Modifier.padding(16.dp), color = C.muted)
                 }
                 // The red now line sits before the first timed item still to come; while an event is running it
                 // crosses that event's card instead, at how far into it the clock is.
                 val nowTime = now.toLocalTime()
-                val inEvent = plan.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
-                var nowShown = inEvent || plan.none { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
-                plan.forEach { section ->
+                val inEvent = daySections.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
+                var nowShown = inEvent || daySections.none { it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
+                daySections.forEach { section ->
                     if (!nowShown && section.part == DayPlan.Part.ANYTIME) {
                         NowLine(nowTime)
                         nowShown = true
                     }
-                    PlanHead(
-                        section.part.label, if (section.part == DayPlan.Part.LATE) C.red else C.muted,
-                        section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen },
-                    )
+                    PlanHead(section.part.label, C.muted, section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
                     section.items.forEach { item ->
                         val t = item.time
                         if (!nowShown && t != null && t > nowTime) {
@@ -221,7 +221,17 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         nowShown = true
                     }
                 }
-                if (!nowShown) NowLine(nowTime)
+                if (!nowShown && daySections.isNotEmpty()) NowLine(nowTime)
+                Box(Modifier.height(4.dp))
+            }
+        }
+
+        if (overdueSection != null) item {
+            Card {
+                PlanHead(overdueSection.part.label, C.red, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
+                overdueSection.items.forEach { item ->
+                    if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
+                }
                 Box(Modifier.height(4.dp))
             }
         }
@@ -410,31 +420,30 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
         Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 6.dp, end = 10.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 40.dp)
-        Column(Modifier.weight(1f).padding(start = 2.dp, top = 9.dp, bottom = 6.dp)) {
+        TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 36.dp)
+        Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
             Text(
                 t.title, color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
                 textDecoration = if (done) TextDecoration.LineThrough else null,
             )
-            val lead = when {
-                done -> tr("เสร็จแล้ว", "Done")
-                late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
-                t.due == today -> tr("ครบวันนี้", "Due today")
-                else -> tr("นัดวันนี้", "Scheduled today")
-            }
-            val sub = listOfNotNull(
+            // Every row here is today's, so "due today" would only repeat. A finished task is one line.
+            val lateText = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
+            val rest = if (done) "" else listOfNotNull(
                 if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
                 Projects.projectOf(t),
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
-            )
-            Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-                // The time, when the task has one, leads the line as a small clock label, as the reminder does on the Tasks page.
-                item.time?.let {
-                    Icon(Ic.clock, null, tint = C.muted, modifier = Modifier.size(12.dp))
-                    Text(it.format(HM) + ", ", Modifier.padding(start = 3.dp), color = C.muted, fontSize = TS.caption)
+            ).joinToString(", ")
+            val clock = if (done) null else item.time
+            if (clock != null || lateText != null || rest.isNotEmpty()) {
+                Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The time leads the line as a small clock label, as the reminder does on the Tasks page.
+                    clock?.let {
+                        Icon(Ic.clock, null, tint = C.muted, modifier = Modifier.size(12.dp))
+                        Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", Modifier.padding(start = 3.dp), color = C.muted, fontSize = TS.caption)
+                    }
+                    if (lateText != null) Text(lateText, color = C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                    if (rest.isNotEmpty()) Text((if (lateText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (lead != null) Text(lead, color = if (late && !done) C.red else C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                if (sub.isNotEmpty()) Text(", " + sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -454,17 +463,12 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     val bg = if (past) C.raised else C.tealSoft
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
-    val sub = (if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")) + when {
-        running -> {
-            val left = ChronoUnit.MINUTES.between(now, e.end)
-            tr(", ตอนนี้ ${now.format(HM)} เหลือ $left นาที", ", now ${now.format(HM)}, $left min left")
-        }
-        past -> tr(", จบแล้ว", ", ended")
-        else -> ", Google Calendar"
-    }
-    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.Top) {
+    // Every event here is from the phone's calendar and on today's page, so neither needs saying.
+    val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")
+    val left = ChronoUnit.MINUTES.between(now, e.end)
+    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(
-            Modifier.weight(1f).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
+            Modifier.weight(1f).heightIn(min = if (running) 0.dp else 36.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
                 .drawBehind {
                     if (running) {
                         val y = size.height * fraction
@@ -473,12 +477,19 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
                         drawCircle(red, 3.5.dp.toPx(), Offset(3.5.dp.toPx(), y))
                     }
                 }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = if (running) 8.dp else 4.dp),
         ) {
             Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (past) C.faint else C.teal))
-            Column(Modifier.padding(start = 10.dp)) {
-                Text(e.title, color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                Text(sub, color = if (past) C.faint else C.tealText, fontSize = TS.caption)
+            if (running) {
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(e.title, color = C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+                    Text(range + tr(", เหลือ $left นาที", ", $left min left"), color = C.tealText, fontSize = TS.caption)
+                }
+            } else {
+                Row(Modifier.weight(1f).fillMaxHeight().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(e.title, Modifier.weight(1f), color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(range, Modifier.padding(start = 8.dp), color = if (past) C.faint else C.tealText, fontSize = TS.caption, maxLines = 1)
+                }
             }
         }
     }
