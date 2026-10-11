@@ -68,7 +68,7 @@ import app.omnitask.model.TaskQuery
 import app.omnitask.model.label
 import app.omnitask.model.tr
 
-private enum class Sheet { FILTER, GROUP, SORT }
+private enum class Sheet { FILTER, SORT }
 
 /**
  * The task list and the views over the same filtered tasks (Kanban, Matrix, Gantt, calendar) behind one switch at the
@@ -105,14 +105,19 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     },
                 )
             }
-            Segmented(
-                listOf<Pair<Mode?, String>>(null to tr("รายการ", "List")) + Mode.entries.map { it to it.label },
-                layout, { layout = it }, Modifier.padding(top = 12.dp).fillMaxWidth(),
-            )
-            FilterBar(
-                state, vm, onFilter = { sheet = Sheet.FILTER }, showSort = layout == null || layout == Mode.KANBAN,
-                onGroup = if (layout == null) ({ sheet = Sheet.GROUP }) else null, onSort = { sheet = Sheet.SORT }, modifier = Modifier.padding(top = 8.dp),
-            )
+            // One row: the filter, the views to choose from (one at a time), and sorting where it applies.
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
+                ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter) { sheet = Sheet.FILTER }
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (listOf<Pair<Mode?, String>>(null to tr("รายการ", "List")) + Mode.entries.map { it to it.label }).forEach { (m, label) ->
+                        Chip(label, m == layout, { layout = m })
+                    }
+                }
+                // Sorting and grouping apply to the list and to Kanban's columns only.
+                if (layout == null || layout == Mode.KANBAN) SquareButton(Ic.sort, tr("เรียงและจัดกลุ่ม", "Sort and group"), { sheet = Sheet.SORT })
+            }
+            ActiveFilters(state, vm, Modifier.padding(top = 8.dp))
         }
     }
 
@@ -134,8 +139,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
 
     when (sheet) {
         Sheet.FILTER -> FilterSheet(state, vm) { sheet = null }
-        Sheet.GROUP -> OptionSheet(tr("จัดกลุ่มตาม", "Group by"), GroupBy.entries.map { it to it.label }, q.groupBy, { vm.setQuery(q.copy(groupBy = it)) }) { sheet = null }
-        Sheet.SORT -> SortSheet(q, vm::setQuery) { sheet = null }
+        Sheet.SORT -> SortSheet(q, vm::setQuery, groupable = layout == null) { sheet = null }
         null -> Unit
     }
 }
@@ -189,42 +193,21 @@ private fun TaskList(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, 
     }
 }
 
-/** Filter, group and sort buttons, then the active filters as chips that remove themselves. Shared by the list and every view. */
+/** The active filters as chips that remove themselves. */
 @Composable
-fun FilterBar(
-    state: UiState,
-    vm: TaskViewModel,
-    onFilter: () -> Unit,
-    showSort: Boolean,
-    modifier: Modifier = Modifier,
-    onGroup: (() -> Unit)? = null,
-    onSort: (() -> Unit)? = null,
-) {
-    val q = state.query
-    Column(modifier) {
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
-            ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter, onFilter)
-            if (onGroup != null) ToolButton(tr("กลุ่ม: ", "Group: ") + q.groupBy.label, false, onClick = onGroup)
-            if (showSort) {
-                val extra = if (q.sorts.size > 1) " +${q.sorts.size - 1}" else ""
-                ToolButton(tr("เรียง: ", "Sort: ") + "${q.sortBy.label} ${if (q.ascending) "↑" else "↓"}$extra", false, onClick = onSort ?: { vm.setQuery(q.copy(ascending = !q.ascending)) })
-            }
-        }
-        val chips = q.activeChips()
-        if (chips.isNotEmpty()) {
-            Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                chips.forEach { (label, without) ->
-                    Row(
-                        Modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).background(C.accentSoft)
-                            .clickable { vm.setQuery(without) }.padding(start = 11.dp, end = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        Text(label, color = C.accentText, fontSize = TS.caption, maxLines = 1)
-                        Icon(Ic.close, tr("เอาออก", "Remove"), tint = C.accentText, modifier = Modifier.size(11.dp))
-                    }
-                }
+private fun ActiveFilters(state: UiState, vm: TaskViewModel, modifier: Modifier = Modifier) {
+    val chips = state.query.activeChips()
+    if (chips.isEmpty()) return
+    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        chips.forEach { (label, without) ->
+            Row(
+                Modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).background(C.accentSoft)
+                    .clickable { vm.setQuery(without) }.padding(start = 11.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(label, color = C.accentText, fontSize = TS.caption, maxLines = 1)
+                Icon(Ic.close, tr("เอาออก", "Remove"), tint = C.accentText, modifier = Modifier.size(11.dp))
             }
         }
     }
@@ -377,17 +360,23 @@ private fun NameDialog(title: String, onSave: (String) -> Unit, onDismiss: () ->
     )
 }
 
-/** Sort by several levels: the first decides, each next one breaks ties. */
+/** Sort by several levels: the first decides, each next one breaks ties. The list also groups here ([groupable]). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, onDismiss: () -> Unit) {
+fun SortSheet(q: TaskQuery, onChange: (TaskQuery) -> Unit, groupable: Boolean = false, onDismiss: () -> Unit) {
     val levels = q.sorts
     fun set(list: List<Pair<SortBy, Boolean>>) {
         if (list.isEmpty()) return
         onChange(q.copy(sortBy = list.first().first, ascending = list.first().second, thenBy = list.drop(1)))
     }
     SheetFrame(onDismiss) {
-        Text(tr("เรียงลำดับ", "Sort"), style = MaterialTheme.typography.titleMedium)
+        Text(if (groupable) tr("เรียงและจัดกลุ่ม", "Sort and group") else tr("เรียงลำดับ", "Sort"), style = MaterialTheme.typography.titleMedium)
+        if (groupable) {
+            Label(tr("จัดกลุ่มตาม", "Group by"))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                GroupBy.entries.forEach { g -> Chip(g.label, g == q.groupBy, { onChange(q.copy(groupBy = g)) }) }
+            }
+        }
         levels.forEachIndexed { i, (by, asc) ->
             Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
