@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watch alarm mockup</title>
+<style>
+:root{--bg:#0b0b0c;--card:#161618;--line:#2a2a2d;--raised:#232326;--text:#f2f2f3;--muted:#9a9aa0;--faint:#6c6c72;--accent:#b9c8ff;--red:#e06c6c;--lime:#a6d96a}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px}
+.wrap{max-width:420px;margin:0 auto}
+h2{font-size:14px;color:var(--muted);font-weight:500;margin:28px 0 10px}
+.note{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.5}
+.row{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.watch{width:190px;height:190px;border-radius:50%;background:#000;border:10px solid #2b2b2e;box-shadow:0 0 0 2px #3a3a3e;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative}
+.watch .small{font-size:12px;color:var(--muted)}
+.watch .big{font-size:40px;font-weight:500;letter-spacing:1px;margin:2px 0 10px}
+.btns{display:flex;gap:10px}
+.b{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-size:11px}
+.stop{background:var(--red);color:#fff}.snooze{background:#2f2f33;color:var(--text)}
+.mid{font-size:14px;margin:6px 0}
+.pill{font-size:11px;color:var(--lime);background:#a6d96a1f;border-radius:99px;padding:3px 10px;margin-top:8px}
+.cap{width:210px;text-align:center;font-size:12px;color:var(--muted);margin-top:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 14px 12px}
+.head{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}.head .t{flex:1}
+.sp{border-radius:99px;padding:2px 9px;font-weight:500;font-size:12.5px;color:var(--red);background:#e06c6c24}
+.tiles{display:flex;gap:8px;margin-top:8px}
+.tile{flex:1;background:var(--raised);border-radius:12px;padding:8px 12px}
+.tile small{display:block;font-size:12px;color:var(--muted)}.tile b{font-size:16px;font-weight:500}
+.why{margin-top:6px;font-size:12px;color:var(--faint)}
+.alarm{display:flex;align-items:center;gap:8px;margin-top:8px;background:var(--raised);border-radius:12px;padding:9px 12px;font-size:12.5px}
+.alarm.on{background:#a6d96a1f;color:var(--lime)}
+.alarm.warn{color:var(--red)}
+.ico{width:15px;height:15px;color:var(--accent)}.on .ico{color:var(--lime)}.warn .ico{color:var(--red)}
+</style></head><body><div class="wrap">
+<svg width="0" height="0" style="position:absolute">
+<symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+<symbol id="watch" viewBox="0 0 24 24"><path d="M8 6.5h8v11H8Z M9.5 6.5l.7-3h3.6l.7 3 M9.5 17.5l.7 3h3.6l.7-3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+</svg>
+
+<h2>มือถือ: ปุ่มบนการ์ดนอน (3 สถานะ)</h2>
+<div class="card">
+ <div class="head"><svg class="ico"><use href="#moon"/></svg><span class="t">คืนนี้</span><span class="sp">ได้นอน 4:52 ชม.</span></div>
+ <div class="tiles"><div class="tile"><small>นอน</small><b>20:37</b></div><div class="tile"><small>ตื่น</small><b>01:30</b></div></div>
+ <div class="why">เผื่อ 1 ชม. ก่อน 02:30: O11 รอบ 3 จาก พี่มิ้น</div>
+ <div class="alarm"><svg class="ico"><use href="#watch"/></svg>ปลุกที่นาฬิกา 01:30</div>
+ <div class="alarm on"><svg class="ico"><use href="#check"/></svg>นาฬิกาจะปลุก 01:30</div>
+ <div class="alarm warn"><svg class="ico"><use href="#watch"/></svg>ส่งไม่ถึงนาฬิกา แตะเพื่อลองใหม่</div>
+</div>
+<div class="note">ถ้าเปลี่ยนเวลาตื่นหลังตั้งปลุกแล้ว แอปจะส่งเวลาใหม่ไปแทนให้เอง ปลุกเก่าไม่ค้าง<br>แตะปุ่มสีเขียวอีกครั้งเพื่อยกเลิกปลุกคืนนี้</div>
+
+<h2>นาฬิกา</h2>
+<div class="row">
+ <div>
+  <div class="watch"><div class="small">Omni</div><div class="mid">ปลุกคืนนี้</div><div class="big" style="font-size:34px;margin:0">01:30</div><div class="pill">ได้นอน 4:52 ชม.</div></div>
+  <div class="cap">หน้าแอปบนนาฬิกา เปิดดูได้ว่าตั้งไว้กี่โมง</div>
+ </div>
+ <div>
+  <div class="watch"><div class="small">ตื่นได้แล้ว</div><div class="big">01:30</div><div class="btns"><div class="b snooze">+5 นาที</div><div class="b stop">หยุด</div></div></div>
+  <div class="cap">ตอนปลุก: สั่นเป็นจังหวะไม่หยุด จนกว่าจะกดหยุด หรือเลื่อน 5 นาที</div>
+ </div>
+</div>
+<div class="note">มือถือไม่ดังและไม่สั่น ปลุกที่นาฬิกาอย่างเดียว ถ้าไม่กดอะไรเลยจะสั่นนานสุด 10 นาทีแล้วเลื่อนให้เอง</div>
+
+<h2>นาฬิกา: ตั้งหรือแก้เวลาตื่นจากนาฬิกาเอง</h2>
+<div class="row">
+ <div>
+  <div class="watch"><div class="small">Omni</div><div class="mid">ปลุกคืนนี้</div><div class="big" style="font-size:34px;margin:0">01:30</div><div class="pill" style="color:var(--text);background:#2f2f33">แตะเพื่อแก้</div></div>
+  <div class="cap">แตะเวลาบนหน้าแรก (ถ้ายังไม่ได้ตั้ง จะเป็นปุ่ม "ตั้งปลุก")</div>
+ </div>
+ <div>
+  <div class="watch"><div class="small">ตื่น</div>
+   <div style="display:flex;align-items:center;gap:8px;margin:2px 0 8px"><div class="b snooze" style="width:34px;height:34px;font-size:18px">&minus;</div><div class="big" style="margin:0;font-size:34px">01:45</div><div class="b snooze" style="width:34px;height:34px;font-size:18px">+</div></div>
+   <div class="b" style="width:auto;height:auto;border-radius:99px;padding:6px 16px;background:var(--lime);color:#111;font-size:12px">บันทึก</div></div>
+  <div class="cap">ปุ่ม &minus; / + ทีละ 5 นาที หรือหมุนขอบนาฬิกา (กดค้างเพื่อเลื่อนเร็ว)</div>
+ </div>
+</div>
+<div class="note">บันทึกแล้ว เวลานี้กลับไปที่แอปบนมือถือเป็น "เวลาตื่นคืนนี้" การ์ดนอนคำนวณชั่วโมงนอนใหม่ และขึ้นว่า "ตั้งจากนาฬิกา"<br>การกด +5 นาทีตอนปลุก ไม่นับเป็นเวลาตื่นใหม่</div>
+</div></body></html>

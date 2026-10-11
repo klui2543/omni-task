@@ -97,6 +97,7 @@ object Ic {
     val calendar = icon("calendar", "M3.5 5h17v15h-17Z", "M3.5 10h17M8 3v4M16 3v4")
     val pen = icon("pen", "M4 20l1-4 11-11 3 3-11 11Z", "M14 7l3 3")
     val moon = icon("moon", "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z")
+    val watch = icon("watch", "M8 6.5h8v11H8Z", "M9.5 6.5l0.7-3h3.6l0.7 3M9.5 17.5l0.7 3h3.6l0.7-3")
     val branch = icon("branch", "M6 3.5v12", "M6 15.5a2.5 2.5 0 1 0 0.01 0Z", "M18 3.5a2.5 2.5 0 1 0 0.01 0Z", "M18 8.5c0 4.5-12 2.5-12 7")
     val archive = icon("archive", "M3.5 4.5h17v4h-17Z", "M5 8.5v11h14v-11", "M10 12.5h4")
     val trash = icon("trash", "M4 7h16", "M9.5 7V4.5h5V7", "M6.5 7l1 13h9l1-13", "M10 11v5.5M14 11v5.5")

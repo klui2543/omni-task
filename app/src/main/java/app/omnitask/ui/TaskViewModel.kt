@@ -40,6 +40,7 @@ import app.omnitask.notify.Digest
 import kotlinx.datetime.LocalDateTime
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.OmniList
+import app.omnitask.notify.WatchAlarm
 import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
@@ -150,8 +151,12 @@ data class UiState(
     /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
     val tonightBed: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     val tonightWake: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
-    /** The wake alarm last handed to the clock app, as the night's evening and the time. */
+    /** The wake alarm last sent to the watch, as the night's evening and the time. */
     val alarmSet: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
+    /** The last send did not reach a watch with Omni. */
+    val alarmFailed: Boolean = false,
+    /** Tonight's wake time was set on the watch. */
+    val wakeFromWatch: Boolean = false,
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
@@ -298,6 +303,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         tonightBed = nightPref(KEY_TONIGHT_BED),
         tonightWake = nightPref(KEY_TONIGHT_WAKE),
         alarmSet = nightPref(KEY_ALARM_SET),
+        wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false),
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
@@ -309,6 +315,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     // Any settings change is copied to the vault file a moment later, batching quick taps into one write.
     private var saveJob: Job? = null
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // A wake time set on the watch lands here from WatchListener.
+        if (key in WATCH_KEYS) {
+            _state.update {
+                it.copy(tonightWake = nightPref(KEY_TONIGHT_WAKE), alarmSet = nightPref(KEY_ALARM_SET), wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false), alarmFailed = false)
+            }
+        }
         if (key == null || key in SYNC_IGNORED) return@OnSharedPreferenceChangeListener
         val vault = _state.value.vault ?: return@OnSharedPreferenceChangeListener
         saveJob?.cancel()
@@ -1679,29 +1691,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Tonight's wake time, or null to go back to the usual one (or an hour before the morning's first event). */
     fun setTonightWake(evening: LocalDate, time: kotlinx.datetime.LocalTime?) {
-        prefs.edit().apply { if (time == null) remove(KEY_TONIGHT_WAKE) else putString(KEY_TONIGHT_WAKE, nightValue(evening, time)) }.apply()
-        _state.update { it.copy(tonightWake = time?.let { evening to it }) }
+        prefs.edit().apply { if (time == null) remove(KEY_TONIGHT_WAKE) else putString(KEY_TONIGHT_WAKE, nightValue(evening, time)) }.putBoolean(KEY_WAKE_FROM_WATCH, false).apply()
+        _state.update { it.copy(tonightWake = time?.let { evening to it }, wakeFromWatch = false) }
     }
 
-    /**
-     * Hands the wake alarm to the phone's clock app (Samsung Clock rings it on a paired Galaxy Watch too).
-     * The clock app keeps it, so it rings even if Omni is closed.
-     */
-    fun setWakeAlarm(evening: LocalDate, time: kotlinx.datetime.LocalTime) {
-        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
-            .putExtra(android.provider.AlarmClock.EXTRA_HOUR, time.hour)
-            .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, time.minute)
-            .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, tr("ตื่นนอน (Omni)", "Wake up (Omni)"))
-            .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
-            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        val ok = runCatching { getApplication<Application>().startActivity(intent) }.isSuccess
-        if (ok) prefs.edit().putString(KEY_ALARM_SET, nightValue(evening, time)).apply()
-        _state.update {
-            it.copy(
-                alarmSet = if (ok) evening to time else it.alarmSet,
-                message = if (ok) tr("ตั้งปลุก ${"%02d:%02d".format(time.hour, time.minute)} ในแอปนาฬิกาแล้ว", "Alarm set for ${"%02d:%02d".format(time.hour, time.minute)} in the Clock app")
-                else tr("ไม่พบแอปนาฬิกาที่ตั้งปลุกได้", "No clock app can set the alarm"),
-            )
+    /** Sends tonight's wake time to the watch, which rings it (the phone stays quiet); null [wakeAt] cancels it. */
+    fun setWakeAlarm(evening: LocalDate, wakeAt: LocalDateTime?, sleepMinutes: Long = 0) {
+        viewModelScope.launch {
+            val reached = withContext(Dispatchers.IO) { WatchAlarm.send(getApplication(), wakeAt, sleepMinutes) }
+            val set = wakeAt?.let { evening to it.time }
+            if (reached) prefs.edit().apply { if (set == null) remove(KEY_ALARM_SET) else putString(KEY_ALARM_SET, nightValue(set.first, set.second)) }.apply()
+            _state.update {
+                if (reached) it.copy(alarmSet = set, alarmFailed = false)
+                else it.copy(alarmFailed = true, message = tr("ส่งไม่ถึงนาฬิกา ดูว่าเชื่อมต่ออยู่และลง Omni บนนาฬิกาแล้ว", "Could not reach the watch. Check it is connected and has Omni"))
+            }
         }
     }
 
@@ -1794,8 +1797,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_CUSTOM_KINDS = "customKinds"
         const val KEY_HIDDEN_KINDS = "hiddenKinds"
         const val KEY_TONIGHT_BED = "sleep.tonight"
-        const val KEY_TONIGHT_WAKE = "sleep.tonight.wake"
-        const val KEY_ALARM_SET = "sleep.alarm"
+        // WatchListener writes these too, when a wake time is set on the watch.
+        const val KEY_TONIGHT_WAKE = WatchAlarm.KEY_TONIGHT_WAKE
+        const val KEY_ALARM_SET = WatchAlarm.KEY_ALARM_SET
+        const val KEY_WAKE_FROM_WATCH = WatchAlarm.KEY_WAKE_FROM_WATCH
+        private val WATCH_KEYS = setOf(KEY_TONIGHT_WAKE, KEY_ALARM_SET, KEY_WAKE_FROM_WATCH)
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"
