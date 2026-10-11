@@ -118,7 +118,7 @@ fun YgdrasilScreen(
     val far by remember { derivedStateOf { scale < 0.45f } }
 
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
-    naming?.let { (title, done) -> NameDialog(title, { done(it); naming = null }) { naming = null } }
+    naming?.let { (title, done) -> MapNameDialog(title, { done(it); naming = null }) { naming = null } }
     var filtering by remember { mutableStateOf(false) }
     if (filtering) YgdrasilFilterDialog(filter, onFilter) { filtering = false }
 

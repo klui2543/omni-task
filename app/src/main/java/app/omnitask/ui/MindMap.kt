@@ -143,7 +143,7 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
     }
 
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
-    naming?.let { (title, done) -> NameDialog(title, { done(it); naming = null }) { naming = null } }
+    naming?.let { (title, done) -> MapNameDialog(title, { done(it); naming = null }) { naming = null } }
 
     // The map takes the whole screen: the bottom bar and the round assistant button step aside while it shows.
     val dock = LocalDockClearance.current
@@ -318,7 +318,7 @@ internal fun MapButton(text: String, filled: Boolean = false, onClick: () -> Uni
 }
 
 @Composable
-internal fun NameDialog(title: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun MapNameDialog(title: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
