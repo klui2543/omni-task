@@ -5,7 +5,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.database.ContentObserver
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.CalendarContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
@@ -308,12 +312,40 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Google Calendar syncs into the phone's calendar on its own time: follow it as the events land instead of waiting for the next reload. */
+    private val calendarObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = refreshEvents()
+    }
+    private var eventsJob: Job? = null
+
     init {
         prefs.registerOnSharedPreferenceChangeListener(settingsListener)
+        runCatching { getApplication<Application>().contentResolver.registerContentObserver(CalendarContract.CONTENT_URI, true, calendarObserver) }
     }
 
     override fun onCleared() {
         prefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
+        getApplication<Application>().contentResolver.unregisterContentObserver(calendarObserver)
+    }
+
+    /** The events every screen needs: the month view plus the Gantt's three weeks, which can run into next month. */
+    private fun loadEvents(app: Application): List<CalendarEvent> = runCatching {
+        val today = LocalDate.now()
+        val now = CalendarReader.month(app, today) + CalendarReader.events(app, today.minusDays(7).atStartOfDay(), today.plusDays(35).atStartOfDay())
+        val other = shownMonth?.takeIf { it.withDayOfMonth(1) != LocalDate.now().withDayOfMonth(1) }?.let { CalendarReader.month(app, it) }.orEmpty()
+        (now + other).distinctBy { it.id to it.begin }
+    }.getOrDefault(emptyList())
+
+    /** Re-reads only the calendar (not the vault) once a sync settles, then redraws the widgets so they follow too. */
+    private fun refreshEvents() {
+        eventsJob?.cancel()
+        eventsJob = viewModelScope.launch {
+            delay(1500)
+            val app = getApplication<Application>()
+            val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
+            _state.update { it.copy(events = events, calendars = calendars) }
+            runCatching { OmniWidgets.refresh(app) }
+        }
     }
 
     val state: StateFlow<UiState> = _state
@@ -375,13 +407,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val app = getApplication<Application>()
             launch { runCatching { OmniWidgets.refresh(app) } }
             val events = withContext(Dispatchers.IO) {
-                runCatching {
-                    val today = LocalDate.now()
-                    // The month view plus the Gantt's three weeks, which can run into next month.
-                    val now = CalendarReader.month(app, today) + CalendarReader.events(app, today.minusDays(7).atStartOfDay(), today.plusDays(35).atStartOfDay())
-                    val other = shownMonth?.takeIf { it.withDayOfMonth(1) != LocalDate.now().withDayOfMonth(1) }?.let { CalendarReader.month(app, it) }.orEmpty()
-                    (now + other).distinctBy { it.id to it.begin }
-                }.getOrDefault(emptyList())
+                runCatching { CalendarReader.requestSync(app) }
+                loadEvents(app)
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }

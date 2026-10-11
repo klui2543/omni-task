@@ -71,6 +71,7 @@ import app.omnitask.time.*
 /** Redraws every Omni Task widget; called after the app or a widget changes the vault. */
 object OmniWidgets {
     suspend fun refresh(context: Context) {
+        CalendarWatch.armIfNeeded(context)
         listOf(QuickAddWidget(), TodayWidget(), NextWidget(), MatrixWidget(), WaitingWidget()).forEach {
             runCatching { it.updateAll(context) }
         }

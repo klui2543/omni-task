@@ -81,33 +81,9 @@ enum class Mode(private val th: String, private val en: String) {
     val label get() = tr(th, en)
 }
 
-@Composable
-fun ViewsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
-    var mode by rememberSaveable { mutableStateOf(Mode.KANBAN) }
-    var filtering by remember { mutableStateOf(false) }
-    var sorting by remember { mutableStateOf(false) }
-    val q = state.query
-    // Every view honours the same filters as the task list. Kanban shows all statuses as its columns,
-    // so the status filter only narrows the other views, and only when it differs from the default.
-    val pool = state.tasks.filter { q.copy(statuses = emptySet()).matches(it, state.today) }
-    // "Hide done" (on by default) keeps finished and cancelled work out of every view.
-    val narrowed = (if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses })
-        .filter { !q.hideDone || it.isOpen }
-    Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
-            Text(tr("มุมมอง", "Views"), Modifier.padding(start = 4.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineSmall, color = C.text)
-            Segmented(Mode.entries.map { it to it.label }, mode, { mode = it }, Modifier.fillMaxWidth())
-            FilterBar(state, vm, onFilter = { filtering = true }, showSort = mode == Mode.KANBAN, modifier = Modifier.padding(top = 8.dp), onSort = { sorting = true })
-        }
-        ViewBody(mode, state, pool, narrowed, vm, onOpen)
-    }
-    if (filtering) FilterSheet(state, vm) { filtering = false }
-    if (sorting) SortSheet(state.query, vm::setQuery) { sorting = false }
-}
-
 /**
  * One view over [pool] (every status, for Kanban's columns) or [narrowed] (what the other views show).
- * The Views tab passes the filtered vault; a project passes its own tasks ([scoped]: only its subtasks join the calendar).
+ * The Tasks tab passes the filtered vault; a project passes its own tasks ([scoped]: only its subtasks join the calendar).
  */
 @Composable
 fun ViewBody(mode: Mode, state: UiState, pool: List<Task>, narrowed: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit, scoped: Boolean = false) {
