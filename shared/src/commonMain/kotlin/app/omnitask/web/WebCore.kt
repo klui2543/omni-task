@@ -257,6 +257,11 @@ object WebCore {
                 line { TaskLine.addTag(it, tag) }
             }
             "removeTag" -> line { TaskLine.removeTag(it, op.value!!) }
+            // Moved to another project or branch (Project Ygdrasil): [field] is the tag it had.
+            "moveTo" -> {
+                val tag = value ?: return fail("empty")
+                line { TaskLine.retag(it, op.field, tag) }
+            }
             "status" -> line { TaskLine.setStatus(it, Status.valueOf(op.value!!), day) }
             // The kind tag (#รอ, #อนาคต, #สักวัน) is swapped for the new one, as Android's kind picker does.
             "kind" -> {

@@ -1046,6 +1046,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeTag(task: Task, tag: String) = edit(task) { TaskLine.removeTag(it, tag) }
 
+    /** Project Ygdrasil: the task moves to another project or branch; its project tag becomes [tag] where it stands. */
+    fun moveTask(task: Task, tag: String) {
+        val from = Projects.tagOf(task)
+        if (from == tag) return
+        edit(task) { TaskLine.retag(it, from, tag) }
+    }
+
     /**
      * Dragging between quadrants changes importance only (priority ⏫ in, 🔼 out).
      * Urgency comes from the dates, so a move across the urgent / not-urgent line is refused.

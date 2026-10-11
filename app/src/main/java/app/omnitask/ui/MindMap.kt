@@ -143,7 +143,7 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
     }
 
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
-    naming?.let { (title, done) -> NameDialog(title, { done(it); naming = null }) { naming = null } }
+    naming?.let { (title, done) -> MapNameDialog(title, { done(it); naming = null }) { naming = null } }
 
     // The map takes the whole screen: the bottom bar and the round assistant button step aside while it shows.
     val dock = LocalDockClearance.current
@@ -303,14 +303,14 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
 }
 
 @Composable
-private fun ZoomKey(text: String, description: String, onClick: () -> Unit) {
+internal fun ZoomKey(text: String, description: String, onClick: () -> Unit) {
     Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Text(text, color = C.text, fontSize = if (text.length == 1) TS.title else TS.caption)
     }
 }
 
 @Composable
-private fun MapButton(text: String, filled: Boolean = false, onClick: () -> Unit) {
+internal fun MapButton(text: String, filled: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier.height(36.dp).clip(RoundedCornerShape(10.dp)).background(if (filled) C.accent else C.raised).clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
@@ -318,7 +318,7 @@ private fun MapButton(text: String, filled: Boolean = false, onClick: () -> Unit
 }
 
 @Composable
-private fun NameDialog(title: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun MapNameDialog(title: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,

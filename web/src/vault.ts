@@ -9,9 +9,9 @@ import { branchStates } from './ui/projects/projectState'
 import { config } from './config'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
 import {
-  addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote,
+  addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote, ygdrasil,
 } from './core'
-import type { BranchOp, BranchResult, ListNote, ProjectEditResult, ProjectsIn, ProjectsOut } from './types'
+import type { BranchOp, BranchResult, ListNote, ProjectEditResult, ProjectsIn, ProjectsOut, YgFilter, YgOut } from './types'
 import { MANY, NoteIndex, NoteText, samePath } from './noteIndex'
 import { customKindTags } from './kinds'
 import { WebNotesApi } from './kotlin/OmniTask-shared.mjs'
@@ -692,6 +692,14 @@ export class Snapshot {
     const key = { state, kinds: customKindTags(), notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }
     return this.memoed('projects', key, () =>
       projects(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state))
+  }
+
+  /** Project Ygdrasil: every project in one tree, under the filter, with the folded limbs closed. */
+  ygdrasil(notes: ListNote[], state: ProjectsIn, filter: YgFilter, folded: string[]): YgOut {
+    const s = this.source()
+    const key = { state, filter, folded, kinds: customKindTags(), notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }
+    return this.memoed('ygdrasil', key, () =>
+      ygdrasil(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state, filter, folded))
   }
 
   /** What the shared code does to the branch states of a project, from the tasks as they stand. */

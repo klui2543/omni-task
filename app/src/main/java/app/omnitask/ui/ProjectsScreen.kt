@@ -47,6 +47,7 @@ import app.omnitask.model.Branches
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
+import app.omnitask.model.Ygdrasil
 import app.omnitask.model.label
 import app.omnitask.model.tr
 import app.omnitask.time.*
@@ -75,8 +76,13 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     // Inside a project: the overview (null) or one of the views over just its tasks.
     var projectView by rememberSaveable { mutableStateOf<Mode?>(null) }
     var mapping by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = open != null || openList != null) {
+    // Project Ygdrasil, with its filter and folded limbs kept while the tab is open.
+    var world by rememberSaveable { mutableStateOf(false) }
+    var ygFilter by rememberSaveable { mutableStateOf("") }
+    var ygFolded by rememberSaveable { mutableStateOf("") }
+    BackHandler(enabled = open != null || openList != null || world) {
         when {
+            world -> world = false
             mapping -> mapping = false
             projectView != null -> projectView = null
             else -> { openName = null; openListPath = null; listCategory = null }
@@ -103,6 +109,17 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         DeleteListDialog(openList, own, pulled, { vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null }) { deletingList = false }
     }
 
+    if (world && open == null && openList == null) {
+        YgdrasilScreen(
+            state, vm,
+            filter = Ygdrasil.Filter.decode(ygFilter), onFilter = { ygFilter = it.encode() },
+            folded = ygFolded.split('\n').filter { it.isNotEmpty() }.toSet(), onFolded = { ygFolded = it.joinToString("\n") },
+            onOpen = onOpen,
+            onOpenProject = { name -> world = false; openName = name; projectView = null; mapping = true },
+            onBack = { world = false },
+        )
+        return
+    }
     if (open != null && mapping) {
         MindMapScreen(Branches.tree(open.name, projectTasks, state.branchStates), vm, onOpen) { mapping = false }
         return
@@ -165,6 +182,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             listDetail(openList, state, vm, listCategory, { listCategory = it }, onOpen) { pickingIcon = true }
         } else if (open == null) {
             if (projects.isEmpty()) item { Card { Text(tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet"), Modifier.padding(16.dp), color = C.muted) } }
+            if (projects.isNotEmpty() && !arranging) item(key = "ygdrasil entry") { YgdrasilEntry { world = true } }
             shown.forEachIndexed { i, p ->
                 item(key = p.name) {
                     val lifted = dragging == p.name

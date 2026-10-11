@@ -117,19 +117,35 @@ object TaskLine {
      * Adds `#tag` among the line's tags, keeping TaskForge's order: plain tags, then any
      * `#remind-at-… ⏰ HH:mm` pair, then priority and the rest.
      */
-    fun addTag(raw: String, tag: String): String = editBody(raw) { body ->
-        val name = normalizeTag(tag)
-        if (name.isEmpty() || TAG.findAll(body).any { it.value.equals("#$name", ignoreCase = true) }) return@editBody body
+    fun addTag(raw: String, tag: String): String = editBody(raw) { addTagToBody(it, normalizeTag(tag)) }
+
+    private fun addTagToBody(body: String, name: String): String {
+        if (name.isEmpty() || TAG.findAll(body).any { it.value.equals("#$name", ignoreCase = true) }) return body
         val token = "#$name"
         val tags = TAG.findAll(body).toList()
         val reminder = tags.firstOrNull { it.value.startsWith("#remind-at-") }
         val pos = reminder?.range?.first
             ?: tags.lastOrNull()?.let { it.range.last + 1 }
             ?: listOf(TIME, PRIORITY, RECURRENCE, ANY_DATE).mapNotNull { it.find(body)?.range?.first }.minOrNull()
-            ?: return@editBody if (body.isBlank()) token else "${body.trimEnd()} $token"
+            ?: return if (body.isBlank()) token else "${body.trimEnd()} $token"
         val before = body.substring(0, pos).trimEnd()
         val after = body.substring(pos).trimStart()
-        listOf(before, token, after).filter { it.isNotEmpty() }.joinToString(" ")
+        return listOf(before, token, after).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+
+    /**
+     * Moves a task to another project or branch: its project tag [old] becomes [new] where it stands, so it stays the
+     * first tag the line has; with no [old] tag on the line, [new] is added as [addTag] does.
+     */
+    fun retag(raw: String, old: String?, new: String): String {
+        val name = normalizeTag(new)
+        if (name.isEmpty() || old == name) return raw
+        return editBody(raw) { body0 ->
+            // The new tag may already sit further along the line; it is kept once, where the old one stood.
+            val body = TAG.findAll(body0).firstOrNull { it.value.equals("#$name", ignoreCase = true) }?.let { remove(body0, it.range) } ?: body0
+            val at = old?.let { o -> TAG.findAll(body).firstOrNull { it.value == "#$o" } }
+            if (at == null) addTagToBody(body, name) else body.replaceRange(at.range, "#$name")
+        }
     }
 
     fun removeTag(raw: String, tag: String): String = editBody(raw) { body ->

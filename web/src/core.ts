@@ -73,7 +73,7 @@ export const addTaskInStatus = (text: string, sentence: string, status: Task['st
 
 /* ---------- Projects ---------- */
 
-import type { BranchOp, BranchResult, ProjectEditResult, ProjectsIn, ProjectsOut } from './types'
+import type { BranchOp, BranchResult, ProjectEditResult, ProjectsIn, ProjectsOut, YgFilter, YgOut } from './types'
 
 const TAGS_KEY = 'omni.ignoredTags'
 
@@ -95,6 +95,14 @@ const edited = (json: string): ProjectEditResult => JSON.parse(json)
 /** Projects, branches and lists from the TaskForge note, the list notes and what this device chose. */
 export const projects = (fileKey: string, path: string, text: string, notes: { key: string; path: string; text: string }[], state: ProjectsIn): ProjectsOut =>
   JSON.parse(api.projects(fileKey, path, text, JSON.stringify(notes), JSON.stringify({ ...state, kindTags: customKindTags() }), today()))
+
+/** Project Ygdrasil: every project in one tree, placed by the shared code; see WebYgdrasil. */
+export const ygdrasil = (
+  fileKey: string, path: string, text: string, notes: { key: string; path: string; text: string }[], state: ProjectsIn, filter: YgFilter, folded: string[],
+): YgOut =>
+  JSON.parse(api.ygdrasil(
+    fileKey, path, text, JSON.stringify(notes), JSON.stringify({ ...state, kindTags: customKindTags() }), JSON.stringify(filter), JSON.stringify(folded), today(),
+  ))
 
 /** A project or branch tag renamed in every task line of [text]; `changed` counts the lines. */
 export const renameTag = (text: string, old: string, name: string) => edited(api.projectRenameTag(text, old, name))
