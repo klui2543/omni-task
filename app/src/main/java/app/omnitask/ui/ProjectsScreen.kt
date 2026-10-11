@@ -71,6 +71,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var listCategory by rememberSaveable { mutableStateOf<String?>(null) }
     var creatingList by remember { mutableStateOf(false) }
     var pickingIcon by remember { mutableStateOf(false) }
+    var deletingList by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     // Inside a project: the overview (null) or one of the views over just its tasks.
     var projectView by rememberSaveable { mutableStateOf<Mode?>(null) }
@@ -102,6 +103,11 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     }
     if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
     if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
+    if (deletingList && openList != null) {
+        val own = state.itemsOf(openList).count { it.list != null }
+        val pulled = state.itemsOf(openList).size - own
+        DeleteListDialog(openList, own, pulled, { vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null }) { deletingList = false }
+    }
 
     if (world && open == null && openList == null) {
         YgdrasilScreen(
@@ -160,6 +166,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     )
                 }
                 if (open != null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
+                if (openList != null) SquareButton(Ic.trash, tr("ลบรายการนี้", "Delete this list"), { deletingList = true })
                 if (open == null && openList == null && projects.size > 1) {
                     Text(
                         if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),

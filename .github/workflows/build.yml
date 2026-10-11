@@ -119,6 +119,8 @@ jobs:
           gradle assembleRelease --no-daemon --stacktrace
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/omni-task-0.2.${OMNI_BUILD_NUMBER}.apk"
+          # The Galaxy Watch app (the wake alarm). Obtainium on the phone should filter APKs by "omni-task".
+          cp wear/build/outputs/apk/release/wear-release.apk "dist/omni-watch-0.2.${OMNI_BUILD_NUMBER}.apk"
 
       - uses: actions/upload-artifact@v4
         with:

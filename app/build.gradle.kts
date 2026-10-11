@@ -87,6 +87,8 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     // Google sign-in for Drive, and HTTP for Drive's API (the Omni folder, see DriveLink).
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // The wake alarm goes to the watch app (see WatchAlarm and the wear module).
+    implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation("junit:junit:4.13.2")

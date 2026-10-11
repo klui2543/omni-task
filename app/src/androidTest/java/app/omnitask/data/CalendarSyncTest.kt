@@ -67,13 +67,13 @@ class CalendarSyncTest {
         if (calendarId >= 0) context.contentResolver.delete(syncAdapter(CalendarContract.Calendars.CONTENT_URI), "${CalendarContract.Calendars._ID} = ?", arrayOf("$calendarId"))
     }
 
-    private fun waitFor(what: String, seconds: Int = 30, ok: () -> Boolean) {
+    private fun waitFor(what: String, seconds: Int = 30, detail: () -> String = { "" }, ok: () -> Boolean) {
         val end = System.currentTimeMillis() + seconds * 1000L
         while (System.currentTimeMillis() < end) {
             if (ok()) return
             Thread.sleep(250)
         }
-        error("gave up waiting for $what")
+        error("gave up waiting for $what${detail().let { if (it.isEmpty()) "" else ": $it" }}")
     }
 
     private fun addEvent(title: String): Long {
@@ -86,8 +86,16 @@ class CalendarSyncTest {
         val vm = TaskViewModel(context as Application)
         // Nothing is loaded or reloaded: only the provider changes.
         check(vm.state.value.events.none { it.title == "Omni sync test" })
-        addEvent("Omni sync test")
-        waitFor("the event to reach the app's state") { vm.state.value.events.any { it.title == "Omni sync test" } }
+        val id = addEvent("Omni sync test")
+        // On a failure, say what the app holds and what the provider gives, so the cause shows in the log.
+        val detail = {
+            val now = LocalDateTime.now()
+            val provider = CalendarReader.events(context, now.minusDays(1), now.plusDays(2))
+            "event $id in calendar $calendarId at ${now.plusHours(1)}; app has ${vm.state.value.events.size} events " +
+                "${vm.state.value.events.map { it.title }.take(5)}; provider has ${provider.map { it.title }}, hidden ${CalendarReader.hiddenIds(context)}, " +
+                "zone ${java.time.ZoneId.systemDefault()}"
+        }
+        waitFor("the event to reach the app's state", detail = detail) { vm.state.value.events.any { it.title == "Omni sync test" } }
     }
 
     @Test

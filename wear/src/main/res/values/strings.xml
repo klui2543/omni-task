@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tonight">ปลุกคืนนี้</string>
+    <string name="none">ยังไม่ได้ตั้งปลุก</string>
+    <string name="set">ตั้งปลุก</string>
+    <string name="wake">ตื่น</string>
+    <string name="save">บันทึก</string>
+    <string name="tap_to_edit">แตะเพื่อแก้</string>
+    <string name="sleep">ได้นอน %1$s ชม.</string>
+    <string name="wake_up">ตื่นได้แล้ว</string>
+    <string name="snooze">+5 นาที</string>
+    <string name="stop">หยุด</string>
+</resources>

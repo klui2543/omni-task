@@ -51,6 +51,14 @@
             </intent-filter>
         </receiver>
 
+        <!-- A wake time set on Omni on the watch comes back through here. -->
+        <service android:name=".notify.WatchListener" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/wake/watch" />
+            </intent-filter>
+        </service>
+
         <!-- Wakes when Google Calendar syncs into the phone, so the widgets show a new event at once. -->
         <service
             android:name=".widget.CalendarWatchService"

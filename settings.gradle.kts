@@ -31,3 +31,4 @@ dependencyResolutionManagement {
 rootProject.name = "OmniTask"
 include(":app")
 include(":shared")
+include(":wear")

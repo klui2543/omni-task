@@ -34,6 +34,18 @@ class NightAndCountdownTest {
     }
 
     @Test
+    fun aWakeTimePickedForTonightBeatsTheMorningEvent() {
+        val now = LocalDateTime.parse("2026-10-08T22:00")
+        val shift = CalendarEvent(1, "เวรเช้า", LocalDateTime.parse("2026-10-09T05:30"), LocalDateTime.parse("2026-10-09T13:00"))
+        val n = DayPlan.night(listOf(shift), profile, now, LocalTime.of(23, 0), wake = LocalTime.of(5, 0))!!
+        assertEquals(LocalDateTime.parse("2026-10-09T05:00"), n.wakeAt)
+        assertEquals(6 * 60L, n.sleep)
+        assertNull(n.because)
+        // A wake later than the usual one keeps the night going past 06:00.
+        assertEquals(LocalDateTime.parse("2026-10-09T08:00"), DayPlan.night(emptyList(), profile, LocalDateTime.parse("2026-10-09T06:30"), LocalTime.of(23, 0), wake = LocalTime.of(8, 0))!!.wakeAt)
+    }
+
+    @Test
     fun aPassedBedtimeMeansNowAndDaytimeHasNoNight() {
         val late = DayPlan.night(emptyList(), profile, LocalDateTime.parse("2026-10-08T23:30"), LocalTime.of(22, 30))!!
         assertEquals(0L, late.toBed)

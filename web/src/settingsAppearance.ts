@@ -1,4 +1,4 @@
-// Theme, palette, font and text size, kept on this device (Android's Appearance, which it also syncs through its
+// Theme, palette, font and text size, kept on this device (Android's Appearance (the 'linear' key is the graphite look; it kept the name it had when it was blue), which it also syncs through its
 // settings file; the web does not read that file). Importing this file applies the saved choice at once, so the
 // app never flashes the default look.
 
@@ -7,7 +7,7 @@ export type PaletteChoice = 'linear' | 'midnight'
 export type FontChoice = 'sarabun' | 'plex' | 'noto' | 'prompt' | 'system'
 
 export const THEMES: [ThemeMode, string][] = [['system', 'ตามระบบ'], ['light', 'สว่าง'], ['dark', 'มืด']]
-export const PALETTES: [PaletteChoice, string][] = [['linear', 'Linear'], ['midnight', 'สีเดิม (มืดเท่านั้น)']]
+export const PALETTES: [PaletteChoice, string][] = [['linear', 'สงบ (Graphite)'], ['midnight', 'สีเดิม (มืดเท่านั้น)']]
 export const SCALES = [0.9, 1, 1.15, 1.3]
 
 export const FONTS: { id: FontChoice; label: string; family: string; google: string | null }[] = [
