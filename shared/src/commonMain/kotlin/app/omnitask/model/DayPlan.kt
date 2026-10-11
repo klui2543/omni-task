@@ -143,17 +143,21 @@ object DayPlan {
 
     /**
      * From 18:00 until the morning wake time: bed is at [bedtime] (tonight's, after midnight when it is before
-     * noon, or now if it has passed), and sleep ends as in [sleepLeft]. Null during the day.
+     * noon, or now if it has passed), and sleep ends as in [sleepLeft]. A [wake] picked for tonight replaces the
+     * profile's and is kept as it is, so a morning event no longer pulls it earlier. Null during the day.
      */
-    fun night(events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, bedtime: LocalTime): Night? {
+    fun night(events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, bedtime: LocalTime, wake: LocalTime? = null): Night? {
+        val p = if (wake != null) profile.copy(wake = wake) else profile
         val t = now.toLocalTime()
         val evening = t >= LocalTime.of(18, 0)
-        if (!evening && t >= profile.wake) return null
+        if (!evening && t >= p.wake) return null
         // The evening this night belongs to.
         val eve = if (evening) now.toLocalDate() else now.toLocalDate().minusDays(1)
         val planned = if (bedtime >= LocalTime.NOON) eve.atTime(bedtime) else eve.plusDays(1).atTime(bedtime)
         val bedAt = if (planned < now) now else planned
-        val left = sleepLeft(events, profile, bedAt.coerceAtMostMorning(eve, profile)) ?: return null
+        // With a picked wake time only what is still on at bedtime counts (a shift running late), not the morning's events.
+        val counted = if (wake != null) events.filter { it.begin <= bedAt } else events
+        val left = sleepLeft(counted, p, bedAt.coerceAtMostMorning(eve, p)) ?: return null
         return Night(ChronoUnit.MINUTES.between(now, bedAt).coerceAtLeast(0), left.minutes, bedAt, left.wakeAt, left.because)
     }
 
