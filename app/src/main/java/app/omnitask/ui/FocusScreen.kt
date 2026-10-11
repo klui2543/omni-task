@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -263,9 +264,10 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         val showWaiting = TaskKind.WAITING !in state.hiddenKinds
         val showFuture = TaskKind.FUTURE !in state.hiddenKinds
         if (showWaiting || showFuture) item {
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (showWaiting) Card(Modifier.weight(1f).fillMaxHeight()) {
-                    Column(Modifier.fillMaxHeight().padding(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Each card is as tall as its own content; the shorter one does not stretch to match the taller.
+                if (showWaiting) Card(Modifier.weight(1f)) {
+                    Column(Modifier.padding(12.dp)) {
                         CardHead(Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), "${brief.waiting.size}")
                         if (brief.waiting.isEmpty()) {
                             Text(tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
@@ -283,8 +285,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                     }
                 }
-                if (showFuture) Card(Modifier.weight(1f).fillMaxHeight()) {
-                    Column(Modifier.fillMaxHeight().padding(12.dp)) {
+                if (showFuture) Card(Modifier.weight(1f)) {
+                    Column(Modifier.padding(12.dp)) {
                         CardHead(Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), null)
                         if (brief.future.isEmpty()) {
                             Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
@@ -297,8 +299,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                 SmallButton(tr("ข้ามวันนี้", "Skip today"), filled = false, modifier = Modifier.padding(top = 8.dp)) { vm.skipFuture(t) }
                             }
                         }
-                        Spacer(Modifier.weight(1f))
-                        Box(Modifier.padding(top = 10.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                        Box(Modifier.padding(top = 12.dp).fillMaxWidth().height(1.dp).background(C.divider))
                         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 tr("เลือกงาน", "Pick"),
@@ -422,10 +423,13 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
     ) {
         TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 36.dp)
         Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
-            Text(
-                t.title, color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
-                textDecoration = if (done) TextDecoration.LineThrough else null,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    t.title, Modifier.weight(1f, fill = false), color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
+                    textDecoration = if (done) TextDecoration.LineThrough else null,
+                )
+                PriorityDot(t)
+            }
             // Every row here is today's, so "due today" would only repeat. A finished task is one line.
             val lateText = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
             val rest = if (done) "" else listOfNotNull(
@@ -460,7 +464,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     val past = phase == DayPlan.Phase.PAST
     val running = phase == DayPlan.Phase.ACTIVE
     val fraction = if (running) DayPlan.progress(e, now) else 0f
-    val bg = if (past) C.raised else C.tealSoft
+    val bg = if (past && !C.calm) C.raised else C.tealSoft
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
     // Every event here is from the phone's calendar and on today's page, so neither needs saying.
@@ -468,7 +472,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     val left = ChronoUnit.MINUTES.between(now, e.end)
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(
-            Modifier.weight(1f).heightIn(min = if (running) 0.dp else 36.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
+            Modifier.weight(1f).heightIn(min = if (running) 0.dp else 36.dp).height(IntrinsicSize.Min).clip(if (C.calm) RectangleShape else RoundedCornerShape(8.dp)).background(bg)
                 .drawBehind {
                     if (running) {
                         val y = size.height * fraction
@@ -477,9 +481,9 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
                         drawCircle(red, 3.5.dp.toPx(), Offset(3.5.dp.toPx(), y))
                     }
                 }
-                .padding(horizontal = 10.dp, vertical = if (running) 8.dp else 4.dp),
+                .padding(start = if (C.calm) 0.dp else 10.dp, end = 10.dp, top = if (running) 8.dp else 4.dp, bottom = if (running) 8.dp else 4.dp),
         ) {
-            Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (past) C.faint else C.teal))
+            Box(Modifier.width(3.dp).fillMaxHeight().background(if (past) C.faint else C.teal))
             if (running) {
                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
                     Text(e.title, color = C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)

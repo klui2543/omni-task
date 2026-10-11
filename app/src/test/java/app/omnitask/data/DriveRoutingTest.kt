@@ -94,6 +94,23 @@ class DriveRoutingTest {
     }
 
     @Test
+    fun anEditedNoteReadsBackWithoutLoadingTheVault() {
+        val repo = VaultRepository(context)
+        val a = repo.load(vault).tasks.first { it.title == "a" }
+        repo.addSubtask(a, "- [ ] a1")
+        repo.setDescription(a, "why")
+        // Only that note is read again, and its tasks come out as the whole load makes them (lines moved by the new ones included).
+        val back = repo.loadNote(a)!!
+        val whole = repo.load(vault).tasks.filter { it.fileUri == a.fileUri }
+        check(back.map { it.key to it.raw } == whole.map { it.key to it.raw }) { "$back != $whole" }
+        check(back.map { it.title } == listOf("a", "a1", "b")) { back.map { it.title }.toString() }
+        check(back.first { it.title == "a1" }.parent == back.first { it.title == "a" }.key)
+        // Offline the cached text answers, the same as a full load does.
+        drive.offline = true
+        check(repo.loadNote(a)!!.size == 3)
+    }
+
+    @Test
     fun addArchiveAndUndoUseDrive() {
         val repo = VaultRepository(context)
         repo.appendLine(vault, VaultRepository.TASK_FILE, "- [ ] c")

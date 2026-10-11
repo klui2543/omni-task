@@ -87,6 +87,17 @@ class VaultRepository(private val context: Context) {
         )
     }
 
+    /**
+     * The tasks of the one note [task] sits in, as [load] would make them, or null when the note cannot be read. Used
+     * after an edit, which changed that note only, so the screen does not wait for every note in the vault to be read.
+     */
+    fun loadNote(task: Task): List<Task>? {
+        val rel = drivePath(task.fileUri)
+        val text = (if (rel != null) DriveLink.use(context) { it.read(rel) } else readText(Uri.parse(task.fileUri))) ?: return null
+        val found = VaultText.parseFile(task.fileUri, task.filePath, text)
+        return Recurrence.withTodayCopies(task.list?.let { name -> found.map { it.copy(list = name) } } ?: found, LocalDate.now())
+    }
+
     /** A note to read: where it is and how to get its text. */
     private class Note(val uri: String, val path: String, val text: () -> String)
 

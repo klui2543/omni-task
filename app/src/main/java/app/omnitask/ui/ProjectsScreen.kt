@@ -60,8 +60,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val rank = state.projectOrder.withIndex().associate { it.value to it.index }
     // Parked branches still belong to their project, so the project (and the way back to it) never disappears.
     val projectTasks = state.tasks + state.parked
-    val projects = Projects.build(projectTasks, state.today)
-        .sortedWith(compareBy({ it.name !in state.starred }, { rank[it.name] ?: Int.MAX_VALUE }))
+    val built = remember(state.tasks, state.parked, state.today) { Projects.build(projectTasks, state.today) }
+    val projects = built.sortedWith(compareBy({ it.name !in state.starred }, { rank[it.name] ?: Int.MAX_VALUE }))
     var arranging by rememberSaveable { mutableStateOf(false) }
     var openName by rememberSaveable { mutableStateOf<String?>(null) }
     val open = projects.firstOrNull { it.name == openName }
