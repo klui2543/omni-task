@@ -24,6 +24,9 @@ h2{font-size:14px;color:var(--muted);font-weight:500;margin:26px 0 8px}
 .w .h{color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 .w .r{display:flex;gap:8px;padding:3px 0}.w .r .t{color:var(--muted);width:36px}
 .w .e{border-left:3px solid var(--blue);padding-left:8px}
+.we{border-left:3px solid var(--blue);padding:3px 0 3px 9px;margin:4px 0}.we b{display:block;font-weight:400;font-size:13.5px}.we span{font-size:11.5px;color:var(--muted)}
+.wt{display:flex;align-items:center;gap:8px;padding:4px 0}.wt b{display:block;font-weight:400;font-size:13.5px}.wt span{font-size:11.5px;color:var(--muted)}
+.ring{width:15px;height:15px;border-radius:50%;border:2px solid var(--faint);flex:none}
 </style></head><body><div class="wrap">
 
 <h2>หน้าโฟกัส: นัดทั้งวันอยู่บนสุด ใต้หัว "วันนี้"</h2>
@@ -47,15 +50,15 @@ h2{font-size:14px;color:var(--muted);font-weight:500;margin:26px 0 8px}
 <h2>Widget: แบบเดียวกัน</h2>
 <div class="w">
  <div class="h">วันนี้</div>
- <div class="r e"><span class="t" style="width:44px">ทั้งวัน</span>วันหยุดชดเชย</div>
- <div class="r e"><span class="t" style="width:44px">ทั้งวัน</span>ประชุมวิชาการ <span style="color:var(--muted)">(2 จาก 3)</span></div>
- <div class="r" style="margin-top:6px"><span class="t">09:00</span>ส่งรายงานเวร</div>
+ <div class="we"><b>วันหยุดชดเชย</b><span>ทั้งวัน</span></div>
+ <div class="we"><b>ประชุมวิชาการ</b><span>ทั้งวัน (วันที่ 2 จาก 3)</span></div>
+ <div class="wt"><div class="ring"></div><div><b>ส่งรายงานเวร</b><span>09:00</span></div></div>
  <div class="now" style="padding:2px 0"><span>10:42</span><i></i></div>
- <div class="r e"><span class="t">11:00</span>O11 รอบ 3</div>
- <div class="r e"><span class="t">14:00</span>ประชุมทีม</div>
+ <div class="we"><b>O11 รอบ 3</b><span>11:00 ถึง 12:00</span></div>
+ <div class="we"><b>ประชุมทีม</b><span>14:00 ถึง 15:00</span></div>
  <div class="h">ไม่ระบุเวลา</div>
- <div class="r">ซื้อของเข้าบ้าน</div>
- <div class="r">โทรหาแม่</div>
+ <div class="wt"><div class="ring"></div><div><b>ซื้อของเข้าบ้าน</b></div></div>
+ <div class="wt"><div class="ring"></div><div><b>โทรหาแม่</b></div></div>
 </div>
-<div class="note">ใน widget ช่องเวลาของนัดทั้งวันเขียนว่า "ทั้งวัน" แทนเวลา งานที่ไม่มีเวลาชิดซ้ายเหมือนกัน</div>
+<div class="note">วงกลมซ้ายมือแตะเพื่อติ๊กเสร็จได้เหมือนเดิม เวลาอยู่บรรทัดล่างของชื่องาน<br>นัดทั้งวันเขียน "ทั้งวัน" ตรงบรรทัดเวลา งานที่ไม่มีเวลาไม่มีบรรทัดล่าง</div>
 </div></body></html>
