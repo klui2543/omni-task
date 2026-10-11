@@ -274,19 +274,19 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), onOpen, Modifier.weight(1f),
                 ) { t ->
                     val age = Focus.ageDays(t, today)
-                    Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(t.title, color = C.text, fontSize = TS.body, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
                         (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { tr("รอ $it วัน", "waiting $it days") } ?: tr("รออยู่", "waiting")),
-                        Modifier.padding(top = 2.dp), color = if ((age ?: 0) >= 7) C.red else C.amber, fontSize = TS.caption, maxLines = 1,
+                        Modifier.padding(top = 4.dp), color = if ((age ?: 0) >= 7) C.red else C.amber, fontSize = TS.caption, maxLines = 1,
                     )
                 }
                 if (showFuture) PagedCard(
                     Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), brief.future,
                     tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), onOpen, Modifier.weight(1f),
-                    footer = {
+                    more = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                tr("เลือกงาน", "Pick"),
+                                tr("+ เลือกงาน", "+ Pick"),
                                 Modifier.clip(RoundedCornerShape(8.dp)).clickable { picking = true }.padding(vertical = 4.dp),
                                 color = C.accentText, fontSize = TS.caption, maxLines = 1,
                             )
@@ -295,12 +295,12 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                     },
                 ) { t ->
-                    Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t.title, color = C.text, fontSize = TS.body, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") } ?: "", Modifier.weight(1f), color = C.muted, fontSize = TS.caption, maxLines = 1)
                         Text(
                             tr("ข้ามวันนี้", "Skip today"),
-                            Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.skipFuture(t) }.padding(horizontal = 4.dp, vertical = 2.dp),
+                            Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.skipFuture(t) }.padding(horizontal = 4.dp),
                             color = C.accentText, fontSize = TS.caption, maxLines = 1,
                         )
                     }
@@ -318,20 +318,28 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 @Composable
 private fun <T : Task> PagedCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, soft: Color, title: String, list: List<T>, empty: String,
-    onOpen: (Task) -> Unit, modifier: Modifier = Modifier, footer: (@Composable () -> Unit)? = null, content: @Composable (T) -> Unit,
+    onOpen: (Task) -> Unit, modifier: Modifier = Modifier, more: (@Composable () -> Unit)? = null, content: @Composable (T) -> Unit,
 ) {
     val pager = androidx.compose.foundation.pager.rememberPagerState { list.size }
     var all by remember { mutableStateOf(false) }
-    if (all && list.isNotEmpty()) {
+    if (all) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { all = false },
             containerColor = C.raised,
             title = { Text(title + "  ${list.size}") },
             text = {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    items(list.size) { i ->
-                        if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
-                        Column(Modifier.fillMaxWidth().clickable { all = false; onOpen(list[i]) }.padding(vertical = 10.dp)) { content(list[i]) }
+                Column {
+                    if (list.isEmpty()) Text(empty, color = C.muted, fontSize = TS.body)
+                    LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                        items(list.size) { i ->
+                            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+                            Column(Modifier.fillMaxWidth().clickable { all = false; onOpen(list[i]) }.padding(vertical = 10.dp)) { content(list[i]) }
+                        }
+                    }
+                    // Adding to the card lives here, so the card itself stays the same size as its neighbour.
+                    if (more != null) {
+                        Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                        Box(Modifier.padding(top = 8.dp)) { more() }
                     }
                 }
             },
@@ -339,25 +347,25 @@ private fun <T : Task> PagedCard(
         )
     }
     Card(modifier) {
-        Column(Modifier.padding(12.dp)) {
-            Box(Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = list.isNotEmpty()) { all = true }) {
+        Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 12.dp)) {
+            Box(Modifier.clip(RoundedCornerShape(8.dp)).clickable { all = true }) {
                 CardHead(icon, tint, soft, title, if (list.size > 1) "${pager.currentPage + 1}/${list.size}" else list.size.takeIf { it > 0 }?.toString())
             }
             if (list.isEmpty()) {
-                Text(empty, Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+                // The same two lines and caption line a task takes, so an empty card is as tall as a full one.
+                Column(Modifier.padding(top = 10.dp)) {
+                    Text(empty, color = C.muted, fontSize = TS.body, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("", Modifier.padding(top = 4.dp), fontSize = TS.caption, minLines = 1)
+                }
+                Box(Modifier.padding(top = 10.dp).height(5.dp))
             } else {
                 androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.padding(top = 10.dp).fillMaxWidth(), pageSpacing = 12.dp, verticalAlignment = Alignment.Top) { i ->
                     Column(Modifier.fillMaxWidth().clickable { onOpen(list[i]) }) { content(list[i]) }
                 }
-                if (list.size > 1) {
-                    Row(Modifier.padding(top = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
-                        repeat(list.size) { i -> Box(Modifier.size(5.dp).clip(CircleShape).background(if (i == pager.currentPage) C.text2 else C.control)) }
-                    }
+                // The dots row is always there (empty for one task), so both cards keep one height.
+                Row(Modifier.padding(top = 10.dp).fillMaxWidth().height(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
+                    if (list.size > 1) repeat(list.size) { i -> Box(Modifier.size(5.dp).clip(CircleShape).background(if (i == pager.currentPage) C.text2 else C.control)) }
                 }
-            }
-            if (footer != null) {
-                Box(Modifier.padding(top = 10.dp).fillMaxWidth().height(1.dp).background(C.divider))
-                Box(Modifier.padding(top = 6.dp)) { footer() }
             }
         }
     }
