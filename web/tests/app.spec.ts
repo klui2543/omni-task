@@ -173,6 +173,25 @@ test('finds the note when Drive stores the folder emoji another way', async ({ p
   await expect(page.getByText('ส่งรายงาน')).toBeVisible()
 })
 
+test('a remembered note that became a conflict copy is not read beside the new note', async ({ page }) => {
+  const { drive, file } = await setup(page)
+  await signInAndPick(page)
+  await expect(page.getByText('ส่งรายงาน')).toHaveCount(1)
+
+  // DriveSync clashed: the old file (whose id the page remembers) is renamed and Obsidian moved it to .trash,
+  // and a new Omni note.md holds the live tasks.
+  const root = drive.nodes.find((n) => n.name === 'ObsidianVault')!
+  const trash = drive.add('.trash', root.id)
+  const omni = file.parent
+  file.name = 'Omni note (older, before conflict 2026-10-10-18-43-58).md'
+  file.parent = trash.id
+  drive.add('Omni note.md', omni, TASKS)
+  await page.reload()
+  await page.evaluate(() => { location.hash = '/tasks' })
+  await expect(page.getByText('โทรหาแม่')).toHaveCount(1)
+  await expect(page.getByText('ส่งรายงาน')).toHaveCount(1)
+})
+
 test('the vault folder can be picked by opening folders', async ({ page }) => {
   const drive = new FakeDrive()
   const { root } = drive.vault(TASKS)

@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import app.omnitask.drive.DriveUnavailable
+import app.omnitask.drive.OmniDrive
+import app.omnitask.drive.sameName
 import app.omnitask.model.OmniList
 import app.omnitask.model.Recurrence
 import app.omnitask.model.Task
@@ -11,7 +14,11 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.model.tr
 import app.omnitask.time.*
 
-/** Reads and writes task lines in the vault folder the user picked through the system folder picker. */
+/**
+ * Reads and writes task lines in the vault folder the user picked through the system folder picker. Once the owner
+ * connects Google Drive ([DriveLink]), the files of the Omni folder are read and written on Drive instead, and their
+ * tasks carry a `omni-drive:` file URI.
+ */
 class VaultRepository(private val context: Context) {
 
     private class MdFile(val uri: Uri, val path: String)
@@ -28,22 +35,86 @@ class VaultRepository(private val context: Context) {
         val lists: List<OmniList> = emptyList(),
         /** Copies a sync app left after a clash, which are not read (see [VaultText.isConflictCopy]). */
         val conflicts: List<String> = emptyList(),
+        /** With Drive connected: how the Omni folder was read this time; null when Drive is not in use. */
+        val drive: DriveStatus? = null,
+    )
+
+    /** How the last read of the Omni folder on Drive went. */
+    class DriveStatus(
+        val online: Boolean,
+        /** Google wants the owner to sign in again before Drive can be reached. */
+        val signIn: Boolean,
+        /** Files with edits made while Drive was out of reach, not sent yet. */
+        val pending: Int,
+        /** Lines edited offline that clashed with a change made elsewhere; Drive's version was kept. */
+        val lost: List<String>,
+        /** When Drive was last read in full (epoch milliseconds), 0 before the first time. */
+        val lastSync: Long,
     )
 
     fun load(treeUri: Uri): Snapshot {
-        val all = listMarkdown(treeUri)
-        val (conflicts, files) = all.partition { VaultText.isConflictCopy(it.path) }
+        val drive = DriveLink.isOn(context)
+        // With Drive connected, the phone's own copy of the Omni folder is left alone: Drive has the live one.
+        val all = listMarkdown(treeUri).let { files -> if (drive) files.filter { omniPath(it.path) == null } else files }
+        val local = all.map { Note(it.uri.toString(), it.path) { readText(it.uri) } }
+        var status: DriveStatus? = null
+        val remote = if (!drive) emptyList() else DriveLink.use(context) { store ->
+            val listing = store.refresh()
+            val lost = store.takeLost().flatMap { it.lines }
+            status = DriveStatus(listing.online, (listing.problem as? DriveUnavailable)?.signIn == true, store.pendingPaths.size, lost, store.state.lastSync)
+            listing.texts.filterKeys { it.endsWith(".md", ignoreCase = true) }.map { (path, text) -> Note(DRIVE_URI + path, "${VaultText.OMNI_DIR}/$path") { text } }
+        }
+        val (conflicts, files) = (local + remote).partition { VaultText.isConflictCopy(it.path) }
         val lists = ArrayList<OmniList>()
         val tasks = files.flatMap { file ->
             // The archive keeps finished work for Obsidian; the app leaves it unread so Done stays short.
             if (Archive.isArchive(file.path)) return@flatMap emptyList<Task>()
-            val text = readText(file.uri)
+            val text = file.text()
             // Lines in a list note (Bucket list, Watch list...) are marked with the list's name.
             val list = OmniList.parse(file.path, text)?.also { lists += it }
-            VaultText.parseFile(file.uri.toString(), file.path, text).let { found -> if (list == null) found else found.map { it.copy(list = list.name) } }
+            VaultText.parseFile(file.uri, file.path, text).let { found -> if (list == null) found else found.map { it.copy(list = list.name) } }
         }
         // A repeating task left open past its date also shows today's round (see Recurrence.todayCopy).
-        return Snapshot(Recurrence.withTodayCopies(tasks, LocalDate.now()), files.map { it.path }, lists.sortedBy { it.name.lowercase() }, conflicts.map { it.path })
+        return Snapshot(
+            Recurrence.withTodayCopies(tasks, LocalDate.now()), files.map { it.path }, lists.sortedBy { it.name.lowercase() },
+            conflicts.map { it.path }, status,
+        )
+    }
+
+    /** A note to read: where it is and how to get its text. */
+    private class Note(val uri: String, val path: String, val text: () -> String)
+
+    /**
+     * The path inside the Omni folder of a vault path, when Drive is connected and the path is in that folder; null
+     * otherwise. Names are compared loosely, since an emoji like 📁 can be stored in more than one way.
+     */
+    private fun omniPath(path: String): String? {
+        if (!DriveLink.isOn(context)) return null
+        val dir = VaultText.OMNI_DIR.split('/')
+        val parts = path.split('/')
+        if (parts.size <= dir.size || dir.indices.any { !sameName(parts[it], dir[it]) }) return null
+        return parts.drop(dir.size).joinToString("/")
+    }
+
+    /** [omniPath] for a folder: "" for the Omni folder itself. */
+    private fun omniDir(dir: String): String? = omniPath("$dir/.")?.removeSuffix(".")?.removeSuffix("/")
+
+    /** The path inside the Omni folder of a task file on Drive, from its `omni-drive:` URI. */
+    private fun drivePath(fileUri: String): String? = fileUri.takeIf { it.startsWith(DRIVE_URI) }?.removePrefix(DRIVE_URI)
+
+    /**
+     * Reads a file, lets [change] make its new text (null leaves it), and writes it: on Drive with the version
+     * checked before writing, or in the picked folder.
+     */
+    private fun update(treeUri: Uri, path: String, change: (String?) -> String?) {
+        val rel = omniPath(path)
+        if (rel != null) {
+            DriveLink.use(context) { it.edit(rel, change) }
+            return
+        }
+        val text = readPath(treeUri, path)
+        val out = change(text) ?: return
+        if (out != text) writePath(treeUri, path, out)
     }
 
     /** The vault's folder name, which is also its name in Obsidian. */
@@ -104,6 +175,10 @@ class VaultRepository(private val context: Context) {
 
     /** Puts lines removed by [deleteTask] back where they were (or at the end when the file got shorter). */
     fun restore(cut: Cut) {
+        drivePath(cut.fileUri)?.let { rel ->
+            DriveLink.use(context) { store -> store.edit(rel) { VaultText.restore(it.orEmpty(), cut.index, cut.lines) } }
+            return
+        }
         val uri = Uri.parse(cut.fileUri)
         writeText(uri, VaultText.restore(readText(uri), cut.index, cut.lines)) ?: throw java.io.IOException("Cannot write")
     }
@@ -115,7 +190,7 @@ class VaultRepository(private val context: Context) {
     fun archiveTask(treeUri: Uri, task: Task, today: LocalDate): Cut {
         val cut = deleteTask(task)
         try {
-            writePath(treeUri, Archive.FILE, Archive.append(readPath(treeUri, Archive.FILE), listOf(cut.lines), today))
+            update(treeUri, Archive.FILE) { Archive.append(it, listOf(cut.lines), today) }
         } catch (e: Exception) {
             restore(cut)
             throw e
@@ -126,7 +201,7 @@ class VaultRepository(private val context: Context) {
     /** Puts an archived task back where it was and takes it out of the archive note. */
     fun unarchive(treeUri: Uri, cut: Cut) {
         restore(cut)
-        readPath(treeUri, Archive.FILE)?.let { text -> Archive.remove(text, cut.lines)?.let { writePath(treeUri, Archive.FILE, it) } }
+        update(treeUri, Archive.FILE) { text -> text?.let { Archive.remove(it, cut.lines) } }
     }
 
     /**
@@ -135,15 +210,18 @@ class VaultRepository(private val context: Context) {
      * so an edit made meanwhile is never lost (the archive is put back and nothing moves). Returns the titles moved.
      */
     fun sweepDone(treeUri: Uri, cutoff: LocalDate, today: LocalDate, keep: (Task) -> Boolean): List<String> {
+        // On Drive the sweep waits for a connection: a move between two notes is not something to queue.
+        if (omniPath(TASK_FILE) != null && !DriveLink.use(context) { it.reachable() }) return emptyList()
         val text = readPath(treeUri, TASK_FILE) ?: return emptyList()
         val sweep = Archive.sweep(text, cutoff, keep) ?: return emptyList()
         val before = readPath(treeUri, Archive.FILE)
         writePath(treeUri, Archive.FILE, Archive.append(before, sweep.blocks, today))
-        if (readPath(treeUri, TASK_FILE) != text) {
+        var moved = false
+        update(treeUri, TASK_FILE) { now -> if (now != text) null else sweep.text.also { moved = true } }
+        if (!moved) {
             writePath(treeUri, Archive.FILE, before ?: "")
             return emptyList()
         }
-        writePath(treeUri, TASK_FILE, sweep.text)
         return sweep.titles
     }
 
@@ -161,6 +239,16 @@ class VaultRepository(private val context: Context) {
     fun renameProject(fileUris: List<String>, old: String, new: String): Int {
         var changed = 0
         fileUris.distinct().forEach { u ->
+            drivePath(u)?.let { rel ->
+                DriveLink.use(context) { store ->
+                    store.edit(rel) { text ->
+                        val (out, n) = VaultText.renameProject(text ?: return@edit null, old, new)
+                        changed += n
+                        out
+                    }
+                }
+                return@forEach
+            }
             val uri = Uri.parse(u)
             val text = readText(uri)
             val (out, n) = VaultText.renameProject(text, old, new)
@@ -171,6 +259,12 @@ class VaultRepository(private val context: Context) {
     }
 
     private fun editLines(task: Task, edit: (MutableList<String>, Int) -> Unit) {
+        drivePath(task.fileUri)?.let { rel ->
+            DriveLink.use(context) { store ->
+                store.edit(rel) { text -> VaultText.edit(text ?: throw ConflictException(), task, edit) ?: throw ConflictException() }
+            }
+            return
+        }
         val uri = Uri.parse(task.fileUri)
         val out = VaultText.edit(readText(uri), task, edit) ?: throw ConflictException()
         writeText(uri, out) ?: throw java.io.IOException("Cannot open ${task.filePath} for writing")
@@ -178,6 +272,7 @@ class VaultRepository(private val context: Context) {
 
     /** The text of a vault file by its path, or null when it does not exist. */
     fun readPath(treeUri: Uri, path: String): String? {
+        omniPath(path)?.let { rel -> return DriveLink.use(context) { it.read(rel) } }
         val dirId = if ('/' in path) findDirId(treeUri, path.substringBeforeLast('/')) ?: return null else DocumentsContract.getTreeDocumentId(treeUri)
         val file = childOf(treeUri, dirId, path.substringAfterLast('/'))?.first ?: return null
         return readText(file)
@@ -185,6 +280,10 @@ class VaultRepository(private val context: Context) {
 
     /** Replaces (or creates, with its folders) a vault file. */
     fun writePath(treeUri: Uri, path: String, text: String) {
+        omniPath(path)?.let { rel ->
+            DriveLink.use(context) { it.edit(rel) { text } }
+            return
+        }
         val dir = if ('/' in path) findOrCreateDir(treeUri, path.substringBeforeLast('/')) else
             DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
         val name = path.substringAfterLast('/')
@@ -200,6 +299,7 @@ class VaultRepository(private val context: Context) {
 
     /** Names of the files directly in a vault folder; empty when the folder is missing. */
     fun namesIn(treeUri: Uri, dir: String): List<String> {
+        omniDir(dir)?.let { rel -> return DriveLink.use(context) { it.namesIn(rel) } }
         val dirId = findDirId(treeUri, dir) ?: return emptyList()
         val out = ArrayList<String>()
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
@@ -210,14 +310,17 @@ class VaultRepository(private val context: Context) {
     }
 
     fun deletePath(treeUri: Uri, path: String) {
+        omniPath(path)?.let { rel ->
+            DriveLink.use(context) { it.delete(rel) }
+            return
+        }
         val dirId = findDirId(treeUri, path.substringBeforeLast('/')) ?: return
         childOf(treeUri, dirId, path.substringAfterLast('/'))?.let { DocumentsContract.deleteDocument(context.contentResolver, it.first) }
     }
 
     /** Adds a task line at the end of a file, keeping its line endings. */
     fun appendLine(treeUri: Uri, path: String, line: String) {
-        val text = readPath(treeUri, path) ?: throw java.io.IOException(tr("ไม่พบ $path", "Not found: $path"))
-        writePath(treeUri, path, VaultText.appendLine(text, line))
+        update(treeUri, path) { text -> VaultText.appendLine(text ?: throw java.io.IOException(tr("ไม่พบ $path", "Not found: $path")), line) }
     }
 
     /** Writes an image into the vault's attachment folder (made if missing) and returns its file name. */
@@ -322,5 +425,8 @@ class VaultRepository(private val context: Context) {
     companion object {
         const val ATTACHMENT_DIR = VaultText.ATTACHMENT_DIR
         const val TASK_FILE = VaultText.TASK_FILE
+
+        /** The file URI of a note in the Omni folder on Drive: this prefix and its path inside the folder. */
+        const val DRIVE_URI = "omni-drive:"
     }
 }

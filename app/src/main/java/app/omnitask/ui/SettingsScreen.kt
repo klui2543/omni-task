@@ -3,6 +3,7 @@ package app.omnitask.ui
 import android.Manifest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,12 +27,16 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +73,16 @@ class CalendarChoices(
     val onPermissionChanged: () -> Unit,
 )
 
+/** The Omni folder on Google Drive: its state and what the card's buttons do (see [DriveUi]). */
+class DriveSettings(
+    val state: DriveUi,
+    val onConnect: () -> Unit,
+    val onSignInShown: () -> Unit,
+    val onSignedIn: (android.content.Intent?) -> Unit,
+    val onConfirm: (Boolean) -> Unit,
+    val onDisconnect: () -> Unit,
+)
+
 /** The choices for [ArchiveSettings.days]. */
 private val ARCHIVE_DAYS = listOf(0, 1, 3, 7, 14, 30)
 
@@ -83,6 +98,7 @@ fun SettingsScreen(
     onLanguageChange: () -> Unit = {},
     archive: ArchiveSettings? = null,
     calendars: CalendarChoices? = null,
+    drive: DriveSettings? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -92,6 +108,34 @@ fun SettingsScreen(
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionTick++
         calendars?.onPermissionChanged?.invoke()
+    }
+
+    // Google's own sign-in screen, when connecting Drive needs one.
+    val signIn = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { drive?.onSignedIn?.invoke(it.data) }
+    val signInIntent = drive?.state?.signInIntent
+    LaunchedEffect(signInIntent) {
+        if (signInIntent != null) {
+            drive?.onSignInShown()
+            signIn.launch(IntentSenderRequest.Builder(signInIntent.intentSender).build())
+        }
+    }
+    if (drive != null && drive.state.confirmDir != null) {
+        AlertDialog(
+            onDismissRequest = { drive.onConfirm(false) },
+            containerColor = C.raised,
+            title = { Text(tr("ไฟล์ในเครื่องยังไม่ตรงกับ Drive", "The phone's copy differs from Drive")) },
+            text = {
+                Text(
+                    tr(
+                        "Omni note ในเครื่องต่างจากใน Google Drive ถ้ามีงานที่แก้บนมือถือแต่ยังไม่ได้ซิงก์ ให้กด sync ใน DriveSync ก่อน แล้วค่อยกลับมาเชื่อม\n\nถ้าเชื่อมเลย Omni จะใช้ไฟล์ใน Drive",
+                        "Omni note on this phone differs from the one in Google Drive. If you edited tasks on the phone that have not synced yet, sync in DriveSync first and connect afterwards.\n\nIf you connect now, Omni uses the file in Drive.",
+                    ),
+                    color = C.text2, fontSize = TS.body,
+                )
+            },
+            confirmButton = { TextButton(onClick = { drive.onConfirm(true) }) { Text(tr("เชื่อมเลย", "Connect now"), color = C.accent) } },
+            dismissButton = { TextButton(onClick = { drive.onConfirm(false) }) { Text(tr("ไว้ก่อน", "Not now"), color = C.text2) } },
+        )
     }
 
     LazyColumn(
@@ -120,6 +164,9 @@ fun SettingsScreen(
                     Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
                 )
             }
+        }
+        if (drive != null) {
+            item { DriveGroup(drive) }
         }
         if (profile != null) {
             item {
@@ -236,6 +283,92 @@ fun SettingsScreen(
                 )
                 SizePreview(Modifier.padding(top = 10.dp, bottom = 12.dp))
             }
+        }
+    }
+}
+
+/** Connecting the Omni folder on Google Drive, and how it is going once connected. */
+@Composable
+private fun DriveGroup(drive: DriveSettings) {
+    val d = drive.state
+    SettingsGroup("Google Drive") {
+        if (!d.on) DriveConnect(drive) else DriveConnected(drive)
+    }
+}
+
+@Composable
+private fun DriveConnect(drive: DriveSettings) {
+    val d = drive.state
+    Column {
+        Text(
+            tr(
+                "ให้ Omni อ่านและเขียนไฟล์ในโฟลเดอร์ Omni บน Google Drive โดยตรงเหมือนเว็บ ไม่ต้องรอแอปซิงก์ และไม่ชนกับการแก้จาก iPad โน้ตอื่นยังอ่านจากโฟลเดอร์ในเครื่องเหมือนเดิม",
+                "Omni reads and writes the files of the Omni folder on Google Drive directly, as the web does: no waiting for the sync app, and no clash with edits from the iPad. Other notes are still read from the folder on the phone.",
+            ),
+            Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+        )
+        Text(
+            tr("ก่อนเชื่อม กด sync ใน DriveSync หนึ่งครั้ง", "Before connecting, sync once in DriveSync."),
+            Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.caption,
+        )
+        PrimaryButton(
+            if (d.busy) tr("กำลังเชื่อม", "Connecting") else tr("เชื่อม Google Drive", "Connect Google Drive"),
+            { if (!d.busy) drive.onConnect() },
+            Modifier.padding(top = 10.dp, bottom = 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun DriveConnected(drive: DriveSettings) {
+    val d = drive.state
+    Column {
+        val time = if (d.lastSync > 0) {
+            java.time.Instant.ofEpochMilli(d.lastSync).atZone(java.time.ZoneId.systemDefault()).toLocalTime().let { "%02d:%02d".format(it.hour, it.minute) }
+        } else null
+        val status = when {
+            d.signIn -> tr("ต้องลงชื่อ Google อีกครั้ง", "Sign in to Google again")
+            !d.online -> tr("ออฟไลน์ ใช้ข้อมูลที่โหลดไว้ล่าสุด", "Offline, showing what was last read")
+            time != null -> tr("เชื่อมแล้ว อ่านล่าสุด $time", "Connected, last read at $time")
+            else -> tr("เชื่อมแล้ว", "Connected")
+        }
+        Text(status, Modifier.padding(top = 8.dp), color = if (d.signIn) C.red else C.text, fontSize = TS.body)
+        if (d.pending > 0) {
+            Text(
+                tr("มีการแก้รอส่งขึ้น Drive ${d.pending} ไฟล์ จะส่งเองเมื่อต่อ Drive ได้", "${d.pending} edited files wait to go to Drive; they are sent once Drive answers."),
+                Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
+            )
+        }
+        if (d.signIn) {
+            PrimaryButton(
+                if (d.busy) tr("กำลังลงชื่อ", "Signing in") else tr("ลงชื่อเข้าใช้", "Sign in"),
+                { if (!d.busy) drive.onConnect() },
+                Modifier.padding(top = 10.dp),
+            )
+        }
+        Text(
+            tr(
+                "ไฟล์ในโฟลเดอร์ Omni อ่านและเขียนบน Drive โดยตรง ตอนออฟไลน์ การแก้จะเก็บไว้ในเครื่องแล้วส่งขึ้นไปเองทีหลัง",
+                "Files in the Omni folder are read and written on Drive directly. Offline, edits are kept on the phone and sent later.",
+            ),
+            Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+        )
+        var asking by remember { mutableStateOf(false) }
+        GhostButton(tr("เลิกเชื่อม", "Disconnect"), { if (d.pending > 0) asking = true else drive.onDisconnect() }, Modifier.padding(top = 10.dp, bottom = 12.dp))
+        if (asking) {
+            AlertDialog(
+                onDismissRequest = { asking = false },
+                containerColor = C.raised,
+                title = { Text(tr("เลิกเชื่อม Google Drive", "Disconnect Google Drive")) },
+                text = {
+                    Text(
+                        tr("ยังมีการแก้ ${d.pending} ไฟล์ที่ยังไม่ได้ส่งขึ้น Drive ถ้าเลิกเชื่อมตอนนี้ การแก้นั้นจะหายไป", "${d.pending} edited files have not reached Drive yet. Disconnecting now drops those edits."),
+                        color = C.text2, fontSize = TS.body,
+                    )
+                },
+                confirmButton = { TextButton(onClick = { asking = false; drive.onDisconnect() }) { Text(tr("เลิกเชื่อม", "Disconnect"), color = C.red) } },
+                dismissButton = { TextButton(onClick = { asking = false }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+            )
         }
     }
 }

@@ -26,11 +26,12 @@ object VaultText {
     /** The app folder at the vault root, where profile, lists and settings were kept before they moved into [OMNI_DIR]. */
     const val LEGACY_OMNI_DIR = "Omni"
 
-    private val CONFLICT_COPY = Regex("""\((?:conflict|conflicted copy)\b[^)]*\)|\.sync-conflict-""", RegexOption.IGNORE_CASE)
+    private val CONFLICT_COPY = Regex("""\((?:[^)]*\s)?(?:conflict|conflicted copy)\b[^)]*\)|\.sync-conflict-""", RegexOption.IGNORE_CASE)
 
     /**
      * A second copy a sync app leaves when a note changed on two sides at once, e.g.
-     * `Omni note (conflict 2026-10-09-05-55-31).md`. Its tasks are the same tasks again, so it is not read.
+     * `Omni note (conflict 2026-10-09-05-55-31).md` or `Omni note (older, before conflict 2026-10-10-18-43-58).md`.
+     * Its tasks are the same tasks again, so it is not read.
      */
     fun isConflictCopy(path: String): Boolean = CONFLICT_COPY.containsMatchIn(path.substringAfterLast('/'))
 

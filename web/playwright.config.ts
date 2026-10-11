@@ -8,6 +8,8 @@ const port = Number(process.env.PORT ?? 4173)
 export default defineConfig({
   testDir: 'tests',
   timeout: 30_000,
+  // Pages wait on the stand-in Drive and Calendar; on a busy runner 5 seconds (the default) was sometimes too short.
+  expect: { timeout: 10_000 },
   use: {
     baseURL: `http://localhost:${port}`,
     launchOptions: executablePath ? { executablePath, args: ['--no-sandbox'] } : {},

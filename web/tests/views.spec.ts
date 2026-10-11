@@ -270,10 +270,8 @@ test('Month: without the calendar allowed it offers to connect, and a task still
 
 test('Calendar: a dated subtask and the Google Calendar error show as on the Focus page', async ({ page }) => {
   const note = NOTE.replace('    - [ ] ซ้อม', '    - [ ] ซ้อม ⏳ 2026-10-09')
-  const { drive } = await views(page, { note, granted: true }, 'calendar')
-  drive.calendarOff = true
-  await page.getByRole('button', { name: 'เดือนถัดไป' }).click()
-  await page.getByRole('button', { name: 'เดือนก่อน' }).click()
+  // The Calendar API is off from the start: switching it off after the page opened raced the first read of the month.
+  await views(page, { note, granted: true, calendarOff: true }, 'calendar')
   await page.getByRole('button', { name: 'ศุกร์ 9 ตุลาคม' }).click()
   await expect(page.getByRole('region', { name: 'งานของวันที่เลือก' }).getByText('ซ้อม')).toBeVisible()
   await expect(page.getByRole('alert').filter({ hasText: 'Google Calendar API' })).toBeVisible()

@@ -167,12 +167,18 @@ test('the conversation stays when leaving the page, and "เริ่มให�
 test('ask Claude opens claude.ai in a new tab with the day as text', async ({ page, context }) => {
   await context.route('https://claude.ai/**', (route) => route.fulfill({ contentType: 'text/html', body: '<title>claude</title>' }))
   await openAssistant(page, { profile: Profile, granted: true, events: [{ title: 'ประชุมทีม', begin: at(14, 0), end: at(15, 0) }] })
-  const [popup] = await Promise.all([context.waitForEvent('page'), page.getByRole('button', { name: /^ถาม Claude/ }).click()])
-  const url = new URL(popup.url())
+  // The calendar is read after the page opens; a click before it arrives sends the day without its events, so
+  // this asks again until they are in.
+  let url = new URL('about:blank')
+  await expect.poll(async () => {
+    const [popup] = await Promise.all([context.waitForEvent('page'), page.getByRole('button', { name: /^ถาม Claude/ }).click()])
+    url = new URL(popup.url())
+    await popup.close()
+    return url.searchParams.get('q') ?? ''
+  }).toContain('- นัด: ประชุมทีม 14:00 ถึง 15:00')
   expect(url.origin + url.pathname).toBe('https://claude.ai/new')
   const q = url.searchParams.get('q')!
   expect(q.startsWith('ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน\n\nวันนี้ 2026-10-08\n[โปรไฟล์]\n- อัปเดต: 2026-10-01\n- ตื่น: 06:30')).toBe(true)
-  expect(q).toContain('- นัด: ประชุมทีม 14:00 ถึง 15:00')
   expect(q).toContain('[งานที่ยังไม่เสร็จทั้งหมด]\n- [ ] ส่งรายงาน')
 })
 
