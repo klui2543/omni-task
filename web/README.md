@@ -89,7 +89,24 @@ JSON list of notes instead, so every page reads one note or all of them with the
 
 Every edit reads the note again, lets the shared code change just the one line, checks the file's version in Drive
 right before writing and starts over on the new text if it moved. If the line itself changed elsewhere, nothing is
-written and the app says so. "Do in order" across several notes reads them all again and writes only when none of
+written and the app says so.
+
+Drive has no conditional write, so another device can still write between that check and ours. Drive keeps each
+write as a revision, so right after writing the app asks for the revision before its own (`src/safeWrite.ts`): when
+it is not the one the edit started from, someone slipped in, and their text is joined back line by line with the
+shared `Merge3` (the same code Android uses for offline edits). Where both changed the same line, the other side is
+kept and this device's line waits in a banner ("การแก้ที่ชนกับที่อื่น") to be added to the end of the note or let go.
+
+## Without a network
+
+The site's own files are kept by a service worker (`public/sw.js`, network first, Google's services untouched), so the
+app also opens with no network. The task note as last read is kept on the device (`src/offline.ts`; the other notes
+are already kept by the note index). Opened without a network, even after the hour of the sign-in ran out, the page
+shows them and says "ออฟไลน์" (in the side bar, or at the top of the page when the iPad is upright; a tap reads again). An edit to a note that was read
+(ticks, edits, deletes, quick add) is made on the device's copy and waits; the badge counts the notes waiting. The
+next read that reaches Drive (a reload, the network coming back) sends them: each note is read again and the edits
+are joined with what changed meanwhile (`Merge3`), clashes going to the same banner. Moving to the archive, the daily
+sweep, the profile and new list notes need Drive and say so. "Do in order" across several notes reads them all again and writes only when none of
 them moved.
 
 ## Projects and lists
@@ -99,14 +116,25 @@ header says `omni-list: true`, found only directly in that folder). Every text c
 a branch, adding to a list, pulling tasks into a list, "do in order" with 🆔 and ⛔, a new list note) is made by
 `shared/.../web/WebProjects.kt`, the same code paths Android uses, and written with the same version check.
 
-What the owner chooses on this page stays on this device (localStorage `omni.projects`): the order of projects, the
-starred ones, the state of each branch (active, trying, chosen, parked), each project's task order. The web does not
-read or write Android's `omni-settings.json` yet, so these choices do not travel between the phone and the iPad.
+What the owner chooses on this page (the order of projects, the starred ones, the state of each branch, each
+project's task order, "do in order") is kept on this device (localStorage `omni.projects`) and travels with Android
+through `omni-settings.json`; see "Settings shared with Android" below.
 
 ## Task kinds
 
 Settings has the same "ประเภทงาน" manager as Android: hide the built-in kinds (#รอ, #อนาคต, #สักวัน; hiding one also removes its
 card from Focus and its choice from the edit panel unless the task has that kind) and make kinds of your own (a name, an emoji
 and the tag that marks it, which never names a project). The edit panel's "ประเภท" field and the Tasks filter use that list. The
-logic is `shared/.../web/WebKinds.kt`. The choices stay on this device (localStorage `omni.kinds`, in Android's own
-tab-separated `name, emoji, tag` form); the web does not read or write `omni-settings.json`, so they do not travel yet.
+logic is `shared/.../web/WebKinds.kt`. The choices are kept on this device (localStorage `omni.kinds`, in Android's own
+tab-separated `name, emoji, tag` form) and travel with Android through `omni-settings.json`.
+
+## Settings shared with Android
+
+`src/settingsSync.ts` reads and writes Android's settings file, `omni-settings.json` in the Omni folder, for the choices
+both apps have: the Projects page (order, stars, branch states, task order, "do in order"), the task kinds, what
+counts as urgent, the archive days and whether ticking done asks. The file is read when the page opens and on every
+reload; it wins when its `savedAt` is newer than this device's last sync, as on Android. A change here is written
+1.5 seconds later (quick changes become one write), with every key Android wrote left as it was and `savedAt` later
+than the file's own, so a phone whose clock runs ahead still takes it. Nothing is written before the file was read
+once, so the iPad never overwrites the phone's choices with its defaults. The look, the calendars shown and the
+assistant's memory stay on each device.

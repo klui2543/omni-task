@@ -61,10 +61,10 @@ Vault.prototype.changeProfile = async function (this: any, change: (text: string
       this.setProfile(text, null)
       return text
     }
-    const { text: current, version } = await this.drive.readText(file.id)
-    const text = change(current)
-    if ((await this.drive.version(file.id)) !== version) continue
-    await this.drive.writeText(file.id, text)
+    const read = await this.drive.readText(file.id)
+    const text = change(read.text)
+    if ((await this.drive.version(file.id)) !== read.version) continue
+    await this.write(file.id, read, text)
     this.setProfile(text, file.id)
     return text
   }
@@ -81,19 +81,19 @@ Vault.prototype.sweep = async function (
 ): Promise<string[]> {
   const id = await this.file()
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { text, version } = await this.drive.readText(id)
+    const read = await this.drive.readText(id)
     const archive = await this.archiveNote()
-    const res = sweepOp(text, archive.text)
+    const res = sweepOp(read.text, archive.text)
     if (!res) return []
     const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), this.archiveName(), res.archive))
-    if (archive.id) await this.drive.writeText(archive.id, res.archive)
-    if ((await this.drive.version(id)) !== version) {
+    if (archive.id) await this.write(archive.id, archive, res.archive)
+    if ((await this.drive.version(id)) !== read.version) {
       // The note moved on meanwhile: put the archive back as it was and start over on the new text.
       if (archive.id) await this.drive.writeText(archive.id, archive.text)
       else await this.drive.trash(archiveId)
       continue
     }
-    await this.drive.writeText(id, res.text)
+    await this.write(id, read, res.text)
     return res.titles
   }
   throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')

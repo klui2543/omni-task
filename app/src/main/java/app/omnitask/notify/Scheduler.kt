@@ -62,12 +62,18 @@ object Scheduler {
             .apply()
     }
 
+    /**
+     * How old a read of Drive may be for widgets and reminders, which load several times in a row (a tick from the
+     * widget loads, writes, loads again and redraws). Edits always read Drive fresh; opening the app always asks.
+     */
+    const val BACKGROUND_FRESH_MS = 2 * 60_000L
+
     /** Reads the vault the app was pointed at; empty when no vault is set or it cannot be read. */
     fun loadVaultTasks(context: Context): List<Task> {
         val vault = prefs(context).getString(KEY_VAULT, null)?.let(Uri::parse) ?: return emptyList()
         // Tasks in parked project branches stay quiet: no alarms, not in the widgets.
         val parked = app.omnitask.model.Branches.parse(prefs(context).getStringSet("branchStates", emptySet()).orEmpty())
-        return runCatching { VaultRepository(context).loadTasks(vault) }.getOrDefault(emptyList())
+        return runCatching { VaultRepository(context).loadTasks(vault, BACKGROUND_FRESH_MS) }.getOrDefault(emptyList())
             .filterNot { app.omnitask.model.Branches.isParked(it, parked) }
     }
 

@@ -8,6 +8,8 @@ interface Node {
   parent: string | null
   text?: string
   version: number
+  /** Every text the file held, oldest first, as Drive keeps revisions. */
+  revisions?: { id: string; text: string }[]
 }
 
 export class FakeDrive {
@@ -35,6 +37,25 @@ export class FakeDrive {
   insertFails = false
   /** Runs once, right after the app's next read of a file, to play someone else editing it. */
   afterNextRead: ((n: Node) => void) | null = null
+  /** Runs once, right before the app's next write of a file lands, to play someone writing after the app's version check. */
+  beforeNextWrite: ((n: Node) => void) | null = null
+  /** No network: every request to Google fails as if the device were offline. */
+  offline = false
+
+  /** Someone else (Android, Obsidian) writes a file: a new version and a new revision. */
+  edit(n: Node, text: string) {
+    this.save(n, text)
+  }
+
+  private save(n: Node, text: string) {
+    n.text = text
+    n.version++
+    n.revisions = [...this.revs(n), { id: `${n.id}-r${n.version}`, text }]
+  }
+
+  private revs(n: Node) {
+    return n.revisions ?? [{ id: `${n.id}-r1`, text: n.text ?? '' }]
+  }
 
   add(name: string, parent: string | null, text?: string): Node {
     const n: Node = { id: `id${this.next++}`, name, folder: text === undefined, parent, text, version: 1 }
@@ -150,6 +171,7 @@ export class FakeDrive {
     await page.route('https://www.googleapis.com/**', async (route) => {
       const req = route.request()
       const url = new URL(req.url())
+      if (this.offline) return route.abort('internetdisconnected')
       this.requests.push(`${req.method()} ${url.pathname}${url.search}`)
       const json = (body: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
       if (req.headers()['authorization'] !== 'Bearer fake-token') return route.fulfill({ status: 401, body: 'no' })
@@ -201,6 +223,15 @@ export class FakeDrive {
       if (url.pathname === '/drive/v3/changes/startPageToken') return json({ startPageToken: this.mark() })
       if (url.pathname === '/drive/v3/changes') return json(this.changesSince(url.searchParams.get('pageToken') ?? ''))
 
+      const rev = /\/drive\/v3\/files\/([^/]+)\/revisions(?:\/([^/?]+))?$/.exec(url.pathname)
+      if (rev) {
+        const n = this.nodes.find((x) => x.id === rev[1])
+        if (!n) return route.fulfill({ status: 404, body: 'not found' })
+        if (!rev[2]) return json({ revisions: this.revs(n).map((r) => ({ id: r.id })) })
+        const r = this.revs(n).find((x) => x.id === rev[2])
+        return r ? route.fulfill({ contentType: 'text/plain', body: r.text }) : route.fulfill({ status: 404, body: 'no revision' })
+      }
+
       const m = /\/files\/?([^/?]*)$/.exec(url.pathname)
       const id = m?.[1]
       // A new folder is a plain JSON post (a new note is a multipart upload).
@@ -230,16 +261,19 @@ export class FakeDrive {
         return route.fulfill({ contentType: 'text/plain', body: text })
       }
       if (req.method() === 'GET') {
-        return json({ id: node.id, name: node.name, parents: node.parent ? [node.parent] : [], version: String(node.version) })
+        const head = node.folder ? {} : { headRevisionId: this.revs(node).at(-1)!.id }
+        return json({ id: node.id, name: node.name, parents: node.parent ? [node.parent] : [], version: String(node.version), ...head })
       }
       if (req.method() === 'PATCH' && !url.pathname.startsWith('/upload')) {
         if (JSON.parse(req.postData() ?? '{}').trashed) this.nodes = this.nodes.filter((n) => n !== node)
         return json({ id: node.id })
       }
       if (req.method() === 'PATCH') {
-        node.text = req.postData() ?? ''
-        node.version++
-        return json({ id: node.id })
+        const hook = this.beforeNextWrite
+        this.beforeNextWrite = null
+        hook?.(node)
+        this.save(node, req.postData() ?? '')
+        return json({ id: node.id, version: String(node.version), headRevisionId: this.revs(node).at(-1)!.id })
       }
       return route.fulfill({ status: 400, body: 'unsupported' })
     })

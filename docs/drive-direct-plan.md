@@ -56,9 +56,21 @@ actions, widgets, the daily sweep, settings sync):
 - CI prints the release key's SHA-1 and publishes releases from main only.
 - Conflict copies named "(older, before conflict ...)" (DriveSync's other pattern) are now recognised and not read.
 
-Still open: a screen listing offline edits that clashed (today they show once as a message).
+Done 2026-10-11:
+- Settings > Google Drive lists the edits that clashed (offline, or in the same moment as another write), each with
+  "ใส่ท้ายโน้ต" (add the phone's lines to the end of the note) and "ทิ้ง" (let it go). They are kept in the cache file
+  until the owner decides; the message after a load still says it once.
+- After every write the store asks Drive for the revision before its own. When it is not the one the edit started
+  from, another write landed between the version check and ours; its text is joined back with `Merge3` and written
+  again, clashing lines going to the list above. No revision history (or any error there) leaves the write as it is.
+- A refresh reads Drive's change log (one request when nothing changed) and downloads only the files whose version
+  moved; a file or folder added, moved, renamed or removed in the Omni folder, an unknown log position, or a day
+  since the last full walk makes it walk the folder as before.
+- Widgets and reminders use a read up to 2 minutes old (`Scheduler.BACKGROUND_FRESH_MS`) instead of asking Drive on
+  every load; edits still read fresh and opening the app always asks.
 
 ## Edges that remain
-- Drive v3 has no conditional write, so two writers in the same second can still race; the version re-check and retry
-  keep it to that second.
+- Drive v3 has no conditional write. The check after writing closes the gap for writers that check too (Omni on the
+  phone and the web); a write from Obsidian on the PC in that same moment is joined back the same way, since Drive
+  keeps its revision too. Two writers checking at once can each join the other's text, which ends the same.
 - Editing an Omni file in Obsidian on the PC while the app writes is still possible, but rare.

@@ -1,9 +1,10 @@
 import { sweep } from './assistantCore'
 import { today } from './core'
 import type { Vault } from './vault'
+import { settingsBus } from './settingsBus'
 
-// Choices made on the Settings page that stay on this device (Android keeps the same in its synced settings file,
-// which the web does not read until the owner decides how settings sync).
+// Choices made on the Settings page. The archive days are shared with Android through its settings file
+// (see settingsSync.ts); when the last sweep ran stays on this device.
 
 const read = (key: string): string | null => {
   try { return localStorage.getItem(key) } catch { return null }
@@ -27,6 +28,7 @@ export const archiveDays = {
   set(days: number) {
     write(DAYS_KEY, String(days))
     write(SWEPT_KEY, null)
+    settingsBus.changed()
   },
 }
 

@@ -42,7 +42,17 @@ data class DriveEntry(
     val isFolder get() = mimeType == DriveRest.FOLDER
 }
 
-class Versioned(val text: String, val version: String)
+/** A file's text with its version and the id of the revision that holds it ("" when Drive gave none). */
+class Versioned(val text: String, val version: String, val revision: String = "")
+
+/** What a write left on Drive: the file's new version and the id of the revision it made ("" when Drive gave none). */
+class Written(val version: String, val revision: String = "")
+
+/** One entry of Drive's change log: a file that was added, changed, moved or removed ([entry] null when removed). */
+class DriveChange(val fileId: String, val removed: Boolean, val entry: DriveEntry?, val trashed: Boolean = false)
+
+/** The changes since a position of the log, and the position to ask from next time. */
+class DriveChanges(val changes: List<DriveChange>, val token: String)
 
 /** The little of Google Drive the app needs, so the logic on top can be tested against a stand-in. */
 interface DriveFiles {
@@ -58,8 +68,8 @@ interface DriveFiles {
 
     fun version(id: String): String
 
-    /** Replaces a file's text; returns its new version. */
-    fun write(id: String, text: String, mimeType: String): String
+    /** Replaces a file's text. */
+    fun write(id: String, text: String, mimeType: String): Written
 
     fun create(parentId: String, name: String, mimeType: String, text: String): DriveEntry
 
@@ -67,6 +77,21 @@ interface DriveFiles {
 
     /** Moves a file to Drive's trash, where it can still be restored. */
     fun trash(id: String)
+
+    /**
+     * The id of the revision saved just before [revision] in the file's history, or null when Drive keeps no
+     * history for it. Tells whether someone else wrote between a version check and a write.
+     */
+    fun revisionBefore(id: String, revision: String): String?
+
+    /** The file's text as it was at [revision]. */
+    fun readRevision(id: String, revision: String): String
+
+    /** Where Drive's change log stands now; changes after it are read with [changes]. */
+    fun startPageToken(): String
+
+    /** What changed in the owner's Drive since [token]. A token Drive no longer knows throws [DriveHttpError]. */
+    fun changes(token: String): DriveChanges
 }
 
 /**
@@ -175,18 +200,62 @@ class DriveRest(
         obj(call("GET", "$API/files/${urlEncode(id)}?fields=version&supportsAllDrives=true")).str("version").orEmpty()
 
     override fun read(id: String): Versioned {
-        val version = version(id)
+        val meta = obj(call("GET", "$API/files/${urlEncode(id)}?fields=version,headRevisionId&supportsAllDrives=true"))
         val text = call("GET", "$API/files/${urlEncode(id)}?alt=media&supportsAllDrives=true")
-        return Versioned(text, version)
+        return Versioned(text, meta.str("version").orEmpty(), meta.str("headRevisionId").orEmpty())
     }
 
-    override fun write(id: String, text: String, mimeType: String): String =
-        obj(
+    override fun write(id: String, text: String, mimeType: String): Written {
+        val res = obj(
             call(
-                "PATCH", "$UPLOAD/files/${urlEncode(id)}?uploadType=media&supportsAllDrives=true&fields=version",
+                "PATCH", "$UPLOAD/files/${urlEncode(id)}?uploadType=media&supportsAllDrives=true&fields=version,headRevisionId",
                 mapOf("Content-Type" to "$mimeType; charset=UTF-8"), text,
             ),
-        ).str("version").orEmpty()
+        )
+        return Written(res.str("version").orEmpty(), res.str("headRevisionId").orEmpty())
+    }
+
+    override fun revisionBefore(id: String, revision: String): String? {
+        val ids = ArrayList<String>()
+        var page = ""
+        do {
+            val params = "fields=${urlEncode("nextPageToken,revisions(id)")}&pageSize=1000" +
+                (if (page.isNotEmpty()) "&pageToken=${urlEncode(page)}" else "")
+            val res = obj(call("GET", "$API/files/${urlEncode(id)}/revisions?$params"))
+            (res["revisions"] as? JsonArray)?.forEach { r -> (r.jsonObject["id"] as? JsonPrimitive)?.contentOrNull?.let { ids += it } }
+            page = res.str("nextPageToken").orEmpty()
+        } while (page.isNotEmpty())
+        val at = ids.indexOf(revision)
+        return if (at > 0) ids[at - 1] else null
+    }
+
+    override fun readRevision(id: String, revision: String): String =
+        call("GET", "$API/files/${urlEncode(id)}/revisions/${urlEncode(revision)}?alt=media")
+
+    override fun startPageToken(): String =
+        obj(call("GET", "$API/changes/startPageToken?supportsAllDrives=true")).str("startPageToken").orEmpty()
+
+    override fun changes(token: String): DriveChanges {
+        val out = ArrayList<DriveChange>()
+        var page = token
+        while (true) {
+            val params = "pageToken=${urlEncode(page)}&pageSize=1000&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true" +
+                "&fields=${urlEncode("nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,parents,trashed,version))")}"
+            val res = obj(call("GET", "$API/changes?$params"))
+            (res["changes"] as? JsonArray)?.forEach { c ->
+                val o = c.jsonObject
+                val file = o["file"] as? JsonObject
+                out += DriveChange(
+                    fileId = o.str("fileId").orEmpty(),
+                    removed = (o["removed"] as? JsonPrimitive)?.contentOrNull == "true",
+                    entry = file?.let(::entry),
+                    trashed = (file?.get("trashed") as? JsonPrimitive)?.contentOrNull == "true",
+                )
+            }
+            res.str("newStartPageToken")?.let { return DriveChanges(out, it) }
+            page = res.str("nextPageToken") ?: return DriveChanges(out, page)
+        }
+    }
 
     override fun create(parentId: String, name: String, mimeType: String, text: String): DriveEntry {
         val boundary = "omni" + (100000..999999).random()

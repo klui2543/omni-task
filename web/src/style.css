@@ -60,11 +60,19 @@ button.link { border: 0; background: none; color: var(--accent-text); min-height
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); flex: none; }
 .dot.busy { background: var(--amber); }
 .dot.off { background: var(--red); }
+.dot.offline { background: var(--muted); }
+.clash { margin-top: 8px; padding-top: 8px; border-top: 1px solid currentColor; border-top-color: color-mix(in srgb, currentColor 25%, transparent); }
+.clash-lines { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
+.clash-actions { display: flex; gap: 16px; justify-content: flex-end; }
 .side-item { display: block; width: 100%; text-align: left; white-space: nowrap; min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; font-size: 15px; background: transparent; color: var(--text2); }
 .side-item:hover { background: var(--raised); }
 .side-item[aria-current=page] { background: var(--accent-soft); color: var(--accent-text); font-weight: 500; }
 .sync { border: 0; background: none; text-align: left; padding: 4px 12px 0; font-size: 12px; color: var(--faint); white-space: nowrap; }
 .sync:hover { color: var(--accent-text); }
+.sync-chip { display: none; }
+@media (max-width: 999px) {
+  .sync-chip { display: flex; align-items: center; gap: 6px; margin: 12px auto 0; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--card); color: var(--muted); font-size: 13px; }
+}
 .bar { position: fixed; left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: rgb(255 255 255 / .96); border: 1px solid var(--border); border-radius: 20px; padding: 6px; z-index: 5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .bar button { height: 50px; border: 0; border-radius: 14px; font-size: 13px; line-height: 1.2; background: transparent; color: var(--muted); padding: 0 2px; }
 .bar button[aria-current=page] { background: var(--accent-soft); color: var(--accent-text); font-weight: 500; }

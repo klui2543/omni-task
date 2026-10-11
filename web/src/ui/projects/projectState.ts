@@ -1,9 +1,10 @@
 import { useRef, useState } from 'preact/hooks'
 import type { ProjectsIn } from '../../types'
+import { settingsBus } from '../../settingsBus'
 
-// What the owner chose on the Projects page, kept on this device. Android keeps the same choices in its settings
-// file (omni-settings.json); the web does not read or write that file yet, so these stay here for now:
-// the order of projects, the starred ones, the state of each branch, each project's task order and "do in order".
+// What the owner chose on the Projects page: the order of projects, the starred ones, the state of each branch, each
+// project's task order and "do in order". Kept on this device and shared with Android through its settings file
+// (omni-settings.json, see settingsSync.ts).
 
 const KEY = 'omni.projects'
 const SEEDED_KEY = 'omni.listsSeeded'
@@ -30,6 +31,7 @@ export function useProjectsLocal(): [ProjectsIn, (change: (s: ProjectsIn) => Pro
       latest.current = next
       setState(next)
       try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* just not kept */ }
+      settingsBus.changed()
     },
   ]
 }

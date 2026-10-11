@@ -1,5 +1,6 @@
-// Choices the owner makes once and every page reads, kept on this device (Android keeps the same choices in its
-// settings file). Pages read them through these helpers so a change shows up everywhere.
+// Choices the owner makes once and every page reads, kept on this device and shared with Android through its
+// settings file (see settingsSync.ts). Pages read them through these helpers so a change shows up everywhere.
+import { settingsBus } from './settingsBus'
 
 export type UrgentRule = 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK'
 
@@ -19,5 +20,6 @@ export const urgentRule = {
   },
   set(rule: UrgentRule) {
     try { localStorage.setItem(URGENT_KEY, rule) } catch { /* just not kept */ }
+    settingsBus.changed()
   },
 }

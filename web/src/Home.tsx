@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { config } from './config'
-import { AuthExpired, Drive } from './drive'
+import { AuthExpired, Drive, Offline } from './drive'
+import { clashes, type Clash } from './offline'
+import { appendLines } from './safeWrite'
+import { settingsBus } from './settingsBus'
+import { SettingsSync } from './settingsSync'
 import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
 import { AssistantPage } from './pages/Assistant'
@@ -50,7 +54,10 @@ const ASK_KEY = 'omni.askOnDone'
 /** Whether ticking a task done asks to archive or delete it, as Android's setting of the same name. */
 export const askOnDone = {
   get: () => { try { return localStorage.getItem(ASK_KEY) !== 'no' } catch { return true } },
-  set: (on: boolean) => { try { localStorage.setItem(ASK_KEY, on ? 'yes' : 'no') } catch { /* just not kept */ } },
+  set: (on: boolean) => {
+    try { localStorage.setItem(ASK_KEY, on ? 'yes' : 'no') } catch { /* just not kept */ }
+    settingsBus.changed()
+  },
 }
 
 /**
@@ -75,6 +82,16 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   const [closing, setClosing] = useState<Task | null>(null)
   const [finished, setFinished] = useState<Task | null>(null)
   const [undo, setUndo] = useState<Cut | null>(null)
+  /** Google could not be reached on the last read, and how many notes hold edits waiting for it. */
+  const [offline, setOffline] = useState(false)
+  const [waiting, setWaiting] = useState(0)
+  /** Edits that clashed with a change made elsewhere, kept until the owner decides. */
+  const [kept, setKept] = useState<Clash[]>(() => clashes.all())
+  /** Android's settings file: read on load, written when a shared choice changes here. A newer file remounts the page. */
+  const settings = useMemo(() => new SettingsSync(p.drive, p.vaultId, (path) => vault.ensureFolders(path)), [vault])
+  const [settingsRev, setSettingsRev] = useState(0)
+  const pullSettings = () => settings.pull().then((changed) => { if (changed) setSettingsRev((r) => r + 1) }, () => {})
+  useEffect(() => settingsBus.listen(() => { settings.push().catch(() => {}) }), [settings])
   // The add button in the middle of the bottom bar: a new task from any page.
   const [adding, setAdding] = useState(false)
 
@@ -124,18 +141,26 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
       const loaded = await vault.load()
       latest.current = loaded
       setSnapshot(loaded)
-      setSyncedAt(new Date())
+      const status = vault.status()
+      setOffline(status.offline)
+      setWaiting(status.pending)
+      if (!status.offline) setSyncedAt(new Date())
       setNeedSignIn(false)
       // A plain notice from the action (e.g. "moved 3 finished tasks to the archive"), shown once the note is read.
       if (res?.ok && res.notice) setMessage(res.notice)
     } catch (e) {
       if (e instanceof AuthExpired) setNeedSignIn(true)
-      else if (e instanceof VaultError) setMessage(e.message)
+      else if (e instanceof Offline) {
+        setOffline(true)
+        setMessage('ออฟไลน์อยู่ รายการนี้ต้องต่อ Google Drive ได้ก่อน ลองอีกครั้งเมื่อต่อเน็ตได้')
+      } else if (e instanceof VaultError) setMessage(e.message)
       else setMessage(`เชื่อมต่อ Google Drive ไม่ได้ (${(e as Error).message})`)
+    } finally {
+      setKept(clashes.all())
     }
   }
   // A reload asks Drive and Google for everything again; the pages keep showing what they have until it is read.
-  const reload = () => { vault.clearCaches(); calendar.stale(); return run(async () => undefined) }
+  const reload = () => { vault.clearCaches(); calendar.stale(); pullSettings(); return run(async () => undefined) }
 
   // The first walk of the vault ends in the background: its notes join the task note as last read, without a
   // spinner, a message cleared or the task note read again.
@@ -152,6 +177,25 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     }
     return () => { vault.onIndexed = null }
   }, [vault])
+
+  // Back online: read again, which sends the edits made meanwhile.
+  useEffect(() => {
+    const back = () => reload()
+    window.addEventListener('online', back)
+    return () => window.removeEventListener('online', back)
+  }, [vault])
+
+  /** Adds the lines of a clash to the end of their note, or lets the clash go. */
+  const putBack = (c: Clash) =>
+    run(async () => {
+      const res = await vault.editNote((text) => ({ ok: true, text: appendLines(text, c.lines) }), c.fileId)
+      if (res.ok) clashes.remove(c.id)
+      return res.ok ? { ok: true, notice: `ใส่บรรทัดไว้ท้าย ${c.name} แล้ว` } : res
+    })
+  const letGo = (c: Clash) => {
+    clashes.remove(c.id)
+    setKept(clashes.all())
+  }
 
   // Once a day finished tasks move to the archive note (Settings: archive days); the note is read again only if some moved.
   useEffect(() => {
@@ -196,13 +240,29 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
 
   return (
-    <Shell page={page} onNavigate={navigate} onAdd={() => setAdding(true)} sync={{ state: needSignIn ? 'off' : busy ? 'busy' : 'ok', at: syncedAt }} onReload={reload}>
+    <Shell page={page} onNavigate={navigate} onAdd={() => setAdding(true)} sync={{ state: needSignIn ? 'off' : busy ? 'busy' : offline ? 'offline' : 'ok', at: syncedAt, waiting }} onReload={reload}>
       {needSignIn && (
         <div class="banner" role="alert">
           หมดเวลาเข้าสู่ระบบ <button class="link" onClick={p.onSignIn}>เข้าสู่ระบบอีกครั้ง</button>
         </div>
       )}
       {message && <div class="banner" role="alert">{message}</div>}
+      {kept.length > 0 && (
+        <div class="banner" role="alert" aria-label="การแก้ที่ชนกัน">
+          <strong>การแก้ที่ชนกับที่อื่น</strong>
+          <div class="small">Google Drive ใช้ของอีกฝั่งไว้ ด้านล่างคือที่แก้จากเครื่องนี้ ใส่ไว้ท้ายโน้ตเพื่อจัดการเอง หรือทิ้งไปถ้าไม่ต้องการแล้ว</div>
+          {kept.map((c) => (
+            <div class="clash" key={c.id}>
+              <div class="small">{c.name}</div>
+              <div class="clash-lines">{c.lines.map((l) => l.trim()).join('\n')}</div>
+              <div class="clash-actions">
+                <button class="link quiet" onClick={() => letGo(c)}>ทิ้ง</button>
+                <button class="link" disabled={busy} onClick={() => putBack(c)}>ใส่ท้ายโน้ต</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {snapshot && snapshot.conflicts.length > 0 && (
         <div class="banner" role="alert">
           พบสำเนาจากการซิงก์ชนกัน: {snapshot.conflicts.join(', ')}
@@ -211,12 +271,12 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         </div>
       )}
 
-      {page === 'focus' ? <FocusPage {...props} />
-        : page === 'tasks' ? <TasksPage {...props} />
-        : page === 'projects' ? <ProjectsPage {...props} />
-        : page === 'more' ? <MorePage {...props} />
-        : page === 'assistant' ? <AssistantPage {...props} />
-        : <SettingsPage {...props} />}
+      {page === 'focus' ? <FocusPage key={settingsRev} {...props} />
+        : page === 'tasks' ? <TasksPage key={settingsRev} {...props} />
+        : page === 'projects' ? <ProjectsPage key={settingsRev} {...props} />
+        : page === 'more' ? <MorePage key={settingsRev} {...props} />
+        : page === 'assistant' ? <AssistantPage key={settingsRev} {...props} />
+        : <SettingsPage key={settingsRev} {...props} />}
 
       {adding && <QuickAdd {...props} onClose={() => setAdding(false)} />}
 

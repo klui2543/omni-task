@@ -7,7 +7,7 @@ Where the conflict question stands, for the next session.
 - The sync app ("Drive Sync Ultimate") is most likely Autosync for Google Drive by MetaCtrl: the conflict name matches its documented pattern. Per MetaCtrl's 2015 post it compares MD5 (identical content is not a conflict) and, on a real conflict, keeps both versions: one under the original name, one as "(conflict ...)". Which side gets which name is not documented.
 - Autosync offers 15 min to hourly intervals, Instant upload (local changes go up right away) and a manual sync. The owner's actual settings are not known yet.
 - The Android app has no Drive access; it reads and writes the vault through the folder picked with SAF. On the first open of each day it runs the archive sweep (`TaskViewModel.sweepIfDue`), which edits `TaskForge.md` without any tap.
-- The web writes Drive directly, checking the version just before writing. No documented conditional write (If-Match) was found for Drive v3, so a short race window remains.
+- The web writes Drive directly, checking the version just before writing. No documented conditional write (If-Match) was found for Drive v3, so a short race window remains. (2026-10-11: both apps now check the revision before their own right after writing and join back a write that slipped in; see below.)
 - Obsidian Sync merges Markdown with diff-match-patch and can still duplicate text; its files are not in Drive, so the web could not read them.
 - An Android Drive login under an OAuth app in "Testing" status gets refresh tokens that expire after 7 days.
 
@@ -41,6 +41,25 @@ Not now: building our own full-vault sync ("Omni Sync") or moving to Obsidian Sy
 
 ## Open for the next session (owner deferred all three on 2026-10-10)
 1. What "Omni setting เพียบเลย" means: too many files in the Omni folder, too many options in the Settings screen, or something else. Ask the owner; nothing was changed for it.
-2. Settings sync: should the web read and write `Omni/omni-settings.json` (Android's synced settings)? Today the web keeps its choices in localStorage and never touches that file.
+2. Settings sync: done 2026-10-11, the web reads and writes `omni-settings.json` for the choices both apps have (web/README.md, "Settings shared with Android").
 3. Sync and conflict work above (steps 0 to 3).
 Also pending on the owner's side: move the files in Obsidian (Omni folder into `หลังบ้าน`, `TaskForge.md` to `Omni/Omni note.md`), add the `calendar.events` scope on the OAuth consent screen, and check CI on main after the PR #9 merge (Build APK emulator tests failed on the two runs before it).
+
+## Update (2026-10-11): the ecosystem review, all items
+Review of the whole sync design, then everything it suggested, in one change:
+1. Owner's side (no code): do not edit the files in `หลังบ้าน/Omni/` in Obsidian on the phone (tick in Omni). With
+   Drive connected in Omni, those phone copies are no longer written by Omni, so Obsidian on the phone is the last
+   second writer to them. DriveSync has no way to exclude a folder (owner, 2026-10-11), so the copies stay synced;
+   with no edits on the phone side, a sync only downloads them and makes no conflict.
+2. Both apps check the revision before their own right after each write and join back a write that landed between
+   the version check and theirs (`OmniDrive.settle`, `web/src/safeWrite.ts`).
+3. Android reads the Omni folder through Drive's change log instead of walking it on every load, walks it in full
+   once a day, and widgets and reminders reuse a read up to 2 minutes old.
+4. The web shares the choices both apps have through `omni-settings.json`.
+5. Edits that clashed are kept until the owner decides: Settings > Google Drive on Android, a banner on the web.
+6. The web works without a network: the device's copy shows, edits wait and are joined with `Merge3` when Drive
+   answers. (The review first suggested running the shared `OmniDrive` in the browser; it is written for blocking
+   calls, which a browser cannot make, so the web got its own small queue around the same `Merge3`.)
+
+Not changed: the web's sign-in stays the browser token flow; Google's code exchange for web clients needs a client
+secret, which a site with no server of its own cannot keep.

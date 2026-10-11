@@ -3,7 +3,7 @@
 // the device (IndexedDB) for the next visit.
 import { WebNotesApi } from './kotlin/OmniTask-shared.mjs'
 import { isConflictCopy } from './core'
-import { AuthExpired, Drive, DriveChange, FOLDER, sameName } from './drive'
+import { AuthExpired, Drive, DriveChange, FOLDER, Offline, sameName } from './drive'
 
 const api = WebNotesApi.getInstance()
 
@@ -164,7 +164,7 @@ export class NoteIndex {
         dirty = outcome !== 'same' || token !== this.token
         this.token = token
       } catch (e) {
-        if (e instanceof AuthExpired) throw e
+        if (e instanceof AuthExpired || e instanceof Offline) throw e
         // The change log cannot be read (an old position, say): walk the vault again.
         await this.walkFromNow()
         dirty = true
@@ -254,7 +254,8 @@ export class NoteIndex {
         const text = await this.drive.media(id)
         e.text = HAS_TASK.test(text) ? text : null
       } catch (err) {
-        if (err instanceof AuthExpired) throw err
+        // No sign-in or no network says nothing about the note: it is read next time.
+        if (err instanceof AuthExpired || err instanceof Offline) throw err
         // A file Drive will not hand over (not text after all) holds no tasks for us.
         e.text = null
       }

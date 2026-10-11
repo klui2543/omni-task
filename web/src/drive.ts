@@ -5,6 +5,8 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
 export const FOLDER = 'application/vnd.google-apps.folder'
 
 export class AuthExpired extends Error {}
+/** Google could not be reached at all (no network): what was read last can still be shown, and edits can wait. */
+export class Offline extends Error {}
 export class DriveError extends Error {
   constructor(public status: number, message: string) {
     super(message)
@@ -19,6 +21,21 @@ export interface DriveFile {
   version?: string
   modifiedTime?: string
   trashed?: boolean
+  /** The revision that holds the file's current text (files with content only). */
+  headRevisionId?: string
+}
+
+/** A file's text with its version and the revision that holds it ('' when Drive gave none). */
+export interface Versioned {
+  text: string
+  version: string
+  revision: string
+}
+
+/** What a write left on Drive: the file's new version and the revision it made. */
+export interface Written {
+  version: string
+  revision: string
 }
 
 /** One entry of Drive's change log: a file that was added, changed, moved or removed. */
@@ -44,7 +61,16 @@ export class Drive {
   constructor(private token: () => string) {}
 
   private async call(url: string, init: RequestInit = {}): Promise<Response> {
-    const res = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${this.token()}` } })
+    // Without a network an expired sign-in cannot be renewed anyway: say offline, so the device's copy serves.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Offline('navigator offline')
+    const auth = `Bearer ${this.token()}`
+    let res: Response
+    try {
+      res = await fetch(url, { ...init, headers: { ...init.headers, Authorization: auth } })
+    } catch (e) {
+      // fetch only fails like this when the request never got an answer: no network.
+      throw new Offline((e as Error).message)
+    }
     if (res.status === 401) throw new AuthExpired()
     if (!res.ok) throw new DriveError(res.status, `Drive ${res.status}: ${(await res.text()).slice(0, 200)}`)
     return res
@@ -114,10 +140,10 @@ export class Drive {
     return current
   }
 
-  async readText(id: string): Promise<{ text: string; version: string }> {
-    const version = (await this.get(id, 'version')).version ?? ''
+  async readText(id: string): Promise<Versioned> {
+    const meta = await this.get(id, 'version,headRevisionId')
     const text = await (await this.call(`${API}/files/${id}?alt=media&supportsAllDrives=true`)).text()
-    return { text, version }
+    return { text, version: meta.version ?? '', revision: meta.headRevisionId ?? '' }
   }
 
   async version(id: string): Promise<string> {
@@ -130,11 +156,11 @@ export class Drive {
   }
 
   /** A new text file in [parentId]; returns its id. */
-  async createText(parentId: string, name: string, text: string): Promise<string> {
+  async createText(parentId: string, name: string, text: string, mimeType = 'text/markdown'): Promise<string> {
     const boundary = 'omni' + Math.random().toString(36).slice(2)
     const body =
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [parentId], mimeType: 'text/markdown' })}\r\n` +
-      `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${text}\r\n--${boundary}--`
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [parentId], mimeType })}\r\n` +
+      `--${boundary}\r\nContent-Type: ${mimeType}; charset=UTF-8\r\n\r\n${text}\r\n--${boundary}--`
     const res = await this.call(`${UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id`, {
       method: 'POST',
       headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
@@ -152,12 +178,34 @@ export class Drive {
     })
   }
 
-  async writeText(id: string, text: string): Promise<void> {
-    await this.call(`${UPLOAD}/files/${id}?uploadType=media&supportsAllDrives=true`, {
+  async writeText(id: string, text: string, mimeType = 'text/markdown'): Promise<Written> {
+    const res = await this.call(`${UPLOAD}/files/${id}?uploadType=media&supportsAllDrives=true&fields=version,headRevisionId`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'text/markdown; charset=UTF-8' },
+      headers: { 'Content-Type': `${mimeType}; charset=UTF-8` },
       body: text,
     })
+    const meta = await res.json().catch(() => ({}))
+    return { version: meta.version ?? '', revision: meta.headRevisionId ?? '' }
+  }
+
+  /** The revision saved just before [revision] in the file's history, or null when Drive keeps none before it. */
+  async revisionBefore(id: string, revision: string): Promise<string | null> {
+    const ids: string[] = []
+    let pageToken = ''
+    do {
+      const params = new URLSearchParams({ fields: 'nextPageToken,revisions(id)', pageSize: '1000' })
+      if (pageToken) params.set('pageToken', pageToken)
+      const page = await (await this.call(`${API}/files/${id}/revisions?${params}`)).json()
+      ids.push(...(page.revisions ?? []).map((r: { id: string }) => r.id))
+      pageToken = page.nextPageToken ?? ''
+    } while (pageToken)
+    const at = ids.indexOf(revision)
+    return at > 0 ? ids[at - 1] : null
+  }
+
+  /** The file's text as it was at [revision]. */
+  async revisionText(id: string, revision: string): Promise<string> {
+    return (await this.call(`${API}/files/${id}/revisions/${revision}?alt=media`)).text()
   }
 
   /** A new folder in [parentId]; returns its id. */

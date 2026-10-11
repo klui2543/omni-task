@@ -13,6 +13,9 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${port}`,
     launchOptions: executablePath ? { executablePath, args: ['--no-sandbox'] } : {},
+    // The site's service worker would stand between the page and the stand-in Google; the test of opening without
+    // a network turns it on for itself.
+    serviceWorkers: 'block',
   },
   // Every test runs on an iPad in portrait and in a desktop browser window.
   projects: [

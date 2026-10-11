@@ -39,7 +39,8 @@ export function usePage(): [Page, (p: Page) => void] {
   return [page, (p) => { location.hash = '/' + p }]
 }
 
-export type Sync = { state: 'ok' | 'busy' | 'off'; at: Date | null }
+/** [waiting]: notes with edits made offline that are not on Drive yet. */
+export type Sync = { state: 'ok' | 'busy' | 'off' | 'offline'; at: Date | null; waiting?: number }
 
 const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
 
@@ -49,7 +50,10 @@ const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minut
  * is a round button floating at the bottom right of every page; adding a task is the middle of the bar.
  */
 export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
-  const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่' : p.sync.state === 'busy' ? 'กำลังซิงก์...' : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
+  const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่'
+    : p.sync.state === 'busy' ? 'กำลังซิงก์...'
+    : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
+    : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
   const onMore = p.page === 'more' || p.page === 'assistant' || p.page === 'settings'
   return (
     <div class="shell">
@@ -68,7 +72,13 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
           <button class="sync" aria-label="โหลดใหม่" title="โหลดใหม่" onClick={p.onReload}>{syncText}</button>
         </div>
       </nav>
-      <div class="content">{p.children}</div>
+      <div class="content">
+        {/* Upright on the iPad the side bar is hidden: being offline still shows, at the top, and a tap reads again. */}
+        {p.sync.state === 'offline' && (
+          <button class="sync-chip" aria-label="โหลดใหม่" title="โหลดใหม่" onClick={p.onReload}><span class="dot offline" />{syncText}</button>
+        )}
+        {p.children}
+      </div>
       {p.page !== 'assistant' && (
         <button class="ai-fab" aria-label="เปิดผู้ช่วย" onClick={() => p.onNavigate('assistant')}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" /></svg>

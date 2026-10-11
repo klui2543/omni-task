@@ -5,6 +5,7 @@ import { AuthExpired, Drive, DriveFile } from './drive'
 import { Main } from './Home'
 import { FoundVault, findVaults } from './vault'
 import { clearNoteIndex } from './noteIndex'
+import { offlineStore } from './offline'
 
 type Stage = 'setup' | 'signin' | 'vault' | 'ready'
 
@@ -27,7 +28,10 @@ export function App({ authError }: { authError: string | null }) {
         : null,
     [auth],
   )
-  const hasToken = signedIn || auth?.token != null
+  // Opened without a network after the token ran out: a trip to Google cannot work now, so the app opens on what this
+  // device kept, and asks for a sign-in once the network is back.
+  const offlineStart = auth != null && vaultId != null && auth.token == null && auth.shouldRenewSilently && navigator.onLine === false
+  const hasToken = signedIn || auth?.token != null || offlineStart
   const renewing = auth != null && !hasToken && auth.shouldRenewSilently
 
   // The token ran out since last time: renew it with a quiet trip to Google instead of asking.
@@ -63,7 +67,7 @@ export function App({ authError }: { authError: string | null }) {
       onSignIn={signIn}
       onConnectCalendar={() => auth!.signIn('select_account', CALENDAR_SCOPE)}
       onAllowCalendarWrite={() => auth!.signIn('select_account', `${CALENDAR_SCOPE} ${CALENDAR_WRITE_SCOPE}`)}
-      onSignOut={() => { auth!.signOut(); setSignedIn(false); clearNoteIndex().finally(() => location.reload()) }}
+      onSignOut={() => { auth!.signOut(); setSignedIn(false); offlineStore.clear(); clearNoteIndex().finally(() => location.reload()) }}
       onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
     />
   )

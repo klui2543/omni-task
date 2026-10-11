@@ -81,6 +81,10 @@ class DriveSettings(
     val onSignedIn: (android.content.Intent?) -> Unit,
     val onConfirm: (Boolean) -> Unit,
     val onDisconnect: () -> Unit,
+    /** Adds the phone's lines of a kept clash to the end of their note. */
+    val onPutBack: (String) -> Unit = {},
+    /** Lets a kept clash go. */
+    val onDismissClash: (String) -> Unit = {},
 )
 
 /** The choices for [ArchiveSettings.days]. */
@@ -339,6 +343,7 @@ private fun DriveConnected(drive: DriveSettings) {
                 Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
             )
         }
+        if (d.kept.isNotEmpty()) KeptClashes(drive)
         if (d.signIn) {
             PrimaryButton(
                 if (d.busy) tr("กำลังลงชื่อ", "Signing in") else tr("ลงชื่อเข้าใช้", "Sign in"),
@@ -369,6 +374,37 @@ private fun DriveConnected(drive: DriveSettings) {
                 confirmButton = { TextButton(onClick = { asking = false; drive.onDisconnect() }) { Text(tr("เลิกเชื่อม", "Disconnect"), color = C.red) } },
                 dismissButton = { TextButton(onClick = { asking = false }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
             )
+        }
+    }
+}
+
+/** Edits that clashed with a change made elsewhere: what the phone wrote, to add back to the note or let go. */
+@Composable
+private fun KeptClashes(drive: DriveSettings) {
+    Column(Modifier.padding(top = 10.dp)) {
+        Text(tr("การแก้ที่ชนกับที่อื่น", "Edits that clashed"), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
+        Text(
+            tr(
+                "Drive ใช้ของอีกฝั่งไว้ ด้านล่างคือที่แก้จากมือถือ ใส่ไว้ท้ายโน้ตเพื่อจัดการเอง หรือทิ้งไปถ้าไม่ต้องการแล้ว",
+                "Drive kept the other side. Below is what the phone wrote: add it to the end of the note to sort out yourself, or let it go.",
+            ),
+            Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption,
+        )
+        drive.state.kept.forEach { k ->
+            val time = java.time.Instant.ofEpochMilli(k.at).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+            Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.raised).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(
+                    "${k.path.substringAfterLast('/').removeSuffix(".md")}, ${"%d/%d %02d:%02d".format(time.dayOfMonth, time.monthValue, time.hour, time.minute)}",
+                    color = C.muted, fontSize = TS.caption,
+                )
+                k.lines.forEach { Text(it.trim(), Modifier.padding(top = 2.dp), color = C.text, fontSize = TS.body) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { drive.onDismissClash(k.id) }) { Text(tr("ทิ้ง", "Let go"), color = C.text2) }
+                    if (k.path.endsWith(".md", ignoreCase = true)) {
+                        TextButton(onClick = { drive.onPutBack(k.id) }) { Text(tr("ใส่ท้ายโน้ต", "Add to the note"), color = C.accentText) }
+                    }
+                }
+            }
         }
     }
 }
