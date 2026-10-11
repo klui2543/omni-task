@@ -418,7 +418,7 @@ private fun TimeRow(label: String, time: kotlinx.datetime.LocalTime, onClick: ()
 }
 
 @Composable
-private fun SettingsGroup(title: String, content: @Composable () -> Unit) {
+internal fun SettingsGroup(title: String, content: @Composable () -> Unit) {
     Card {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(title, Modifier.padding(top = 6.dp, bottom = 2.dp), color = C.accentText, style = MaterialTheme.typography.titleSmall)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { AgendaOut, PlanOut, Proposal, Ranked } from './assistantCore'
 
 // What the Assistant keeps on this device (Android keeps the same in its preferences): the log of when work got done,
@@ -69,9 +69,14 @@ const listeners = new Set<() => void>()
 
 export function useChat(): [Chat[], (change: (c: Chat[]) => Chat[]) => void] {
   const [, force] = useState(0)
-  useEffect(() => {
+  const rendered = useRef(chat)
+  rendered.current = chat
+  // Subscribed as the page is committed, not after the next paint: a tap landing in between changed the chat while
+  // nobody was listening, and the answer never showed. If it changed even so, draw once more.
+  useLayoutEffect(() => {
     const l = () => force((n) => n + 1)
     listeners.add(l)
+    if (rendered.current !== chat) l()
     return () => { listeners.delete(l) }
   }, [])
   return [chat, (change) => { chat = change(chat); listeners.forEach((l) => l()) }]
