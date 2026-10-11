@@ -241,7 +241,7 @@ object WebFocus {
                     is DayPlan.Item.EventItem -> {
                         val e = item.event
                         val phase = DayPlan.phase(e, now)
-                        val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${hm(e.begin.time)} ถึง ${hm(e.end.time)}", "${hm(e.begin.time)} to ${hm(e.end.time)}")
+                        val range = DayPlan.range(e, item.time != null, today) { hm(it) }
                         // Every event is on today's page and from the calendar, so only the one that is on says more.
                         val tail = if (phase == DayPlan.Phase.ACTIVE) {
                             val left = ChronoUnit.MINUTES.between(now, e.end)

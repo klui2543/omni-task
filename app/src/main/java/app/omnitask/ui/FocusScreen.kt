@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
 import app.omnitask.model.Countdown
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import java.time.format.DateTimeFormatter
@@ -85,11 +86,24 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             now = LocalDateTime.now()
         }
     }
-    // Tonight's bedtime: the one picked for this evening, or the usual one from the profile.
-    val eve = if (now.toLocalTime() >= LocalTime.of(18, 0)) today else today.minusDays(1)
-    val bedtime = state.tonightBed?.takeIf { it.first == eve }?.second ?: state.profile.sleep
-    val pickedWake = state.tonightWake?.takeIf { it.first == eve }?.second
-    val night = DayPlan.night(state.events, state.profile, now, bedtime, pickedWake)
+    // The night the sleep card plans, all day long: last night until its wake time, then tonight's.
+    // Bed and wake are the ones picked for that evening, or the usual ones from the profile.
+    val yesterday = today.minusDays(1)
+    fun bedOf(evening: LocalDate) = state.tonightBed?.takeIf { it.first == evening }?.second ?: state.profile.sleep
+    fun wakeOf(evening: LocalDate) = state.tonightWake?.takeIf { it.first == evening }?.second
+    val clock = now.toLocalTime()
+    val eve = if (clock < LocalTime.of(18, 0) && clock < (wakeOf(yesterday) ?: state.profile.wake)) yesterday else today
+    // From 18:00 until the wake time it is night: the card counts down to bed instead of the free time left.
+    val isNight = eve == yesterday || clock >= LocalTime.of(18, 0)
+    val bedtime = bedOf(eve)
+    val pickedWake = wakeOf(eve)
+    val night = DayPlan.night(state.events, state.profile, now, bedtime, pickedWake, evening = eve)
+    // Up until noon after a night: how long it gave, from its planned bedtime.
+    val lastNight = if (eve == today && clock < LocalTime.NOON) {
+        val bed = bedOf(yesterday)
+        val at = if (bed >= LocalTime.NOON) yesterday.atTime(bed) else today.atTime(bed)
+        DayPlan.night(state.events, state.profile, at, bed, wakeOf(yesterday), evening = yesterday)?.sleep
+    } else null
     val free = DayPlan.freeMinutesLeft(events, now, state.profile.wake, state.profile.sleep)
     val blocked = Projects.blocked(state.tasks)
     val context = LocalContext.current
@@ -124,7 +138,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Row(Modifier.weight(1f).padding(start = 12.dp).height(IntrinsicSize.Min)) {
                         Stat("$overdue", tr("เลยกำหนด", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
                         Stat("${events.count { !it.allDay }}", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
-                        if (night != null) {
+                        if (night != null && isNight) {
                             Stat(hm(night.toBed), tr("ก่อนนอน", "Until bed"), if (night.toBed < 30) C.amber else C.text, Modifier.weight(1f))
                         } else {
                             Stat(hours(free), tr("ว่างเหลือ", "Free left"), C.lime, Modifier.weight(1f))
@@ -148,6 +162,12 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         if (alarm != null && alarm.second != wake) vm.setWakeAlarm(eve, night.wakeAt, night.sleep)
                     }
                     Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
+                        if (lastNight != null) {
+                            Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Ic.sun, null, tint = C.accentText, modifier = Modifier.size(15.dp))
+                                Text(tr("เมื่อคืนได้นอน ${hm(lastNight)}", "${hm(lastNight)} of sleep last night"), Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption)
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Ic.moon, null, tint = C.accentText, modifier = Modifier.size(15.dp))
                             Text(tr("คืนนี้", "Tonight"), Modifier.weight(1f).padding(start = 8.dp), color = C.muted, fontSize = TS.caption)
@@ -161,7 +181,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             SleepTile(tr("นอน", "Bed"), night.bedAt.format(HM), Modifier.weight(1f)) {
                                 pickSystemTime(context, bedtime) { vm.setTonightBedtime(eve, it) }
                             }
-                            SleepTile(tr("ตื่น", "Up"), night.wakeAt.format(HM), Modifier.weight(1f)) {
+                            // In the daytime the wake time is tomorrow's; say so, or it reads as this morning's.
+                            val tomorrow = night.wakeAt.toLocalDate() > today
+                            SleepTile(tr("ตื่น", "Up"), night.wakeAt.format(HM), Modifier.weight(1f), if (tomorrow) tr("พรุ่งนี้", "tomorrow") else null) {
                                 pickSystemTime(context, wake) { vm.setTonightWake(eve, it) }
                             }
                         }
@@ -205,7 +227,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                             )
                         }
                     }
-                } else {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+                }
+                run {
                     // The pinned countdown: any task, counted to its date (and time on the day).
                     FooterRow(Ic.hourglass, onClick = { pickingCountdown = true }) {
                         if (countdown == null) {
@@ -457,12 +481,15 @@ private fun DoneRing(done: Int, total: Int) {
     }
 }
 
-/** One of tonight's two times, big enough to tap. */
+/** One of tonight's two times, big enough to tap; [day] says which day when it is not today. */
 @Composable
-private fun SleepTile(label: String, time: String, modifier: Modifier, onClick: () -> Unit) {
+private fun SleepTile(label: String, time: String, modifier: Modifier, day: String? = null, onClick: () -> Unit) {
     Column(modifier.clip(RoundedCornerShape(12.dp)).background(C.raised).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(label, color = C.muted, fontSize = TS.micro)
-        Text(time, color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(time, color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
+            if (day != null) Text(day, Modifier.padding(start = 4.dp, bottom = 1.dp), color = C.muted, fontSize = TS.micro)
+        }
     }
 }
 
@@ -577,7 +604,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
     // Every event here is from the phone's calendar and on today's page, so neither needs saying.
-    val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")
+    val range = DayPlan.range(e, item.time != null, now.toLocalDate()) { it.format(HM) }
     val left = ChronoUnit.MINUTES.between(now, e.end)
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(

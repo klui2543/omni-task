@@ -235,33 +235,39 @@ private sealed interface Line {
 private fun timeline(data: WidgetData, now: LocalDateTime): List<Line> {
     val out = ArrayList<Line>()
     val plan = data.plan
-    val timed = plan.filter { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME }.flatMap { it.items }
+    // All-day events and ones running over several days lead, under a heading of their own, apart from the tasks.
+    val allDay = plan.filter { it.part == DayPlan.Part.ALL_DAY }.flatMap { it.items }
+    if (allDay.isNotEmpty()) {
+        out += Line.Head(DayPlan.Part.ALL_DAY.label)
+        allDay.forEach { out += line(it, "", now, data.today) }
+    }
+    val timed = plan.filter { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.part != DayPlan.Part.ALL_DAY }.flatMap { it.items }
     val inEvent = timed.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE }
     var nowShown = timed.isEmpty() || inEvent
     timed.forEach { item ->
         val time = item.time
         if (!nowShown && time != null && time > now.toLocalTime()) { out += Line.Now(now.toLocalTime()); nowShown = true }
-        out += line(item, time?.let(::hm) ?: "", now)
+        out += line(item, time?.let(::hm) ?: "", now, data.today)
     }
     if (!nowShown) out += Line.Now(now.toLocalTime())
     // Untimed work follows the day; overdue work is not part of it and sits last, under a heading of its own, as on the Focus screen.
     val untimed = plan.filter { it.part == DayPlan.Part.ANYTIME }.flatMap { it.items }
     if (untimed.isNotEmpty()) {
         out += Line.Head(tr("ไม่ระบุเวลา", "Any time"))
-        untimed.forEach { out += line(it, "", now) }
+        untimed.forEach { out += line(it, "", now, data.today) }
     }
     val overdue = plan.filter { it.part == DayPlan.Part.LATE }.flatMap { it.items }
     if (overdue.isNotEmpty()) {
         out += Line.Head(tr("ค้างอยู่", "Overdue"), overdue = true)
-        overdue.forEach { out += line(it, "", now) }
+        overdue.forEach { out += line(it, "", now, data.today) }
     }
     return out
 }
 
-private fun line(item: DayPlan.Item, time: String, now: LocalDateTime): Line = when (item) {
+private fun line(item: DayPlan.Item, time: String, now: LocalDateTime, today: LocalDate): Line = when (item) {
     is DayPlan.Item.EventItem -> {
         val e = item.event
-        val range = if (e.allDay) tr("ทั้งวัน", "All day") else hm(e.begin.toLocalTime()) + tr(" ถึง ", " to ") + hm(e.end.toLocalTime())
+        val range = DayPlan.range(e, item.time != null, today, ::hm)
         Line.Event(e.title, range, DayPlan.phase(e, now), ChronoUnit.MINUTES.between(now, e.end), DayPlan.progress(e, now))
     }
     is DayPlan.Item.TaskItem -> Line.Todo(time, item.task, listOfNotNull(Projects.projectOf(item.task)?.let { "#$it" }, Focus.waitingFor(item.task)?.let { tr("รอ $it", "waiting on $it") }).joinToString(", "))

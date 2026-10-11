@@ -10,6 +10,8 @@ import app.omnitask.time.*
 object DayPlan {
 
     enum class Part(private val th: String, private val en: String) {
+        /** All-day events, and events running over several days, on top of the day and apart from the tasks. */
+        ALL_DAY("วันนี้", "Today"),
         LATE("ค้างอยู่", "Overdue"), MORNING("เช้า", "Morning"), AFTERNOON("บ่าย", "Afternoon"), EVENING("เย็น", "Evening"),
         ANYTIME("ไม่ระบุเวลา", "Any time"),
         ;
@@ -51,11 +53,28 @@ object DayPlan {
         }
         events.filter { overlaps(it, today) }.forEach { e ->
             val time = if (e.allDay) null else e.begin.toLocalTime().takeIf { e.begin.toLocalDate() == today }
-            items += partOf(time) to Item.EventItem(e, time)
+            items += (if (time == null) Part.ALL_DAY else partOf(time)) to Item.EventItem(e, time)
         }
         return Part.entries.map { part ->
             Section(part, items.filter { it.first == part }.map { it.second }.sortedBy { it.time ?: LocalTime.LAST })
         }.filter { it.items.isNotEmpty() }
+    }
+
+    /** The time line of an event on [today]'s page: its hours, or All day (with which day of a long one). */
+    fun range(e: CalendarEvent, timed: Boolean, today: LocalDate, hm: (LocalTime) -> String): String {
+        if (timed) return tr("${hm(e.begin.toLocalTime())} ถึง ${hm(e.end.toLocalTime())}", "${hm(e.begin.toLocalTime())} to ${hm(e.end.toLocalTime())}")
+        val day = dayOf(e, today)?.let { (n, of) -> tr(" (วันที่ $n จาก $of)", " (day $n of $of)") } ?: ""
+        return tr("ทั้งวัน", "All day") + day
+    }
+
+    /** For an event over several days: which day [today] is of how many, like 2 of 3. Null for a one-day event. */
+    fun dayOf(e: CalendarEvent, today: LocalDate): Pair<Int, Int>? {
+        val first = e.begin.toLocalDate()
+        // An event ending at midnight does not take the day it ends on.
+        val last = e.end.toLocalDate().let { if (e.end.toLocalTime() == LocalTime.MIDNIGHT && it > first) it.minusDays(1) else it }
+        val total = ChronoUnit.DAYS.between(first, last).toInt() + 1
+        if (total < 2) return null
+        return (ChronoUnit.DAYS.between(first, today).toInt() + 1).coerceIn(1, total) to total
     }
 
     /** Where a timed calendar event stands against the clock. All-day events never pass or run. */
@@ -144,15 +163,17 @@ object DayPlan {
     /**
      * From 18:00 until the morning wake time: bed is at [bedtime] (tonight's, after midnight when it is before
      * noon, or now if it has passed), and sleep ends as in [sleepLeft]. A [wake] picked for tonight replaces the
-     * profile's and is kept as it is, so a morning event no longer pulls it earlier. Null during the day.
+     * profile's and is kept as it is, so a morning event no longer pulls it earlier. Null during the day, unless the
+     * [evening] the night starts on is given: then a daytime call plans the night ahead.
      */
-    fun night(events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, bedtime: LocalTime, wake: LocalTime? = null): Night? {
+    fun night(events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, bedtime: LocalTime, wake: LocalTime? = null, evening: LocalDate? = null): Night? {
         val p = if (wake != null) profile.copy(wake = wake) else profile
         val t = now.toLocalTime()
-        val evening = t >= LocalTime.of(18, 0)
-        if (!evening && t >= p.wake) return null
+        val late = t >= LocalTime.of(18, 0)
+        // Given the evening, the night is planned all day long (the Focus card); without, there is none in the daytime.
+        if (evening == null && !late && t >= p.wake) return null
         // The evening this night belongs to.
-        val eve = if (evening) now.toLocalDate() else now.toLocalDate().minusDays(1)
+        val eve = evening ?: if (late) now.toLocalDate() else now.toLocalDate().minusDays(1)
         val planned = if (bedtime >= LocalTime.NOON) eve.atTime(bedtime) else eve.plusDays(1).atTime(bedtime)
         val bedAt = if (planned < now) now else planned
         // With a picked wake time only what is still on at bedtime counts (a shift running late), not the morning's events.
