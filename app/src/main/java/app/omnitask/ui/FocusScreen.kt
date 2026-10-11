@@ -167,6 +167,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                         // Why the wake time is what it is: an event in the morning, or picked for tonight.
                         val why = when {
+                            pickedWake != null && state.wakeFromWatch -> tr("ตั้งจากนาฬิกา", "Set on the watch")
                             pickedWake != null -> tr("ตั้งเองสำหรับคืนนี้", "Picked for tonight")
                             night.because != null -> tr("เผื่อ 1 ชม. ก่อน ${night.because!!.begin.format(HM)}: ${night.because!!.title}", "An hour before ${night.because!!.begin.format(HM)}: ${night.because!!.title}")
                             else -> null

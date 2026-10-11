@@ -2,7 +2,10 @@
 <resources>
     <string name="tonight">Alarm tonight</string>
     <string name="none">No alarm set</string>
-    <string name="none_hint">Set it from the sleep card in the phone app</string>
+    <string name="set">Set alarm</string>
+    <string name="wake">Wake</string>
+    <string name="save">Save</string>
+    <string name="tap_to_edit">Tap to change</string>
     <string name="sleep">%1$s of sleep</string>
     <string name="wake_up">Time to wake up</string>
     <string name="snooze">+5 min</string>

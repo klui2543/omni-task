@@ -5,7 +5,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.google.android.gms.wearable.DataMap
+import com.google.android.gms.wearable.PutDataMapRequest
+import com.google.android.gms.wearable.Wearable
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
@@ -55,6 +58,23 @@ object WakeAlarm {
 
     fun snooze(context: Context, minutes: Long, auto: Boolean) =
         set(context, LocalDateTime.now().plusMinutes(minutes).withSecond(0).withNano(0), snoozes = if (auto) snoozes(context) + 1 else 0)
+
+    /** Where a time set on the watch goes, so the phone counts tonight's sleep from it. */
+    const val TO_PHONE = "/wake/watch"
+
+    /** Sets the alarm from the watch itself, for the next [time] to come, and tells the phone. */
+    fun setOnWatch(context: Context, time: LocalTime): LocalDateTime {
+        val now = LocalDateTime.now()
+        var at = now.toLocalDate().atTime(time)
+        if (at <= now) at = at.plusDays(1)
+        set(context, at, sleep = 0)
+        val request = PutDataMapRequest.create(TO_PHONE).apply {
+            dataMap.putString("at", at.toString())
+            dataMap.putLong("sent", System.currentTimeMillis())
+        }.asPutDataRequest().setUrgent()
+        Wearable.getDataClient(context).putDataItem(request)
+        return at
+    }
 
     /** Puts the saved time in the system alarm clock, or clears it. Also run after a reboot. */
     fun schedule(context: Context) {

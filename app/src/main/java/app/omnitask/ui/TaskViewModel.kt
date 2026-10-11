@@ -155,6 +155,8 @@ data class UiState(
     val alarmSet: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     /** The last send did not reach a watch with Omni. */
     val alarmFailed: Boolean = false,
+    /** Tonight's wake time was set on the watch. */
+    val wakeFromWatch: Boolean = false,
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
@@ -301,6 +303,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         tonightBed = nightPref(KEY_TONIGHT_BED),
         tonightWake = nightPref(KEY_TONIGHT_WAKE),
         alarmSet = nightPref(KEY_ALARM_SET),
+        wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false),
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
@@ -312,6 +315,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     // Any settings change is copied to the vault file a moment later, batching quick taps into one write.
     private var saveJob: Job? = null
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // A wake time set on the watch lands here from WatchListener.
+        if (key in WATCH_KEYS) {
+            _state.update {
+                it.copy(tonightWake = nightPref(KEY_TONIGHT_WAKE), alarmSet = nightPref(KEY_ALARM_SET), wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false), alarmFailed = false)
+            }
+        }
         if (key == null || key in SYNC_IGNORED) return@OnSharedPreferenceChangeListener
         val vault = _state.value.vault ?: return@OnSharedPreferenceChangeListener
         saveJob?.cancel()
@@ -1682,8 +1691,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Tonight's wake time, or null to go back to the usual one (or an hour before the morning's first event). */
     fun setTonightWake(evening: LocalDate, time: kotlinx.datetime.LocalTime?) {
-        prefs.edit().apply { if (time == null) remove(KEY_TONIGHT_WAKE) else putString(KEY_TONIGHT_WAKE, nightValue(evening, time)) }.apply()
-        _state.update { it.copy(tonightWake = time?.let { evening to it }) }
+        prefs.edit().apply { if (time == null) remove(KEY_TONIGHT_WAKE) else putString(KEY_TONIGHT_WAKE, nightValue(evening, time)) }.putBoolean(KEY_WAKE_FROM_WATCH, false).apply()
+        _state.update { it.copy(tonightWake = time?.let { evening to it }, wakeFromWatch = false) }
     }
 
     /** Sends tonight's wake time to the watch, which rings it (the phone stays quiet); null [wakeAt] cancels it. */
@@ -1788,8 +1797,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_CUSTOM_KINDS = "customKinds"
         const val KEY_HIDDEN_KINDS = "hiddenKinds"
         const val KEY_TONIGHT_BED = "sleep.tonight"
-        const val KEY_TONIGHT_WAKE = "sleep.tonight.wake"
-        const val KEY_ALARM_SET = "sleep.alarm"
+        // WatchListener writes these too, when a wake time is set on the watch.
+        const val KEY_TONIGHT_WAKE = WatchAlarm.KEY_TONIGHT_WAKE
+        const val KEY_ALARM_SET = WatchAlarm.KEY_ALARM_SET
+        const val KEY_WAKE_FROM_WATCH = WatchAlarm.KEY_WAKE_FROM_WATCH
+        private val WATCH_KEYS = setOf(KEY_TONIGHT_WAKE, KEY_ALARM_SET, KEY_WAKE_FROM_WATCH)
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"

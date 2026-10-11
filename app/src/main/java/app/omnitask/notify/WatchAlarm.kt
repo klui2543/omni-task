@@ -14,7 +14,14 @@ import java.util.concurrent.TimeUnit
  */
 object WatchAlarm {
     private const val PATH = "/wake"
+    /** Where the watch writes a wake time set on it (see WatchListener). */
+    const val FROM_WATCH = "/wake/watch"
     private const val CAPABILITY = "omni_wake"
+
+    // The app's preferences for tonight, shared with the view model.
+    const val KEY_TONIGHT_WAKE = "sleep.tonight.wake"
+    const val KEY_ALARM_SET = "sleep.alarm"
+    const val KEY_WAKE_FROM_WATCH = "sleep.wake.watch"
 
     /**
      * Writes [at] (null cancels) and says whether a watch with Omni is in reach right now. Blocks, so call it
