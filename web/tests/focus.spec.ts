@@ -10,7 +10,7 @@ test('opens on Focus with the day, who is waiting and the future pick', async ({
   await expect(page.getByRole('img', { name: 'เสร็จแล้ว 0 จาก 4' })).toBeVisible()
   await expect(page.locator('.plabel', { hasText: 'ค้างอยู่' })).toBeVisible()
   await expect(page.getByText('เลย 1 วัน')).toBeVisible()
-  await expect(page.getByText('ครบวันนี้, กำลังทำ, งานย่อย 1/2')).toBeVisible()
+  await expect(page.getByText('10:00, กำลังทำ, งานย่อย 1/2')).toBeVisible()
   await expect(page.getByText('พี่เอ รอ 12 วัน')).toBeVisible()
   await expect(page.getByText('ค้าง 21 วัน')).toBeVisible()
   await expect(page.getByText('มีคนรอมา 12 วันแล้ว ยกเป็นสำคัญ?')).toBeVisible()
@@ -118,7 +118,7 @@ test('Google Calendar: asks first, then the events join the plan and take free t
 
   await page.getByRole('button', { name: 'อนุญาต' }).click()
   await expect(page.getByText('ประชุมทีม')).toBeVisible()
-  await expect(page.getByText('13:00 ถึง 14:30, Google Calendar')).toBeVisible()
+  await expect(page.getByText('13:00 ถึง 14:30')).toBeVisible()
   await expect(page.getByText('เชื่อมต่อ Google Calendar')).toHaveCount(0)
   // Today's only: tomorrow's meeting is read (for the night) but not planned.
   await expect(page.getByText('ประชุมพรุ่งนี้')).toHaveCount(0)
@@ -181,10 +181,9 @@ test('the red line runs through the event that is on, and an event that is over 
   })
   const over = page.locator('.prow.event.past')
   await expect(over).toContainText('ราวด์เช้า')
-  await expect(over).toContainText('จบแล้ว')
   const on = page.locator('.prow.event.active')
   await expect(on).toContainText('ประชุมทีม')
-  await expect(on).toContainText('ตอนนี้ 09:20 เหลือ 40 นาที')
+  await expect(on).toContainText('เหลือ 40 นาที')
   // 20 of 60 minutes in: the line sits a third of the way down the card, so no separate line is drawn.
   await expect(on.locator('.ebox')).toHaveAttribute('style', /--p:\s*33%/)
   await expect(page.locator('.nowline')).toHaveCount(0)
@@ -195,7 +194,20 @@ test('a task ticked today stays on the timeline, greyed', async ({ page }) => {
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
   const row = page.locator('.prow.done', { hasText: 'ทบทวนเคส' })
   await expect(row).toBeVisible()
-  await expect(row).toContainText('เสร็จแล้ว')
+  // A finished task is one line: nothing under its title.
+  await expect(row.locator('.plead')).toHaveCount(0)
   // The ring still counts one of four, not two of five.
   await expect(page.getByRole('img', { name: 'เสร็จแล้ว 1 จาก 4' })).toBeVisible()
+})
+
+test('overdue work is a card of its own, below the day\'s timeline', async ({ page }) => {
+  await open(page)
+  const day = page.locator('.fcard.plan:not(.overdue)')
+  const late = page.locator('.fcard.plan.overdue')
+  await expect(late).toContainText('ค้างอยู่')
+  await expect(late).toContainText('ส่งรายงาน')
+  await expect(day).not.toContainText('ค้างอยู่')
+  await expect(day).not.toContainText('ส่งรายงาน')
+  // The day's rows do not repeat that they are today's.
+  await expect(day).not.toContainText('ครบวันนี้')
 })

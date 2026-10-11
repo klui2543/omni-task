@@ -242,13 +242,12 @@ object WebFocus {
                         val e = item.event
                         val phase = DayPlan.phase(e, now)
                         val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${hm(e.begin.time)} ถึง ${hm(e.end.time)}", "${hm(e.begin.time)} to ${hm(e.end.time)}")
-                        val tail = when (phase) {
-                            DayPlan.Phase.ACTIVE -> {
-                                val left = ChronoUnit.MINUTES.between(now, e.end)
-                                tr(", ตอนนี้ ${hm(nowTime)} เหลือ $left นาที", ", now ${hm(nowTime)}, $left min left")
-                            }
-                            DayPlan.Phase.PAST -> tr(", จบแล้ว", ", ended")
-                            DayPlan.Phase.UPCOMING -> ", Google Calendar"
+                        // Every event is on today's page and from the calendar, so only the one that is on says more.
+                        val tail = if (phase == DayPlan.Phase.ACTIVE) {
+                            val left = ChronoUnit.MINUTES.between(now, e.end)
+                            tr(", เหลือ $left นาที", ", $left min left")
+                        } else {
+                            ""
                         }
                         PlanItem(
                             "event", item.time?.let { hm(it) }, title = e.title, range = range + tail, link = links[e.id],
@@ -273,20 +272,16 @@ object WebFocus {
         val t = item.task
         val late = t.isOpen && t.due?.let { it < today } == true
         val done = t.status == Status.DONE
-        val lead = when {
-            done -> tr("เสร็จแล้ว", "Done")
-            late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
-            t.due == today -> tr("ครบวันนี้", "Due today")
-            else -> tr("นัดวันนี้", "Scheduled today")
-        }
-        val sub = listOfNotNull(
+        // Every row is today's, so "due today" would only repeat: a lead is for overdue work only, and a finished task is a title.
+        val lead = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
+        val sub = if (done) emptyList() else listOfNotNull(
             if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
             Projects.projectOf(t),
             progress[t.key]?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
         )
         return PlanItem(
             "task", item.time?.let { hm(it) }, t.key, t.title, lead, late,
-            if (sub.isEmpty()) null else ", " + sub.joinToString(", "), blocked,
+            if (sub.isEmpty()) null else sub.joinToString(", "), blocked,
             done = done,
         )
     }

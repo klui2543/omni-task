@@ -29,7 +29,7 @@ class WebFocusTest {
         assertTrue(r.contains("\"label\":\"ค้างอยู่\",\"late\":true,\"tasks\":1"), r)
         assertTrue(r.contains("{\"type\":\"now\",\"time\":\"09:20\""), r)
         assertTrue(r.contains("\"lead\":\"เลย 1 วัน\",\"late\":true"), r)
-        assertTrue(r.contains("\"extra\":\", กำลังทำ, งานย่อย 1/2\""), r)
+        assertTrue(r.contains("\"extra\":\"กำลังทำ, งานย่อย 1/2\""), r)
         // 3 open tasks for today plus 1 overdue, and 1 done today.
         assertTrue(r.contains("\"ring\":{\"done\":1,\"total\":5,\"overdue\":1,\"events\":0}"), r)
         assertTrue(r.contains("\"waiting\":[{\"key\":\"f#6\",\"who\":\"พี่เอ\",\"age\":12}]"), r)
@@ -64,7 +64,7 @@ class WebFocusTest {
         val events = ""","events":[{"id":1,"title":"ประชุมทีม","begin":"2026-10-08T13:00","end":"2026-10-08T14:30"}]"""
         val r = focus(events)
         assertTrue(r.contains("\"type\":\"event\",\"time\":\"13:00\",\"title\":\"ประชุมทีม\""), r)
-        assertTrue(r.contains("\"range\":\"13:00 ถึง 14:30, Google Calendar\""), r)
+        assertTrue(r.contains("\"range\":\"13:00 ถึง 14:30\""), r)
         assertTrue(r.contains("\"events\":1"), r)
         // From 09:20 to the usual 22:30 bedtime, less the 90 minute meeting.
         assertTrue(r.contains("\"third\":{\"kind\":\"free\",\"minutes\":${13 * 60 + 10 - 90}"), r)
@@ -74,9 +74,9 @@ class WebFocusTest {
     fun anEventCarriesItsGoogleCalendarLinkIntoThePlan() {
         val events = ""","events":[{"id":7,"title":"ประชุมทีม","begin":"2026-10-08T13:00","end":"2026-10-08T14:30","link":"https://www.google.com/calendar/event?eid=abc"},{"id":8,"title":"ไม่มีลิงก์","begin":"2026-10-08T16:00","end":"2026-10-08T17:00"}]"""
         val r = focus(events)
-        assertTrue(r.contains("\"range\":\"13:00 ถึง 14:30, Google Calendar\",\"link\":\"https://www.google.com/calendar/event?eid=abc\""), r)
+        assertTrue(r.contains("\"range\":\"13:00 ถึง 14:30\",\"link\":\"https://www.google.com/calendar/event?eid=abc\""), r)
         // An event without a link carries no link key: the next field after its range is not "link".
-        assertTrue(r.contains("\"range\":\"16:00 ถึง 17:00, Google Calendar\",\"done\":false"), r)
+        assertTrue(r.contains("\"range\":\"16:00 ถึง 17:00\",\"done\":false"), r)
     }
 
     @Test
