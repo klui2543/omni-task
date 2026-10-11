@@ -184,6 +184,7 @@ export function FocusPage(p: PageProps) {
             <div class="muted small">{longDate(now)}</div>
             <h1>{greeting(now)}</h1>
           </div>
+          <button class="ghost pill-btn" onClick={() => p.onNavigate('assistant')}>✦ ผู้ช่วย</button>
           <div class="menu-wrap">
             <button class="square" aria-label="เมนู" aria-expanded={menu} onClick={() => setMenu(!menu)}>⋮</button>
             {menu && (
@@ -352,6 +353,7 @@ export function FocusPage(p: PageProps) {
           </div>
         )}
 
+        <button class="fab narrow-only" aria-label="เพิ่มงาน" onClick={() => setAdding(true)}>+</button>
         {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
         {dialog === 'review' && f && (
           <ReviewDialog

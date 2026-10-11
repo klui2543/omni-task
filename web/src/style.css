@@ -67,16 +67,13 @@ button.link { border: 0; background: none; color: var(--accent-text); min-height
 .sync:hover { color: var(--accent-text); }
 .bar { position: fixed; left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: rgb(255 255 255 / .96); border: 1px solid var(--border); border-radius: 20px; padding: 6px; z-index: 5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .bar button { height: 50px; border: 0; border-radius: 14px; font-size: 13px; line-height: 1.2; background: transparent; color: var(--muted); padding: 0 2px; }
-.bar button[aria-current=page] { background: var(--accent-soft); color: var(--accent-text); font-weight: 500; }
-.bar button.bar-add { background: var(--accent); color: #fff; font-size: 26px; font-weight: 400; }
+.bar button[aria-current=page] { background: var(--accent); color: #fff; font-weight: 500; }
 .wide-only { display: none; }
-.ai-fab { position: fixed; right: max(24px, env(safe-area-inset-right)); bottom: calc(max(14px, env(safe-area-inset-bottom)) + 90px); width: 56px; height: 56px; border-radius: 18px; border: 1px solid var(--accent-line, var(--accent)); background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; box-shadow: 0 6px 16px rgb(30 30 60 / .2); z-index: 5; }
-.ai-fab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.fab { position: fixed; right: max(24px, env(safe-area-inset-right)); bottom: calc(max(14px, env(safe-area-inset-bottom)) + 90px); width: 56px; height: 56px; border-radius: 18px; border: 0; background: var(--accent); color: #fff; font-size: 28px; line-height: 1; box-shadow: 0 6px 16px rgb(30 30 60 / .2); z-index: 5; }
 
 @media (min-width: 1000px) {
   .side { display: flex; flex-direction: column; flex: none; position: sticky; top: 0; height: 100vh; height: 100dvh; width: 180px; padding: 24px 12px 16px; background: var(--card); border-right: 1px solid var(--border); }
   .bar, .narrow-only { display: none !important; }
-  .ai-fab { bottom: 24px; }
   .wide-only { display: revert; }
   .kbd.wide-only { display: inline; }
 }
@@ -775,9 +772,9 @@ main.page { zoom: var(--text-scale, 1); }
 :root[data-theme=dark] .bar { background: rgb(19 22 27 / .94); }
 :root[data-palette=midnight] .bar { background: rgb(23 26 35 / .94); }
 :root[data-theme=dark] .chip.warn { border-color: #6b2f33; }
-:root[data-palette=midnight] button.primary, :root[data-palette=midnight] .bar button.bar-add,
+:root[data-palette=midnight] button.primary, :root[data-palette=midnight] .bar button[aria-current=page], :root[data-palette=midnight] .fab,
 :root[data-palette=midnight] .segmented button[aria-checked=true], :root[data-palette=midnight] .as-bubble { color: #0d0f14; }
-:root[data-theme=dark] .as-bubble, :root[data-theme=dark] .segmented button[aria-checked=true], :root[data-theme=dark] button.primary, :root[data-theme=dark] .bar button.bar-add { color: #06101c; }
+:root[data-theme=dark] .as-bubble, :root[data-theme=dark] .segmented button[aria-checked=true], :root[data-theme=dark] button.primary, :root[data-theme=dark] .bar button[aria-current=page], :root[data-theme=dark] .fab { color: #06101c; }
 
 /* ---------- Settings ---------- */
 .set-cols { display: flex; gap: 14px; align-items: flex-start; }
@@ -816,17 +813,3 @@ a.ebox, a.tpill.ev, a.tblock.ev, a.teal-text { color: inherit; text-decoration: 
 a.teal-text { color: var(--teal-text); }
 a.ebox:hover, a.tpill.ev:hover, a.tblock.ev:hover, a.teal-text:hover { filter: brightness(.96); }
 .as-switch { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; }
-
-/* More: rows like Settings' cards (the narrow bottom bar's page). */
-.more-card { padding: 0; overflow: hidden; }
-.more-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 0 16px; border: 0; background: transparent; color: var(--text); font-size: 15px; text-align: left; }
-.more-row.hl { color: var(--accent-text); font-weight: 500; }
-.more-row .chev { color: var(--faint); font-size: 20px; }
-.more-group { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
-.more-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--accent-text); }
-
-/* Tasks: the filter, the views (one at a time) and sort on one row, scrolling sideways when narrow. */
-.layout-bar { flex-wrap: nowrap; align-items: center; overflow-x: auto; scrollbar-width: none; }
-.layout-bar::-webkit-scrollbar { display: none; }
-.layout-bar > * { flex: none; }
-.layout-chips { flex-wrap: nowrap; }

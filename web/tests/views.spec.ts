@@ -9,7 +9,7 @@ async function views(page: Page, opts: Parameters<typeof open>[1] = {}, mode?: s
   if (mode) await page.addInitScript((m) => localStorage.setItem('omni.viewMode', m), mode)
   const opened = await open(page, { note: NOTE + MORE, ...opts })
   await page.evaluate(() => { location.hash = '/views' })
-  await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
   return opened
 }
 const tab = (page: Page, name: string) => page.getByRole('tab', { name, exact: true })

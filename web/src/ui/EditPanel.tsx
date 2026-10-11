@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { describeRule, kindPicker, today } from '../core'
 import { customKindTags, kindsStore } from '../kinds'
 import type { PageProps } from '../Home'
@@ -53,15 +53,7 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const [sub, setSub] = useState('')
   const [askDelete, setAskDelete] = useState(false)
   useEffect(() => setDesc(t.description), [t.key, t.description])
-  // A different task closes what was open. Not on the first render: that effect runs after paint, and a tap on a
-  // chip landing before it was undone (the panel looked as if it ignored the tap).
-  const shown = useRef(t.key)
-  useEffect(() => {
-    if (shown.current === t.key) return
-    shown.current = t.key
-    setOpen(null)
-    setAskDelete(false)
-  }, [t.key])
+  useEffect(() => { setOpen(null); setAskDelete(false) }, [t.key])
 
   const change = (op: EditOp) => p.run(() => p.vault.change(p.fresh(t), op))
   const all = p.snapshot?.tasks ?? []

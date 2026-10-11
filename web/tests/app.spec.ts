@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
 import { FakeDrive, TASKS } from './fakeGoogle'
-import { goTo } from './helpers'
 
 const TODAY = new Date('2026-10-08T10:00:00+07:00')
 
@@ -241,34 +240,12 @@ test('the menu moves between pages and the page stays after a reload', async ({ 
   await expect(menu).toHaveCount(1)
   await expect(menu.getByRole('button', { name: 'งาน', exact: true })).toHaveAttribute('aria-current', 'page')
 
-  // The views are a switch on the Tasks page; the old Views address still opens them there.
-  await page.getByRole('tab', { name: 'Kanban', exact: true }).click()
-  await expect(page.getByRole('tab', { name: 'Kanban', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await menu.getByRole('button', { name: 'มุมมอง' }).click()
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Kanban', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('tab', { name: 'รายการ', exact: true }).click()
-  await expect(page.getByRole('tab', { name: 'รายการ', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await page.evaluate(() => { location.hash = '/views' })
-  await expect(page.getByRole('tab', { name: 'Kanban', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(page).toHaveURL(/#\/tasks$/)
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
 
-  await goTo(page, 'ตั้งค่า')
-  await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
-})
-
-test('More (narrow) has the assistant and settings; the floating button opens the assistant', async ({ page }) => {
-  await setup(page)
-  await signInAndPick(page)
-  await page.getByRole('button', { name: 'เปิดผู้ช่วย' }).click()
-  await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
-  // The assistant is the page itself: no floating button over it.
-  await expect(page.getByRole('button', { name: 'เปิดผู้ช่วย' })).toHaveCount(0)
-  await page.evaluate(() => { location.hash = '/more' })
-  await expect(page.getByRole('heading', { name: 'เพิ่มเติม', level: 1 })).toBeVisible()
-  await expect(page.getByRole('main').getByRole('button', { name: 'ผู้ช่วย' })).toBeVisible()
-  await expect(page.getByRole('main').getByRole('button', { name: 'ตั้งค่า' })).toBeVisible()
-  await page.getByRole('main').getByRole('button', { name: 'ตั้งค่า' }).click()
+  await page.getByRole('button', { name: 'ตั้งค่า' }).first().click()
   await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
 })
 
@@ -368,9 +345,9 @@ test('filters, grouping and sorting change the list and are remembered', async (
   await page.getByRole('button', { name: 'เอา วันนี้ ออก' }).click()
   await expect(page.getByText('ส่งรายงาน')).toBeVisible()
 
-  await page.getByRole('button', { name: 'เรียงและจัดกลุ่ม' }).click()
+  await page.getByRole('button', { name: /^กลุ่ม:/ }).click()
   await page.getByRole('radio', { name: 'ความสำคัญ' }).click()
   await page.getByRole('button', { name: 'เสร็จ', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'เรียงและจัดกลุ่ม' })).toHaveAttribute('title', /กลุ่ม: ความสำคัญ/)
+  await expect(page.getByRole('button', { name: 'กลุ่ม: ความสำคัญ' })).toBeVisible()
   await expect(page.getByRole('heading', { name: /เลยกำหนด/ })).toHaveCount(0)
 })

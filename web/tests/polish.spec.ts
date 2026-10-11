@@ -47,7 +47,7 @@ test('the Tasks filter sheet has the "hide done" switch too, shared with Views',
 
   // The Views page reads the same choice: with it off, Kanban's Done column is open.
   await page.evaluate(() => { localStorage.setItem('omni.viewMode', 'kanban'); location.hash = '/views' })
-  await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
   await expect(page.getByRole('region', { name: 'เสร็จ', exact: true })).toBeVisible()
 })
 

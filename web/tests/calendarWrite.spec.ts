@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { Profile, allowFolders } from './assistantHelpers'
-import { goTo, open } from './helpers'
+import { open } from './helpers'
 
 // The assistant can put what it plans on Google Calendar, as on Android. The web asks for the write permission
 // (calendar.events) only the first time the owner turns that on, and says why first.
@@ -9,7 +9,7 @@ import { goTo, open } from './helpers'
 async function openAssistant(page: Page, opts: Parameters<typeof open>[1] = {}) {
   const r = await open(page, { profile: Profile, ...opts })
   await allowFolders(page, r.drive)
-  await goTo(page, 'ผู้ช่วย')
+  await page.getByRole('navigation', { name: 'เมนูหลัก' }).getByRole('button', { name: 'ผู้ช่วย', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
   return r
 }
@@ -139,6 +139,6 @@ test('an event added shows up in the calendar views', async ({ page }) => {
   await page.getByRole('button', { name: 'สร้างงานในโน้ต' }).click()
   await expect(page.getByRole('button', { name: 'เพิ่มงาน + ลงปฏิทินแล้ว' })).toBeVisible()
   await page.evaluate(() => { localStorage.setItem('omni.viewMode', 'gantt'); location.hash = '/views' })
-  await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'มุมมอง', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: /ไปธนาคาร/ }).first()).toBeVisible()
 })

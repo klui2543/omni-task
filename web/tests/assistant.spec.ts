@@ -1,13 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { Profile, allowFolders, profileText } from './assistantHelpers'
-import { at, goTo, open } from './helpers'
+import { at, open } from './helpers'
 
 /** Opens the app on the Assistant page. */
 async function openAssistant(page: Page, opts: Parameters<typeof open>[1] = {}) {
   const r = await open(page, opts)
   await allowFolders(page, r.drive)
-  await goTo(page, 'ผู้ช่วย')
+  await page.getByRole('navigation', { name: 'เมนูหลัก' }).getByRole('button', { name: 'ผู้ช่วย', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
   return r
 }
@@ -157,7 +157,7 @@ test('the conversation stays when leaving the page, and "เริ่มให�
   await expect(page.getByText('ใช้เวลาราว 1 ชั่วโมง')).toBeVisible()
   const nav = page.getByRole('navigation', { name: 'เมนูหลัก' })
   await nav.getByRole('button', { name: 'งาน', exact: true }).click()
-  await goTo(page, 'ผู้ช่วย')
+  await nav.getByRole('button', { name: 'ผู้ช่วย', exact: true }).click()
   await expect(page.getByText('ใช้เวลาราว 1 ชั่วโมง')).toBeVisible()
   await page.getByRole('button', { name: 'เริ่มใหม่' }).click()
   await expect(page.getByText('ใช้เวลาราว 1 ชั่วโมง')).toHaveCount(0)
