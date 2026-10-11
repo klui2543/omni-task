@@ -2,6 +2,10 @@
 
 package app.omnitask.web
 
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
 /** The entry points for reading every note of the vault together; see [WebNotes]. */
 @JsExport
 object WebNotesApi {
@@ -13,6 +17,22 @@ object WebNotesApi {
 
     /** The attachments folder, which holds no notes worth reading. */
     fun attachmentDir(): String = app.omnitask.data.VaultText.ATTACHMENT_DIR
+
+    /** The link text Obsidian would write for the note at [path], among every note path ([pathsJson]). */
+    fun linkText(path: String, pathsJson: String): String =
+        app.omnitask.model.NoteLinks.linkText(path, Json.decodeFromString<List<String>>(pathsJson))
+
+    /** The notes matching [text], names first (JSON list of paths). */
+    fun searchNotes(text: String, pathsJson: String): String = Json.encodeToString(
+        app.omnitask.model.NoteLinks.search(text, Json.decodeFromString<List<String>>(pathsJson)),
+    )
+
+    /** The note a link points to, or null when it is not in the vault. */
+    fun resolveLink(link: String, pathsJson: String): String? =
+        app.omnitask.model.NoteLinks.resolve(link, Json.decodeFromString<List<String>>(pathsJson))
+
+    /** The file name of the note a task's description moves to (from its title), as Android names it. */
+    fun descriptionNoteName(title: String): String = app.omnitask.model.NoteLinks.nameFor(title)
 
     fun chain(notes: String, ordered: String, on: Boolean): String = WebNotes.chain(notes, ordered, on)
 

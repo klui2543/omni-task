@@ -33,6 +33,9 @@ export interface Task {
   note?: string | null
   /** Today's round of a repeating task whose earlier round is still open; ticking it moves the same line past today. */
   todayCopy?: boolean
+  /** The task's 🆔, and the ids it waits on (⛔). */
+  id?: string | null
+  dependsOn?: string[]
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
@@ -87,6 +90,12 @@ export type EditOp =
   | { op: 'customKind'; value: string; custom: string[] }
   | { op: 'describe'; value: string }
   | { op: 'subtask'; value: string }
+  /** A linked note (the link text) or an attached image (its file name), added or taken off. */
+  | { op: 'link' | 'unlink' | 'image' | 'unimage'; value: string }
+  /** The description went to the note [value]: its lines give way to a link. */
+  | { op: 'moveDescription'; value: string }
+  /** The direct subtasks in a new order: their lines as a JSON list. */
+  | { op: 'order'; value: string }
   | { op: 'quadrant'; value: Quadrant; field: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK' }
 
 export type Kind = 'NORMAL' | 'WAITING' | 'FUTURE' | 'SOMEDAY'

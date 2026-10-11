@@ -272,6 +272,11 @@ export class NoteIndex {
     return out.sort((a, b) => a.path.localeCompare(b.path))
   }
 
+  /** Every note's vault path, read for tasks or not (for linking a note to a task). */
+  paths(): string[] {
+    return [...this.files.values()].map((e) => e.path).sort((a, b) => a.localeCompare(b))
+  }
+
   /** The names of the conflict copies a sync app left anywhere in the vault. */
   conflicts(): string[] {
     return [...this.files.values()].map((e) => e.path.split('/').pop()!).filter(isConflictCopy)

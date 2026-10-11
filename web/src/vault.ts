@@ -422,6 +422,83 @@ export class Vault {
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
   }
 
+  /* ---------- Links, images and notes under a task (Android's edit sheet) ---------- */
+
+  /** Every note of the vault by path, for linking one to a task; the vault is walked first if it never was. */
+  async notePaths(): Promise<string[]> {
+    const index = this.index()
+    // One question to Drive's change log brings in notes made since; offline, the notes as last walked serve.
+    if (!(await index.ready())) await index.refresh()
+    else await index.refresh().catch(() => undefined)
+    return index.paths()
+  }
+
+  private vaultNameMemo: string | null = null
+
+  /** The vault's name, which is its folder's: Obsidian opens a note by it. */
+  async vaultName(): Promise<string> {
+    return (this.vaultNameMemo ??= (await this.drive.get(this.rootId, 'name')).name)
+  }
+
+  private attachmentsId: string | null = null
+
+  private async attachmentFolder(): Promise<string> {
+    return (this.attachmentsId ??= await this.ensureFolders(attachmentDirPath))
+  }
+
+  /** Saves an image (already WebP) in the Attachments folder and embeds it under the task. */
+  async attach(task: Task, name: string, image: Blob): Promise<EditResult> {
+    // An image is no note, so the task note as just written still stands for the whole vault.
+    await this.drive.createBlob(await this.attachmentFolder(), name, image)
+    return this.change(task, { op: 'image', value: name })
+  }
+
+  /** Takes the image off the task and moves its file to Drive's trash. */
+  async detach(task: Task, name: string): Promise<EditResult> {
+    const res = await this.change(task, { op: 'unimage', value: name })
+    if (!res.ok) return res
+    const file = await this.drive.child(await this.attachmentFolder(), name)
+    if (file) await this.drive.trash(file.id)
+    this.images.delete(name)
+    return res
+  }
+
+  private images = new Map<string, Promise<string | null>>()
+
+  /** An attached image to show (an object URL), read once per visit; null when the file is not in Attachments. */
+  image(name: string): Promise<string | null> {
+    let p = this.images.get(name)
+    if (!p) {
+      p = (async () => {
+        const file = await this.drive.child(await this.attachmentFolder(), name)
+        return file ? URL.createObjectURL(await this.drive.blob(file.id)) : null
+      })()
+      p.catch(() => this.images.delete(name))
+      this.images.set(name, p)
+    }
+    return p
+  }
+
+  /**
+   * Moves a long description to its own note in the Omni folder's Notes (added to the end when the note is there),
+   * and links that note under the task in its place, as Android does.
+   */
+  async moveDescription(task: Task, text: string): Promise<EditResult & { path?: string }> {
+    const name = notesApi.descriptionNoteName(task.title)
+    const path = `${omniDirPath}/Notes/${name}.md`
+    const folder = await this.ensureFolders(`${omniDirPath}/Notes`)
+    const file = await this.drive.child(folder, `${name}.md`)
+    this.wroteOther()
+    if (file) {
+      const read = await this.drive.readText(file.id)
+      await this.write(file.id, read, read.text.trimEnd() + '\n\n' + text.trim() + '\n')
+    } else {
+      await this.drive.createText(folder, `${name}.md`, `# ${name}\n\n${text.trim()}\n`)
+    }
+    const res = await this.change(task, { op: 'moveDescription', value: name })
+    return { ...res, path }
+  }
+
   /** The profile note the assistant keeps (wake and sleep times...), or null when the vault has none. */
   async profile(): Promise<string | null> {
     const m = this.profileMemo
@@ -664,6 +741,14 @@ export const byNote = <T extends { key: string }>(tasks: T[]): Map<string, T[]> 
 }
 
 const notesApi = WebNotesApi.getInstance()
+const attachmentDirPath: string = notesApi.attachmentDir()
+
+/** The link text Obsidian would write for the note at [path] among [all]. */
+export const linkText = (path: string, all: string[]): string => notesApi.linkText(path, JSON.stringify(all))
+/** The notes matching [text], names first. */
+export const searchNotes = (text: string, all: string[]): string[] => JSON.parse(notesApi.searchNotes(text, JSON.stringify(all)))
+/** The note a link points to, or null when it is not in the vault. */
+export const resolveLink = (link: string, all: string[]): string | null => notesApi.resolveLink(link, JSON.stringify(all)) ?? null
 
 /** What the shared page builders read: the task note alone, or (when other notes have tasks) every note as a JSON list. */
 const sourceOf = (fileId: string, path: string, text: string, notes: NoteText[]) =>

@@ -117,6 +117,42 @@ class WebCoreTest {
     }
 
     @Test
+    fun linksImagesAndADescriptionMovedToANoteSitUnderTheTask() {
+        var text = "- [ ] สไลด์ 📅 2026-10-09\n    - เนื้อหายาว\n    - [ ] โครง\n    - [ ] รูป\n- [ ] อื่น\n"
+        fun apply(op: String): WebCore.EditResult {
+            val r = result(WebCore.editTask(text, text.split("\n")[0], 0, "2026-10-08", op))
+            if (r.ok) text = r.text!!
+            return r
+        }
+        apply("""{"op":"link","value":"ประชุมทีม"}""")
+        apply("""{"op":"image","value":"Omni-2026-10-08-090000.webp"}""")
+        assertEquals("- [ ] สไลด์ 📅 2026-10-09\n    - เนื้อหายาว\n    - [[ประชุมทีม]]\n    - ![[Omni-2026-10-08-090000.webp]]\n    - [ ] โครง", text.lines().take(5).joinToString("\n"))
+        // Linked once only.
+        apply("""{"op":"link","value":"ประชุมทีม"}""")
+        assertEquals(1, Regex("ประชุมทีม").findAll(text).count())
+        val loaded = WebCore.loadTasks("f", "n.md", text, "2026-10-08")
+        assertTrue(loaded.contains("\"linkNames\":[\"ประชุมทีม\"]") && loaded.contains("\"attachmentNames\":[\"Omni-2026-10-08-090000.webp\"]"), loaded)
+
+        apply("""{"op":"unimage","value":"Omni-2026-10-08-090000.webp"}""")
+        apply("""{"op":"unlink","value":"ประชุมทีม"}""")
+        apply("""{"op":"moveDescription","value":"สไลด์"}""")
+        assertEquals("- [ ] สไลด์ 📅 2026-10-09\n    - [[สไลด์]]\n    - [ ] โครง\n    - [ ] รูป\n- [ ] อื่น\n", text)
+
+        // Subtasks in a new order; a list that no longer matches is refused.
+        val order = Json.encodeToString(listOf("    - [ ] รูป", "    - [ ] โครง"))
+        apply(Json.encodeToString(mapOf("op" to "order", "value" to order)))
+        assertEquals("- [ ] สไลด์ 📅 2026-10-09\n    - [[สไลด์]]\n    - [ ] รูป\n    - [ ] โครง\n- [ ] อื่น\n", text)
+        assertEquals("Task", app.omnitask.model.NoteLinks.nameFor("##"))
+        assertEquals("a b c", app.omnitask.model.NoteLinks.nameFor("a/b: [c]"))
+    }
+
+    @Test
+    fun aTaskCarriesItsIdAndWhatItWaitsOn() {
+        val loaded = WebCore.loadTasks("f", "n.md", "- [ ] ก 🆔 aa\n- [ ] ข ⛔ aa\n", "2026-10-08")
+        assertTrue(loaded.contains("\"id\":\"aa\"") && loaded.contains("\"dependsOn\":[\"aa\"]"), loaded)
+    }
+
+    @Test
     fun cutRestoreAndArchive() {
         val withSub = "- [ ] สไลด์\n    - [ ] โครง\n- [ ] อื่น\n"
         val cut = result(WebCore.cut(withSub, "- [ ] สไลด์", 0))

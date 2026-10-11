@@ -29,6 +29,8 @@ export interface PageProps {
   tick: (t: Task) => void
   /** Deletes a task with its block; the bar at the bottom offers undo. */
   remove: (t: Task) => void
+  /** Moves a task with its block to the archive note; the bar at the bottom offers undo. */
+  archive: (t: Task) => void
   /** The task as last read, for an action that waited behind another one. */
   fresh: (t: Task) => Task
   /** Reads the note again. */
@@ -239,7 +241,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   const finishedNow = finished && snapshot?.tasks.find((c) => c.lineIndex === finished.lineIndex && c.title === finished.title)
 
   const props: PageProps = {
-    vault, snapshot, busy, run, tick, remove: (t) => takeOut(t, false), fresh,
+    vault, snapshot, busy, run, tick, remove: (t) => takeOut(t, false), archive: (t) => takeOut(t, true), fresh,
     onReload: reload, onNavigate: navigate, onChangeVault: p.onChangeVault, onSignOut: p.onSignOut,
     onConnectCalendar: p.onConnectCalendar, readCalendar: calendar.read, peekCalendar: calendar.peek,
     onAllowCalendarWrite: p.onAllowCalendarWrite, listCalendars: () => listCalendars(p.drive),
@@ -253,7 +255,8 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
           หมดเวลาเข้าสู่ระบบ <button class="link" onClick={p.onSignIn}>เข้าสู่ระบบอีกครั้ง</button>
         </div>
       )}
-      {message && <div class="banner" role="alert">{message}</div>}
+      {/* Null rather than an empty string when there is none: a text node turning into the banner made Preact mount the page anew, closing an open task. */}
+      {message ? <div class="banner" role="alert">{message}</div> : null}
       {kept.length > 0 && (
         <div class="banner" role="alert" aria-label="การแก้ที่ชนกัน">
           <strong>การแก้ที่ชนกับที่อื่น</strong>

@@ -28,4 +28,8 @@ object NoteLinks {
     }
 
     fun displayName(path: String) = base(path)
+
+    /** A note name made from a task's title (for its description moved to a note): no characters Obsidian refuses. */
+    fun nameFor(title: String): String =
+        title.replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").replace(Regex("""\s+"""), " ").trim().take(80).ifEmpty { "Task" }
 }
