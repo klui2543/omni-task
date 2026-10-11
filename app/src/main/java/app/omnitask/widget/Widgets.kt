@@ -208,7 +208,7 @@ class TodayWidget : GlanceAppWidget() {
                         item {
                             when (r) {
                                 is Line.Now -> NowLine(r.time)
-                                is Line.Head -> Label(r.text, cp { it.faint }, 11.5.sp, modifier = GlanceModifier.padding(top = 8.dp, bottom = 2.dp))
+                                is Line.Head -> Label(r.text, if (r.overdue) cp { it.red } else cp { it.faint }, 11.5.sp, bold = r.overdue, modifier = GlanceModifier.padding(top = 8.dp, bottom = 2.dp))
                                 is Line.Event -> EventLine(context, r)
                                 is Line.Todo -> TodoLine(context, r, data.today)
                             }
@@ -222,13 +222,13 @@ class TodayWidget : GlanceAppWidget() {
 
 private sealed interface Line {
     data class Now(val time: LocalTime) : Line
-    data class Head(val text: String) : Line
+    data class Head(val text: String, val overdue: Boolean = false) : Line
     data class Event(val time: String, val title: String, val sub: String, val phase: DayPlan.Phase, val progress: Float) : Line
     data class Todo(val time: String, val task: Task, val sub: String) : Line
 }
 
 /**
- * The rows: timed items with the now line among them, then late and untimed tasks under one heading. Finished
+ * The rows: timed items with the now line among them, then untimed tasks, then overdue work under a heading of its own. Finished
  * tasks and events that are over stay in the list, greyed; the now line runs through the event that is on.
  */
 private fun timeline(data: WidgetData, now: LocalDateTime): List<Line> {
@@ -243,10 +243,16 @@ private fun timeline(data: WidgetData, now: LocalDateTime): List<Line> {
         out += line(item, time?.let(::hm) ?: "", now)
     }
     if (!nowShown) out += Line.Now(now.toLocalTime())
-    val rest = plan.filter { it.part == DayPlan.Part.LATE || it.part == DayPlan.Part.ANYTIME }.flatMap { it.items }
-    if (rest.isNotEmpty()) {
+    // Untimed work follows the day; overdue work is not part of it and sits last, under a heading of its own, as on the Focus screen.
+    val untimed = plan.filter { it.part == DayPlan.Part.ANYTIME }.flatMap { it.items }
+    if (untimed.isNotEmpty()) {
         out += Line.Head(tr("ไม่ระบุเวลา", "Any time"))
-        rest.forEach { out += line(it, "", now) }
+        untimed.forEach { out += line(it, "", now) }
+    }
+    val overdue = plan.filter { it.part == DayPlan.Part.LATE }.flatMap { it.items }
+    if (overdue.isNotEmpty()) {
+        out += Line.Head(tr("ค้างอยู่", "Overdue"), overdue = true)
+        overdue.forEach { out += line(it, "", now) }
     }
     return out
 }
