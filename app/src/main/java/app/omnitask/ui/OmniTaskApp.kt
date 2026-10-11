@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -46,6 +48,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -171,44 +176,51 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val editing = state.allTasks.firstOrNull { it.key == editingKey } ?: state.parked.firstOrNull { it.key == editingKey }
 
+    val assistantHidden = remember { mutableIntStateOf(0) }
+    // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
+    val dock = if (wide) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     val content: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            if (state.loading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = C.accent, trackColor = C.bg)
-            } else {
-                Box(Modifier.height(2.dp))
-            }
-            // On wide screens reading columns stay a comfortable width; the views (Kanban, Gantt, calendar) use it all.
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
-                Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
-                when (screen) {
-                    Screen.FOCUS -> FocusScreen(state, vm, open, menu)
-                    Screen.TASKS -> TasksScreen(state, vm, open)
-                    Screen.PROJECTS -> ProjectsScreen(state, vm, open)
-                    Screen.AI -> AssistantScreen(state, vm, open)
-                    Screen.MORE -> MoreScreen(
-                        urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
-                        onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
-                        onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
-                    )
+        CompositionLocalProvider(LocalAssistantHidden provides assistantHidden, LocalDockClearance provides dock) {
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                if (state.loading) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = C.accent, trackColor = C.bg)
+                } else {
+                    Box(Modifier.height(2.dp))
                 }
+                // On wide screens reading columns stay a comfortable width; the views (Kanban, Gantt, calendar) use it all.
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
+                    Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
+                    when (screen) {
+                        Screen.FOCUS -> FocusScreen(state, vm, open, menu)
+                        Screen.TASKS -> TasksScreen(state, vm, open)
+                        Screen.PROJECTS -> ProjectsScreen(state, vm, open)
+                        Screen.AI -> AssistantScreen(state, vm, open)
+                        Screen.MORE -> MoreScreen(
+                            urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
+                            onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
+                            onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
+                        )
+                    }
+                    }
                 }
             }
         }
     }
     // The assistant floats where the add button used to; adding a task is the middle of the bottom bar (the top of the side rail when wide).
+    // A page that needs the whole corner (the project mind map) asks it to step aside ([HideAssistantButton]).
     val assistantButton: @Composable (Modifier) -> Unit = { m ->
-        if (screen != Screen.AI) {
+        if (screen != Screen.AI && assistantHidden.intValue == 0) {
             Box(
-                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accentSoft)
-                    .border(1.dp, C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
+                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(if (C.calm) C.raised else C.accentSoft)
+                    .border(1.dp, if (C.calm) C.control else C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.spark, tr("ผู้ช่วย", "Assistant"), tint = C.accentText, modifier = Modifier.size(24.dp)) }
         }
     }
     // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
-    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI) 84.dp else 12.dp
+    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI && assistantHidden.intValue == 0) 84.dp else 12.dp
 
     if (wide) {
         // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
@@ -322,19 +334,22 @@ private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> U
         ) {
             // Adding a task, where the bottom bar of a phone has it in the middle.
             Box(
-                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable(onClick = onAdd),
+                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             Screen.entries.filter { it != Screen.MORE }.forEach { s ->
                 val on = s == selected
+                // The quiet look marks the current place softly, as the bottom bar does, instead of a filled pill.
+                val onBg = if (C.calm) C.accentSoft else C.accent
+                val onFg = if (C.calm) C.accentText else C.onAccent
                 Column(
                     Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp))
-                        .background(if (on) C.accent else Color.Transparent).clickable { onSelect(s) },
+                        .background(if (on) onBg else Color.Transparent).clickable { onSelect(s) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(s.icon, null, tint = if (on) C.onAccent else C.muted, modifier = Modifier.size(20.dp))
-                    Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
+                    Icon(s.icon, null, tint = if (on) onFg else C.muted, modifier = Modifier.size(20.dp))
+                    Text(s.label, fontSize = TS.micro, color = if (on) onFg else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
                 }
             }
         }
@@ -364,9 +379,9 @@ private fun DockNav(
             DockItem(Screen.TASKS.icon, Screen.TASKS.label, selected == Screen.TASKS && !moreSelected, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 Box(
-                    Modifier.size(width = 60.dp, height = 42.dp).clip(RoundedCornerShape(16.dp)).background(C.accent).clickable(onClick = onAdd),
+                    Modifier.size(width = 60.dp, height = 42.dp).clip(RoundedCornerShape(16.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             }
             DockItem(Screen.PROJECTS.icon, tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS && !moreSelected, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
             DockItem(Ic.grid, tr("เพิ่มเติม", "More"), moreSelected, onMore, Modifier.weight(1f))
@@ -427,6 +442,21 @@ private fun Welcome(onPick: () -> Unit) {
             color = C.muted,
         )
         PrimaryButton(tr("เลือกโฟลเดอร์ตู้โน้ต", "Choose vault folder"), onPick, Modifier.fillMaxWidth())
+    }
+}
+
+/** Height the bottom bar covers when it floats over the page (nothing beside the side rail), for pages that fill the screen. */
+val LocalDockClearance = staticCompositionLocalOf { 0.dp }
+
+/** Lets a page ask the floating assistant button to step aside while it shows (a counter, so pages can nest). */
+val LocalAssistantHidden = staticCompositionLocalOf<MutableIntState?> { null }
+
+@Composable
+fun HideAssistantButton() {
+    val hidden = LocalAssistantHidden.current ?: return
+    DisposableEffect(hidden) {
+        hidden.intValue++
+        onDispose { hidden.intValue-- }
     }
 }
 

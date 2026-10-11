@@ -145,7 +145,10 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     naming?.let { (title, done) -> NameDialog(title, { done(it); naming = null }) { naming = null } }
 
-    Column(Modifier.fillMaxSize()) {
+    // The map is a whole page: its buttons stay above the bottom bar, and the round assistant button leaves the corner.
+    val dock = LocalDockClearance.current
+    HideAssistantButton()
+    Column(Modifier.fillMaxSize().padding(bottom = dock)) {
         Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -255,7 +258,7 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
         }
 
         // The picked branch: its state and what to do with it.
-        Column(Modifier.fillMaxWidth().background(C.card).padding(horizontal = 14.dp, vertical = 12.dp).navigationBarsPadding()) {
+        Column(Modifier.fillMaxWidth().background(C.card).padding(horizontal = 14.dp, vertical = 12.dp).then(if (dock == 0.dp) Modifier.navigationBarsPadding() else Modifier)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (sel.path.isNotEmpty()) Box(Modifier.size(9.dp).clip(CircleShape).background(sel.state.color))
                 Text(
