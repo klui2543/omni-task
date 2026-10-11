@@ -215,7 +215,7 @@ private fun KanbanCard(t: Task, state: UiState, vm: TaskViewModel, onOpen: (Task
         // Dates and counts on one line with the move arrows at its end, so the card stays short.
         val meta = metaOf(t, state.today, compact = true, progress = state.progressOf(t))
         Row(Modifier.padding(start = 11.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
             }
             // Small arrows for one-tap moves; long-press and drag works too.
