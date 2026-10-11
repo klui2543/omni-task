@@ -185,6 +185,9 @@ object Ygdrasil {
         val cx2: Float, val cy2: Float,
         val x2: Float, val y2: Float,
         val state: Branches.State? = null,
+        /** For a wait: the task waited for and the one waiting. */
+        val blocker: Task? = null,
+        val waiting: Task? = null,
     )
 
     data class Layout(val spots: List<Spot>, val edges: List<Edge>, val width: Float, val height: Float)
@@ -258,6 +261,7 @@ object Ygdrasil {
             edges += Edge(
                 if (link.across) EdgeKind.LINK_ACROSS else EdgeKind.LINK,
                 a.x, a.y, a.x - bow, a.y, b.x - bow, b.y, b.x, b.y,
+                blocker = link.blocker, waiting = link.waiting,
             )
         }
         return Layout(spots, edges, (deepest + 1) * COL + TASK_W, height)
