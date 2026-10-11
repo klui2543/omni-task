@@ -76,7 +76,6 @@ import app.omnitask.model.tr
 enum class Screen(private val th: String, private val en: String, val icon: ImageVector) {
     FOCUS("โฟกัส", "Focus", Ic.focus),
     TASKS("งาน", "Tasks", Ic.tasks),
-    VIEWS("มุมมอง", "Views", Ic.views),
     PROJECTS("โปรเจกต์/ลิสต์", "Projects/Lists", Ic.folder),
     AI("ผู้ช่วย", "Assistant", Ic.spark),
     /** The bottom bar's "More" page; the side rail has every destination of its own, so it leaves this one out. */
@@ -181,11 +180,11 @@ fun OmniTaskApp(vm: TaskViewModel) {
             }
             // On wide screens reading columns stay a comfortable width; the views (Kanban, Gantt, calendar) use it all.
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                Box(Modifier.widthIn(max = if (screen == Screen.VIEWS) Dp.Unspecified else 760.dp)) {
+                // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
+                Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
                 when (screen) {
                     Screen.FOCUS -> FocusScreen(state, vm, open, menu)
                     Screen.TASKS -> TasksScreen(state, vm, open)
-                    Screen.VIEWS -> ViewsScreen(state, vm, open)
                     Screen.PROJECTS -> ProjectsScreen(state, vm, open)
                     Screen.AI -> AssistantScreen(state, vm, open)
                     Screen.MORE -> MoreScreen(
@@ -237,7 +236,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         Box(Modifier.fillMaxSize().background(C.bg)) {
             content()
             DockNav(
-                selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.PROJECTS || screen == Screen.AI,
+                selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.AI,
                 onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { screen = Screen.MORE },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -306,7 +305,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: Tas
     }
 }
 
-/** The same five destinations as a vertical pill on the left, for wide screens. */
+/** The same destinations as a vertical pill on the left, for wide screens. */
 @Composable
 private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> Unit) {
     // A phone on its side is short: smaller items, and the rail scrolls rather than clips.
@@ -347,7 +346,7 @@ private val DOCK_HEIGHT = 64.dp
 
 /**
  * The bottom bar on a phone: flush with the screen's edge, so every button is in the thumb's reach and nothing floats over
- * the lists. Focus, Tasks, the add button in the middle, Views, and More for everything else (lists, assistant, settings).
+ * the lists. Focus, Tasks, the add button in the middle, Projects, and More for everything else (assistant, settings).
  */
 @Composable
 private fun DockNav(
@@ -369,7 +368,7 @@ private fun DockNav(
                     contentAlignment = Alignment.Center,
                 ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
             }
-            DockItem(Screen.VIEWS.icon, Screen.VIEWS.label, selected == Screen.VIEWS && !moreSelected, { onSelect(Screen.VIEWS) }, Modifier.weight(1f))
+            DockItem(Screen.PROJECTS.icon, tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS && !moreSelected, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
             DockItem(Ic.grid, tr("เพิ่มเติม", "More"), moreSelected, onMore, Modifier.weight(1f))
         }
         Box(Modifier.navigationBarsPadding())
