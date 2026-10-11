@@ -35,6 +35,8 @@ export class FakeDrive {
   inserted: { summary: string; start: { date?: string; dateTime?: string; timeZone?: string }; end: { date?: string; dateTime?: string; timeZone?: string } }[] = []
   /** Makes Google refuse to add events, as when the Calendar API is switched off. */
   insertFails = false
+  /** Holds every Drive request this long, to play a slow connection. */
+  latency = 0
   /** Runs once, right after the app's next read of a file, to play someone else editing it. */
   afterNextRead: ((n: Node) => void) | null = null
   /** Runs once, right before the app's next write of a file lands, to play someone writing after the app's version check. */
@@ -172,6 +174,7 @@ export class FakeDrive {
       const req = route.request()
       const url = new URL(req.url())
       if (this.offline) return route.abort('internetdisconnected')
+      if (this.latency) await new Promise((r) => setTimeout(r, this.latency))
       this.requests.push(`${req.method()} ${url.pathname}${url.search}`)
       const json = (body: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
       if (req.headers()['authorization'] !== 'Bearer fake-token') return route.fulfill({ status: 401, body: 'no' })

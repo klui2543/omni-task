@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -57,6 +58,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -133,21 +136,51 @@ fun YgdrasilScreen(
     // Zoomed far out, tasks show as their rings only.
     val far by remember { derivedStateOf { scale < 0.45f } }
 
-    // A task carried to another project or branch (held, then dragged): where it is on the tree, in dp, and the
-    // project or branch under it. Let go on one to move the task there; let go where it was to open it.
-    var carry by remember { mutableStateOf<Pair<Task, String>?>(null) }
+    // A task, project or branch carried across the tree (held, then dragged): where it is, in dp, and the project or
+    // branch (or the trunk, "") under it. A task let go on another branch moves there, and let go where it was opens;
+    // a project or branch let go on another goes under it, and on the trunk becomes a project of its own.
+    var carry by remember { mutableStateOf<Carry?>(null) }
     var carryAt by remember { mutableStateOf(Offset.Zero) }
     var carryMoved by remember { mutableStateOf(false) }
     val spots by rememberUpdatedState(layout.spots)
     fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
-        s.kind == Ygdrasil.Kind.LIMB && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
-    }?.limb?.node?.tag
-    val dropTag = carry?.let { targetAt(carryAt) }
+        (s.kind == Ygdrasil.Kind.LIMB || s.kind == Ygdrasil.Kind.TRUNK) && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
+    }?.let { it.limb?.node?.tag ?: "" }
+    /** Where the carried thing would go if let go now, or null. */
+    fun goesTo(c: Carry, to: String?): String? = when {
+        to == null -> null
+        c.task != null -> to.takeIf { it.isNotEmpty() && it != c.from }
+        else -> to.takeIf { Branches.graftTag(c.from, it) != null }
+    }
+    val dropTag = carry?.let { goesTo(it, targetAt(carryAt)) }
+    val baseConfig = LocalViewConfiguration.current
+    val quickHold = remember(baseConfig) { object : ViewConfiguration by baseConfig { override val longPressTimeoutMillis: Long get() = HOLD_MS } }
     fun drop() {
-        val (task, from) = carry ?: return
-        val to = targetAt(carryAt)
-        if (to != null && to != from) vm.moveTask(task, to) else if (!carryMoved) onOpen(task)
+        val c = carry ?: return
+        val to = goesTo(c, targetAt(carryAt))
+        when {
+            c.task != null && to != null -> vm.moveTask(c.task, to)
+            c.task != null && !carryMoved -> onOpen(c.task)
+            to != null -> vm.graftBranch(c.from, to)
+        }
         carry = null
+    }
+    /** Lifts [what] when held, and carries it until let go. */
+    fun Modifier.carries(what: Carry, top: Float, left: Float): Modifier = pointerInput(what, top, left) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = { o ->
+                carry = what
+                carryMoved = false
+                carryAt = Offset(left + o.x / density, top + o.y / density)
+            },
+            onDrag = { change, amount ->
+                change.consume()
+                carryAt += Offset(amount.x / density, amount.y / density)
+                if (amount.getDistance() > 0f) carryMoved = true
+            },
+            onDragEnd = { drop() },
+            onDragCancel = { carry = null },
+        )
     }
 
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
@@ -229,12 +262,14 @@ fun YgdrasilScreen(
                         }
                     }
                 }
+                CompositionLocalProvider(LocalViewConfiguration provides quickHold) {
                 layout.spots.forEach { s ->
                     when (s.kind) {
                         Ygdrasil.Kind.TRUNK -> Row(
                             Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
                                 .clip(RoundedCornerShape(12.dp)).background(C.accent)
                                 .then(if (sel == null) Modifier.border(2.dp, C.accentText, RoundedCornerShape(12.dp)) else Modifier)
+                                .then(if (carry != null && dropTag == "") Modifier.border(2.dp, C.amber, RoundedCornerShape(12.dp)) else Modifier)
                                 .clickable { selTag = "" }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -245,7 +280,7 @@ fun YgdrasilScreen(
                             val n = s.limb!!.node
                             val world = n.path.isEmpty()
                             val picked = sel === s
-                            val target = carry != null && dropTag == n.tag && n.tag != carry?.second
+                            val target = carry != null && dropTag == n.tag
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
                                     .clip(RoundedCornerShape(10.dp)).background(if (target) C.amberSoft else if (world) C.accentSoft else C.card)
@@ -253,7 +288,9 @@ fun YgdrasilScreen(
                                         if (picked || target) 2.dp else 1.dp,
                                         if (target) C.amber else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
                                     )
-                                    .clickable { selTag = n.tag }.alpha(if (n.state == Branches.State.PARKED) 0.5f else 1f)
+                                    .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else 1f)
+                                    .pointerInput(n.tag) { detectTapGestures(onTap = { selTag = n.tag }) }
+                                    .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x)
                                     .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -276,26 +313,11 @@ fun YgdrasilScreen(
                             val done = t.status == Status.DONE
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .alpha(if (carry?.first == t) 0.35f else 1f)
+                                    .alpha(if (carry?.task == t) 0.35f else 1f)
                                     // A tap ticks; held, the task lifts and follows the finger (the drag consumes the
                                     // touch, so neither the tap nor the map's own drag sees it).
                                     .pointerInput(t) { detectTapGestures(onTap = { vm.toggleDone(t) }) }
-                                    .pointerInput(t, from, s.x, s.y) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = { o ->
-                                                carry = t to from
-                                                carryMoved = false
-                                                carryAt = Offset(s.x + o.x / density, s.y - s.h / 2 + o.y / density)
-                                            },
-                                            onDrag = { change, amount ->
-                                                change.consume()
-                                                carryAt += Offset(amount.x / density, amount.y / density)
-                                                if (amount.getDistance() > 0f) carryMoved = true
-                                            },
-                                            onDragEnd = { drop() },
-                                            onDragCancel = { carry = null },
-                                        )
-                                    }
+                                    .carries(Carry(t, from, t.title), s.y - s.h / 2, s.x)
                                     .padding(horizontal = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -315,18 +337,24 @@ fun YgdrasilScreen(
                         )
                     }
                 }
-                // The carried task, under the finger, saying where it would go.
-                carry?.let { (task, from) ->
+                // What is carried, under the finger, saying where it would go.
+                carry?.let { c ->
                     Column(
                         Modifier.offset((carryAt.x + 10).dp, (carryAt.y + 10).dp).width(200.dp).clip(RoundedCornerShape(10.dp))
                             .background(C.card).border(1.5.dp, C.accent, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
                     ) {
-                        Text(task.title, color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(c.label, color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            if (dropTag != null && dropTag != from) tr("ย้ายไป #$dropTag", "Move to #$dropTag") else tr("ลากไปวางบนกิ่ง", "Drop it on a branch"),
+                            when {
+                                dropTag == null -> if (c.task != null) tr("ลากไปวางบนกิ่ง", "Drop it on a branch") else tr("ลากไปวางบนโปรเจกต์ กิ่ง หรือลำต้น", "Drop it on a project, branch or the trunk")
+                                c.task != null -> tr("ย้ายไป #$dropTag", "Move to #$dropTag")
+                                dropTag.isEmpty() -> tr("แยกเป็นโปรเจกต์ของตัวเอง", "Make it a project of its own")
+                                else -> tr("ไปไว้ใต้ #$dropTag", "Put it under #$dropTag")
+                            },
                             color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
                 }
             }
             if (tree.worlds.isEmpty()) {
@@ -379,6 +407,12 @@ fun YgdrasilScreen(
         }
     }
 }
+
+/** What is carried across the tree: a task ([task] set), or a project or branch; [from] is its tag. */
+private data class Carry(val task: Task?, val from: String, val label: String)
+
+/** Tasks, projects and branches lift after this short a hold (the system's long press is slower). */
+private const val HOLD_MS = 250L
 
 /** The tick ring's edge carries the priority, as the task rows do. */
 private fun priorityTint(p: Priority) = when (p) {

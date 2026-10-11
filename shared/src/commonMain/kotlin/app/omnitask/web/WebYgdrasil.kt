@@ -100,7 +100,7 @@ object WebYgdrasil {
         val st = json.decodeFromString<WebProjects.StateIn>(stateJson)
         val notes = json.decodeFromString<List<WebProjects.NoteIn>>(notesJson)
         val lists = notes.mapNotNull { OmniList.parse(it.path, it.text) }
-        Projects.ignoredTags = lists.flatMap { listOf(it.tag) + it.categories }.toSet() + st.kindTags
+        Projects.ignoredTags = lists.flatMap { listOf(it.tag) + it.categories }.toSet() + st.kindTags + st.listTags
 
         val filter = json.decodeFromString<FilterIn>(filterJson).toFilter()
         val folded = json.decodeFromString<List<String>>(foldedJson).toSet()

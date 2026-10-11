@@ -108,6 +108,31 @@ object Branches {
      * Renames a project inside one task line: `#old` and `#old/branch` become `#new` and `#new/branch`.
      * Lines that are not tasks, and other tags, are left alone.
      */
+    /**
+     * Where a project or branch tagged [old] goes when it is dropped on [target] (a project's or branch's tag; empty
+     * for the trunk): under it, keeping its own name, with everything below it (`#peddose` on `#Siriraj` becomes
+     * `#Siriraj/peddose`; `#peddose/แอป` on the trunk becomes the project `#แอป`). Null when nothing would move, or
+     * when it would go inside itself.
+     */
+    fun graftTag(old: String, target: String): String? {
+        if (old.isEmpty() || target == old || target.startsWith("$old/")) return null
+        val name = old.substringAfterLast('/')
+        val new = if (target.isEmpty()) name else "$target/$name"
+        return new.takeIf { it != old }
+    }
+
+    /** States after the branches under [old] moved to [new] (see [graftTag]), across projects too. */
+    fun moveTag(states: Map<Pair<String, String>, State>, old: String, new: String): Map<Pair<String, String>, State> =
+        states.mapKeys { (k, _) ->
+            val tag = if (k.second.isEmpty()) k.first else "${k.first}/${k.second}"
+            val moved = when {
+                tag == old -> new
+                tag.startsWith("$old/") -> new + tag.removePrefix(old)
+                else -> return@mapKeys k
+            }
+            moved.substringBefore('/') to moved.substringAfter('/', "")
+        }
+
     fun renameInLine(line: String, old: String, new: String): String = TAG.replace(line) { m ->
         val tag = m.groupValues[1]
         when {

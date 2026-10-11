@@ -1614,6 +1614,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Renames a branch: every task line under it gets the new tag, and the states under it move along. */
+    /**
+     * Project Ygdrasil: a project or branch tagged [oldTag] dropped on [target] (a tag, or "" for the trunk) goes under
+     * it with everything below it, in every note (see [Branches.graftTag]); its branch states go along.
+     */
+    fun graftBranch(oldTag: String, target: String) {
+        val newTag = Branches.graftTag(oldTag, target) ?: return
+        // Cancelled tasks are out of the tree but keep their tag, so they move too.
+        val files = (_state.value.allTasks + _state.value.parked)
+            .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
+            result.onSuccess { saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag)) }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
+            reload()
+        }
+    }
+
     fun renameBranch(node: Branches.Node, name: String) {
         val clean = Branches.clean(name)
         if (clean.isEmpty() || node.path.isEmpty() || clean == node.name) return
