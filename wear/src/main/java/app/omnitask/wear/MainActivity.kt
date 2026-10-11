@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Label("Omni", W.muted, 12)
+            Label("Omni Watch", W.muted, 12)
             val time = at
             if (time == null) {
                 Label(stringResource(R.string.none), W.text, 15, modifier = Modifier.padding(top = 6.dp))
