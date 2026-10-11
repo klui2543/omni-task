@@ -99,6 +99,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var screen by rememberSaveable { mutableStateOf(Screen.FOCUS) }
     var notifyOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
@@ -152,9 +153,13 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     BackHandler(enabled = screen != Screen.FOCUS) { screen = Screen.FOCUS }
 
+    val width = LocalConfiguration.current.screenWidthDp
+    val wide = width >= WIDE_DP
+    val twoPane = width >= TWO_PANE_DP
     val open: (app.omnitask.model.Task) -> Unit = { editingKey = it.key }
+    // On a phone the menu's items live in the "More" sheet on the bottom bar, where the thumb reaches; the rail layout keeps the menu at the top.
     val menu: @Composable () -> Unit = {
-        AppMenu(
+        if (wide) AppMenu(
             urgentRule = state.urgentRule,
             onUrgent = vm::setUrgentRule,
             onNotify = { notifyOpen = true },
@@ -164,9 +169,6 @@ fun OmniTaskApp(vm: TaskViewModel) {
         )
     }
 
-    val width = LocalConfiguration.current.screenWidthDp
-    val wide = width >= WIDE_DP
-    val twoPane = width >= TWO_PANE_DP
     val editing = state.allTasks.firstOrNull { it.key == editingKey } ?: state.parked.firstOrNull { it.key == editingKey }
 
     val content: @Composable () -> Unit = {
@@ -224,15 +226,30 @@ fun OmniTaskApp(vm: TaskViewModel) {
     } else {
         Box(Modifier.fillMaxSize().background(C.bg)) {
             content()
-            FloatingNav(screen, { screen = it }, Modifier.align(Alignment.BottomCenter))
-            addButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 92.dp))
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp)) {
+            DockNav(
+                selected = screen, moreSelected = moreOpen || screen == Screen.PROJECTS || screen == Screen.AI,
+                onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { moreOpen = true },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = DOCK_HEIGHT + 12.dp)) {
                 Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
             }
             state.finished?.let { t ->
-                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (screen != Screen.AI) 156.dp else 84.dp))
+                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = DOCK_HEIGHT + 12.dp))
             }
         }
+    }
+
+    if (moreOpen) {
+        MoreSheet(
+            urgentRule = state.urgentRule,
+            onUrgent = vm::setUrgentRule,
+            onScreen = { screen = it },
+            onNotify = { notifyOpen = true },
+            onSettings = { settingsOpen = true },
+            onReload = vm::reload,
+            onVault = { pickVault.launch(state.vault) },
+        ) { moreOpen = false }
     }
 
     if (editing != null && !(wide && twoPane)) {
@@ -321,26 +338,102 @@ private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
     }
 }
 
-/** The floating pill bar from the C+ mockup. */
+/** Height of the bottom bar without the system navigation inset. */
+private val DOCK_HEIGHT = 64.dp
+
+/**
+ * The bottom bar on a phone: flush with the screen's edge, so every button is in the thumb's reach and nothing floats over
+ * the lists. Focus, Tasks, the add button in the middle, Views, and More for everything else (lists, assistant, settings).
+ */
 @Composable
-private fun FloatingNav(selected: Screen, onSelect: (Screen) -> Unit, modifier: Modifier) {
-    Row(
-        modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 12.dp).fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp)).background(C.navBg)
-            .border(1.dp, C.cardBorder, RoundedCornerShape(20.dp)).padding(6.dp),
-    ) {
-        Screen.entries.forEach { s ->
-            val on = s == selected
-            Column(
-                Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(14.dp))
-                    .background(if (on) C.accent else Color.Transparent).clickable { onSelect(s) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(s.icon, null, tint = if (on) C.onAccent else C.muted, modifier = Modifier.size(20.dp))
-                // One line even for the longest label; it may run a little past the pill rather than wrap.
-                Text(s.label, fontSize = TS.micro, color = if (on) C.onAccent else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1, softWrap = false)
+private fun DockNav(
+    selected: Screen,
+    moreSelected: Boolean,
+    onSelect: (Screen) -> Unit,
+    onAdd: () -> Unit,
+    onMore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth().background(C.card)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.cardBorder))
+        Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
+            DockItem(Screen.FOCUS.icon, Screen.FOCUS.label, selected == Screen.FOCUS && !moreSelected, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
+            DockItem(Screen.TASKS.icon, Screen.TASKS.label, selected == Screen.TASKS && !moreSelected, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(width = 60.dp, height = 42.dp).clip(RoundedCornerShape(16.dp)).background(C.accent).clickable(onClick = onAdd),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
             }
+            DockItem(Screen.VIEWS.icon, Screen.VIEWS.label, selected == Screen.VIEWS && !moreSelected, { onSelect(Screen.VIEWS) }, Modifier.weight(1f))
+            DockItem(Ic.grid, tr("เพิ่มเติม", "More"), moreSelected, onMore, Modifier.weight(1f))
+        }
+        Box(Modifier.navigationBarsPadding())
+    }
+}
+
+@Composable
+private fun DockItem(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Column(
+        modifier.fillMaxHeight().clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        // A short bar above the icon marks the current place; colour alone is not the only sign.
+        Box(Modifier.size(width = 26.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(if (on) C.accent else Color.Transparent))
+        Icon(icon, null, tint = if (on) C.accentText else C.muted, modifier = Modifier.padding(top = 5.dp).size(22.dp))
+        Text(label, fontSize = TS.micro, color = if (on) C.accentText else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1, softWrap = false)
+    }
+}
+
+/** What the old three-dot menu held, as a sheet from the bottom: the lists, the assistant, notifications, settings and the rest. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MoreSheet(
+    urgentRule: UrgentRule,
+    onUrgent: (UrgentRule) -> Unit,
+    onScreen: (Screen) -> Unit,
+    onNotify: () -> Unit,
+    onSettings: () -> Unit,
+    onReload: () -> Unit,
+    onVault: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    fun pick(action: () -> Unit): () -> Unit = { onDismiss(); action() }
+    SheetFrame(onDismiss) {
+        Text(tr("เพิ่มเติม", "More"), style = MaterialTheme.typography.titleMedium)
+        val tiles = listOf(
+            Triple(Ic.folder, Screen.PROJECTS.label, pick { onScreen(Screen.PROJECTS) }),
+            Triple(Ic.spark, Screen.AI.label, pick { onScreen(Screen.AI) }),
+            Triple(Ic.bell, tr("แจ้งเตือน", "Notifications"), pick(onNotify)),
+            Triple(Ic.gear, tr("ตั้งค่า", "Settings"), pick(onSettings)),
+            Triple(Ic.refresh, tr("โหลดใหม่", "Reload"), pick(onReload)),
+            Triple(Ic.folderOpen, tr("เปลี่ยนโฟลเดอร์ตู้โน้ต", "Change vault folder"), pick(onVault)),
+        )
+        tiles.chunked(3).forEach { rowTiles ->
+            Row(Modifier.padding(top = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowTiles.forEach { (icon, label, click) ->
+                    val settings = icon == Ic.gear
+                    Column(
+                        Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(14.dp))
+                            .background(if (settings) C.accentSoft else C.raised)
+                            .border(1.dp, if (settings) C.accentLine else C.cardBorder, RoundedCornerShape(14.dp))
+                            .clickable(onClick = click).padding(horizontal = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(icon, null, tint = if (settings) C.accentText else C.text2, modifier = Modifier.size(22.dp))
+                        Text(
+                            label, Modifier.padding(top = 6.dp), color = if (settings) C.accentText else C.text2, fontSize = TS.caption,
+                            fontWeight = if (settings) FontWeight.Medium else FontWeight.Normal, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+        Label(tr("งานที่นับว่า \"ด่วน\"", "What counts as urgent"))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            UrgentRule.entries.forEach { rule -> Chip(rule.label, rule == urgentRule, { onUrgent(rule) }) }
         }
     }
 }

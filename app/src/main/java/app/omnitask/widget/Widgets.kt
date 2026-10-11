@@ -38,6 +38,7 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextDecoration
 import androidx.glance.text.TextStyle
 import androidx.glance.color.ColorProvider
 import androidx.glance.unit.ColorProvider
@@ -47,6 +48,7 @@ import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.Focus
 import app.omnitask.model.Quadrant
+import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import app.omnitask.model.load
@@ -97,10 +99,13 @@ private fun cp(pick: (Palette) -> Color): ColorProvider = when {
 }
 
 @Composable
-private fun Label(text: String, color: ColorProvider = cp { it.muted }, size: TextUnit = 12.sp, bold: Boolean = false, maxLines: Int = 1, modifier: GlanceModifier = GlanceModifier) {
+private fun Label(text: String, color: ColorProvider = cp { it.muted }, size: TextUnit = 12.sp, bold: Boolean = false, maxLines: Int = 1, modifier: GlanceModifier = GlanceModifier, strike: Boolean = false) {
     Text(
         text, modifier,
-        style = TextStyle(color = color, fontSize = size, fontWeight = if (bold) FontWeight.Medium else FontWeight.Normal),
+        style = TextStyle(
+            color = color, fontSize = size, fontWeight = if (bold) FontWeight.Medium else FontWeight.Normal,
+            textDecoration = if (strike) TextDecoration.LineThrough else null,
+        ),
         maxLines = maxLines,
     )
 }
@@ -218,35 +223,45 @@ class TodayWidget : GlanceAppWidget() {
 private sealed interface Line {
     data class Now(val time: LocalTime) : Line
     data class Head(val text: String) : Line
-    data class Event(val time: String, val title: String, val sub: String) : Line
+    data class Event(val time: String, val title: String, val sub: String, val phase: DayPlan.Phase, val progress: Float) : Line
     data class Todo(val time: String, val task: Task, val sub: String) : Line
 }
 
-/** The rows: timed items with the now line among them, then late and untimed tasks under one heading. */
+/**
+ * The rows: timed items with the now line among them, then late and untimed tasks under one heading. Finished
+ * tasks and events that are over stay in the list, greyed; the now line runs through the event that is on.
+ */
 private fun timeline(data: WidgetData, now: LocalDateTime): List<Line> {
     val out = ArrayList<Line>()
     val plan = data.plan
     val timed = plan.filter { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME }.flatMap { it.items }
-    var nowShown = timed.isEmpty()
+    val inEvent = timed.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE }
+    var nowShown = timed.isEmpty() || inEvent
     timed.forEach { item ->
         val time = item.time
         if (!nowShown && time != null && time > now.toLocalTime()) { out += Line.Now(now.toLocalTime()); nowShown = true }
-        out += line(item, time?.let(::hm) ?: "")
+        out += line(item, time?.let(::hm) ?: "", now)
     }
     if (!nowShown) out += Line.Now(now.toLocalTime())
     val rest = plan.filter { it.part == DayPlan.Part.LATE || it.part == DayPlan.Part.ANYTIME }.flatMap { it.items }
     if (rest.isNotEmpty()) {
         out += Line.Head(tr("ไม่ระบุเวลา", "Any time"))
-        rest.forEach { out += line(it, "") }
+        rest.forEach { out += line(it, "", now) }
     }
     return out
 }
 
-private fun line(item: DayPlan.Item, time: String): Line = when (item) {
-    is DayPlan.Item.EventItem -> Line.Event(
-        time, item.event.title,
-        if (item.event.allDay) tr("ทั้งวัน", "All day") else hm(item.event.begin.toLocalTime()) + tr(" ถึง ", " to ") + hm(item.event.end.toLocalTime()),
-    )
+private fun line(item: DayPlan.Item, time: String, now: LocalDateTime): Line = when (item) {
+    is DayPlan.Item.EventItem -> {
+        val phase = DayPlan.phase(item.event, now)
+        val range = if (item.event.allDay) tr("ทั้งวัน", "All day") else hm(item.event.begin.toLocalTime()) + tr(" ถึง ", " to ") + hm(item.event.end.toLocalTime())
+        val sub = when (phase) {
+            DayPlan.Phase.ACTIVE -> range + tr(", เหลือ ${ChronoUnit.MINUTES.between(now, item.event.end)} นาที", ", ${ChronoUnit.MINUTES.between(now, item.event.end)} min left")
+            DayPlan.Phase.PAST -> range + tr(", จบแล้ว", ", ended")
+            DayPlan.Phase.UPCOMING -> range
+        }
+        Line.Event(time, item.event.title, sub, phase, DayPlan.progress(item.event, now))
+    }
     is DayPlan.Item.TaskItem -> Line.Todo(time, item.task, listOfNotNull(Projects.projectOf(item.task)?.let { "#$it" }, Focus.waitingFor(item.task)?.let { tr("รอ $it", "waiting on $it") }).joinToString(", "))
 }
 
@@ -261,14 +276,27 @@ private fun NowLine(time: LocalTime) {
 
 @Composable
 private fun EventLine(context: Context, e: Line.Event) {
-    Row(GlanceModifier.fillMaxWidth().height(40.dp).clickable(open(context)), verticalAlignment = Alignment.CenterVertically) {
-        Label(e.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.width(40.dp))
-        Box(GlanceModifier.width(20.dp), contentAlignment = Alignment.Center) {
-            Box(GlanceModifier.width(3.dp).height(22.dp).cornerRadius(2.dp).background(cp { it.teal })) {}
+    val past = e.phase == DayPlan.Phase.PAST
+    Box(GlanceModifier.fillMaxWidth().height(40.dp).clickable(open(context))) {
+        Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            Label(e.time, if (past) cp { it.faint } else cp { it.muted }, 12.sp, modifier = GlanceModifier.width(40.dp))
+            Box(GlanceModifier.width(20.dp), contentAlignment = Alignment.Center) {
+                Box(GlanceModifier.width(3.dp).height(22.dp).cornerRadius(2.dp).background(if (past) cp { it.faint } else cp { it.teal })) {}
+            }
+            Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
+                Label(e.title, if (past) cp { it.faint } else cp { it.text }, 14.sp)
+                Label(e.sub, if (past) cp { it.faint } else cp { it.tealText }, 11.5.sp)
+            }
         }
-        Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
-            Label(e.title, cp { it.text }, 14.sp)
-            Label(e.sub, cp { it.tealText }, 11.5.sp)
+        // While the event runs, the now line crosses it at how far in the clock is.
+        if (e.phase == DayPlan.Phase.ACTIVE) {
+            Column(GlanceModifier.fillMaxSize()) {
+                Spacer(GlanceModifier.height((e.progress * 34f).dp))
+                Row(GlanceModifier.fillMaxWidth().height(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(GlanceModifier.size(6.dp).cornerRadius(3.dp).background(cp { it.red })) {}
+                    Box(GlanceModifier.defaultWeight().height(1.5.dp).background(cp { it.red })) {}
+                }
+            }
         }
     }
 }
@@ -276,10 +304,16 @@ private fun EventLine(context: Context, e: Line.Event) {
 @Composable
 private fun TodoLine(context: Context, r: Line.Todo, today: LocalDate) {
     val t = r.task
-    val late = t.due?.let { it < today } == true
+    val done = t.status == Status.DONE
+    val late = !done && t.due?.let { it < today } == true
     Row(GlanceModifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-        Label(r.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.width(40.dp))
-        Box(
+        Label(r.time, if (done) cp { it.faint } else cp { it.muted }, 12.sp, modifier = GlanceModifier.width(40.dp))
+        if (done) {
+            // Ticked already: a filled grey dot in place of the ring, nothing to tap.
+            Box(GlanceModifier.size(20.dp), contentAlignment = Alignment.Center) {
+                Box(GlanceModifier.size(12.dp).cornerRadius(6.dp).background(cp { it.faint })) {}
+            }
+        } else Box(
             GlanceModifier.size(20.dp).clickable(actionRunCallback<TickAction>(actionParametersOf(RAW to t.raw))),
             contentAlignment = Alignment.Center,
         ) {
@@ -287,9 +321,12 @@ private fun TodoLine(context: Context, r: Line.Todo, today: LocalDate) {
                 colorFilter = ColorFilter.tint(if (late) cp { it.red } else cp { it.faint }))
         }
         Column(GlanceModifier.defaultWeight().padding(start = 8.dp).clickable(open(context))) {
-            Label(t.title, cp { it.text }, 14.sp)
-            val sub = listOfNotNull(if (late) tr("เลยกำหนด", "Overdue") else null, r.sub.ifEmpty { null }).joinToString(", ")
-            if (sub.isNotEmpty()) Label(sub, if (late) cp { it.red } else cp { it.muted }, 11.5.sp)
+            Label(t.title, if (done) cp { it.faint } else cp { it.text }, 14.sp, strike = done)
+            val sub = listOfNotNull(
+                if (done) tr("เสร็จแล้ว", "Done") else if (late) tr("เลยกำหนด", "Overdue") else null,
+                r.sub.ifEmpty { null },
+            ).joinToString(", ")
+            if (sub.isNotEmpty()) Label(sub, if (late) cp { it.red } else if (done) cp { it.faint } else cp { it.muted }, 11.5.sp)
         }
     }
 }

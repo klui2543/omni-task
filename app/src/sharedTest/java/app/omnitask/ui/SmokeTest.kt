@@ -51,7 +51,12 @@ class SmokeTest {
     fun everyScreenRenders() {
         val vm = vm()
         rule.setContent { OmniTheme { OmniTaskApp(vm) } }
+        // The lists and the assistant sit behind the bottom bar's "More" button.
         listOf("งาน", "มุมมอง", "โปรเจกต์/ลิสต์", "ผู้ช่วย", "โฟกัส").forEach { label ->
+            if (label == "โปรเจกต์/ลิสต์" || label == "ผู้ช่วย") {
+                rule.onAllNodesWithText("เพิ่มเติม")[0].performClick()
+                rule.waitForIdle()
+            }
             rule.onAllNodesWithText(label).fetchSemanticsNodes().let { check(it.isNotEmpty()) { "no $label" } }
             rule.onAllNodesWithText(label)[0].performClick()
             rule.waitForIdle()

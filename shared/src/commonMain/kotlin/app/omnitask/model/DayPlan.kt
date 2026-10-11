@@ -29,16 +29,24 @@ object DayPlan {
     private val DAY_START = LocalTime.of(7, 0)
     private val DAY_END = LocalTime.of(21, 0)
 
-    fun build(tasks: List<Task>, events: List<CalendarEvent>, today: LocalDate): List<Section> {
+    /**
+     * With [includeDone] the tasks already ticked off today stay in the plan (the Focus timeline greys them
+     * instead of dropping them): those dated today, and those from earlier days ticked today.
+     */
+    fun build(tasks: List<Task>, events: List<CalendarEvent>, today: LocalDate, includeDone: Boolean = false): List<Section> {
         val items = ArrayList<Pair<Part, Item>>()
-        tasks.filter { it.isOpen }.forEach { t ->
+        tasks.forEach { t ->
             val due = t.due
+            val dated = due == today || t.scheduled == today
+            val doneToday = includeDone && t.status == Status.DONE
             when {
-                due != null && due < today -> items += Part.LATE to Item.TaskItem(t, null)
-                due == today || t.scheduled == today -> {
+                !t.isOpen && !doneToday -> Unit
+                t.isOpen && due != null && due < today -> items += Part.LATE to Item.TaskItem(t, null)
+                dated -> {
                     val time = t.reminderAt?.takeIf { it.toLocalDate() == today }?.toLocalTime()
                     items += partOf(time) to Item.TaskItem(t, time)
                 }
+                doneToday && t.done == today && due != null && due < today -> items += Part.LATE to Item.TaskItem(t, null)
             }
         }
         events.filter { overlaps(it, today) }.forEach { e ->
@@ -48,6 +56,23 @@ object DayPlan {
         return Part.entries.map { part ->
             Section(part, items.filter { it.first == part }.map { it.second }.sortedBy { it.time ?: LocalTime.LAST })
         }.filter { it.items.isNotEmpty() }
+    }
+
+    /** Where a timed calendar event stands against the clock. All-day events never pass or run. */
+    enum class Phase { UPCOMING, ACTIVE, PAST }
+
+    fun phase(e: CalendarEvent, now: LocalDateTime): Phase = when {
+        e.allDay -> Phase.UPCOMING
+        e.end <= now -> Phase.PAST
+        e.begin <= now -> Phase.ACTIVE
+        else -> Phase.UPCOMING
+    }
+
+    /** How far into a timed event the clock is, 0 to 1; the Focus card and the widget draw the now line there. */
+    fun progress(e: CalendarEvent, now: LocalDateTime): Float {
+        val total = ChronoUnit.SECONDS.between(e.begin, e.end)
+        if (total <= 0) return 0f
+        return (ChronoUnit.SECONDS.between(e.begin, now).toFloat() / total).coerceIn(0f, 1f)
     }
 
     /** Minutes between 07:00 and 21:00 today not taken by timed events. */

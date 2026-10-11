@@ -23,13 +23,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,7 +48,9 @@ import app.omnitask.model.tr
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.delay
 import app.omnitask.model.Countdown
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -63,13 +69,21 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     val today = state.today
     val brief = state.brief
     val events = state.todayEvents
-    val plan = DayPlan.build(state.tasks, events, today)
-    val openToday = plan.flatMap { it.items }.filterIsInstance<DayPlan.Item.TaskItem>().size
+    // Tasks already ticked today stay in the day's timeline, greyed, so the day reads as a whole.
+    val plan = DayPlan.build(state.tasks, events, today, includeDone = true)
+    val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
     // Done today counts anything ticked today that belonged to today (or was overdue).
     val doneToday = state.tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
     val total = openToday + doneToday
     val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
-    val now = LocalDateTime.now()
+    // The clock the timeline follows: it moves on at every minute, so the now line and the running event keep up with real time.
+    var now by remember { mutableStateOf(LocalDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L + 50L)
+            now = LocalDateTime.now()
+        }
+    }
     // Tonight's bedtime: the one picked for this evening, or the usual one from the profile.
     val eve = if (now.toLocalTime() >= LocalTime.of(18, 0)) today else today.minusDays(1)
     val bedtime = state.tonightBed?.takeIf { it.first == eve }?.second ?: state.profile.sleep
@@ -178,11 +192,20 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 if (plan.isEmpty()) {
                     Text(tr("วันนี้ยังไม่มีงานหรือนัด", "Nothing due or booked today"), Modifier.padding(16.dp), color = C.muted)
                 }
-                // The red now line sits before the first timed item still to come.
-                var nowShown = plan.none { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
+                // The red now line sits before the first timed item still to come; while an event is running it
+                // crosses that event's card instead, at how far into it the clock is.
                 val nowTime = now.toLocalTime()
+                val inEvent = plan.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
+                var nowShown = inEvent || plan.none { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
                 plan.forEach { section ->
-                    PlanHead(section.part.label, if (section.part == DayPlan.Part.LATE) C.red else C.muted, section.items.count { it is DayPlan.Item.TaskItem })
+                    if (!nowShown && section.part == DayPlan.Part.ANYTIME) {
+                        NowLine(nowTime)
+                        nowShown = true
+                    }
+                    PlanHead(
+                        section.part.label, if (section.part == DayPlan.Part.LATE) C.red else C.muted,
+                        section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen },
+                    )
                     section.items.forEach { item ->
                         val t = item.time
                         if (!nowShown && t != null && t > nowTime) {
@@ -191,7 +214,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                         when (item) {
                             is DayPlan.Item.TaskItem -> TimelineTask(item, state, vm, onOpen, item.task in blocked)
-                            is DayPlan.Item.EventItem -> TimelineEvent(item)
+                            is DayPlan.Item.EventItem -> TimelineEvent(item, now)
                         }
                     }
                     if (!nowShown && section.part == DayPlan.Part.EVENING) {
@@ -199,6 +222,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         nowShown = true
                     }
                 }
+                if (!nowShown) NowLine(nowTime)
                 Box(Modifier.height(8.dp))
             }
         }
@@ -391,12 +415,21 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
     val t = item.task
     val today = state.today
     val late = t.isLate(today)
-    Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Top) {
+    // A task already ticked off stays on the timeline, greyed out.
+    val done = t.status == Status.DONE
+    Row(
+        Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
         Text(item.time?.format(HM) ?: "", Modifier.width(TIME_W).padding(top = 3.dp), color = C.muted, fontSize = TS.caption)
         TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 26.dp)
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(t.title, color = if (isBlocked) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+            Text(
+                t.title, color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
+                textDecoration = if (done) TextDecoration.LineThrough else null,
+            )
             val lead = when {
+                done -> tr("เสร็จแล้ว", "Done")
                 late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
                 t.due == today -> tr("ครบวันนี้", "Due today")
                 else -> tr("นัดวันนี้", "Scheduled today")
@@ -407,26 +440,53 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
             )
             Row(Modifier.padding(top = 1.dp)) {
-                if (lead != null) Text(lead, color = if (late) C.red else C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                if (lead != null) Text(lead, color = if (late && !done) C.red else C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                 if (sub.isNotEmpty()) Text(", " + sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
 }
 
+/**
+ * A calendar event on the timeline against the clock: greyed once it has ended, and while it runs the red now line
+ * crosses the card at how far into the event it is, with the part already gone tinted darker.
+ */
 @Composable
-private fun TimelineEvent(item: DayPlan.Item.EventItem) {
+private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     val e = item.event
+    val phase = DayPlan.phase(e, now)
+    val past = phase == DayPlan.Phase.PAST
+    val running = phase == DayPlan.Phase.ACTIVE
+    val fraction = if (running) DayPlan.progress(e, now) else 0f
+    val bg = if (past) C.raised else C.tealSoft
+    val spent = C.teal.copy(alpha = 0.16f)
+    val red = C.red
+    val sub = (if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")) + when {
+        running -> {
+            val left = ChronoUnit.MINUTES.between(now, e.end)
+            tr(", ตอนนี้ ${now.format(HM)} เหลือ $left นาที", ", now ${now.format(HM)}, $left min left")
+        }
+        past -> tr(", จบแล้ว", ", ended")
+        else -> ", Google Calendar"
+    }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.Top) {
-        Text(item.time?.format(HM) ?: "", Modifier.width(TIME_W).padding(top = 9.dp), color = C.muted, fontSize = TS.caption)
-        Row(Modifier.weight(1f).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(C.tealSoft).padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(C.teal))
+        Text(item.time?.format(HM) ?: "", Modifier.width(TIME_W).padding(top = 9.dp), color = if (past) C.faint else C.muted, fontSize = TS.caption)
+        Row(
+            Modifier.weight(1f).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
+                .drawBehind {
+                    if (running) {
+                        val y = size.height * fraction
+                        drawRect(spent, size = androidx.compose.ui.geometry.Size(size.width, y))
+                        drawLine(red, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5.dp.toPx())
+                        drawCircle(red, 3.5.dp.toPx(), Offset(3.5.dp.toPx(), y))
+                    }
+                }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (past) C.faint else C.teal))
             Column(Modifier.padding(start = 10.dp)) {
-                Text(e.title, color = C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                Text(
-                    (if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")) + ", Google Calendar",
-                    color = C.tealText, fontSize = TS.caption,
-                )
+                Text(e.title, color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+                Text(sub, color = if (past) C.faint else C.tealText, fontSize = TS.caption)
             }
         }
     }

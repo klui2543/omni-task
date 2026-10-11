@@ -28,8 +28,8 @@ class WidgetData(
 ) {
     val brief by lazy { Focus.build(tasks, today, futureCount = 1) }
 
-    /** Today's plan as on the Focus screen: late work, then the parts of the day, then work without a time. */
-    val plan by lazy { DayPlan.build(tasks, events, today) }
+    /** Today's plan as on the Focus screen: late work, then the parts of the day, then work without a time; finished work stays, for the widget to grey. */
+    val plan by lazy { DayPlan.build(tasks, events, today, includeDone = true) }
 
     /** Today's open work in the same order as the Focus timeline. */
     val todayTasks: List<Task> by lazy {
