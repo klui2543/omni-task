@@ -54,6 +54,15 @@ class NightAndCountdownTest {
     }
 
     @Test
+    fun givenTheEveningTheNightIsPlannedInTheDaytime() {
+        val now = LocalDateTime.parse("2026-10-08T14:00")
+        val n = DayPlan.night(emptyList(), profile, now, LocalTime.of(22, 30), evening = now.toLocalDate())!!
+        assertEquals(LocalDateTime.parse("2026-10-08T22:30"), n.bedAt)
+        assertEquals(LocalDateTime.parse("2026-10-09T06:00"), n.wakeAt)
+        assertEquals(450L, n.sleep)
+    }
+
+    @Test
     fun countdownTexts() {
         val now = LocalDateTime.parse("2026-10-08T10:00")
         val exam = TaskLine.parse("- [ ] สอบ BCP 📅 2026-10-20")!!

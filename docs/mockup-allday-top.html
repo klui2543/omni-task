@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>All-day events on top</title>
+<style>
+:root{--bg:#0b0b0c;--card:#161618;--line:#2a2a2d;--raised:#232326;--text:#f2f2f3;--muted:#9a9aa0;--faint:#6c6c72;--accent:#b9c8ff;--red:#e06c6c;--lime:#a6d96a;--blue:#7fb2ff}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px}
+.wrap{max-width:400px;margin:0 auto}
+h2{font-size:14px;color:var(--muted);font-weight:500;margin:26px 0 8px}
+.note{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.55}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:6px 0 12px}
+.head{font-size:12.5px;color:var(--muted);padding:10px 16px 4px;display:flex;justify-content:space-between}
+.ev{margin:4px 12px;border-radius:12px;background:#7fb2ff1a;border-left:3px solid var(--blue);padding:8px 12px}
+.ev b{display:block;font-size:14px;font-weight:500}.ev span{font-size:12px;color:var(--muted)}
+.ad{display:flex;flex-wrap:wrap;gap:6px;padding:4px 12px 2px}
+.chip{background:#7fb2ff1a;border:1px solid #7fb2ff40;color:var(--text);border-radius:10px;padding:6px 10px;font-size:13px}
+.chip small{color:var(--muted);font-size:11.5px;margin-left:4px}
+.task{display:flex;align-items:center;gap:12px;padding:8px 16px;font-size:14px}
+.box{width:18px;height:18px;border-radius:50%;border:2px solid var(--faint)}
+.time{font-size:12px;color:var(--muted);width:38px}
+.now{display:flex;align-items:center;gap:6px;padding:4px 16px;color:var(--red);font-size:11px}
+.now i{flex:1;height:1.5px;background:var(--red)}
+.sep{height:1px;background:var(--line);margin:8px 16px 2px}
+.w{background:#1c1c1f;border-radius:24px;padding:12px 14px;font-size:12.5px}
+.w .h{color:var(--muted);font-size:11.5px;margin:8px 0 3px}
+.w .r{display:flex;gap:8px;padding:3px 0}.w .r .t{color:var(--muted);width:36px}
+.w .e{border-left:3px solid var(--blue);padding-left:8px}
+.we{border-left:3px solid var(--blue);padding:3px 0 3px 9px;margin:4px 0}.we b{display:block;font-weight:400;font-size:13.5px}.we span{font-size:11.5px;color:var(--muted)}
+.wt{display:flex;align-items:center;gap:8px;padding:4px 0}.wt b{display:block;font-weight:400;font-size:13.5px}.wt span{font-size:11.5px;color:var(--muted)}
+.ring{width:15px;height:15px;border-radius:50%;border:2px solid var(--faint);flex:none}
+</style></head><body><div class="wrap">
+
+<h2>หน้าโฟกัส: นัดทั้งวันอยู่บนสุด ใต้หัว "วันนี้"</h2>
+<div class="card">
+ <div class="head"><span>วันนี้</span></div>
+ <div class="ev"><b>วันหยุดชดเชย</b><span>ทั้งวัน</span></div>
+ <div class="ev"><b>ประชุมวิชาการ</b><span>ทั้งวัน (วันที่ 2 จาก 3)</span></div>
+ <div class="sep"></div>
+ <div class="head"><span>เช้า</span><span>1</span></div>
+ <div class="task"><span class="time">09:00</span><div class="box"></div>ส่งรายงานเวร</div>
+ <div class="now"><span>10:42</span><i></i></div>
+ <div class="ev"><b>O11 รอบ 3</b><span>11:00 ถึง 12:00</span></div>
+ <div class="head"><span>บ่าย</span><span>0</span></div>
+ <div class="ev"><b>ประชุมทีม</b><span>14:00 ถึง 15:00</span></div>
+ <div class="head"><span>ไม่ระบุเวลา</span><span>2</span></div>
+ <div class="task"><div class="box"></div>ซื้อของเข้าบ้าน</div>
+ <div class="task"><div class="box"></div>โทรหาแม่</div>
+</div>
+<div class="note">นัดทั้งวัน (และนัดหลายวันที่คาบวันนี้) อยู่บนสุดใต้หัว "วันนี้" หน้าตาเหมือนนัดปกติ แต่ตรงที่เป็นเวลาเขียนว่า "ทั้งวัน"<br>"ไม่ระบุเวลา" เหลือแต่งาน ไม่มีนัดปน และชิดซ้ายเพราะไม่มีช่องเวลา</div>
+
+<h2>Widget: แบบเดียวกัน</h2>
+<div class="w">
+ <div class="h">วันนี้</div>
+ <div class="we"><b>วันหยุดชดเชย</b><span>ทั้งวัน</span></div>
+ <div class="we"><b>ประชุมวิชาการ</b><span>ทั้งวัน (วันที่ 2 จาก 3)</span></div>
+ <div class="wt"><div class="ring"></div><div><b>ส่งรายงานเวร</b><span>09:00</span></div></div>
+ <div class="now" style="padding:2px 0"><span>10:42</span><i></i></div>
+ <div class="we"><b>O11 รอบ 3</b><span>11:00 ถึง 12:00</span></div>
+ <div class="we"><b>ประชุมทีม</b><span>14:00 ถึง 15:00</span></div>
+ <div class="h">ไม่ระบุเวลา</div>
+ <div class="wt"><div class="ring"></div><div><b>ซื้อของเข้าบ้าน</b></div></div>
+ <div class="wt"><div class="ring"></div><div><b>โทรหาแม่</b></div></div>
+</div>
+<div class="note">วงกลมซ้ายมือแตะเพื่อติ๊กเสร็จได้เหมือนเดิม เวลาอยู่บรรทัดล่างของชื่องาน<br>นัดทั้งวันเขียน "ทั้งวัน" ตรงบรรทัดเวลา งานที่ไม่มีเวลาไม่มีบรรทัดล่าง</div>
+</div></body></html>

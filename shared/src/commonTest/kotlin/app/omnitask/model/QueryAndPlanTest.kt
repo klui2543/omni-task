@@ -55,6 +55,22 @@ class QueryAndPlanTest {
     }
 
     @Test
+    fun allDayAndLongEventsGoOnTopApartFromTheTasks() {
+        val events = listOf(
+            CalendarEvent(1, "วันหยุด", LocalDateTime.parse("2026-10-07T00:00"), LocalDateTime.parse("2026-10-08T00:00"), allDay = true),
+            CalendarEvent(2, "ประชุมวิชาการ", LocalDateTime.parse("2026-10-06T00:00"), LocalDateTime.parse("2026-10-09T00:00"), allDay = true),
+            CalendarEvent(3, "เวรดึก", LocalDateTime.parse("2026-10-06T20:00"), LocalDateTime.parse("2026-10-07T08:00")),
+        )
+        val plan = DayPlan.build(listOf(t("- [ ] ไม่มีเวลา ⏳ 2026-10-07")), events, today)
+        assertEquals(listOf(DayPlan.Part.ALL_DAY, DayPlan.Part.ANYTIME), plan.map { it.part })
+        assertEquals(3, plan[0].items.size)
+        assertTrue(plan[1].items.all { it is DayPlan.Item.TaskItem })
+        assertEquals(null, DayPlan.dayOf(events[0], today))
+        assertEquals(2 to 3, DayPlan.dayOf(events[1], today))
+        assertEquals(2 to 2, DayPlan.dayOf(events[2], today))
+    }
+
+    @Test
     fun dayPlanSplitsTheDayAndCountsFreeTime() {
         val tasks = listOf(
             t("- [ ] ค้าง 📅 2026-10-05"),
