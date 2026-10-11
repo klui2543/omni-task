@@ -139,8 +139,14 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         night.sleep < 7 * 60 -> C.amber
                         else -> C.lime
                     }
-                    // Bed and wake as two tiles to tap, the hours of sleep beside them, and why the wake time is what it is.
+                    // Bed and wake as two tiles to tap, the hours of sleep beside them, why the wake time is what it is,
+                    // then the alarm on the watch.
                     val wake = night.wakeAt.toLocalTime()
+                    val alarm = state.alarmSet?.takeIf { it.first == eve }
+                    // Set for tonight and the wake time moved (picked again, or a new morning event): send the new one.
+                    LaunchedEffect(alarm, night.wakeAt) {
+                        if (alarm != null && alarm.second != wake) vm.setWakeAlarm(eve, night.wakeAt, night.sleep)
+                    }
                     Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Ic.moon, null, tint = C.accentText, modifier = Modifier.size(15.dp))
@@ -176,6 +182,26 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                     )
                                 }
                             }
+                        }
+                        val on = alarm != null && !state.alarmFailed
+                        val tint = when { on -> C.lime; state.alarmFailed -> C.red; else -> C.accentText }
+                        Row(
+                            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(if (on) C.lime.copy(alpha = 0.12f) else C.raised)
+                                .clickable { vm.setWakeAlarm(eve, if (on) null else night.wakeAt, night.sleep) }
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(if (on) Ic.check else Ic.watch, null, tint = tint, modifier = Modifier.size(15.dp))
+                            Text(
+                                when {
+                                    state.alarmFailed -> tr("ส่งไม่ถึงนาฬิกา แตะเพื่อลองใหม่", "Did not reach the watch, tap to retry")
+                                    on -> tr("นาฬิกาจะปลุก ${night.wakeAt.format(HM)}", "The watch rings at ${night.wakeAt.format(HM)}")
+                                    else -> tr("ปลุกที่นาฬิกา ${night.wakeAt.format(HM)}", "Ring the watch at ${night.wakeAt.format(HM)}")
+                                },
+                                Modifier.padding(start = 8.dp), color = if (on || state.alarmFailed) tint else C.text,
+                                fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 } else {

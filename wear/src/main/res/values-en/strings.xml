@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tonight">Alarm tonight</string>
+    <string name="none">No alarm set</string>
+    <string name="none_hint">Set it from the sleep card in the phone app</string>
+    <string name="sleep">%1$s of sleep</string>
+    <string name="wake_up">Time to wake up</string>
+    <string name="snooze">+5 min</string>
+    <string name="stop">Stop</string>
+</resources>

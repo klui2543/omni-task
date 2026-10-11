@@ -4,7 +4,7 @@
 set -uo pipefail
 
 adb logcat -c || true
-gradle connectedDebugAndroidTest --no-daemon --stacktrace
+gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace
 status=$?
 
 if [ "$status" -ne 0 ]; then
