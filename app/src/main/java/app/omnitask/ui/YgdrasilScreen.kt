@@ -69,6 +69,9 @@ import app.omnitask.model.Task
 import app.omnitask.model.Ygdrasil
 import app.omnitask.model.tr
 
+/** The scale a tree too big for the screen opens at: small enough to see a lot, big enough to read. */
+private const val READABLE = 0.62f
+
 /**
  * Project Ygdrasil: every project in one tree that fills the screen, from the trunk through each project (a world)
  * and its branches to the tasks, with the tasks that wait for one another tied across. Drag to move, pinch or the
@@ -100,14 +103,25 @@ fun YgdrasilScreen(
     var box by remember { mutableStateOf(IntSize.Zero) }
     var touched by remember { mutableStateOf(false) }
     val density = LocalDensity.current.density
-    fun fit() {
+    // A tree too big for the screen opens readable, from the trunk, instead of shrunk until its text cannot be read;
+    // "Fit" shows all of it, and the tree keeps that way until the owner moves it.
+    var whole by remember { mutableStateOf(false) }
+    fun place() {
         if (box.width == 0) return
         val pad = 24f * density
-        val s = minOf(1.2f, (box.width - pad * 2) / (layout.width * density), (box.height - pad * 2) / (layout.height * density)).coerceIn(0.15f, 2.5f)
-        scale = s
-        pan = Offset((box.width - layout.width * density * s) / 2f, (box.height - layout.height * density * s) / 2f)
+        val s = minOf(1.2f, (box.width - pad * 2) / (layout.width * density), (box.height - pad * 2) / (layout.height * density))
+        val trunkY = layout.spots.firstOrNull { it.kind == Ygdrasil.Kind.TRUNK }?.y ?: (layout.height / 2f)
+        if (!whole && s < READABLE) {
+            scale = READABLE
+            pan = Offset(pad, box.height / 2f - trunkY * density * READABLE)
+        } else {
+            val k = s.coerceIn(0.15f, 2.5f)
+            scale = k
+            pan = Offset((box.width - layout.width * density * k) / 2f, (box.height - layout.height * density * k) / 2f)
+        }
         touched = false
     }
+    fun fit() { whole = true; place() }
     fun zoomBy(f: Float, at: Offset) {
         val s = (scale * f).coerceIn(0.15f, 2.5f)
         pan = at - (at - pan) * (s / scale)
@@ -115,7 +129,7 @@ fun YgdrasilScreen(
         touched = true
     }
     // Until the owner moves it, the tree keeps fitting the screen as filters and folds change its size.
-    LaunchedEffect(layout.width, layout.height, box) { if (!touched) fit() }
+    LaunchedEffect(layout.width, layout.height, box) { if (!touched) place() }
     // Zoomed far out, tasks show as their rings only.
     val far by remember { derivedStateOf { scale < 0.45f } }
 

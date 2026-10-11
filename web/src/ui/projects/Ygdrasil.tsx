@@ -111,9 +111,10 @@ export function Ygdrasil(p: {
 }) {
   const [selTag, setSelTag] = useState('')
   const [filtering, setFiltering] = useState(false)
-  const map = usePanZoom(p.out.width, p.out.height, 0.15)
-  const sel = p.out.spots.find((s) => s.kind === 'LIMB' && s.tag === selTag)
   const trunk = p.out.spots.find((s) => s.kind === 'TRUNK')!
+  // On a narrow screen the tree opens readable, from the trunk, instead of shrunk to fit; "พอดี" shows all of it.
+  const map = usePanZoom(p.out.width, p.out.height, 0.15, { scale: 0.62, anchorY: trunk.y })
+  const sel = p.out.spots.find((s) => s.kind === 'LIMB' && s.tag === selTag)
   const changes = filterChanges(p.filter)
   const fold = (tag: string) => p.onFolded(p.folded.includes(tag) ? p.folded.filter((t) => t !== tag) : [...p.folded, tag])
   // A task being carried to another branch: where the pointer is, and the branch under it.

@@ -102,11 +102,32 @@ test('the tree zooms with its buttons and fits again', async ({ page }) => {
   await start(page)
   const layer = page.getByTestId('yg-layer')
   const scale = async () => (await layer.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a))
-  const fitted = await scale()
+  const first = await scale()
   await page.getByRole('button', { name: 'ซูมเข้า' }).click()
-  expect(await scale()).toBeGreaterThan(fitted)
+  expect(await scale()).toBeGreaterThan(first)
   await page.getByRole('button', { name: 'พอดีจอ' }).click()
-  expect(Math.abs((await scale()) - fitted)).toBeLessThan(0.01)
+  expect(await scale()).toBeLessThanOrEqual(first + 0.01)
+})
+
+test('on a phone the tree opens readable from the trunk, and "fit" shows all of it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await start(page)
+  const layer = page.getByTestId('yg-layer')
+  const scale = async () => (await layer.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a))
+  const map = (await page.locator('.pj-map').boundingBox())!
+  expect(await scale()).toBeGreaterThanOrEqual(0.6)
+  const trunk = (await page.locator('.pj-node.yg-trunk').boundingBox())!
+  expect(trunk.x).toBeGreaterThanOrEqual(map.x)
+  expect(trunk.y).toBeGreaterThanOrEqual(map.y)
+  expect(trunk.y + trunk.height).toBeLessThanOrEqual(map.y + map.height)
+  // The panel's text stays clear of the round assistant button.
+  const panel = (await page.getByRole('region', { name: 'กิ่งที่เลือก' }).boundingBox())!
+  const fab = (await page.getByRole('button', { name: 'เปิดผู้ช่วย' }).boundingBox())!
+  const hint = (await page.getByRole('region', { name: 'กิ่งที่เลือก' }).locator('span.small').last().boundingBox())!
+  expect(hint.x + hint.width).toBeLessThanOrEqual(fab.x + 1)
+  expect(panel.width).toBeGreaterThan(0)
+  await page.getByRole('button', { name: 'พอดีจอ' }).click()
+  expect(await scale()).toBeLessThan(0.6)
 })
 
 test('a task held and dragged onto another project moves there, tag and all', async ({ page }) => {

@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks'
  * two fingers or Ctrl + wheel to zoom, the wheel alone to scroll. Until the owner zooms or drags, the map keeps
  * fitting its box; [fit] hands it back to that. A drag never counts as a tap on what is under it.
  */
-export function usePanZoom(width: number, height: number, minScale = 0.3) {
+export function usePanZoom(width: number, height: number, minScale = 0.3, readable?: { scale: number; anchorY: number }) {
   const box = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -19,17 +19,25 @@ export function usePanZoom(width: number, height: number, minScale = 0.3) {
     setPan(pn)
   }
   const size = useRef({ w: 0, h: 0 })
-  const fit = () => {
+  // With [readable], a map too big for its box opens at that scale, pinned at the left on the [anchorY] line (the
+  // trunk), instead of shrunk until its text cannot be read; "fit" still shows the whole map.
+  const whole = useRef(!readable)
+  const place = () => {
     const { w, h } = size.current
     if (!w || !h) return
     const pad = 24
     const s = Math.min(1.2, (w - pad * 2) / width, (h - pad * 2) / height)
-    const k = Math.min(2.5, Math.max(minScale, s))
-    apply(k, { x: (w - width * k) / 2, y: (h - height * k) / 2 })
+    if (readable && !whole.current && s < readable.scale) {
+      apply(readable.scale, { x: pad, y: h / 2 - readable.anchorY * readable.scale })
+    } else {
+      const k = Math.min(2.5, Math.max(minScale, s))
+      apply(k, { x: (w - width * k) / 2, y: (h - height * k) / 2 })
+    }
     touched.current = false
   }
-  const fitRef = useRef(fit)
-  fitRef.current = fit
+  const fit = () => { whole.current = true; place() }
+  const fitRef = useRef(place)
+  fitRef.current = place
   const zoomBy = (f: number, atPoint = { x: size.current.w / 2, y: size.current.h / 2 }) => {
     const { scale: s0, pan: p0 } = view.current
     const s = Math.min(2.5, Math.max(minScale, s0 * f))

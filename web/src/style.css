@@ -650,6 +650,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 .pj-zoom { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .pj-zoom button { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--control); background: var(--card); font-size: 18px; }
 .pj-zoom .fit { font-size: 12px; }
+.page.pj.mapping .pj-sel { padding-right: 88px; } /* clear of the round assistant button */
 .pj-sel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .row-gap.wrap { flex-wrap: wrap; gap: 8px; }
 .chip.pj-state { display: inline-flex; align-items: center; height: 34px; }
