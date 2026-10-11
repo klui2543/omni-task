@@ -84,6 +84,21 @@ object Scheduler {
         (previous - next).forEach { id -> am.cancel(pendingIntent(context, PlannedAlarm(AlarmKind.RESCAN, now, id))) }
         plan.forEach { set(context, am, it) }
         prefs(context).edit().putStringSet(KEY_ALARM_IDS, next).apply()
+        runCatching { scheduleWidgetTick(context, am, now) }
+    }
+
+    /**
+     * The Today widget draws the now line through the running event and greys it once it ends, so while an event runs it
+     * is redrawn every 10 minutes and again when the event ends; with none running, when the next one starts. Every
+     * alarm ends in a reschedule and a widget refresh, so each tick sets up the next. Kept out of the plan, which a
+     * rescan replaces, and not tied to the notification settings.
+     */
+    private fun scheduleWidgetTick(context: Context, am: AlarmManager, now: LocalDateTime) {
+        val events = CalendarReader.events(context, now.date.atStartOfDay(), now.date.plusDays(1).atStartOfDay()).filter { !it.allDay }
+        val running = events.filter { it.begin <= now && it.end > now }
+        val at = if (running.isNotEmpty()) minOf(now.plusMinutes(10), running.minOf { it.end }) else events.filter { it.begin > now }.minOfOrNull { it.begin }
+        val tick = PlannedAlarm(AlarmKind.RESCAN, at ?: now, "widget-tick")
+        if (at == null) am.cancel(pendingIntent(context, tick)) else set(context, am, tick)
     }
 
     /** One-off alarms (snooze, test) live outside the plan so a rescan never cancels them. */

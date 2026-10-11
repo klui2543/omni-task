@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,9 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -74,6 +75,9 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val blocked = Projects.blocked(state.tasks)
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var searching by remember { mutableStateOf(q.text.isNotEmpty()) }
+    // Opening search puts the cursor in the field, so finding a task is one tap and then typing.
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searching) { if (searching) runCatching { searchFocus.requestFocus() } }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -93,8 +97,8 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         singleLine = true,
                         textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                         cursorBrush = SolidColor(C.accent),
-                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card)
-                            .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().focusRequester(searchFocus).clip(RoundedCornerShape(12.dp)).background(C.card)
+                            .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
                         decorationBox = { inner ->
                             if (q.text.isEmpty()) Text(tr("ค้นหาชื่องาน", "Search task titles"), color = C.faint, fontSize = TS.body)
                             inner()
@@ -127,10 +131,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                             modifier = Modifier.size(22.dp).padding(5.dp).rotate(if (folded) 0f else 90f),
                         )
                         Text(g.label, Modifier.weight(1f).padding(start = 6.dp), color = g.tone.color, style = MaterialTheme.typography.titleSmall)
-                        Box(
-                            Modifier.heightIn(min = 24.dp).widthIn(min = 28.dp).clip(RoundedCornerShape(12.dp)).background(C.raised).padding(horizontal = 8.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { Text("${g.tasks.size}", color = C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium) }
+                        Text("${g.tasks.size}", color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                     }
                     if (!folded) g.tasks.forEachIndexed { i, t ->
                         if (i > 0) Divider(start = 48.dp)
@@ -197,8 +198,8 @@ fun FilterBar(
 @Composable
 private fun ToolButton(label: String, active: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
     Row(
-        Modifier.height(34.dp).clip(RoundedCornerShape(10.dp)).background(if (active) C.accentDeep else C.card)
-            .border(1.dp, if (active) C.accentLine else C.cardBorder, RoundedCornerShape(10.dp))
+        Modifier.height(36.dp).clip(RoundedCornerShape(12.dp)).background(if (active) C.accentDeep else C.card)
+            .border(1.dp, if (active) C.accentLine else C.cardBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),

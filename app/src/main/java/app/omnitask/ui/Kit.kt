@@ -113,6 +113,8 @@ object Ic {
     val mic = icon("mic", "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
     val link = icon("link", "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1", "M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1")
     val share = icon("share", "M12 4v11", "M7 9l5-5 5 5", "M5 14v5h14v-5")
+    val grid = icon("grid", "M5 5h4v4H5Z", "M15 5h4v4h-4Z", "M5 15h4v4H5Z", "M15 15h4v4h-4Z")
+    val gear = icon("gear", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z", "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8")
     val folderOpen = icon("folderOpen", "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v1", "M3.5 18.5l2.5-8h15l-2.5 8Z")
 }
 
@@ -126,10 +128,12 @@ fun Card(modifier: Modifier = Modifier, color: Color = C.card, border: Color = C
 
 @Composable
 fun Pill(text: String, bg: Color, fg: Color, icon: ImageVector? = null, modifier: Modifier = Modifier) {
+    // A transparent background is the quiet form: plain icon and text, so only what needs attention gets a box.
+    val quiet = bg == Color.Transparent
     Row(
-        modifier.height(24.dp).clip(RoundedCornerShape(12.dp)).background(bg).padding(horizontal = 9.dp),
+        modifier.height(if (quiet) 20.dp else 24.dp).clip(RoundedCornerShape(12.dp)).background(bg).padding(horizontal = if (quiet) 0.dp else 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (quiet) 4.dp else 5.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(12.dp))
         Text(text, color = fg, fontSize = TS.caption, lineHeight = 1.4.em, maxLines = 1)
@@ -201,13 +205,13 @@ fun SectionHead(title: String, color: Color = C.text2, trailing: String? = null,
 @Composable
 fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.clip(RoundedCornerShape(14.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(4.dp),
+        modifier.clip(RoundedCornerShape(12.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         options.forEach { (value, label) ->
             val on = value == selected
             Box(
-                Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(10.dp))
+                Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(9.dp))
                     .background(if (on) C.accent else Color.Transparent).clickable { onSelect(value) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -235,9 +239,9 @@ fun Chip(label: String, selected: Boolean, onClick: () -> Unit, dot: Color? = nu
 @Composable
 fun SquareButton(icon: ImageVector, description: String, onClick: () -> Unit, filled: Boolean = false, modifier: Modifier = Modifier) {
     Box(
-        modifier.size(42.dp).clip(RoundedCornerShape(14.dp))
+        modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
             .background(if (filled) C.accent else C.raised)
-            .border(1.dp, if (filled) C.accent else C.cardBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, if (filled) C.accent else C.cardBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -249,8 +253,8 @@ fun SquareButton(icon: ImageVector, description: String, onClick: () -> Unit, fi
 @Composable
 fun TodayButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.height(42.dp).clip(RoundedCornerShape(14.dp)).background(C.raised)
-            .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp),
+        modifier.height(42.dp).clip(RoundedCornerShape(12.dp)).background(C.raised)
+            .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Ic.calendar, null, tint = C.accentText, modifier = Modifier.size(16.dp))
@@ -287,7 +291,7 @@ data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageV
 
 /** The small labels under a task title. */
 fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false, progress: Pair<Int, Int>? = null): List<Meta> = buildList {
-    progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else C.raised, if (done == all) C.lime else C.text2, Ic.tasks)) }
+    progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else Color.Transparent, if (done == all) C.lime else C.muted, Ic.tasks)) }
     val open = t.isOpen
     if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
     t.due?.let { d ->
@@ -297,22 +301,22 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
             late -> tr("เลย ${d.format(SHORT_DATE)}", "Overdue ${d.format(SHORT_DATE)}")
             else -> tr("ครบ ${d.format(SHORT_DATE)}", "Due ${d.format(SHORT_DATE)}")
         }
-        add(Meta(text, if (late) C.redSoft else C.raised, if (late) C.red else C.text2))
+        add(Meta(text, if (late) C.redSoft else Color.Transparent, if (late) C.red else C.muted))
     }
     if (t.due == null || !compact) t.scheduled?.let { d ->
-        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), C.raised, C.text2))
+        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), Color.Transparent, C.muted))
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
-    t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), C.raised, C.text2, Ic.bell)) }
-    t.recurrence?.let { add(Meta(Recurrence.describe(it), C.raised, C.text2, Ic.repeat)) }
+    t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted, Ic.bell)) }
+    t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted, Ic.repeat)) }
     if (!compact) {
         val project = Projects.projectOf(t)
         t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
-            if (tag == project) add(Meta(tag, C.tealSoft, C.tealChip)) else add(Meta("#$tag", C.accentSoft, C.accentText))
+            if (tag == project) add(Meta(tag, Color.Transparent, C.tealText)) else add(Meta("#$tag", Color.Transparent, C.accentText))
         }
     }
-    if (t.attachments.isNotEmpty()) add(Meta(t.attachments.size.toString(), C.raised, C.text2, Ic.image))
-    if (t.links.isNotEmpty()) add(Meta(t.links.size.toString(), C.raised, C.text2, Ic.link))
+    if (t.attachments.isNotEmpty()) add(Meta(t.attachments.size.toString(), Color.Transparent, C.muted, Ic.image))
+    if (t.links.isNotEmpty()) add(Meta(t.links.size.toString(), Color.Transparent, C.muted, Ic.link))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -343,7 +347,7 @@ fun TaskRow(
             task.descriptionPreview?.let { Text(it, Modifier.padding(top = 1.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             val meta = metaOf(task, today, blockedBy, compact, progress)
             if (meta.isNotEmpty()) {
-                FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                FlowRow(Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     meta.forEach { Pill(it.text, it.bg, it.fg, it.icon) }
                 }
             }

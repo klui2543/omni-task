@@ -75,7 +75,8 @@ class WebFocusTest {
         val events = ""","events":[{"id":7,"title":"ประชุมทีม","begin":"2026-10-08T13:00","end":"2026-10-08T14:30","link":"https://www.google.com/calendar/event?eid=abc"},{"id":8,"title":"ไม่มีลิงก์","begin":"2026-10-08T16:00","end":"2026-10-08T17:00"}]"""
         val r = focus(events)
         assertTrue(r.contains("\"range\":\"13:00 ถึง 14:30, Google Calendar\",\"link\":\"https://www.google.com/calendar/event?eid=abc\""), r)
-        assertTrue(r.contains("\"range\":\"16:00 ถึง 17:00, Google Calendar\"}"), r)
+        // An event without a link carries no link key: the next field after its range is not "link".
+        assertTrue(r.contains("\"range\":\"16:00 ถึง 17:00, Google Calendar\",\"done\":false"), r)
     }
 
     @Test

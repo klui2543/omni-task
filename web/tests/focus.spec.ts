@@ -170,3 +170,32 @@ test('the Focus menu goes to the other pages', async ({ page }) => {
   await page.getByRole('button', { name: '✦ ผู้ช่วย' }).click()
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
 })
+
+test('the red line runs through the event that is on, and an event that is over is greyed', async ({ page }) => {
+  await open(page, {
+    granted: true,
+    events: [
+      { title: 'ราวด์เช้า', begin: at(7, 0), end: at(8, 0) },
+      { title: 'ประชุมทีม', begin: at(9, 0), end: at(10, 0) },
+    ],
+  })
+  const over = page.locator('.prow.event.past')
+  await expect(over).toContainText('ราวด์เช้า')
+  await expect(over).toContainText('จบแล้ว')
+  const on = page.locator('.prow.event.active')
+  await expect(on).toContainText('ประชุมทีม')
+  await expect(on).toContainText('ตอนนี้ 09:20 เหลือ 40 นาที')
+  // 20 of 60 minutes in: the line sits a third of the way down the card, so no separate line is drawn.
+  await expect(on.locator('.ebox')).toHaveAttribute('style', /--p:\s*33%/)
+  await expect(page.locator('.nowline')).toHaveCount(0)
+})
+
+test('a task ticked today stays on the timeline, greyed', async ({ page }) => {
+  await open(page)
+  await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
+  const row = page.locator('.prow.done', { hasText: 'ทบทวนเคส' })
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('เสร็จแล้ว')
+  // The ring still counts one of four, not two of five.
+  await expect(page.getByRole('img', { name: 'เสร็จแล้ว 1 จาก 4' })).toBeVisible()
+})

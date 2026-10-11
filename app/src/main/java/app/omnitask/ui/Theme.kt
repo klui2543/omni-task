@@ -61,28 +61,28 @@ object Palettes {
         navBg = Color(0xF0171A23), radius = 18.dp,
     )
 
-    /** Linear-like, dark: near-black greys, one indigo accent, thin lines instead of tinted boxes. */
+    /** Linear-like, dark: near-black greys with a cool tint, one blue accent, thin lines instead of tinted boxes. */
     val linearDark = Palette(
         dark = true,
-        bg = Color(0xFF0E0E10), card = Color(0xFF161619), cardBorder = Color(0xFF26262B), raised = Color(0xFF1F1F23),
-        sunken = Color(0xFF121214), divider = Color(0xFF232328), control = Color(0xFF34343B),
-        text = Color(0xFFEDEDEF), text2 = Color(0xFFC9CBD1), muted = Color(0xFF9DA1AA), faint = Color(0xFF7E838D),
-        accent = Color(0xFF7C85F2), accentSoft = Color(0xFF24263F), accentDeep = Color(0xFF1B1C2C), accentText = Color(0xFFA3A9F7),
-        accentLine = Color(0xFF3A3D63), onAccent = Color(0xFF0E0E10),
+        bg = Color(0xFF0B0D10), card = Color(0xFF13161B), cardBorder = Color(0xFF232830), raised = Color(0xFF1B2027),
+        sunken = Color(0xFF0F1216), divider = Color(0xFF1F242B), control = Color(0xFF303843),
+        text = Color(0xFFE9EDF2), text2 = Color(0xFFC5CCD6), muted = Color(0xFF97A0AD), faint = Color(0xFF78818F),
+        accent = Color(0xFF4C9AFF), accentSoft = Color(0xFF14243D), accentDeep = Color(0xFF101C30), accentText = Color(0xFF8CC0FF),
+        accentLine = Color(0xFF24456F), onAccent = Color(0xFF06101C),
         lime = Color(0xFF4CB782), limeSoft = Color(0xFF17291F), red = Color(0xFFF2555A), redSoft = Color(0xFF3A1D1F),
         amber = Color(0xFFF2C94C), amberSoft = Color(0xFF2E2814), blue = Color(0xFF60A5FA),
         teal = Color(0xFF3FB8AE), tealText = Color(0xFF8FD3CB), tealSoft = Color(0xFF142B29), tealChip = Color(0xFF5FCFC3), eventText = Color(0xFFD6F2EE),
-        navBg = Color(0xF0141417), radius = 12.dp,
+        navBg = Color(0xF013161B), radius = 12.dp,
     )
 
-    /** Linear-like, light: white cards on a soft grey page. */
+    /** Linear-like, light: white cards on a soft cool-grey page. */
     val linearLight = Palette(
         dark = false,
-        bg = Color(0xFFF7F7F8), card = Color(0xFFFFFFFF), cardBorder = Color(0xFFE4E4E8), raised = Color(0xFFF0F0F3),
-        sunken = Color(0xFFF3F3F5), divider = Color(0xFFEBEBEF), control = Color(0xFFD5D6DC),
-        text = Color(0xFF1B1B1F), text2 = Color(0xFF3C3F45), muted = Color(0xFF5E626A), faint = Color(0xFF6E727A),
-        accent = Color(0xFF5E6AD2), accentSoft = Color(0xFFECEDFA), accentDeep = Color(0xFFF4F4FC), accentText = Color(0xFF4F5BC4),
-        accentLine = Color(0xFFC9CDF2), onAccent = Color(0xFFFFFFFF),
+        bg = Color(0xFFF4F6F9), card = Color(0xFFFFFFFF), cardBorder = Color(0xFFDFE4EB), raised = Color(0xFFEDF0F5),
+        sunken = Color(0xFFECEFF4), divider = Color(0xFFE8ECF1), control = Color(0xFFCDD4DD),
+        text = Color(0xFF15191F), text2 = Color(0xFF363D48), muted = Color(0xFF566070), faint = Color(0xFF667080),
+        accent = Color(0xFF1F6FEB), accentSoft = Color(0xFFE6F0FE), accentDeep = Color(0xFFF0F6FF), accentText = Color(0xFF1858C4),
+        accentLine = Color(0xFFB9D3FA), onAccent = Color(0xFFFFFFFF),
         lime = Color(0xFF26A269), limeSoft = Color(0xFFE3F4EA), red = Color(0xFFE5484D), redSoft = Color(0xFFFCE8E8),
         amber = Color(0xFFB8730C), amberSoft = Color(0xFFFBF0DC), blue = Color(0xFF3B82F6),
         teal = Color(0xFF2F9E95), tealText = Color(0xFF1E7C74), tealSoft = Color(0xFFE2F3F1), tealChip = Color(0xFF2F9E95), eventText = Color(0xFF134E4A),

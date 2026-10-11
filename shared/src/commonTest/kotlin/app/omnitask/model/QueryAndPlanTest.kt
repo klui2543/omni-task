@@ -76,6 +76,29 @@ class QueryAndPlanTest {
     }
 
     @Test
+    fun dayPlanKeepsDoneTasksAndTracksEventsAgainstTheClock() {
+        val tasks = listOf(
+            t("- [x] เสร็จแล้ว #remind-at-due ⏰ 07:00 📅 2026-10-07 ✅ 2026-10-07"),
+            t("- [x] ค้างที่เพิ่งเสร็จ 📅 2026-10-05 ✅ 2026-10-07"),
+            t("- [x] เสร็จเมื่อวาน 📅 2026-10-06 ✅ 2026-10-06"),
+            t("- [ ] ยังไม่เสร็จ #remind-at-due ⏰ 09:00 📅 2026-10-07"),
+        )
+        val withoutDone = DayPlan.build(tasks, emptyList(), today).flatMap { it.items }.map { (it as DayPlan.Item.TaskItem).task.title }
+        assertEquals(listOf("ยังไม่เสร็จ"), withoutDone)
+        val plan = DayPlan.build(tasks, emptyList(), today, includeDone = true)
+        assertEquals(listOf(DayPlan.Part.LATE, DayPlan.Part.MORNING), plan.map { it.part })
+        assertEquals(listOf("เสร็จแล้ว", "ยังไม่เสร็จ"), plan[1].items.map { (it as DayPlan.Item.TaskItem).task.title })
+        assertEquals(listOf("ค้างที่เพิ่งเสร็จ"), plan[0].items.map { (it as DayPlan.Item.TaskItem).task.title })
+
+        val e = CalendarEvent(1, "ประชุม", LocalDateTime.parse("2026-10-07T10:00"), LocalDateTime.parse("2026-10-07T11:00"))
+        assertEquals(DayPlan.Phase.UPCOMING, DayPlan.phase(e, LocalDateTime.parse("2026-10-07T09:59")))
+        assertEquals(DayPlan.Phase.ACTIVE, DayPlan.phase(e, LocalDateTime.parse("2026-10-07T10:00")))
+        assertEquals(DayPlan.Phase.PAST, DayPlan.phase(e, LocalDateTime.parse("2026-10-07T11:00")))
+        assertEquals(0.5f, DayPlan.progress(e, LocalDateTime.parse("2026-10-07T10:30")))
+        assertEquals(DayPlan.Phase.UPCOMING, DayPlan.phase(e.copy(allDay = true), LocalDateTime.parse("2026-10-07T10:30")))
+    }
+
+    @Test
     fun multiLevelSortKeepsMissingValuesLast() {
         val today = LocalDate.parse("2026-10-07")
         val a = TaskLine.parse("- [ ] ก ⏫ 📅 2026-10-09")!!
