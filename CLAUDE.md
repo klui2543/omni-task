@@ -6,6 +6,7 @@ Native Android app (Kotlin, Jetpack Compose) that reads and writes the checkbox 
 
 - Never use the em dash `—` or the middle dot `·` in any text the user reads: UI strings, notifications, mockups, release notes, and replies in chat. Use a line break, a comma, a colon, parentheses, or separate UI elements with spacing instead.
 - Reply to the owner in Thai, concisely. Suggest a model and effort level for each task.
+- Before saying work is done, follow the `done-check` skill (`.claude/skills/done-check/SKILL.md`).
 
 ## Build
 
