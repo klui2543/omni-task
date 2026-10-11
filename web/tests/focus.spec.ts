@@ -167,7 +167,9 @@ test('the Focus menu goes to the other pages', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'ตั้งค่า' }).click()
   await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
   await page.goBack()
-  await page.getByRole('button', { name: '✦ ผู้ช่วย' }).click()
+  // The assistant is the round button floating over the page, not a button in its header.
+  await expect(page.getByRole('button', { name: '✦ ผู้ช่วย' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'เปิดผู้ช่วย' }).click()
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
 })
 

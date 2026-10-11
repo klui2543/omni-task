@@ -5,6 +5,8 @@ import { BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, SORTS, ST
 import type { Group, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
 import { FilterPanel, SortDialog } from '../ui/ListTools'
+import { LayoutBar, useLayout, type Layout } from '../ui/LayoutBar'
+import { ViewsPage } from './Views'
 import { PageHead } from '../ui/PageHead'
 import { TaskRow } from '../ui/TaskRow'
 import { useStored } from '../ui/views/hooks'
@@ -29,7 +31,13 @@ const write = (store: () => Storage, k: string, v: string) => {
 
 const TONE: Record<Group['tone'], string> = { ALERT: 'alert', ACCENT: 'accent', PLAIN: '', MUTED: 'muted' }
 
+/** The Tasks tab: the list, or one of the views over the same filters (Kanban, Matrix, Gantt, calendar) behind one switch. */
 export function TasksPage(p: PageProps) {
+  const [layout, setLayout] = useLayout()
+  return layout === 'list' ? <TaskList {...p} layout={layout} onLayout={setLayout} /> : <ViewsPage {...p} layout={layout} onLayout={setLayout} />
+}
+
+function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void }) {
   const [text, setText] = useState('')
   // Folded groups are remembered on this device, as Android remembers them.
   const [folded, setFolded] = useState<string[]>(() => read(() => localStorage, FOLD_KEY).split('\n').filter(Boolean))
@@ -104,13 +112,8 @@ export function TasksPage(p: PageProps) {
           <button class="primary wide-only" onClick={() => setAdding(true)}>+ เพิ่มงาน</button>
       </PageHead>
 
-      <div class="toolbar">
-        <button class={`chip tool${filterCount(query) ? ' on' : ''}`} onClick={() => setOverlay('filter')}>
-          กรอง{filterCount(query) ? ` ${filterCount(query)}` : ''}
-        </button>
-        <button class="chip tool" onClick={() => setOverlay('sort')}>กลุ่ม: {labelOf(GROUPS, query.groupBy)}</button>
-        <button class="chip tool" onClick={() => setOverlay('sort')}>เรียง: {sortText}</button>
-      </div>
+      <LayoutBar layout={p.layout} onLayout={p.onLayout} filter={{ count: filterCount(query), onOpen: () => setOverlay('filter') }}
+        end={<button class="chip tool" aria-label="เรียงและจัดกลุ่ม" title={`กลุ่ม: ${labelOf(GROUPS, query.groupBy)}, เรียง: ${sortText}`} onClick={() => setOverlay('sort')}>เรียง ⇅</button>} />
       {active.length > 0 && (
         <div class="chips">
           {active.map(([label, off]) => (
@@ -175,7 +178,6 @@ export function TasksPage(p: PageProps) {
         </div>
       )}
 
-      <button class="fab narrow-only" aria-label="เพิ่มงาน" onClick={() => setAdding(true)}>+</button>
       {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
       {overlay === 'filter' && (
         // Android's one filter sheet has the "hide done" switch here too, though only the views honour it; the choice is shared with Views.
