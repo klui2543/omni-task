@@ -81,12 +81,12 @@ test('theme, colours, font and text size apply at once and stay after a reload',
 
   await page.getByRole('radio', { name: 'มืด', exact: true }).click()
   await expect(root).toHaveAttribute('data-theme', 'dark')
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(11, 13, 16)')
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(14, 14, 16)')
 
   await page.getByRole('radio', { name: 'สีเดิม (มืดเท่านั้น)' }).click()
   await expect(root).toHaveAttribute('data-palette', 'midnight')
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(13, 15, 20)')
-  await page.getByRole('radio', { name: 'Linear' }).click()
+  await page.getByRole('radio', { name: 'สงบ (Graphite)' }).click()
 
   await page.getByRole('radio', { name: 'Prompt (ไม่มีหัว)' }).click()
   expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--app-font'))).toContain('Prompt')

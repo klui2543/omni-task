@@ -42,6 +42,14 @@ const TINT: Record<Task['priority'], string> = {
   LOWEST: 'var(--faint)',
 }
 
+/** In the quiet look (CSS shows it), a small dot after an open task's title when its priority is high; nothing otherwise. */
+export function PriorityDot({ task }: { task: Task }) {
+  if (!task.open) return null
+  if (task.priority === 'HIGHEST') return <span class="pdot red" aria-hidden="true" />
+  if (task.priority === 'HIGH') return <span class="pdot amber" aria-hidden="true" />
+  return null
+}
+
 /** The round tick: its ring takes the priority colour, half filled while in progress, green once done. */
 export function Check({ task, disabled, onToggle }: { task: Task; disabled?: boolean; onToggle: () => void }) {
   const state = task.status === 'DONE' ? 'done' : task.status === 'CANCELLED' ? 'cancelled' : task.status === 'IN_PROGRESS' ? 'prog' : ''
@@ -73,7 +81,7 @@ export function TaskRow(p: {
     <li class={`trow${t.open ? '' : ' done'}${p.selected ? ' selected' : ''}`}>
       <Check task={t} disabled={p.busy} onToggle={p.onToggle} />
       <button class="trow-body" onClick={p.onOpen}>
-        <span class="ttitle">{t.title}</span>
+        <span class="tline"><span class="ttitle">{t.title}</span><PriorityDot task={t} /></span>
         {t.preview && <span class="tpreview">{t.preview}</span>}
         {meta.length > 0 && (
           <span class="pills">

@@ -9,7 +9,8 @@ import type { EditOp, FocusIn, FocusOut, PlanItem, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
 import { BedtimeDialog, CountdownDialog, FutureDialog, ReviewAction, ReviewDialog } from '../ui/FocusDialogs'
 import { URGENT_RULES, urgentRule } from '../settings'
-import { Check } from '../ui/TaskRow'
+import { PagedCard } from '../ui/PagedCard'
+import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
 import { QuickAdd } from './Tasks'
 
@@ -149,7 +150,7 @@ export function FocusPage(p: PageProps) {
       <div key={it.key} class={`prow${it.done ? ' done' : ''}`}>
         <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
         <button class="pbody" onClick={() => openTask(t)}>
-          <span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span>
+          <span class="tline"><span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
           {meta && (
             <span class="plead">
               {it.time && <span class="ptm"><svg class="clk" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0.01 0Z M12 7.5V12l3 2" /></svg>{it.time}</span>}
@@ -303,50 +304,59 @@ export function FocusPage(p: PageProps) {
                 </section>
               )}
 
-              {/* Either card goes when its kind is hidden in Settings; the other then takes the row. */}
+              {/* Either card goes when its kind is hidden in Settings; the other then takes the row. Each shows one task at a time. */}
               {(showWaiting || showFuture) && <div class="pair">
-                {showWaiting && <section class="fcard sidecard">
-                  <div class="side-head"><span class="strong grow">คนรออยู่</span><span class="count">{f.waiting.length}</span></div>
-                  {f.waiting.length === 0 && <span class="muted small">ติด #รอ/ชื่อ ให้งานที่มีคนรอ</span>}
-                  {f.waiting.map((w) => {
-                    const t = task(w.key)
-                    if (!t) return null
-                    return (
-                      <div key={w.key} class="wait">
-                        <button class="link-plain" onClick={() => openTask(t)}>{t.title}</button>
-                        <span class={`pill ${(w.age ?? 0) >= 7 ? 'red' : 'amber'}`}>
-                          {(w.who ? `${w.who} ` : '') + (w.age != null ? `รอ ${w.age} วัน` : 'รออยู่')}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </section>}
-
-                {showFuture && <section class="fcard sidecard">
-                  <div class="side-head"><span class="strong grow">ลงทุนอนาคต</span></div>
-                  {f.future.length === 0 && <span class="muted small">เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์</span>}
-                  {f.future.map((k) => {
-                    const t = task(k)
-                    if (!t) return null
-                    return (
-                      <div key={k} class="fut">
-                        <span class="grow">
-                          <button class="link-plain" onClick={() => openTask(t)}>{t.title}</button>
-                          {f.futureAge[k] != null && <span class="muted small block">ค้าง {f.futureAge[k]} วัน</span>}
-                        </span>
-                        <button class="ghost small-btn" onClick={() => setLocal((x) => ({ ...x, skipped: [...x.skipped.filter((e) => e.startsWith(today() + '|')), `${today()}|${t.title}`] }))}>ข้ามวันนี้</button>
-                      </div>
-                    )
-                  })}
-                  <div class="cardfoot">
-                    <button class="link" onClick={() => setDialog('future')}>เลือกงาน</button>
-                    <span class="grow" />
-                    <span class="muted small">วันละ</span>
-                    <button class="round" aria-label="ลด" onClick={() => setLocal((x) => ({ ...x, futureCount: Math.max(1, x.futureCount - 1) }))}>−</button>
-                    <span class="stepn" aria-live="polite">{local.futureCount}</span>
-                    <button class="round" aria-label="เพิ่ม" onClick={() => setLocal((x) => ({ ...x, futureCount: Math.min(5, x.futureCount + 1) }))}>+</button>
-                  </div>
-                </section>}
+                {showWaiting && (
+                  <PagedCard
+                    title="คนรออยู่"
+                    items={f.waiting}
+                    empty="ติด #รอ/ชื่อ ให้งานที่มีคนรอ"
+                    onOpen={(w) => { const t = task(w.key); if (t) openTask(t) }}
+                    render={(w, open) => {
+                      const t = task(w.key)
+                      if (!t) return null
+                      return (
+                        <>
+                          <button class="pitem-title" onClick={open}>{t.title}</button>
+                          <span class={`pitem-sub ${(w.age ?? 0) >= 7 ? 'red' : 'amber'}`}>
+                            {(w.who ? `${w.who} ` : '') + (w.age != null ? `รอ ${w.age} วัน` : 'รออยู่')}
+                          </span>
+                        </>
+                      )
+                    }}
+                  />
+                )}
+                {showFuture && (
+                  <PagedCard
+                    title="ลงทุนอนาคต"
+                    items={f.future}
+                    empty="เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์"
+                    onOpen={(k) => { const t = task(k); if (t) openTask(t) }}
+                    render={(k, open) => {
+                      const t = task(k)
+                      if (!t) return null
+                      return (
+                        <>
+                          <button class="pitem-title" onClick={open}>{t.title}</button>
+                          <span class="pitem-sub muted">
+                            <span class="grow">{f.futureAge[k] != null ? `ค้าง ${f.futureAge[k]} วัน` : ''}</span>
+                            <button class="link" onClick={() => setLocal((x) => ({ ...x, skipped: [...x.skipped.filter((e) => e.startsWith(today() + '|')), `${today()}|${t.title}`] }))}>ข้ามวันนี้</button>
+                          </span>
+                        </>
+                      )
+                    }}
+                    more={(close) => (
+                      <>
+                        <button class="link" onClick={() => { close(); setDialog('future') }}>+ เลือกงาน</button>
+                        <span class="grow" />
+                        <span class="muted small">วันละ</span>
+                        <button class="round" aria-label="ลด" onClick={() => setLocal((x) => ({ ...x, futureCount: Math.max(1, x.futureCount - 1) }))}>−</button>
+                        <span class="stepn" aria-live="polite">{local.futureCount}</span>
+                        <button class="round" aria-label="เพิ่ม" onClick={() => setLocal((x) => ({ ...x, futureCount: Math.min(5, x.futureCount + 1) }))}>+</button>
+                      </>
+                    )}
+                  />
+                )}
               </div>}
             </div>
           </div>
