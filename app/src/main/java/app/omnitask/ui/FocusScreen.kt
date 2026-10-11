@@ -139,9 +139,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         night.sleep < 7 * 60 -> C.amber
                         else -> C.lime
                     }
-                    // Bed and wake as two tiles to tap, the hours of sleep beside them, then the alarm for the watch.
+                    // Bed and wake as two tiles to tap, the hours of sleep beside them, and why the wake time is what it is.
                     val wake = night.wakeAt.toLocalTime()
-                    val alarmOn = state.alarmSet == eve to wake
                     Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Ic.moon, null, tint = C.accentText, modifier = Modifier.size(15.dp))
@@ -177,19 +176,6 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                     )
                                 }
                             }
-                        }
-                        Row(
-                            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(if (alarmOn) C.lime.copy(alpha = 0.12f) else C.raised)
-                                .clickable { vm.setWakeAlarm(eve, wake) }.padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(if (alarmOn) Ic.check else Ic.bell, null, tint = if (alarmOn) C.lime else C.accentText, modifier = Modifier.size(15.dp))
-                            Text(
-                                if (alarmOn) tr("ตั้งปลุก ${night.wakeAt.format(HM)} แล้ว (นาฬิกาและ Galaxy Watch)", "Alarm set for ${night.wakeAt.format(HM)} (Clock and Galaxy Watch)")
-                                else tr("ตั้งปลุก ${night.wakeAt.format(HM)}", "Set alarm for ${night.wakeAt.format(HM)}"),
-                                Modifier.padding(start = 8.dp), color = if (alarmOn) C.lime else C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
                         }
                     }
                 } else {

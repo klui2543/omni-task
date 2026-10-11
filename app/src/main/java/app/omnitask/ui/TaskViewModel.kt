@@ -150,8 +150,6 @@ data class UiState(
     /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
     val tonightBed: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     val tonightWake: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
-    /** The wake alarm last handed to the clock app, as the night's evening and the time. */
-    val alarmSet: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
@@ -297,7 +295,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         hiddenKinds = prefs.getStringSet(KEY_HIDDEN_KINDS, emptySet()).orEmpty().mapNotNull { n -> TaskKind.entries.firstOrNull { it.name == n } }.toSet(),
         tonightBed = nightPref(KEY_TONIGHT_BED),
         tonightWake = nightPref(KEY_TONIGHT_WAKE),
-        alarmSet = nightPref(KEY_ALARM_SET),
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
@@ -1683,28 +1680,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(tonightWake = time?.let { evening to it }) }
     }
 
-    /**
-     * Hands the wake alarm to the phone's clock app (Samsung Clock rings it on a paired Galaxy Watch too).
-     * The clock app keeps it, so it rings even if Omni is closed.
-     */
-    fun setWakeAlarm(evening: LocalDate, time: kotlinx.datetime.LocalTime) {
-        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
-            .putExtra(android.provider.AlarmClock.EXTRA_HOUR, time.hour)
-            .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, time.minute)
-            .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, tr("ตื่นนอน (Omni)", "Wake up (Omni)"))
-            .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
-            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        val ok = runCatching { getApplication<Application>().startActivity(intent) }.isSuccess
-        if (ok) prefs.edit().putString(KEY_ALARM_SET, nightValue(evening, time)).apply()
-        _state.update {
-            it.copy(
-                alarmSet = if (ok) evening to time else it.alarmSet,
-                message = if (ok) tr("ตั้งปลุก ${"%02d:%02d".format(time.hour, time.minute)} ในแอปนาฬิกาแล้ว", "Alarm set for ${"%02d:%02d".format(time.hour, time.minute)} in the Clock app")
-                else tr("ไม่พบแอปนาฬิกาที่ตั้งปลุกได้", "No clock app can set the alarm"),
-            )
-        }
-    }
-
     private fun nightValue(evening: LocalDate, time: kotlinx.datetime.LocalTime) = "$evening ${"%02d:%02d".format(time.hour, time.minute)}"
 
     private fun nightPref(key: String): Pair<LocalDate, kotlinx.datetime.LocalTime>? = prefs.getString(key, null)?.let { v ->
@@ -1795,7 +1770,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_HIDDEN_KINDS = "hiddenKinds"
         const val KEY_TONIGHT_BED = "sleep.tonight"
         const val KEY_TONIGHT_WAKE = "sleep.tonight.wake"
-        const val KEY_ALARM_SET = "sleep.alarm"
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"
