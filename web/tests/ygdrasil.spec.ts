@@ -120,12 +120,9 @@ test('on a phone the tree opens readable from the trunk, and "fit" shows all of 
   expect(trunk.x).toBeGreaterThanOrEqual(map.x)
   expect(trunk.y).toBeGreaterThanOrEqual(map.y)
   expect(trunk.y + trunk.height).toBeLessThanOrEqual(map.y + map.height)
-  // The panel's text stays clear of the round assistant button.
-  const panel = (await page.getByRole('region', { name: 'กิ่งที่เลือก' }).boundingBox())!
-  const fab = (await page.getByRole('button', { name: 'เปิดผู้ช่วย' }).boundingBox())!
-  const hint = (await page.getByRole('region', { name: 'กิ่งที่เลือก' }).locator('span.small').last().boundingBox())!
-  expect(hint.x + hint.width).toBeLessThanOrEqual(fab.x + 1)
-  expect(panel.width).toBeGreaterThan(0)
+  // The map takes the whole screen: the bottom bar and the round assistant button step aside, so nothing covers the panel.
+  await expect(page.getByRole('button', { name: 'เปิดผู้ช่วย' })).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'เมนูหลัก' })).toHaveCount(0)
   await page.getByRole('button', { name: 'พอดีจอ' }).click()
   expect(await scale()).toBeLessThan(0.6)
 })
