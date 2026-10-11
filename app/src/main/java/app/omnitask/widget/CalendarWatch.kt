@@ -21,6 +21,11 @@ import kotlinx.coroutines.launch
 object CalendarWatch {
     private const val JOB_ID = 4201
 
+    /** How many times the watch has woken since this process started; the emulator test waits on it. */
+    val wakes = java.util.concurrent.atomic.AtomicInteger()
+
+    fun isArmed(context: Context) = context.getSystemService(JobScheduler::class.java)?.getPendingJob(JOB_ID) != null
+
     fun armIfNeeded(context: Context) {
         val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
         if (scheduler.getPendingJob(JOB_ID) == null) arm(context)
@@ -43,6 +48,7 @@ class CalendarWatchService : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onStartJob(params: JobParameters): Boolean {
+        CalendarWatch.wakes.incrementAndGet()
         scope.launch {
             runCatching { OmniWidgets.refresh(applicationContext) }
             jobFinished(params, false)
