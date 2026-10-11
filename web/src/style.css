@@ -739,6 +739,7 @@ input.pj-focus-input { border: 1.5px solid var(--accent); border-radius: 12px; p
 .as-foot { position: sticky; bottom: 0; margin-top: auto; background: var(--bg); padding: 6px 0 92px; display: flex; flex-direction: column; gap: 8px; z-index: 3; }
 @media (min-width: 1000px) { .as-foot { padding-bottom: 12px; } }
 .as-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.as-example:disabled, .as-qcard:disabled, .as-chip:disabled { opacity: .55; }
 .as-chip { flex: none; height: 34px; padding: 0 13px; border-radius: 17px; border: 1px solid var(--control); background: var(--card); font-size: 14px; white-space: nowrap; }
 .as-input { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 6px 0 18px; border-radius: 26px; background: var(--card); border: 1px solid var(--border); }
 .as-input:focus-within { border-color: var(--accent); }

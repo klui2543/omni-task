@@ -377,13 +377,14 @@ export function AssistantPage(p: PageProps) {
               )}
               <section class="as-card">
                 <span class="as-intro">ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล</span>
-                {EXAMPLES.map((q) => <button key={q} class="as-example" onClick={() => ask(q)}>"{q}"</button>)}
+                {/* Every shortcut needs the vault's tasks; until they are read a tap would do nothing, so the buttons wait (disabled) instead. */}
+                {EXAMPLES.map((q) => <button key={q} class="as-example" disabled={!snap} onClick={() => ask(q)}>"{q}"</button>)}
               </section>
               <div class="as-quick">
                 {quick.map((q) => (
-                  <button key={q.title} class="as-qcard" onClick={q.run}><span class="medium">{q.title}</span><span class="muted small">{q.sub}</span></button>
+                  <button key={q.title} class="as-qcard" disabled={!snap} onClick={q.run}><span class="medium">{q.title}</span><span class="muted small">{q.sub}</span></button>
                 ))}
-                <button class="as-qcard wide" onClick={() => askClaude(CLAUDE_QUESTION)}>
+                <button class="as-qcard wide" disabled={!snap} onClick={() => askClaude(CLAUDE_QUESTION)}>
                   <span class="medium">ถาม Claude</span>
                   <span class="muted small">ส่งงานและนัดวันนี้ไปที่ Claude พร้อมคำถาม (เปิดแท็บใหม่ ใช้ subscription ของคุณ)</span>
                 </button>
@@ -423,7 +424,7 @@ export function AssistantPage(p: PageProps) {
         <div class="as-foot">
           {chat.length > 0 && (
             <div class="as-chips" role="toolbar" aria-label="ทางลัด">
-              {chips.map(([label, run]) => <button key={label} class="as-chip" onClick={run}>{label}</button>)}
+              {chips.map(([label, run]) => <button key={label} class="as-chip" disabled={!snap} onClick={run}>{label}</button>)}
             </div>
           )}
           <form class="as-input" onSubmit={(e) => { e.preventDefault(); ask(input) }}>
