@@ -656,8 +656,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Completes a repeating task by moving its line on to the next occurrence; no copy is added. */
     private fun completeRecurring(task: Task) {
         logDone(task)
+        TaskLine.advanceRecurring(task.raw, LocalDate.now(), task.todayCopy)?.let { showEdited(task, it) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } }
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } } }
             val text = result.fold(
                 { made ->
                     if (made) {
@@ -679,7 +680,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 },
             )
             text?.let { t -> _state.update { it.copy(message = t) } }
-            reload()
+            if (result.getOrNull() == true) reloadNote(task) else reload()
         }
     }
 
@@ -1099,18 +1100,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(closingParent = null) }
         if (withSubtasks == null) return
         val open = if (withSubtasks) _state.value.subtasksOf(parent).filter { it.isOpen } else emptyList()
+        val day = LocalDate.now()
+        open.forEach { child -> showEdited(child, TaskLine.setDone(child.raw, true, day)) }
+        if (parent.recurrence == null) showEdited(parent, TaskLine.setDone(parent.raw, true, day))
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) {
                 runCatching {
                     val today = LocalDate.now()
                     open.forEach { child -> repo.rewriteLine(child) { TaskLine.setDone(it, true, today) } }
                     if (parent.recurrence != null) repo.completeRecurring(parent, today) else repo.rewriteLine(parent) { TaskLine.setDone(it, true, today) }
                 }
-            }
+            } }
             logDone(parent)
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ", "Could not save: ") + e.message) } }
             if (result.isSuccess) offerFinish(parent, TaskLine.setDone(parent.raw, true, LocalDate.now()), open.map { it.key }.toSet())
-            reload()
+            if (result.isSuccess) reloadNote(parent) else reload()
         }
     }
 
