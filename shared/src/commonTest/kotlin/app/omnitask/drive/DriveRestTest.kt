@@ -38,8 +38,10 @@ class DriveRestTest {
 
     @Test
     fun writeSendsTheTextAndReturnsTheVersion() {
-        val drive = rest(HttpResponse(200, """{"version":"12"}"""))
-        assertEquals("12", drive.write("abc", "- [ ] ก\n", "text/markdown"))
+        val drive = rest(HttpResponse(200, """{"version":"12","headRevisionId":"r12"}"""))
+        val written = drive.write("abc", "- [ ] ก\n", "text/markdown")
+        assertEquals("12", written.version)
+        assertEquals("r12", written.revision)
         assertEquals("PATCH", sent[0].method)
         assertEquals("- [ ] ก\n", sent[0].body)
         assertTrue(sent[0].url.startsWith("${DriveRest.UPLOAD}/files/abc?uploadType=media"))
@@ -47,9 +49,10 @@ class DriveRestTest {
 
     @Test
     fun readAsksTheVersionThenTheText() {
-        val drive = rest(HttpResponse(200, """{"version":"3"}"""), HttpResponse(200, "hello"))
+        val drive = rest(HttpResponse(200, """{"version":"3","headRevisionId":"r3"}"""), HttpResponse(200, "hello"))
         val v = drive.read("x")
         assertEquals("3", v.version)
+        assertEquals("r3", v.revision)
         assertEquals("hello", v.text)
         assertTrue(sent[1].url.contains("alt=media"))
     }
@@ -89,6 +92,36 @@ class DriveRestTest {
         assertTrue(body.contains(""""parents":["p"]"""))
         assertTrue(body.contains("\r\n\r\nbody\r\n"))
         assertTrue(sent[0].headers.getValue("Content-Type").startsWith("multipart/related; boundary="))
+    }
+
+    @Test
+    fun revisionBeforeFollowsPages() {
+        val drive = rest(
+            HttpResponse(200, """{"nextPageToken":"p2","revisions":[{"id":"r1"},{"id":"r2"}]}"""),
+            HttpResponse(200, """{"revisions":[{"id":"r3"}]}"""),
+        )
+        assertEquals("r2", drive.revisionBefore("x", "r3"))
+        assertTrue(sent[0].url.startsWith("${DriveRest.API}/files/x/revisions?"))
+        assertTrue(sent[1].url.contains("pageToken=p2"))
+        val none = rest(HttpResponse(200, """{"revisions":[{"id":"r1"}]}"""))
+        assertEquals(null, none.revisionBefore("x", "r1"))
+    }
+
+    @Test
+    fun changesFollowPagesUntilTheNewPosition() {
+        val drive = rest(
+            HttpResponse(200, """{"nextPageToken":"5","changes":[{"fileId":"a","removed":false,"file":{"id":"a","name":"x.md","mimeType":"text/markdown","parents":["p"],"version":"7","trashed":true}}]}"""),
+            HttpResponse(200, """{"newStartPageToken":"9","changes":[{"fileId":"b","removed":true}]}"""),
+        )
+        val res = drive.changes("4")
+        assertEquals("9", res.token)
+        assertEquals(listOf("a", "b"), res.changes.map { it.fileId })
+        assertTrue(res.changes[0].trashed)
+        assertEquals("7", res.changes[0].entry!!.version)
+        assertTrue(res.changes[1].removed)
+        assertEquals(null, res.changes[1].entry)
+        assertTrue(sent[0].url.contains("pageToken=4"))
+        assertTrue(sent[1].url.contains("pageToken=5"))
     }
 
     @Test

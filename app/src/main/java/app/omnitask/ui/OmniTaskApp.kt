@@ -146,7 +146,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
             archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
             calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
-            drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive),
+            drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive, vm::putBackClash, vm::dismissClash),
         ) { settingsOpen = false }
         return
     }

@@ -1,7 +1,8 @@
 import type { KindsState } from './types'
+import { settingsBus } from './settingsBus'
 
-// The task kinds the owner manages (their own kinds, and the built-in ones hidden). Android keeps these in its synced
-// settings; the web keeps them on this device only (localStorage `omni.kinds`) until the owner decides how settings sync.
+// The task kinds the owner manages (their own kinds, and the built-in ones hidden). Kept on this device (localStorage
+// `omni.kinds`) and shared with Android through its settings file (see settingsSync.ts).
 // The state is in Android's form, so custom kinds are "name\temoji\ttag" and hidden ones are TaskKind names.
 
 const KEY = 'omni.kinds'
@@ -19,6 +20,7 @@ export const kindsStore = {
   },
   set(state: KindsState) {
     try { localStorage.setItem(KEY, JSON.stringify(state)) } catch { /* just not kept */ }
+    settingsBus.changed()
   },
 }
 

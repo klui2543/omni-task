@@ -2,7 +2,9 @@ import {
   addTask, focus, archiveAppend, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
-import { Drive, DriveFile, FOLDER, sameName } from './drive'
+import { Drive, DriveError, DriveFile, FOLDER, Offline, sameName, type Versioned } from './drive'
+import { clashes, offlineStore } from './offline'
+import { merge3, writeChecked } from './safeWrite'
 import { branchStates } from './ui/projects/projectState'
 import { config } from './config'
 import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
@@ -25,7 +27,7 @@ export interface Cut {
 }
 
 export class VaultError extends Error {
-  constructor(public code: 'notfound' | 'busy', message: string) {
+  constructor(public code: 'notfound' | 'busy' | 'offline', message: string) {
     super(message)
   }
 }
@@ -38,6 +40,14 @@ export class Vault {
   /** The task note's path in the vault as found: the new place, or the old TaskForge.md until it is moved. */
   private notePath = taskFilePath
   private located = false
+
+  /** Whether the last read had to use what this device kept, because Google could not be reached. */
+  offline = false
+
+  /** Whether the last read used the device's copy, and how many notes hold edits that wait for Drive. */
+  status(): { offline: boolean; pending: number } {
+    return { offline: this.offline, pending: Object.keys(offlineStore.pending(this.rootId)).length }
+  }
 
   private async file(): Promise<string> {
     if (this.located && this.fileId) return this.fileId
@@ -111,6 +121,21 @@ export class Vault {
    * those mean two versions met, so the owner should compare them before going on.
    */
   async load(): Promise<Snapshot> {
+    try {
+      await this.flush()
+      const snap = await this.loadOnline()
+      this.offline = false
+      return snap
+    } catch (e) {
+      if (!(e instanceof Offline)) throw e
+      const snap = await this.loadOffline()
+      if (!snap) throw e
+      this.offline = true
+      return snap
+    }
+  }
+
+  private async loadOnline(): Promise<Snapshot> {
     const id = await this.file()
     const index = this.index()
     index.skip = id
@@ -126,9 +151,88 @@ export class Vault {
     const base = this.isLegacy ? 'TaskForge' : 'Omni note'
     const beside = files.map((f) => f.name).filter((n) => n.startsWith(base) && isConflictCopy(n))
     const conflicts = quick ? [...new Set([...beside, ...index.conflicts()])] : beside
-    const notes = quick ? this.otherNotes(index) : []
-    const src = sourceOf(id, this.notePath, text, notes)
-    return new Snapshot(id, text, loadTasks(src.key, src.path, src.text), conflicts, this.notePath, notes)
+    offlineStore.setNote(this.rootId, { id, path: this.notePath, text })
+    return this.snapshotOf(id, text, quick ? this.otherNotes(index) : [], conflicts)
+  }
+
+  /** The task note and the other notes as this device kept them, with the edits that wait; null when nothing was kept. */
+  private async loadOffline(): Promise<Snapshot | null> {
+    const kept = offlineStore.note(this.rootId)
+    if (!kept) return null
+    this.fileId = kept.id
+    this.notePath = kept.path
+    this.located = true
+    const index = this.index()
+    index.skip = kept.id
+    const notes = (await index.ready()) ? this.otherNotes(index) : []
+    return this.snapshotOf(kept.id, kept.text, notes, [])
+  }
+
+  /** A snapshot of the task note and the other notes, each shown with the edits that still wait for Drive. */
+  private snapshotOf(id: string, text: string, notes: NoteText[], conflicts: string[]): Snapshot {
+    const waiting = offlineStore.pending(this.rootId)
+    const shown = notes.map((n) => (waiting[n.key] ? { ...n, text: waiting[n.key].text } : n))
+    const own = waiting[id]?.text ?? text
+    const src = sourceOf(id, this.notePath, own, shown)
+    return new Snapshot(id, own, loadTasks(src.key, src.path, src.text), conflicts, this.notePath, shown)
+  }
+
+  /* ---------- Edits made without a network ---------- */
+
+  /** The note's path, for naming it to the owner. */
+  private pathOf(id: string): string {
+    if (id === this.fileId) return this.notePath
+    return this.notes.find((n) => n.key === id)?.path ?? this.listsMemo?.notes.find((n) => n.id === id)?.path ?? id
+  }
+
+  /** The note's text as last read on this device, or null when it was never read. */
+  private keptText(id: string): string | null {
+    const note = offlineStore.note(this.rootId)
+    if (note && note.id === id) return note.text
+    return this.notes.find((n) => n.key === id)?.text ?? this.listsMemo?.notes.find((n) => n.id === id)?.text ?? null
+  }
+
+  /** Makes an edit on the device's copy while Google cannot be reached; it is sent with the next read that reaches Drive. */
+  private editOffline(op: (text: string) => EditResult, id: string | null): EditResult {
+    const waiting = id ? offlineStore.pending(this.rootId)[id] : undefined
+    const current = waiting?.text ?? (id ? this.keptText(id) : null)
+    if (!id || current === null) throw new VaultError('offline', 'ออฟไลน์อยู่ และโน้ตนี้ยังไม่ได้อ่านเก็บไว้ในเครื่อง ลองอีกครั้งเมื่อต่อเน็ตได้')
+    const result = op(current)
+    if (!result.ok || result.text == null || result.text === current) return result
+    offlineStore.setPending(this.rootId, id, { path: this.pathOf(id), base: waiting?.base ?? current, text: result.text })
+    return result
+  }
+
+  /**
+   * Sends the edits made offline: each note is read again, the edits are joined with what changed on Drive meanwhile
+   * (line by line, shared Merge3) and written with the version checked. Lines that clashed keep Drive's side and are
+   * kept for the owner ([clashes]). A note still moving stays waiting for the next try.
+   */
+  private async flush(): Promise<void> {
+    for (const [id, edit] of Object.entries(offlineStore.pending(this.rootId))) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let remote: Versioned
+        try {
+          remote = await this.drive.readText(id)
+        } catch (e) {
+          if (!(e instanceof DriveError && e.status === 404)) throw e
+          // The note is gone from Drive: what was added offline is kept for the owner.
+          const before = new Set(edit.base.split(/\r?\n/))
+          clashes.add(id, edit.path, [edit.text.split(/\r?\n/).filter((l) => l.trim() && !before.has(l))].filter((g) => g.length > 0))
+          offlineStore.setPending(this.rootId, id, null)
+          break
+        }
+        const merged = merge3(edit.base, edit.text, remote.text)
+        if (merged.text !== remote.text) {
+          if ((await this.drive.version(id)) !== remote.version) continue
+          merged.lost.push(...(await writeChecked(this.drive, id, remote, merged.text)))
+        }
+        clashes.add(id, edit.path, merged.lost)
+        offlineStore.setPending(this.rootId, id, null)
+        if (id !== this.fileId) this.staleLists()
+        break
+      }
+    }
   }
 
   /** The other notes with tasks as the index has them; the old TaskForge.md is left unread once an Omni note.md has taken its place. */
@@ -171,21 +275,36 @@ export class Vault {
    * so a change made elsewhere is never overwritten.
    */
   private async edit(op: (text: string) => EditResult, fileId?: string): Promise<EditResult> {
-    // A task of a list note carries that note's id in its key, so it is edited in its own note.
-    const id = fileId ?? (await this.file())
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const { text, version } = await this.drive.readText(id)
-      const result = op(text)
-      if (!result.ok) return result
-      // Nothing to change (e.g. a rename that touched no line of this note): nothing is written.
-      if (result.text === text) return result
-      if ((await this.drive.version(id)) !== version) continue
-      await this.drive.writeText(id, result.text!)
-      // A note other than the task note may be a list note: the lists are read again next time.
-      if (id !== this.fileId) this.staleLists()
-      return result
+    // Once a write has gone out, no network afterwards must not make the same edit again on the device's copy.
+    let sent = false
+    try {
+      // A task of a list note carries that note's id in its key, so it is edited in its own note.
+      const id = fileId ?? (await this.file())
+      // Edits made offline go first, so this one works on the note as it now stands.
+      await this.flush()
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const read = await this.drive.readText(id)
+        const result = op(read.text)
+        if (!result.ok) return result
+        // Nothing to change (e.g. a rename that touched no line of this note): nothing is written.
+        if (result.text === read.text) return result
+        if ((await this.drive.version(id)) !== read.version) continue
+        sent = true
+        await this.write(id, read, result.text!)
+        // A note other than the task note may be a list note: the lists are read again next time.
+        if (id !== this.fileId) this.staleLists()
+        return result
+      }
+      throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
+    } catch (e) {
+      if (!(e instanceof Offline) || sent) throw e
+      return this.editOffline(op, fileId ?? this.fileId)
     }
-    throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
+  }
+
+  /** Writes a note read as [base] (version just checked), keeping a write that landed in the same moment; see safeWrite.ts. */
+  private async write(id: string, base: Versioned, text: string): Promise<void> {
+    clashes.add(id, this.pathOf(id), await writeChecked(this.drive, id, base, text))
   }
 
   toggle(task: Task, withSubtasks = false) {
@@ -211,9 +330,9 @@ export class Vault {
     return res.ok ? { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: false, fileId: noteOf(task) } } : res
   }
 
-  private async archiveNote(): Promise<{ id: string | null; text: string; version: string }> {
+  private async archiveNote(): Promise<{ id: string | null } & Versioned> {
     const file = await this.drive.child(await this.folder(), this.archiveName())
-    if (!file) return { id: null, text: '', version: '' }
+    if (!file) return { id: null, text: '', version: '', revision: '' }
     return { id: file.id, ...(await this.drive.readText(file.id)) }
   }
 
@@ -226,19 +345,19 @@ export class Vault {
     // The block leaves the note it is in; the archive note is the one beside the task note.
     const id = noteOf(task)
     for (let attempt = 0; attempt < 3; attempt++) {
-      const { text, version } = await this.drive.readText(id)
-      const res = cutTask(text, task)
+      const read = await this.drive.readText(id)
+      const res = cutTask(read.text, task)
       if (!res.ok) return res
       const archive = await this.archiveNote()
       const next = archiveAppend(archive.text, res.cutLines!)
       const archiveId = archive.id ?? (await this.drive.createText(await this.folder(), this.archiveName(), next))
-      if (archive.id) await this.drive.writeText(archive.id, next)
-      if ((await this.drive.version(id)) !== version) {
+      if (archive.id) await this.write(archive.id, archive, next)
+      if ((await this.drive.version(id)) !== read.version) {
         if (archive.id) await this.drive.writeText(archive.id, archive.text)
         else await this.drive.trash(archiveId)
         continue
       }
-      await this.drive.writeText(id, res.text!)
+      await this.write(id, read, res.text!)
       return { ...res, cut: { title: task.title, index: res.cutIndex!, lines: res.cutLines!, archived: true, fileId: id } }
     }
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')
@@ -252,11 +371,17 @@ export class Vault {
   }
 
   private async readProfile(): Promise<string | null> {
-    // The file is looked up once; later reads go straight to it.
-    const id = this.profileMemo?.id ?? ((await this.drive.resolve(this.rootId, profileFilePath)) ?? (await this.drive.resolve(this.rootId, legacyProfileFilePath)))?.id ?? null
-    const text = id ? (await this.drive.readText(id)).text : null
-    this.profileMemo = { text, id, at: Date.now() }
-    return text
+    try {
+      // The file is looked up once; later reads go straight to it.
+      const id = this.profileMemo?.id ?? ((await this.drive.resolve(this.rootId, profileFilePath)) ?? (await this.drive.resolve(this.rootId, legacyProfileFilePath)))?.id ?? null
+      const text = id ? (await this.drive.readText(id)).text : null
+      this.profileMemo = { text, id, at: Date.now() }
+      return text
+    } catch (e) {
+      // Offline, the profile as last read serves.
+      if (e instanceof Offline && this.profileMemo) return this.profileMemo.text
+      throw e
+    }
   }
 
   private profileMemo: { text: string | null; id: string | null; at: number } | null = null
@@ -291,11 +416,12 @@ export class Vault {
 
   /** Puts a deleted or archived task back where it was (and takes it out of the archive note). */
   async undo(cut: Cut): Promise<EditResult> {
+    // An archived task comes out of the archive too, which needs Drive: it is read first, so no network stops it whole.
+    const archive = cut.archived ? await this.archiveNote() : null
     const res = await this.edit((text) => restoreBlock(text, cut.index, cut.lines), cut.fileId)
-    if (res.ok && cut.archived) {
-      const archive = await this.archiveNote()
-      const back = archive.id ? archiveRemove(archive.text, cut.lines) : null
-      if (archive.id && back !== null) await this.drive.writeText(archive.id, back)
+    if (res.ok && archive?.id) {
+      const back = archiveRemove(archive.text, cut.lines)
+      if (back !== null) await this.write(archive.id, archive, back)
     }
     return res
   }
@@ -336,7 +462,12 @@ export class Vault {
   async lists(): Promise<ListNote[]> {
     const m = this.listsMemo
     if (m && Date.now() - m.at < MEMO_MS) return m.notes
-    return (this.listsLoad ??= this.readLists().finally(() => { this.listsLoad = null }))
+    return (this.listsLoad ??= this.readLists().catch((e) => {
+      // Offline, the lists as last read serve, with the edits that wait for Drive.
+      if (!(e instanceof Offline) || !m) throw e
+      const waiting = offlineStore.pending(this.rootId)
+      return m.notes.map((n) => (waiting[n.id] ? { ...n, text: waiting[n.id].text } : n))
+    }).finally(() => { this.listsLoad = null }))
   }
 
   private async readLists(): Promise<ListNote[]> {
@@ -426,7 +557,7 @@ export class Vault {
       if (!res.ok) return { ok: false, error: res.error }
       const versions = await Promise.all(read.map((r) => this.drive.version(r.id)))
       if (read.some((r, i) => versions[i] !== r.version)) continue
-      for (const [id, text] of Object.entries(res.texts)) await this.drive.writeText(id, text)
+      for (const [id, text] of Object.entries(res.texts)) await this.write(id, read.find((r) => r.id === id)!, text)
       return { ok: true, changed: res.changed }
     }
     throw new VaultError('busy', 'ไฟล์ถูกแก้อยู่ตลอด ลองใหม่อีกครั้ง')

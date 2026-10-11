@@ -200,4 +200,147 @@ class OmniDriveTest {
         assertFalse(s.connected)
         assertTrue(s.state.files.isEmpty())
     }
+
+    @Test
+    fun aWriteLandingBetweenCheckAndWriteIsJoinedBack() {
+        val s = store()
+        // The web ticks b after the phone checked the version and before its write lands: Drive takes both writes,
+        // the phone's last, so the web's tick would be gone without the check after writing.
+        drive.beforeWrite = { drive.change(note, "- [ ] a\n- [x] b\n") }
+        s.edit("Omni note.md") { it!!.replace("- [ ] a", "- [x] a") }
+        assertEquals("- [x] a\n- [x] b\n", drive.textOf(omni, "Omni note.md"))
+        assertTrue(s.lost.isEmpty())
+        // The cache holds what Drive holds.
+        assertEquals("- [x] a\n- [x] b\n", s.read("Omni note.md"))
+    }
+
+    @Test
+    fun aWriteWithNobodyInBetweenAsksNothingMore() {
+        val s = store()
+        s.edit("Omni note.md") { it!!.replace("- [ ] a", "- [x] a") }
+        // The version went up by one: no revision list was needed (the fake would have answered, but was not asked).
+        assertEquals(0, drive.revisionAsks)
+        drive.beforeWrite = { drive.change(note, "- [x] a\n- [x] b\n") }
+        s.edit("Omni note.md") { it!!.replace("- [x] a", "- [ ] a") }
+        assertEquals(1, drive.revisionAsks)
+    }
+
+    @Test
+    fun aClashInThatMomentKeepsTheOtherSideAndKeepsTheLine() {
+        val s = store()
+        drive.beforeWrite = { drive.change(note, "- [ ] a web\n- [ ] b\n") }
+        s.edit("Omni note.md") { it!!.replace("- [ ] a", "- [ ] a phone") }
+        assertEquals("- [ ] a web\n- [ ] b\n", drive.textOf(omni, "Omni note.md"))
+        assertEquals(listOf("- [ ] a phone"), s.takeLost().single().lines)
+        // Told once, still kept for Settings until the owner decides.
+        assertTrue(s.takeLost().isEmpty())
+        val kept = s.lost.single()
+        assertTrue(s.putBackLost(kept.id))
+        assertEquals("- [ ] a web\n- [ ] b\n- [ ] a phone\n", drive.textOf(omni, "Omni note.md"))
+        assertTrue(s.lost.isEmpty())
+    }
+
+    @Test
+    fun aKeptClashCanBeLetGoAndSurvivesARestart() {
+        val s = store()
+        drive.beforeWrite = { drive.change(note, "- [ ] a web\n- [ ] b\n") }
+        s.edit("Omni note.md") { it!!.replace("- [ ] a", "- [ ] a phone") }
+        val kept = store(saved).lost.single()
+        assertEquals("Omni note.md", kept.path)
+        val again = store(saved)
+        again.dismissLost(kept.id)
+        assertTrue(store(saved).lost.isEmpty())
+        assertEquals("- [ ] a web\n- [ ] b\n", drive.textOf(omni, "Omni note.md"))
+    }
+
+    @Test
+    fun refreshAsksTheChangeLogInsteadOfListingTheFolder() {
+        val notes = drive.folder("Notes", omni)
+        drive.file("x.md", notes, "x")
+        val s = store()
+        s.refresh()
+        val listings = drive.listings
+        val downloads = drive.downloads
+        // Nothing changed: one question to the log, no listing, no download.
+        assertTrue(s.refresh().online)
+        assertEquals(listings, drive.listings)
+        assertEquals(downloads, drive.downloads)
+        // A note's text changed: only it is downloaded.
+        drive.change(note, "- [ ] a\n")
+        assertEquals("- [ ] a\n", s.refresh().texts["Omni note.md"])
+        assertEquals(listings, drive.listings)
+        assertEquals(downloads + 1, drive.downloads)
+        // A change outside the folder means nothing to it.
+        val elsewhere = drive.file("other.md", vault, "y")
+        drive.change(elsewhere, "z")
+        s.refresh()
+        assertEquals(listings, drive.listings)
+    }
+
+    @Test
+    fun aNewFileOrAConflictCopyMakesTheFolderWalkedAgain() {
+        val s = store()
+        s.refresh()
+        drive.file("Omni note (conflict 2026-10-11-08-00-00).md", omni, "copy")
+        val listing = s.refresh()
+        assertTrue(s.namesIn("").any { it.startsWith("Omni note (conflict") })
+        assertTrue("Omni note (conflict 2026-10-11-08-00-00).md" in listing.texts)
+        drive.trash(drive.nodes.values.first { it.name.startsWith("Omni note (conflict") }.id)
+        s.refresh()
+        assertFalse(s.namesIn("").any { it.startsWith("Omni note (conflict") })
+    }
+
+    @Test
+    fun aRenamedFileIsSeen() {
+        val s = store()
+        s.refresh()
+        drive.nodes.getValue(note).name = "Omni note old.md"
+        drive.touch(note)
+        val listing = s.refresh()
+        assertEquals(setOf("Omni note old.md"), listing.texts.keys)
+    }
+
+    @Test
+    fun aForgottenLogPositionWalksAgain() {
+        val s = store()
+        s.refresh()
+        drive.change(note, "- [ ] new\n")
+        drive.forgottenBefore = Int.MAX_VALUE
+        val listings = drive.listings
+        assertEquals("- [ ] new\n", s.refresh().texts["Omni note.md"])
+        assertTrue(drive.listings > listings)
+    }
+
+    @Test
+    fun aFreshEnoughReadIsServedFromTheCache() {
+        val s = store()
+        s.refresh()
+        drive.change(note, "- [ ] later\n")
+        val asked = drive.changeReads
+        assertEquals("- [ ] a\n- [ ] b\n", s.refresh(maxAgeMs = 60_000).texts["Omni note.md"])
+        assertEquals(asked, drive.changeReads)
+        // Without the allowance (the app opening), Drive is asked.
+        assertEquals("- [ ] later\n", s.refresh().texts["Omni note.md"])
+    }
+
+    @Test
+    fun aStoreSavedBeforeTheLogWalksOnce() {
+        val s = store()
+        s.refresh()
+        s.state.changeToken = null
+        val listings = drive.listings
+        s.refresh()
+        assertTrue(drive.listings > listings)
+        assertTrue(s.state.changeToken != null)
+    }
+
+    @Test
+    fun theSettingsFileIsNotJoinedLineByLine() {
+        val settings = drive.file("omni-settings.json", omni, "{\n  \"a\": 1\n}")
+        val s = store()
+        drive.beforeWrite = { drive.change(settings, "{\n  \"b\": 2\n}") }
+        s.edit("omni-settings.json") { "{\n  \"c\": 3\n}" }
+        assertEquals("{\n  \"c\": 3\n}", drive.nodes.getValue(settings).text)
+        assertTrue(s.lost.isEmpty())
+    }
 }

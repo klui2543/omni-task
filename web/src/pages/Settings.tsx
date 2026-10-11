@@ -23,9 +23,10 @@ function Segmented<T extends string | number>(p: { label: string; options: [T, s
 }
 
 /**
- * What Android's Settings and Notifications screens hold that makes sense on the web. The choices here stay on this
- * device (Android syncs its own through omni-settings.json in the Omni folder, which the web does not read yet); the sleep times are
- * written to the profile note in the vault, which the assistant and Focus read.
+ * What Android's Settings and Notifications screens hold that makes sense on the web. Ticking asks, archive days,
+ * what counts as urgent and the task kinds are shared with Android through omni-settings.json in the Omni folder
+ * (settingsSync.ts); the look stays on this device; the sleep times are written to the profile note in the vault,
+ * which the assistant and Focus read.
  */
 export function SettingsPage(p: PageProps) {
   const [ask, setAsk] = useState(askOnDone.get)

@@ -1,5 +1,6 @@
 package app.omnitask.drive
 
+import app.omnitask.data.VaultText
 import kotlinx.datetime.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -16,9 +17,20 @@ class CachedFile(
     var pending: Boolean = false,
 )
 
-/** Lines edited on the phone while offline that clashed with a change made elsewhere; Drive's version was kept. */
+/**
+ * Lines edited on the phone that clashed with a change made elsewhere (offline, or in the same second as a write
+ * from the web); Drive's version was kept. Kept until the owner puts them back or lets them go.
+ */
 @Serializable
-class LostEdit(val path: String, val lines: List<String>)
+class LostEdit(
+    val path: String,
+    val lines: List<String>,
+    val id: String = "",
+    /** When the clash was found (epoch milliseconds). */
+    val at: Long = 0,
+    /** The owner was told once already. */
+    var seen: Boolean = false,
+)
 
 @Serializable
 class OmniDriveState(
@@ -30,8 +42,14 @@ class OmniDriveState(
     /** The names in each folder at the last listing, conflict copies and other files included. */
     val names: MutableMap<String, List<String>> = mutableMapOf(),
     val lost: MutableList<LostEdit> = mutableListOf(),
-    /** When Drive was last read in full (epoch milliseconds), 0 before the first time. */
+    /** When Drive was last read (epoch milliseconds), 0 before the first time. */
     var lastSync: Long = 0,
+    /** Drive's change log position after the last read; null until the folder was walked once. */
+    var changeToken: String? = null,
+    /** When the folder was last walked in full (epoch milliseconds); a walk a day catches what the log missed. */
+    var lastWalk: Long = 0,
+    /** Numbers [LostEdit.id]. */
+    var lostSeq: Int = 0,
 )
 
 /**
@@ -76,6 +94,8 @@ class OmniDrive(private val drive: DriveFiles, saved: String?, private val persi
         state.names.clear()
         state.lost.clear()
         state.lastSync = 0
+        state.changeToken = null
+        state.lastWalk = 0
     }
 
     class Listing(
@@ -87,13 +107,24 @@ class OmniDrive(private val drive: DriveFiles, saved: String?, private val persi
         val problem: Exception? = null,
     )
 
-    /** Sends pending edits, then reads the folder, downloading only files whose version changed. */
-    fun refresh(): Listing {
+    /**
+     * Sends pending edits, then brings the cache up to date: Drive's change log says which files changed (one small
+     * request when nothing did), and only those are downloaded. The folder is walked in full the first time, when the
+     * log points at a change of its folders or files, and once a day.
+     *
+     * With [maxAgeMs], a read made less than that long ago with nothing pending is answered from the cache without
+     * asking Drive: for widgets and reminders, which can load several times in a row. Edits always read fresh.
+     */
+    fun refresh(maxAgeMs: Long = 0): Listing {
         val dir = state.dirId ?: return Listing(emptyMap(), false)
+        val now = Clock.System.now().toEpochMilliseconds()
+        if (maxAgeMs > 0 && state.lastSync > 0 && now - state.lastSync in 0 until maxAgeMs && pendingPaths.isEmpty()) {
+            return Listing(state.files.filter { isText(it.key) }.mapValues { it.value.text }, true)
+        }
         val problem = try {
             flushPending()
-            walk(dir)
-            state.lastSync = Clock.System.now().toEpochMilliseconds()
+            update(dir, now)
+            state.lastSync = now
             null
         } catch (e: DriveUnavailable) {
             e
@@ -173,7 +204,7 @@ class OmniDrive(private val drive: DriveFiles, saved: String?, private val persi
             if (out == fresh?.text) return null
             if (id != null && fresh != null) {
                 if (drive.version(id) != fresh.version) return@repeat
-                state.files[path] = CachedFile(id, drive.write(id, out, mimeOf(path)), out)
+                state.files[path] = settle(path, id, fresh, out, drive.write(id, out, mimeOf(path)))
             } else {
                 val made = drive.create(folderId(parentOf(path), create = true)!!, nameOf(path), mimeOf(path), out)
                 state.files[path] = CachedFile(made.id, made.version, out)
@@ -211,13 +242,76 @@ class OmniDrive(private val drive: DriveFiles, saved: String?, private val persi
     /** Names in a folder of the Omni folder at the last listing (empty when unknown). */
     fun namesIn(dir: String): List<String> = state.names.entries.firstOrNull { samePath(it.key, dir) }?.value.orEmpty()
 
-    /** Edits made offline that clashed with a change made elsewhere, once each. */
+    /** Edits that clashed with a change made elsewhere and were not shown yet; each is returned once. */
     fun takeLost(): List<LostEdit> {
-        if (state.lost.isEmpty()) return emptyList()
-        val out = state.lost.toList()
-        state.lost.clear()
+        val out = state.lost.filter { !it.seen }
+        if (out.isEmpty()) return emptyList()
+        out.forEach { it.seen = true }
         save()
         return out
+    }
+
+    /** Every edit that clashed and is still kept, newest first. */
+    val lost: List<LostEdit> get() = state.lost.sortedByDescending { it.at }
+
+    /** Lets a kept clash go. */
+    fun dismissLost(id: String) {
+        if (state.lost.removeAll { it.id == id }) save()
+    }
+
+    /**
+     * Adds the lines of a kept clash to the end of its note (as they were written on the phone) and lets the clash
+     * go. Works offline like any edit. False when it is not a note or no longer kept.
+     */
+    fun putBackLost(id: String): Boolean {
+        val l = state.lost.firstOrNull { it.id == id } ?: return false
+        if (!l.path.endsWith(".md", ignoreCase = true)) return false
+        edit(l.path) { text -> l.lines.fold(text ?: "") { t, line -> VaultText.appendLine(t, line) } }
+        dismissLost(id)
+        return true
+    }
+
+    private fun keepLost(path: String, lines: List<List<String>>) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        lines.forEach { state.lost += LostEdit(path, it, "${now}-${state.lostSeq++}", now) }
+    }
+
+    /**
+     * Makes sure nobody else wrote between the version check and the write just made ([written]): Drive has no
+     * conditional write, so another writer can land in that moment and be replaced. Drive keeps each write as a
+     * revision, so the one just before ours tells: when it is not the one the edit started from ([base]), its text is
+     * joined with ours ([Merge3]) and written again; lines that clash keep the other side and are kept in [lost].
+     * Anything going wrong here leaves the write as it is, as before this check existed. Only notes are joined: a line
+     * join of two JSON files (the settings) could leave them unreadable, so those stay the last write, as before.
+     */
+    private fun settle(path: String, id: String, base: Versioned, ours: String, written: Written): CachedFile {
+        if (!path.endsWith(".md", ignoreCase = true)) return CachedFile(id, written.version, ours)
+        var from = base
+        var mine = ours
+        var w = written
+        try {
+            repeat(ATTEMPTS) {
+                if (from.revision.isEmpty() || w.revision.isEmpty()) return CachedFile(id, w.version, mine)
+                // Drive's version goes up with every change: one step up means nobody wrote in between, no need to ask.
+                val start = from.version.toLongOrNull()
+                if (start != null && w.version.toLongOrNull() == start + 1) return CachedFile(id, w.version, mine)
+                val before = drive.revisionBefore(id, w.revision) ?: return CachedFile(id, w.version, mine)
+                if (before == from.revision) return CachedFile(id, w.version, mine)
+                val theirs = drive.readRevision(id, before)
+                val merged = Merge3.merge(from.text, mine, theirs)
+                keepLost(path, merged.lost)
+                if (merged.text == mine) return CachedFile(id, w.version, mine)
+                // Written over again since: whoever wrote last checks the same way; the cache is read again next time.
+                if (drive.version(id) != w.version) return CachedFile(id, "", mine)
+                val again = drive.write(id, merged.text, mimeOf(path))
+                from = Versioned(mine, w.version, w.revision)
+                mine = merged.text
+                w = again
+            }
+        } catch (e: Exception) {
+            return CachedFile(id, w.version, mine)
+        }
+        return CachedFile(id, w.version, mine)
     }
 
     /** Sends every pending file; one Drive refuses stays pending, and no network stops the round. */
@@ -244,16 +338,70 @@ class OmniDrive(private val drive: DriveFiles, saved: String?, private val persi
             val remote = drive.read(id)
             val merged = if (c.id == id && remote.version == c.version) Merge3.Result(c.text, emptyList())
             else Merge3.merge(c.base ?: "", c.text, remote.text)
-            var version = remote.version
-            if (merged.text != remote.text) {
+            state.files[path] = if (merged.text != remote.text) {
                 if (drive.version(id) != remote.version) return@repeat
-                version = drive.write(id, merged.text, mimeOf(path))
+                settle(path, id, remote, merged.text, drive.write(id, merged.text, mimeOf(path)))
+            } else {
+                CachedFile(id, remote.version, merged.text)
             }
-            state.files[path] = CachedFile(id, version, merged.text)
-            merged.lost.forEach { state.lost += LostEdit(path, it) }
+            keepLost(path, merged.lost)
             save()
             return
         }
+    }
+
+    /** Brings the cache up to date from Drive's change log, or by a walk of the folder when the log cannot tell. */
+    private fun update(dir: String, now: Long) {
+        val token = state.changeToken
+        if (token == null || state.folders.isEmpty() || now - state.lastWalk !in 0 until WALK_MS) return fullWalk(dir, now)
+        val log = try {
+            drive.changes(token)
+        } catch (e: DriveHttpError) {
+            // A position Drive no longer knows: start again from a walk.
+            return fullWalk(dir, now)
+        }
+        if (fromLog(log.changes)) walk(dir)
+        state.changeToken = log.token
+    }
+
+    private fun fullWalk(dir: String, now: Long) {
+        // The position is taken first, so a change made during the walk is still seen next time.
+        val token = drive.startPageToken()
+        walk(dir)
+        state.changeToken = token
+        state.lastWalk = now
+    }
+
+    /**
+     * Takes in the changes of Drive's log: a file of the folder whose text changed is downloaded again. True when the
+     * folder needs a walk instead: a file or folder in it added, moved, renamed or removed.
+     */
+    private fun fromLog(changes: List<DriveChange>): Boolean {
+        val folderIds = state.folders.values.toSet()
+        val folderPath = state.folders.entries.associate { it.value to it.key }
+        val filePath = state.files.entries.mapNotNull { (path, c) -> c.id?.let { it to path } }.toMap()
+        val again = LinkedHashMap<String, DriveEntry>()
+        for (c in changes) {
+            val e = c.entry?.takeIf { !c.removed && !c.trashed }
+            val folder = folderPath[c.fileId]
+            val file = filePath[c.fileId]
+            when {
+                c.fileId == state.dirId -> if (e == null) return true
+                folder != null -> if (e == null || e.parents.firstOrNull() != state.folders[parentOf(folder)] || !sameName(e.name, nameOf(folder))) return true
+                file != null -> {
+                    if (e == null || e.parents.firstOrNull() != state.folders[parentOf(file)] || !sameName(e.name, nameOf(file))) return true
+                    val cached = state.files.getValue(file)
+                    if (!cached.pending && cached.version != e.version) again[file] = e
+                }
+                // Something new in the folder (a note, a conflict copy, a folder), or something else moved in or out of it.
+                c.entry != null && c.entry.parents.any { it in folderIds } -> return true
+            }
+        }
+        for ((path, e) in again) {
+            val fresh = drive.read(e.id)
+            state.files[path] = CachedFile(e.id, fresh.version, fresh.text)
+        }
+        return false
     }
 
     /** Lists the folder and its subfolders, and downloads each Markdown or JSON file whose version changed. */
@@ -324,6 +472,9 @@ class OmniDrive(private val drive: DriveFiles, saved: String?, private val persi
 
     companion object {
         private const val ATTEMPTS = 3
+
+        /** How often the folder is walked in full even when the change log says nothing moved. */
+        const val WALK_MS = 24 * 60 * 60_000L
 
         fun isText(name: String) = name.endsWith(".md", ignoreCase = true) || name.endsWith(".json", ignoreCase = true)
 

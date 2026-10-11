@@ -11,7 +11,9 @@ import app.omnitask.drive.DriveHttpError
 import app.omnitask.drive.DriveRest
 import app.omnitask.drive.DriveUnavailable
 import app.omnitask.drive.OmniDrive
+import app.omnitask.drive.DriveChanges
 import app.omnitask.drive.Versioned
+import app.omnitask.drive.Written
 import kotlinx.datetime.LocalDate
 import org.junit.After
 import org.junit.Before
@@ -46,10 +48,15 @@ class DriveRoutingTest {
         override fun get(id: String) = run { up(); entry(node(id)) }
         override fun read(id: String) = run { up(); node(id).let { Versioned(it.text, it.version.toString()) } }
         override fun version(id: String) = run { up(); node(id).version.toString() }
-        override fun write(id: String, text: String, mimeType: String) = run { up(); node(id).let { it.text = text; it.version++; it.version.toString() } }
+        override fun write(id: String, text: String, mimeType: String) = run { up(); node(id).let { it.text = text; it.version++; Written(it.version.toString()) } }
         override fun create(parentId: String, name: String, mimeType: String, text: String) = run { up(); entry(nodes.getValue(file(name, parentId, text))) }
         override fun createFolder(parentId: String, name: String) = run { up(); folder(name, parentId) }
         override fun trash(id: String) { up(); node(id).trashed = true }
+        // No revision history and no change log here: the store then checks nothing after a write and walks the folder on every read.
+        override fun revisionBefore(id: String, revision: String): String? = null
+        override fun readRevision(id: String, revision: String): String = throw DriveHttpError(404, "no history")
+        override fun startPageToken() = run { up(); "0" }
+        override fun changes(token: String): DriveChanges = run { up(); throw DriveHttpError(400, "no log") }
     }
 
     private val context: Context get() = ApplicationProvider.getApplicationContext<Application>()

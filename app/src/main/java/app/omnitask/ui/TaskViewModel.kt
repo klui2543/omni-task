@@ -210,6 +210,8 @@ data class DriveUi(
     val signInIntent: PendingIntent? = null,
     /** The Omni folder found on Drive while the phone's copy of the task note differs: asks before connecting. */
     val confirmDir: String? = null,
+    /** Edits that clashed with a change made elsewhere, kept until the owner puts them back or lets them go. */
+    val kept: List<app.omnitask.drive.LostEdit> = emptyList(),
 )
 
 /** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
@@ -424,7 +426,29 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** The Drive card's state after a load: [status] is null when Drive is not in use. */
     private fun driveUi(old: DriveUi, status: VaultRepository.DriveStatus?): DriveUi =
         if (status == null) old.copy(on = DriveLink.isOn(getApplication()))
-        else old.copy(on = true, online = status.online, signIn = status.signIn, pending = status.pending, lastSync = status.lastSync)
+        else old.copy(on = true, online = status.online, signIn = status.signIn, pending = status.pending, lastSync = status.lastSync, kept = status.kept)
+
+    /** Adds the phone's lines of a kept clash to the end of their note. */
+    fun putBackClash(id: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.putBackClash(id) } }
+            _state.update {
+                it.copy(
+                    message = if (result.getOrNull() == true) tr("ใส่บรรทัดไว้ท้ายโน้ตแล้ว", "Added the lines to the end of the note")
+                    else tr("ใส่กลับไม่ได้: ", "Could not add them back: ") + (result.exceptionOrNull()?.message ?: ""),
+                )
+            }
+            reload()
+        }
+    }
+
+    /** Lets a kept clash go. */
+    fun dismissClash(id: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { repo.dismissClash(id) } }
+            _state.update { it.copy(drive = it.drive.copy(kept = it.drive.kept.filterNot { k -> k.id == id })) }
+        }
+    }
 
     /**
      * Connects the Omni folder on Google Drive: asks Google for access, showing its screen when it needs to

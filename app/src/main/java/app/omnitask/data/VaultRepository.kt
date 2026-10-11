@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import app.omnitask.drive.DriveUnavailable
+import app.omnitask.drive.LostEdit
 import app.omnitask.drive.OmniDrive
 import app.omnitask.drive.sameName
 import app.omnitask.model.OmniList
@@ -25,8 +26,11 @@ class VaultRepository(private val context: Context) {
 
     class ConflictException : Exception()
 
-    /** Tasks only, without the items of list notes (reminders, widgets and the views never want those). */
-    fun loadTasks(treeUri: Uri): List<Task> = load(treeUri).tasks.filter { it.list == null }
+    /**
+     * Tasks only, without the items of list notes (reminders, widgets and the views never want those). With
+     * [maxAgeMs], a read of Drive made less than that long ago is used again (see [OmniDrive.refresh]).
+     */
+    fun loadTasks(treeUri: Uri, maxAgeMs: Long = 0): List<Task> = load(treeUri, maxAgeMs).tasks.filter { it.list == null }
 
     /** Tasks plus the path of every note in the vault (for linking notes to tasks). */
     class Snapshot(
@@ -46,22 +50,24 @@ class VaultRepository(private val context: Context) {
         val signIn: Boolean,
         /** Files with edits made while Drive was out of reach, not sent yet. */
         val pending: Int,
-        /** Lines edited offline that clashed with a change made elsewhere; Drive's version was kept. */
+        /** Lines that clashed with a change made elsewhere since the last load (Drive's version was kept), to tell once. */
         val lost: List<String>,
-        /** When Drive was last read in full (epoch milliseconds), 0 before the first time. */
+        /** When Drive was last read (epoch milliseconds), 0 before the first time. */
         val lastSync: Long,
+        /** Every clash still kept, newest first, for Settings to put back or let go. */
+        val kept: List<LostEdit> = emptyList(),
     )
 
-    fun load(treeUri: Uri): Snapshot {
+    fun load(treeUri: Uri, maxAgeMs: Long = 0): Snapshot {
         val drive = DriveLink.isOn(context)
         // With Drive connected, the phone's own copy of the Omni folder is left alone: Drive has the live one.
         val all = listMarkdown(treeUri).let { files -> if (drive) files.filter { omniPath(it.path) == null } else files }
         val local = all.map { Note(it.uri.toString(), it.path) { readText(it.uri) } }
         var status: DriveStatus? = null
         val remote = if (!drive) emptyList() else DriveLink.use(context) { store ->
-            val listing = store.refresh()
+            val listing = store.refresh(maxAgeMs)
             val lost = store.takeLost().flatMap { it.lines }
-            status = DriveStatus(listing.online, (listing.problem as? DriveUnavailable)?.signIn == true, store.pendingPaths.size, lost, store.state.lastSync)
+            status = DriveStatus(listing.online, (listing.problem as? DriveUnavailable)?.signIn == true, store.pendingPaths.size, lost, store.state.lastSync, store.lost)
             listing.texts.filterKeys { it.endsWith(".md", ignoreCase = true) }.map { (path, text) -> Note(DRIVE_URI + path, "${VaultText.OMNI_DIR}/$path") { text } }
         }
         val (conflicts, files) = (local + remote).partition { VaultText.isConflictCopy(it.path) }
@@ -116,6 +122,12 @@ class VaultRepository(private val context: Context) {
         val out = change(text) ?: return
         if (out != text) writePath(treeUri, path, out)
     }
+
+    /** Adds the phone's lines of a kept clash to the end of their note; false when it is gone or not a note. */
+    fun putBackClash(id: String): Boolean = DriveLink.use(context) { it.putBackLost(id) }
+
+    /** Lets a kept clash go. */
+    fun dismissClash(id: String) = DriveLink.use(context) { it.dismissLost(id) }
 
     /** The vault's folder name, which is also its name in Obsidian. */
     fun vaultName(treeUri: Uri): String? =
