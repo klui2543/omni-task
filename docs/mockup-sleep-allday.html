@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sleep card all day</title>
+<style>
+:root{--bg:#0b0b0c;--card:#161618;--line:#2a2a2d;--raised:#232326;--text:#f2f2f3;--muted:#9a9aa0;--faint:#6c6c72;--accent:#b9c8ff;--red:#e06c6c;--amber:#e3a94b;--lime:#a6d96a}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px}
+.wrap{max-width:400px;margin:0 auto}
+h2{font-size:14px;color:var(--muted);font-weight:500;margin:28px 0 8px}
+.note{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.55}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.top{display:flex;align-items:center;padding:14px;gap:12px}
+.ring{width:44px;height:44px;border-radius:50%;border:4px solid var(--raised);border-top-color:var(--lime);display:grid;place-items:center;font-size:11px}
+.stat{flex:1;text-align:center}.stat b{display:block;font-size:20px;font-weight:500}.stat span{font-size:12px;color:var(--muted)}
+.div{height:1px;background:var(--line);margin:0 14px}
+.night{padding:10px 14px 12px}
+.head{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}.head .t{flex:1}
+.pill{border-radius:99px;padding:2px 9px;font-weight:500;font-size:12.5px}
+.red{color:var(--red);background:#e06c6c24}.lime{color:var(--lime);background:#a6d96a1f}.amber{color:var(--amber);background:#e3a94b22}
+.tiles{display:flex;gap:8px;margin-top:8px}
+.tile{flex:1;background:var(--raised);border-radius:12px;padding:8px 12px}
+.tile small{display:block;font-size:12px;color:var(--muted)}.tile b{font-size:16px;font-weight:500}
+.tile b i{font-style:normal;font-size:12px;color:var(--muted);font-weight:400;margin-left:4px}
+.why{margin-top:6px;font-size:12px;color:var(--faint)}
+.alarm{display:flex;align-items:center;gap:8px;margin-top:8px;background:var(--raised);border-radius:12px;padding:9px 12px;font-size:12.5px}
+.alarm.on{background:#a6d96a1f;color:var(--lime)}
+.ico{width:15px;height:15px;color:var(--accent)}.on .ico{color:var(--lime)}
+.foot{display:flex;align-items:center;gap:8px;padding:8px 14px 10px;font-size:12.5px}
+.foot .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chev{color:var(--faint);font-size:12px}
+</style></head><body><div class="wrap">
+<svg width="0" height="0" style="position:absolute">
+<symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+<symbol id="sun" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0.01 0Z M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+<symbol id="watch" viewBox="0 0 24 24"><path d="M8 6.5h8v11H8Z M9.5 6.5l.7-3h3.6l.7 3 M9.5 17.5l.7 3h3.6l.7-3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="glass" viewBox="0 0 24 24"><path d="M7 3.5h10M7 20.5h10 M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5 M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+</svg>
+
+<h2>1. กลางวัน 14:00: ตั้งปลุกของคืนนี้ล่วงหน้าได้</h2>
+<div class="card">
+ <div class="top"><div class="ring">3/8</div>
+  <div class="stat"><b>1</b><span>เลยกำหนด</span></div><div class="stat"><b>2</b><span>นัดวันนี้</span></div><div class="stat" style="color:var(--lime)"><b>3.5 ชม.</b><span style="color:var(--muted)">ว่างเหลือ</span></div></div>
+ <div class="div"></div>
+ <div class="night">
+  <div class="head"><svg class="ico"><use href="#moon"/></svg><span class="t">คืนนี้</span><span class="pill amber">ได้นอน 6:30 ชม.</span></div>
+  <div class="tiles"><div class="tile"><small>นอน</small><b>22:30</b></div><div class="tile"><small>ตื่น</small><b>05:00<i>พรุ่งนี้</i></b></div></div>
+  <div class="why">เผื่อ 1 ชม. ก่อน 06:00: เวรเช้า</div>
+  <div class="alarm"><svg class="ico"><use href="#watch"/></svg>ปลุกที่นาฬิกา 05:00</div>
+ </div>
+ <div class="div"></div>
+ <div class="foot"><svg class="ico"><use href="#glass"/></svg><span class="t">สอบ BCP <span style="color:var(--accent)">อีก 9 วัน</span></span><span class="chev">›</span></div>
+</div>
+<div class="note">การ์ดนอนอยู่ตลอดทั้งวัน ช่องตื่นบอก "พรุ่งนี้" เพื่อไม่ให้งงว่าเป็นของคืนไหน<br>แถบนับถอยหลังย้ายลงมาเป็นแถวล่างสุดของการ์ด อยู่ทั้งวันเหมือนกัน</div>
+
+<h2>2. กลางคืน 23:00: เหมือนตอนนี้ แต่มีแถบนับถอยหลังต่อท้าย</h2>
+<div class="card">
+ <div class="top"><div class="ring">6/8</div>
+  <div class="stat"><b>0</b><span>เลยกำหนด</span></div><div class="stat"><b>0</b><span>นัดวันนี้</span></div><div class="stat"><b>0:00</b><span>ก่อนนอน</span></div></div>
+ <div class="div"></div>
+ <div class="night">
+  <div class="head"><svg class="ico"><use href="#moon"/></svg><span class="t">คืนนี้</span><span class="pill red">ได้นอน 6:00 ชม.</span></div>
+  <div class="tiles"><div class="tile"><small>นอน</small><b>23:00</b></div><div class="tile"><small>ตื่น</small><b>05:00</b></div></div>
+  <div class="why">เผื่อ 1 ชม. ก่อน 06:00: เวรเช้า</div>
+  <div class="alarm on"><svg class="ico"><use href="#check"/></svg>นาฬิกาจะปลุก 05:00</div>
+ </div>
+ <div class="div"></div>
+ <div class="foot"><svg class="ico"><use href="#glass"/></svg><span class="t">สอบ BCP <span style="color:var(--accent)">อีก 9 วัน</span></span><span class="chev">›</span></div>
+</div>
+
+<h2>3. หลังตื่น 07:30: ยังเห็นการ์ด และเป็นของคืนถัดไปแล้ว</h2>
+<div class="card">
+ <div class="night">
+  <div class="head"><svg class="ico"><use href="#sun"/></svg><span class="t">เมื่อคืนได้นอน 6:00 ชม.</span></div>
+  <div class="head" style="margin-top:10px"><svg class="ico"><use href="#moon"/></svg><span class="t">คืนนี้</span><span class="pill lime">ได้นอน 7:30 ชม.</span></div>
+  <div class="tiles"><div class="tile"><small>นอน</small><b>22:30</b></div><div class="tile"><small>ตื่น</small><b>06:00<i>พรุ่งนี้</i></b></div></div>
+  <div class="alarm"><svg class="ico"><use href="#watch"/></svg>ปลุกที่นาฬิกา 06:00</div>
+ </div>
+</div>
+<div class="note">เปลี่ยนเป็น "คืนนี้" ของคืนถัดไปทันทีที่เลยเวลาตื่น (ปลุกของเมื่อคืนดังไปแล้ว) บรรทัดบนสุดสรุปเมื่อคืนสั้นๆ จนถึงเที่ยง<br>ถ้าไม่อยากได้บรรทัดสรุปเมื่อคืน ตัดออกได้</div>
+
+</div></body></html>
