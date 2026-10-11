@@ -176,12 +176,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val editing = state.allTasks.firstOrNull { it.key == editingKey } ?: state.parked.firstOrNull { it.key == editingKey }
 
-    val assistantHidden = remember { mutableIntStateOf(0) }
+    val fullPage = remember { mutableIntStateOf(0) }
     // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
-    val dock = if (wide) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val dock = if (wide || fullPage.intValue > 0) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     val content: @Composable () -> Unit = {
-        CompositionLocalProvider(LocalAssistantHidden provides assistantHidden, LocalDockClearance provides dock) {
+        CompositionLocalProvider(LocalFullPage provides fullPage, LocalDockClearance provides dock) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 if (state.loading) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = C.accent, trackColor = C.bg)
@@ -209,9 +209,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
     // The assistant floats where the add button used to; adding a task is the middle of the bottom bar (the top of the side rail when wide).
-    // A page that needs the whole corner (the project mind map) asks it to step aside ([HideAssistantButton]).
+    // A page that fills the screen (the project mind map) hides it and the bottom bar ([FullPage]).
     val assistantButton: @Composable (Modifier) -> Unit = { m ->
-        if (screen != Screen.AI && assistantHidden.intValue == 0) {
+        if (screen != Screen.AI && fullPage.intValue == 0) {
             Box(
                 m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(if (C.calm) C.raised else C.accentSoft)
                     .border(1.dp, if (C.calm) C.control else C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
@@ -220,7 +220,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
     // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
-    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI && assistantHidden.intValue == 0) 84.dp else 12.dp
+    val popupLift = (if (fullPage.intValue > 0) 0.dp else DOCK_HEIGHT) + if (screen != Screen.AI && fullPage.intValue == 0) 84.dp else 12.dp
 
     if (wide) {
         // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
@@ -247,7 +247,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     } else {
         Box(Modifier.fillMaxSize().background(C.bg)) {
             content()
-            DockNav(
+            if (fullPage.intValue == 0) DockNav(
                 selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.AI,
                 onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { screen = Screen.MORE },
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -448,12 +448,12 @@ private fun Welcome(onPick: () -> Unit) {
 /** Height the bottom bar covers when it floats over the page (nothing beside the side rail), for pages that fill the screen. */
 val LocalDockClearance = staticCompositionLocalOf { 0.dp }
 
-/** Lets a page ask the floating assistant button to step aside while it shows (a counter, so pages can nest). */
-val LocalAssistantHidden = staticCompositionLocalOf<MutableIntState?> { null }
+/** Lets a page take the whole screen while it shows: the bottom bar and the floating assistant button step aside (a counter, so pages can nest). */
+val LocalFullPage = staticCompositionLocalOf<MutableIntState?> { null }
 
 @Composable
-fun HideAssistantButton() {
-    val hidden = LocalAssistantHidden.current ?: return
+fun FullPage() {
+    val hidden = LocalFullPage.current ?: return
     DisposableEffect(hidden) {
         hidden.intValue++
         onDispose { hidden.intValue-- }

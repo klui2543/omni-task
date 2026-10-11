@@ -113,7 +113,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
-        item { CalendarConnect(state, vm) }
+        // Items that draw nothing would still take a gap in the column, so they are only added when they show.
+        if (calendarConnectShows(state)) item { CalendarConnect(state, vm) }
 
         item {
             Card {
@@ -185,13 +186,14 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
         brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
-        item { ReviewPrompt(state) { reviewing = true } }
+        if (state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
 
         // Overdue work is not part of the day's timeline: it sits in its own card below it.
         val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
         val daySections = plan.filter { it.part != DayPlan.Part.LATE }
         if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
+                Box(Modifier.height(6.dp))
                 if (daySections.isEmpty()) {
                     Text(tr("วันนี้ยังไม่มีงานหรือนัด", "Nothing due or booked today"), Modifier.padding(16.dp), color = C.muted)
                 }
@@ -223,17 +225,18 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     }
                 }
                 if (!nowShown && daySections.isNotEmpty()) NowLine(nowTime)
-                Box(Modifier.height(4.dp))
+                Box(Modifier.height(12.dp))
             }
         }
 
         if (overdueSection != null) item {
             Card {
+                Box(Modifier.height(6.dp))
                 PlanHead(overdueSection.part.label, C.red, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
                 overdueSection.items.forEach { item ->
                     if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
                 }
-                Box(Modifier.height(4.dp))
+                Box(Modifier.height(12.dp))
             }
         }
 
@@ -265,51 +268,103 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         val showFuture = TaskKind.FUTURE !in state.hiddenKinds
         if (showWaiting || showFuture) item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Each card is as tall as its own content; the shorter one does not stretch to match the taller.
-                if (showWaiting) Card(Modifier.weight(1f)) {
-                    Column(Modifier.padding(12.dp)) {
-                        CardHead(Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), "${brief.waiting.size}")
-                        if (brief.waiting.isEmpty()) {
-                            Text(tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
-                        }
-                        brief.waiting.forEach { t ->
-                            val age = Focus.ageDays(t, today)
-                            Column(Modifier.padding(top = 10.dp).clickable { onOpen(t) }) {
-                                Text(t.title, color = C.text, fontSize = TS.body, maxLines = 2)
-                                Pill(
-                                    (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { tr("รอ $it วัน", "waiting $it days") } ?: tr("รออยู่", "waiting")),
-                                    if ((age ?: 0) >= 7) C.redSoft else C.amberSoft, if ((age ?: 0) >= 7) C.red else C.amber,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                )
-                            }
-                        }
-                    }
+                // Each card shows one task at a time: swipe for the next, or tap the head to see them all at once.
+                if (showWaiting) PagedCard(
+                    Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), brief.waiting,
+                    tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), onOpen, Modifier.weight(1f),
+                ) { t ->
+                    val age = Focus.ageDays(t, today)
+                    Text(t.title, color = C.text, fontSize = TS.body, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        (Focus.waitingFor(t)?.let { "$it " } ?: "") + (age?.let { tr("รอ $it วัน", "waiting $it days") } ?: tr("รออยู่", "waiting")),
+                        Modifier.padding(top = 4.dp), color = if ((age ?: 0) >= 7) C.red else C.amber, fontSize = TS.caption, maxLines = 1,
+                    )
                 }
-                if (showFuture) Card(Modifier.weight(1f)) {
-                    Column(Modifier.padding(12.dp)) {
-                        CardHead(Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), null)
-                        if (brief.future.isEmpty()) {
-                            Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
-                        }
-                        brief.future.forEach { t ->
-                            Column(Modifier.padding(top = 10.dp)) {
-                                Text(t.title, Modifier.clickable { onOpen(t) }, color = C.text, fontSize = TS.body, maxLines = 3)
-                                val sub = listOfNotNull(Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") })
-                                if (sub.isNotEmpty()) Text(sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 2)
-                                SmallButton(tr("ข้ามวันนี้", "Skip today"), filled = false, modifier = Modifier.padding(top = 8.dp)) { vm.skipFuture(t) }
-                            }
-                        }
-                        Box(Modifier.padding(top = 12.dp).fillMaxWidth().height(1.dp).background(C.divider))
-                        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (showFuture) PagedCard(
+                    Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), brief.future,
+                    tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), onOpen, Modifier.weight(1f),
+                    more = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                tr("เลือกงาน", "Pick"),
+                                tr("+ เลือกงาน", "+ Pick"),
                                 Modifier.clip(RoundedCornerShape(8.dp)).clickable { picking = true }.padding(vertical = 4.dp),
                                 color = C.accentText, fontSize = TS.caption, maxLines = 1,
                             )
                             Spacer(Modifier.weight(1f))
                             Stepper(state.futureCount, { vm.setFutureCount((state.futureCount + it).coerceIn(1, 5)) })
                         }
+                    },
+                ) { t ->
+                    Text(t.title, color = C.text, fontSize = TS.body, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(Focus.ageDays(t, today)?.let { tr("ค้าง $it วัน", "open $it days") } ?: "", Modifier.weight(1f), color = C.muted, fontSize = TS.caption, maxLines = 1)
+                        Text(
+                            tr("ข้ามวันนี้", "Skip today"),
+                            Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.skipFuture(t) }.padding(horizontal = 4.dp),
+                            color = C.accentText, fontSize = TS.caption, maxLines = 1,
+                        )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A small card that shows one of [items] at a time: swipe sideways for the next, the head counts "1/3", and tapping
+ * the head opens all of them in a dialog in the middle of the screen. Tapping a task opens it.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun <T : Task> PagedCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, soft: Color, title: String, list: List<T>, empty: String,
+    onOpen: (Task) -> Unit, modifier: Modifier = Modifier, more: (@Composable () -> Unit)? = null, content: @Composable (T) -> Unit,
+) {
+    val pager = androidx.compose.foundation.pager.rememberPagerState { list.size }
+    var all by remember { mutableStateOf(false) }
+    if (all) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { all = false },
+            containerColor = C.raised,
+            title = { Text(title + "  ${list.size}") },
+            text = {
+                Column {
+                    if (list.isEmpty()) Text(empty, color = C.muted, fontSize = TS.body)
+                    LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                        items(list.size) { i ->
+                            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+                            Column(Modifier.fillMaxWidth().clickable { all = false; onOpen(list[i]) }.padding(vertical = 10.dp)) { content(list[i]) }
+                        }
+                    }
+                    // Adding to the card lives here, so the card itself stays the same size as its neighbour.
+                    if (more != null) {
+                        Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                        Box(Modifier.padding(top = 8.dp)) { more() }
+                    }
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { all = false }) { Text(tr("ปิด", "Close"), color = C.accentText) } },
+        )
+    }
+    Card(modifier) {
+        Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 12.dp)) {
+            Box(Modifier.clip(RoundedCornerShape(8.dp)).clickable { all = true }) {
+                CardHead(icon, tint, soft, title, if (list.size > 1) "${pager.currentPage + 1}/${list.size}" else list.size.takeIf { it > 0 }?.toString())
+            }
+            if (list.isEmpty()) {
+                // The same two lines and caption line a task takes, so an empty card is as tall as a full one.
+                Column(Modifier.padding(top = 10.dp)) {
+                    Text(empty, color = C.muted, fontSize = TS.body, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("", Modifier.padding(top = 4.dp), fontSize = TS.caption, minLines = 1)
+                }
+                Box(Modifier.padding(top = 10.dp).height(5.dp))
+            } else {
+                androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.padding(top = 10.dp).fillMaxWidth(), pageSpacing = 12.dp, verticalAlignment = Alignment.Top) { i ->
+                    Column(Modifier.fillMaxWidth().clickable { onOpen(list[i]) }) { content(list[i]) }
+                }
+                // The dots row is always there (empty for one task), so both cards keep one height.
+                Row(Modifier.padding(top = 10.dp).fillMaxWidth().height(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
+                    if (list.size > 1) repeat(list.size) { i -> Box(Modifier.size(5.dp).clip(CircleShape).background(if (i == pager.currentPage) C.text2 else C.control)) }
                 }
             }
         }
@@ -387,7 +442,7 @@ private fun CardHead(icon: androidx.compose.ui.graphics.vector.ImageVector, tint
             Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
         }
         Text(title, Modifier.weight(1f).padding(start = 8.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
-        if (count != null) Text(count, color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+        if (count != null) Text(count, color = C.muted, fontSize = TS.caption)
     }
 }
 
