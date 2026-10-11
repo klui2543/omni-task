@@ -61,7 +61,7 @@ private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
-fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit, onAssistant: () -> Unit) {
+fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit) {
     var picking by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
     if (picking) FuturePicker(state, vm) { picking = false }
@@ -98,17 +98,16 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = NavClearance + FabClearance),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
                     Text(greeting(), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 }
-                RoundButton(Ic.spark, tr("ผู้ช่วย", "Assistant"), C.accentSoft, C.accentText, onAssistant)
-                Box(Modifier.width(8.dp))
+                // The assistant is the floating button now; only the wide layout's menu is left up here.
                 menu()
             }
         }
@@ -117,7 +116,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
         item {
             Card {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     DoneRing(doneToday, total)
                     Row(Modifier.weight(1f).padding(start = 12.dp).height(IntrinsicSize.Min)) {
                         Stat("$overdue", tr("เลยกำหนด", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
@@ -129,7 +128,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                     }
                 }
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(C.divider))
+                Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
                 if (night != null) {
                     // Tap to move tonight's bedtime; the usual one is in settings.
                     val color = when {
@@ -187,25 +186,25 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
         item { ReviewPrompt(state) { reviewing = true } }
 
-        item {
+        // Overdue work is not part of the day's timeline: it sits in its own card below it.
+        val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
+        val daySections = plan.filter { it.part != DayPlan.Part.LATE }
+        if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
-                if (plan.isEmpty()) {
+                if (daySections.isEmpty()) {
                     Text(tr("วันนี้ยังไม่มีงานหรือนัด", "Nothing due or booked today"), Modifier.padding(16.dp), color = C.muted)
                 }
                 // The red now line sits before the first timed item still to come; while an event is running it
                 // crosses that event's card instead, at how far into it the clock is.
                 val nowTime = now.toLocalTime()
-                val inEvent = plan.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
-                var nowShown = inEvent || plan.none { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
-                plan.forEach { section ->
+                val inEvent = daySections.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
+                var nowShown = inEvent || daySections.none { it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
+                daySections.forEach { section ->
                     if (!nowShown && section.part == DayPlan.Part.ANYTIME) {
                         NowLine(nowTime)
                         nowShown = true
                     }
-                    PlanHead(
-                        section.part.label, if (section.part == DayPlan.Part.LATE) C.red else C.muted,
-                        section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen },
-                    )
+                    PlanHead(section.part.label, C.muted, section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
                     section.items.forEach { item ->
                         val t = item.time
                         if (!nowShown && t != null && t > nowTime) {
@@ -222,21 +221,31 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         nowShown = true
                     }
                 }
-                if (!nowShown) NowLine(nowTime)
-                Box(Modifier.height(8.dp))
+                if (!nowShown && daySections.isNotEmpty()) NowLine(nowTime)
+                Box(Modifier.height(4.dp))
+            }
+        }
+
+        if (overdueSection != null) item {
+            Card {
+                PlanHead(overdueSection.part.label, C.red, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
+                overdueSection.items.forEach { item ->
+                    if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
+                }
+                Box(Modifier.height(4.dp))
             }
         }
 
         if (brief.suggestions.isNotEmpty()) {
             item {
                 Card {
-                    Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(15.dp))
                         Text(tr("ข้อเสนอ", "Suggestions"), Modifier.padding(start = 6.dp), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                     }
                     brief.suggestions.forEachIndexed { i, s ->
-                        if (i > 0) Divider(start = 16.dp)
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        if (i > 0) Divider(start = 12.dp)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(s.task.title, Modifier.clickable { onOpen(s.task) }, color = C.text, fontSize = TS.body)
                             Text(s.text, color = C.muted, fontSize = TS.caption)
                             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
@@ -254,9 +263,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         val showWaiting = TaskKind.WAITING !in state.hiddenKinds
         val showFuture = TaskKind.FUTURE !in state.hiddenKinds
         if (showWaiting || showFuture) item {
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (showWaiting) Card(Modifier.weight(1f).fillMaxHeight()) {
-                    Column(Modifier.fillMaxHeight().padding(14.dp)) {
+                    Column(Modifier.fillMaxHeight().padding(12.dp)) {
                         CardHead(Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), "${brief.waiting.size}")
                         if (brief.waiting.isEmpty()) {
                             Text(tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
@@ -275,7 +284,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     }
                 }
                 if (showFuture) Card(Modifier.weight(1f).fillMaxHeight()) {
-                    Column(Modifier.fillMaxHeight().padding(14.dp)) {
+                    Column(Modifier.fillMaxHeight().padding(12.dp)) {
                         CardHead(Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), null)
                         if (brief.future.isEmpty()) {
                             Text(tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
@@ -338,8 +347,8 @@ private fun Stat(value: String, label: String, color: Color, modifier: Modifier)
 /** Today's done over all, the label inside the ring. */
 @Composable
 private fun DoneRing(done: Int, total: Int) {
-    Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
-        ProgressRing(if (total == 0) 0f else done.toFloat() / total, 76.dp, 7.dp, C.accent)
+    Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+        ProgressRing(if (total == 0) 0f else done.toFloat() / total, 64.dp, 6.dp, C.accent)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$done/$total", color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
             Text(tr("เสร็จแล้ว", "done"), color = C.muted, fontSize = TS.micro)
@@ -351,19 +360,12 @@ private fun DoneRing(done: Int, total: Int) {
 @Composable
 private fun FooterRow(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 14.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = C.accentText, modifier = Modifier.padding(end = 8.dp).size(15.dp))
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, content = content)
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.padding(start = 6.dp).size(12.dp))
-    }
-}
-
-@Composable
-private fun RoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, bg: Color, fg: Color, onClick: () -> Unit) {
-    Box(Modifier.size(40.dp).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, description, tint = fg, modifier = Modifier.size(19.dp))
     }
 }
 
@@ -380,8 +382,8 @@ private fun SmallButton(text: String, filled: Boolean, modifier: Modifier = Modi
 @Composable
 private fun CardHead(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, soft: Color, title: String, count: String?) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(28.dp).clip(CircleShape).background(soft), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp))
+        Box(Modifier.size(24.dp).clip(CircleShape).background(soft), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
         }
         Text(title, Modifier.weight(1f).padding(start = 8.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
         if (count != null) Text(count, color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
@@ -391,7 +393,7 @@ private fun CardHead(icon: androidx.compose.ui.graphics.vector.ImageVector, tint
 /** A part of the day: its name, a hairline, and how many tasks it holds. */
 @Composable
 private fun PlanHead(title: String, color: Color, count: Int) {
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = color, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
         Box(Modifier.weight(1f).padding(horizontal = 10.dp).height(1.dp).background(C.divider))
         if (count > 0) Text("$count", color = C.muted, fontSize = TS.caption)
@@ -400,15 +402,12 @@ private fun PlanHead(title: String, color: Color, count: Int) {
 
 @Composable
 private fun NowLine(now: LocalTime) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(now.format(HM), Modifier.width(TIME_W), color = C.red, fontSize = TS.micro, fontWeight = FontWeight.SemiBold)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(C.red))
+        Text(now.format(HM), Modifier.padding(horizontal = 6.dp), color = C.red, fontSize = TS.micro, fontWeight = FontWeight.SemiBold)
         Box(Modifier.weight(1f).height(1.5.dp).background(C.red.copy(alpha = 0.7f)))
     }
 }
-
-/** The time column every plan row starts with, so titles line up. */
-private val TIME_W = 46.dp
 
 @Composable
 private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, isBlocked: Boolean) {
@@ -418,30 +417,33 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
     // A task already ticked off stays on the timeline, greyed out.
     val done = t.status == Status.DONE
     Row(
-        Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+        Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 6.dp, end = 10.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Text(item.time?.format(HM) ?: "", Modifier.width(TIME_W).padding(top = 3.dp), color = C.muted, fontSize = TS.caption)
-        TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 26.dp)
-        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+        TaskCheck(t, { vm.toggleDone(t) }, size = 22.dp, touch = 36.dp)
+        Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
             Text(
                 t.title, color = if (isBlocked || done) C.muted else C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3,
                 textDecoration = if (done) TextDecoration.LineThrough else null,
             )
-            val lead = when {
-                done -> tr("เสร็จแล้ว", "Done")
-                late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
-                t.due == today -> tr("ครบวันนี้", "Due today")
-                else -> tr("นัดวันนี้", "Scheduled today")
-            }
-            val sub = listOfNotNull(
+            // Every row here is today's, so "due today" would only repeat. A finished task is one line.
+            val lateText = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
+            val rest = if (done) "" else listOfNotNull(
                 if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
                 Projects.projectOf(t),
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
-            )
-            Row(Modifier.padding(top = 1.dp)) {
-                if (lead != null) Text(lead, color = if (late && !done) C.red else C.text2, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                if (sub.isNotEmpty()) Text(", " + sub.joinToString(", "), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            ).joinToString(", ")
+            val clock = if (done) null else item.time
+            if (clock != null || lateText != null || rest.isNotEmpty()) {
+                Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The time leads the line as a small clock label, as the reminder does on the Tasks page.
+                    clock?.let {
+                        Icon(Ic.clock, null, tint = C.muted, modifier = Modifier.size(12.dp))
+                        Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", Modifier.padding(start = 3.dp), color = C.muted, fontSize = TS.caption)
+                    }
+                    if (lateText != null) Text(lateText, color = C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                    if (rest.isNotEmpty()) Text((if (lateText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }
@@ -461,18 +463,12 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     val bg = if (past) C.raised else C.tealSoft
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
-    val sub = (if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")) + when {
-        running -> {
-            val left = ChronoUnit.MINUTES.between(now, e.end)
-            tr(", ตอนนี้ ${now.format(HM)} เหลือ $left นาที", ", now ${now.format(HM)}, $left min left")
-        }
-        past -> tr(", จบแล้ว", ", ended")
-        else -> ", Google Calendar"
-    }
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.Top) {
-        Text(item.time?.format(HM) ?: "", Modifier.width(TIME_W).padding(top = 9.dp), color = if (past) C.faint else C.muted, fontSize = TS.caption)
+    // Every event here is from the phone's calendar and on today's page, so neither needs saying.
+    val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.format(HM)} ถึง ${e.end.format(HM)}", "${e.begin.format(HM)} to ${e.end.format(HM)}")
+    val left = ChronoUnit.MINUTES.between(now, e.end)
+    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(
-            Modifier.weight(1f).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
+            Modifier.weight(1f).heightIn(min = if (running) 0.dp else 36.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(8.dp)).background(bg)
                 .drawBehind {
                     if (running) {
                         val y = size.height * fraction
@@ -481,12 +477,19 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
                         drawCircle(red, 3.5.dp.toPx(), Offset(3.5.dp.toPx(), y))
                     }
                 }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = if (running) 8.dp else 4.dp),
         ) {
             Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (past) C.faint else C.teal))
-            Column(Modifier.padding(start = 10.dp)) {
-                Text(e.title, color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                Text(sub, color = if (past) C.faint else C.tealText, fontSize = TS.caption)
+            if (running) {
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(e.title, color = C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+                    Text(range + tr(", เหลือ $left นาที", ", $left min left"), color = C.tealText, fontSize = TS.caption)
+                }
+            } else {
+                Row(Modifier.weight(1f).fillMaxHeight().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(e.title, Modifier.weight(1f), color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(range, Modifier.padding(start = 8.dp), color = if (past) C.faint else C.tealText, fontSize = TS.caption, maxLines = 1)
+                }
             }
         }
     }
@@ -494,12 +497,12 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
 
 @Composable
 private fun Notice(text: String, onClose: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(C.amberSoft).padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
-        Box(Modifier.size(30.dp).clip(CircleShape).background(C.amber.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(C.amberSoft).padding(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 2.dp), verticalAlignment = Alignment.Top) {
+        Box(Modifier.size(26.dp).clip(CircleShape).background(C.amber.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
             Icon(Ic.bell, null, tint = C.amber, modifier = Modifier.size(16.dp))
         }
-        Text(text, Modifier.weight(1f).padding(start = 10.dp, top = 4.dp), color = C.text, fontSize = TS.body)
-        Box(Modifier.size(30.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+        Text(text, Modifier.weight(1f).padding(start = 8.dp, top = 3.dp), color = C.text, fontSize = TS.body)
+        Box(Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
             Icon(Ic.close, tr("ซ่อน", "Hide"), tint = C.muted, modifier = Modifier.size(13.dp))
         }
     }

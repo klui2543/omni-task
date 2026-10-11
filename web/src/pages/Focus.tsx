@@ -122,36 +122,59 @@ export function FocusPage(p: PageProps) {
   const reviewTop = f?.review[0]
   const reviewTask = task(reviewTop?.key)
 
+  // One line a row: what repeats on every row of today's page is not said, and a second line only when it has something to say.
   const row = (it: PlanItem, i: number) => {
     if (it.type === 'now') {
       return (
         <div key={`now${i}`} class="nowline" aria-label="เวลาตอนนี้">
-          <span class="ptime">{it.time}</span><span class="nowdot" /><span class="nowbar" />
+          <span class="nowdot" /><span class="nowtime">{it.time}</span><span class="nowbar" />
         </div>
       )
     }
     if (it.type === 'event') {
       const Box = evTag(it.link, 'div')
+      const one = it.phase !== 'active'
       return (
         <div key={`ev${i}`} class={`prow event ${it.phase ?? 'upcoming'}`}>
-          <span class="ptime">{it.time}</span>
-          <Box class="ebox" style={it.phase === 'active' ? { '--p': `${Math.round((it.progress ?? 0) * 100)}%` } : undefined} {...evLink(it.link)}><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></Box>
+          <Box class={`ebox${one ? ' one' : ''}`} style={it.phase === 'active' ? { '--p': `${Math.round((it.progress ?? 0) * 100)}%` } : undefined} {...evLink(it.link)}>
+            <span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span>
+          </Box>
         </div>
       )
     }
     const t = task(it.key)
     if (!t) return null
+    const meta = !it.done && (it.time || it.lead || it.extra)
     return (
       <div key={it.key} class={`prow${it.done ? ' done' : ''}`}>
-        <span class="ptime">{it.time}</span>
         <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
         <button class="pbody" onClick={() => openTask(t)}>
           <span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span>
-          <span class="plead"><span class={it.late ? 'late' : 'lead'}>{it.lead}</span>{it.extra}</span>
+          {meta && (
+            <span class="plead">
+              {it.time && <span class="ptm"><svg class="clk" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0.01 0Z M12 7.5V12l3 2" /></svg>{it.time}</span>}
+              {it.time && (it.lead || it.extra) ? ', ' : ''}
+              {it.lead && <span class="late">{it.lead}</span>}
+              {it.lead && it.extra ? ', ' : ''}
+              {it.extra}
+            </span>
+          )}
         </button>
       </div>
     )
   }
+
+  // Overdue work is not part of the day's timeline: it is a card of its own below it.
+  const section = (s: FocusOut['plan'][number]) => (
+    <div key={s.label}>
+      <div class="phead">
+        <span class={`plabel${s.late ? ' late' : ''}`}>{s.label}</span>
+        <span class="rule" />
+        {s.tasks > 0 && <span class="muted small">{s.tasks}</span>}
+      </div>
+      {s.items.map(row)}
+    </div>
+  )
 
   return (
     <div class={`split${current ? ' with-pane' : ''}`}>
@@ -251,19 +274,17 @@ export function FocusPage(p: PageProps) {
                 </button>
               )}
 
-              <section class="fcard plan">
-                {f.plan.length === 0 && <p class="muted pad">วันนี้ยังไม่มีงานหรือนัด</p>}
-                {f.plan.map((s) => (
-                  <div key={s.label}>
-                    <div class="phead">
-                      <span class={`plabel${s.late ? ' late' : ''}`}>{s.label}</span>
-                      <span class="rule" />
-                      {s.tasks > 0 && <span class="muted small">{s.tasks}</span>}
-                    </div>
-                    {s.items.map(row)}
-                  </div>
-                ))}
-              </section>
+              {(f.plan.some((s) => !s.late) || !f.plan.some((s) => s.late)) && (
+                <section class="fcard plan">
+                  {f.plan.length === 0 && <p class="muted pad">วันนี้ยังไม่มีงานหรือนัด</p>}
+                  {f.plan.filter((s) => !s.late).map(section)}
+                </section>
+              )}
+              {f.plan.some((s) => s.late) && (
+                <section class="fcard plan overdue">
+                  {f.plan.filter((s) => s.late).map(section)}
+                </section>
+              )}
             </div>
 
             <div class="colB">

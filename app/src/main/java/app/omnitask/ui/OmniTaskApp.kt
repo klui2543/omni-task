@@ -79,6 +79,8 @@ enum class Screen(private val th: String, private val en: String, val icon: Imag
     VIEWS("มุมมอง", "Views", Ic.views),
     PROJECTS("โปรเจกต์/ลิสต์", "Projects/Lists", Ic.folder),
     AI("ผู้ช่วย", "Assistant", Ic.spark),
+    /** The bottom bar's "More" page; the side rail has every destination of its own, so it leaves this one out. */
+    MORE("เพิ่มเติม", "More", Ic.grid),
     ;
 
     val label get() = tr(th, en)
@@ -99,7 +101,6 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var screen by rememberSaveable { mutableStateOf(Screen.FOCUS) }
     var notifyOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
-    var moreOpen by remember { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
@@ -182,33 +183,42 @@ fun OmniTaskApp(vm: TaskViewModel) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = if (screen == Screen.VIEWS) Dp.Unspecified else 760.dp)) {
                 when (screen) {
-                    Screen.FOCUS -> FocusScreen(state, vm, open, menu) { screen = Screen.AI }
+                    Screen.FOCUS -> FocusScreen(state, vm, open, menu)
                     Screen.TASKS -> TasksScreen(state, vm, open)
                     Screen.VIEWS -> ViewsScreen(state, vm, open)
                     Screen.PROJECTS -> ProjectsScreen(state, vm, open)
                     Screen.AI -> AssistantScreen(state, vm, open)
+                    Screen.MORE -> MoreScreen(
+                        urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
+                        onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
+                        onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
+                    )
                 }
                 }
             }
         }
     }
-    val addButton: @Composable (Modifier) -> Unit = { m ->
+    // The assistant floats where the add button used to; adding a task is the middle of the bottom bar (the top of the side rail when wide).
+    val assistantButton: @Composable (Modifier) -> Unit = { m ->
         if (screen != Screen.AI) {
             Box(
-                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accent).clickable { adding = QuickAddRequest() },
+                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accentSoft)
+                    .border(1.dp, C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+            ) { Icon(Ic.spark, tr("ผู้ช่วย", "Assistant"), tint = C.accentText, modifier = Modifier.size(24.dp)) }
         }
     }
+    // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
+    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI) 84.dp else 12.dp
 
     if (wide) {
         // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
         CompositionLocalProvider(LocalNavClearance provides 24.dp) {
             Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
-                NavRail(screen) { screen = it }
+                NavRail(screen, onAdd = { adding = QuickAddRequest() }) { screen = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     content()
-                    addButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
+                    assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
                         Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                     }
@@ -227,29 +237,18 @@ fun OmniTaskApp(vm: TaskViewModel) {
         Box(Modifier.fillMaxSize().background(C.bg)) {
             content()
             DockNav(
-                selected = screen, moreSelected = moreOpen || screen == Screen.PROJECTS || screen == Screen.AI,
-                onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { moreOpen = true },
+                selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.PROJECTS || screen == Screen.AI,
+                onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { screen = Screen.MORE },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = DOCK_HEIGHT + 12.dp)) {
+            assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = DOCK_HEIGHT + 16.dp))
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
                 Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
             }
             state.finished?.let { t ->
-                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = DOCK_HEIGHT + 12.dp))
+                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
             }
         }
-    }
-
-    if (moreOpen) {
-        MoreSheet(
-            urgentRule = state.urgentRule,
-            onUrgent = vm::setUrgentRule,
-            onScreen = { screen = it },
-            onNotify = { notifyOpen = true },
-            onSettings = { settingsOpen = true },
-            onReload = vm::reload,
-            onVault = { pickVault.launch(state.vault) },
-        ) { moreOpen = false }
     }
 
     if (editing != null && !(wide && twoPane)) {
@@ -309,7 +308,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: Tas
 
 /** The same five destinations as a vertical pill on the left, for wide screens. */
 @Composable
-private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
+private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> Unit) {
     // A phone on its side is short: smaller items, and the rail scrolls rather than clips.
     val itemH = if (LocalConfiguration.current.screenHeightDp < 440) 46.dp else 56.dp
     Column(
@@ -322,7 +321,12 @@ private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
                 .border(1.dp, C.cardBorder, RoundedCornerShape(20.dp)).padding(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Screen.entries.forEach { s ->
+            // Adding a task, where the bottom bar of a phone has it in the middle.
+            Box(
+                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable(onClick = onAdd),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+            Screen.entries.filter { it != Screen.MORE }.forEach { s ->
                 val on = s == selected
                 Column(
                     Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp))
@@ -383,58 +387,6 @@ private fun DockItem(icon: ImageVector, label: String, on: Boolean, onClick: () 
         Box(Modifier.size(width = 26.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(if (on) C.accent else Color.Transparent))
         Icon(icon, null, tint = if (on) C.accentText else C.muted, modifier = Modifier.padding(top = 5.dp).size(22.dp))
         Text(label, fontSize = TS.micro, color = if (on) C.accentText else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1, softWrap = false)
-    }
-}
-
-/** What the old three-dot menu held, as a sheet from the bottom: the lists, the assistant, notifications, settings and the rest. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun MoreSheet(
-    urgentRule: UrgentRule,
-    onUrgent: (UrgentRule) -> Unit,
-    onScreen: (Screen) -> Unit,
-    onNotify: () -> Unit,
-    onSettings: () -> Unit,
-    onReload: () -> Unit,
-    onVault: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    fun pick(action: () -> Unit): () -> Unit = { onDismiss(); action() }
-    SheetFrame(onDismiss) {
-        Text(tr("เพิ่มเติม", "More"), style = MaterialTheme.typography.titleMedium)
-        val tiles = listOf(
-            Triple(Ic.folder, Screen.PROJECTS.label, pick { onScreen(Screen.PROJECTS) }),
-            Triple(Ic.spark, Screen.AI.label, pick { onScreen(Screen.AI) }),
-            Triple(Ic.bell, tr("แจ้งเตือน", "Notifications"), pick(onNotify)),
-            Triple(Ic.gear, tr("ตั้งค่า", "Settings"), pick(onSettings)),
-            Triple(Ic.refresh, tr("โหลดใหม่", "Reload"), pick(onReload)),
-            Triple(Ic.folderOpen, tr("เปลี่ยนโฟลเดอร์ตู้โน้ต", "Change vault folder"), pick(onVault)),
-        )
-        tiles.chunked(3).forEach { rowTiles ->
-            Row(Modifier.padding(top = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowTiles.forEach { (icon, label, click) ->
-                    val settings = icon == Ic.gear
-                    Column(
-                        Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(14.dp))
-                            .background(if (settings) C.accentSoft else C.raised)
-                            .border(1.dp, if (settings) C.accentLine else C.cardBorder, RoundedCornerShape(14.dp))
-                            .clickable(onClick = click).padding(horizontal = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(icon, null, tint = if (settings) C.accentText else C.text2, modifier = Modifier.size(22.dp))
-                        Text(
-                            label, Modifier.padding(top = 6.dp), color = if (settings) C.accentText else C.text2, fontSize = TS.caption,
-                            fontWeight = if (settings) FontWeight.Medium else FontWeight.Normal, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
-                }
-            }
-        }
-        Label(tr("งานที่นับว่า \"ด่วน\"", "What counts as urgent"))
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            UrgentRule.entries.forEach { rule -> Chip(rule.label, rule == urgentRule, { onUrgent(rule) }) }
-        }
     }
 }
 

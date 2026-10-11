@@ -268,7 +268,7 @@ fun ReviewPrompt(state: UiState, onStart: () -> Unit) {
     val n = state.toReview.size
     if (n == 0) return
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.card).clickable(onClick = onStart).padding(14.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(C.card).clickable(onClick = onStart).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Ic.refresh, null, tint = C.accentText, modifier = Modifier.size(18.dp))
