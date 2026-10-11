@@ -182,7 +182,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = if (screen == Screen.VIEWS) Dp.Unspecified else 760.dp)) {
                 when (screen) {
-                    Screen.FOCUS -> FocusScreen(state, vm, open, menu) { screen = Screen.AI }
+                    Screen.FOCUS -> FocusScreen(state, vm, open, menu)
                     Screen.TASKS -> TasksScreen(state, vm, open)
                     Screen.VIEWS -> ViewsScreen(state, vm, open)
                     Screen.PROJECTS -> ProjectsScreen(state, vm, open)
@@ -192,23 +192,27 @@ fun OmniTaskApp(vm: TaskViewModel) {
             }
         }
     }
-    val addButton: @Composable (Modifier) -> Unit = { m ->
+    // The assistant floats where the add button used to; adding a task is the middle of the bottom bar (the top of the side rail when wide).
+    val assistantButton: @Composable (Modifier) -> Unit = { m ->
         if (screen != Screen.AI) {
             Box(
-                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accent).clickable { adding = QuickAddRequest() },
+                m.size(56.dp).clip(RoundedCornerShape(18.dp)).background(C.accentSoft)
+                    .border(1.dp, C.accentLine, RoundedCornerShape(18.dp)).clickable { screen = Screen.AI },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
+            ) { Icon(Ic.spark, tr("ผู้ช่วย", "Assistant"), tint = C.accentText, modifier = Modifier.size(24.dp)) }
         }
     }
+    // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
+    val popupLift = DOCK_HEIGHT + if (screen != Screen.AI) 84.dp else 12.dp
 
     if (wide) {
         // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
         CompositionLocalProvider(LocalNavClearance provides 24.dp) {
             Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
-                NavRail(screen) { screen = it }
+                NavRail(screen, onAdd = { adding = QuickAddRequest() }) { screen = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     content()
-                    addButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
+                    assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
                         Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                     }
@@ -231,11 +235,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { moreOpen = true },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = DOCK_HEIGHT + 12.dp)) {
+            assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = DOCK_HEIGHT + 16.dp))
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
                 Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
             }
             state.finished?.let { t ->
-                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = DOCK_HEIGHT + 12.dp))
+                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
             }
         }
     }
@@ -309,7 +314,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: Tas
 
 /** The same five destinations as a vertical pill on the left, for wide screens. */
 @Composable
-private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
+private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> Unit) {
     // A phone on its side is short: smaller items, and the rail scrolls rather than clips.
     val itemH = if (LocalConfiguration.current.screenHeightDp < 440) 46.dp else 56.dp
     Column(
@@ -322,6 +327,11 @@ private fun NavRail(selected: Screen, onSelect: (Screen) -> Unit) {
                 .border(1.dp, C.cardBorder, RoundedCornerShape(20.dp)).padding(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // Adding a task, where the bottom bar of a phone has it in the middle.
+            Box(
+                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable(onClick = onAdd),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = C.onAccent, modifier = Modifier.size(24.dp)) }
             Screen.entries.forEach { s ->
                 val on = s == selected
                 Column(

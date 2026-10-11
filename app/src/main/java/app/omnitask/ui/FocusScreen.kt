@@ -61,7 +61,7 @@ private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
-fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit, onAssistant: () -> Unit) {
+fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit) {
     var picking by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
     if (picking) FuturePicker(state, vm) { picking = false }
@@ -107,8 +107,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
                     Text(greeting(), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 }
-                RoundButton(Ic.spark, tr("ผู้ช่วย", "Assistant"), C.accentSoft, C.accentText, onAssistant)
-                Box(Modifier.width(8.dp))
+                // The assistant is the floating button now; only the wide layout's menu is left up here.
                 menu()
             }
         }
@@ -357,13 +356,6 @@ private fun FooterRow(icon: androidx.compose.ui.graphics.vector.ImageVector, onC
         Icon(icon, null, tint = C.accentText, modifier = Modifier.padding(end = 8.dp).size(15.dp))
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, content = content)
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.padding(start = 6.dp).size(12.dp))
-    }
-}
-
-@Composable
-private fun RoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, bg: Color, fg: Color, onClick: () -> Unit) {
-    Box(Modifier.size(40.dp).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, description, tint = fg, modifier = Modifier.size(19.dp))
     }
 }
 
