@@ -6,10 +6,11 @@ import { EditPanel } from '../ui/EditPanel'
 import { CreateListDialog, IconPickerDialog, IncludeDialog, NameDialog, RenameProjectDialog } from '../ui/projects/ProjectDialogs'
 import { ListDetail } from '../ui/projects/ListDetail'
 import { MindMap } from '../ui/projects/MindMap'
+import { PLAIN_FILTER, Ygdrasil } from '../ui/projects/Ygdrasil'
 import { ProjectHome } from '../ui/projects/ProjectHome'
 import { ProjectOverview } from '../ui/projects/ProjectOverview'
 import { ViewsPage, type ViewMode } from './Views'
-import { listsSeeded, renamedProject, toggleIn, useProjectsLocal } from '../ui/projects/projectState'
+import { listsSeeded, renamedProject, toggleIn, useProjectsLocal, useYgdrasilLocal } from '../ui/projects/projectState'
 import { QuickAdd } from './Tasks'
 
 type Dialog =
@@ -39,6 +40,9 @@ export function ProjectsPage(p: PageProps) {
   const [notice, setNotice] = useState('')
   const [adding, setAdding] = useState(false)
   const [mapSelect, setMapSelect] = useState<string | undefined>()
+  // Project Ygdrasil: every project in one tree.
+  const [world, setWorld] = useState(false)
+  const [yg, setYg] = useYgdrasilLocal(PLAIN_FILTER)
 
   // The list notes are read again whenever the task note is (every action reloads it).
   useEffect(() => {
@@ -68,6 +72,10 @@ export function ProjectsPage(p: PageProps) {
   }, [notice])
 
   const out = useMemo(() => (p.snapshot && notes ? p.snapshot.projects(notes, local) : null), [p.snapshot, notes, local])
+  const tree = useMemo(
+    () => (world && p.snapshot && notes ? p.snapshot.ygdrasil(notes, local, yg.filter, yg.folded) : null),
+    [world, p.snapshot, notes, local, yg],
+  )
   useEffect(() => { if (out) setIgnoredTags(out.ignored) }, [out])
 
   const noteTasks = useMemo(() => new Map((out?.noteTasks ?? []).map((t) => [t.key, t])), [out])
@@ -90,8 +98,22 @@ export function ProjectsPage(p: PageProps) {
   const openTask = (t: Task) => setSelected({ key: t.key, title: t.title })
   const say = (text: string) => setNotice(text)
 
-  const home = () => { setProjectView(null); setOpenName(null); setOpenPath(null); setMapping(false); setCategory(null); setSelected(null) }
+  const home = () => { setProjectView(null); setOpenName(null); setOpenPath(null); setMapping(false); setCategory(null); setSelected(null); setWorld(false) }
   const back = () => (mapping ? setMapping(false) : home())
+
+  // ---- Ygdrasil: adding from the whole tree, and the way into one project's mind map ----
+  const ygAddTask = (tag: string, name: string) =>
+    setDialog({ k: 'name', title: `งานใหม่ใน ${name}`, done: (title) => { setDialog(null); p.run(() => p.vault.addTagged(tag, title)) } })
+  const ygAddBranch = (projectName: string, path: string, name: string) =>
+    setDialog({
+      k: 'name', title: `กิ่งใหม่ใต้ ${name}`,
+      done: (branchName) => {
+        setDialog(null)
+        const r = p.snapshot!.branchChange(local.branches, { op: 'add', project: projectName, path, value: branchName })
+        if (r.ok) setLocal((s) => ({ ...s, branches: r.states }))
+      },
+    })
+  const ygOpenProject = (name: string) => { setWorld(false); setOpenName(name); setMapSelect(''); setMapping(true) }
   const noteOf = (l: { path: string }) => notes?.find((n) => n.path === l.path)
 
   // ---- Branch states: decided by the shared code, kept on this device ----
@@ -212,6 +234,13 @@ export function ProjectsPage(p: PageProps) {
 
   const screen = !out ? (
     <p class="muted pad">กำลังโหลด...</p>
+  ) : world && tree ? (
+    <Ygdrasil
+      out={tree} task={task} busy={p.busy} filter={yg.filter} folded={yg.folded}
+      onFilter={(filter) => setYg({ filter })} onFolded={(folded) => setYg({ folded })}
+      onBack={home} onTick={p.tick} onOpen={openTask}
+      onAddTask={ygAddTask} onAddBranch={ygAddBranch} onOpenProject={ygOpenProject}
+    />
   ) : project && mapping ? (
     <MindMap
       project={project} task={task} busy={p.busy} select={mapSelect}
@@ -254,7 +283,7 @@ export function ProjectsPage(p: PageProps) {
       onOrder={(names) => setLocal((s) => ({ ...s, order: names }))}
       onStar={(n) => setLocal((s) => ({ ...s, starred: toggleIn(s.starred, n) }))}
       onOpen={(n) => { setOpenName(n); setMapping(false) }} onOpenList={(path) => { setOpenPath(path); setCategory(null) }}
-      onCreateList={() => setDialog({ k: 'create' })}
+      onCreateList={() => setDialog({ k: 'create' })} onYgdrasil={() => setWorld(true)}
     />
   )
 
@@ -270,7 +299,7 @@ export function ProjectsPage(p: PageProps) {
 
   return (
     <div class={`split${current ? ' with-pane' : ''}`}>
-      <main class={`page pj${mapping ? ' mapping' : ''}`}>
+      <main class={`page pj${mapping || world ? ' mapping' : ''}`}>
         {notice && (
           <section class="notice" role="status">
             <span class="grow">{notice}</span>

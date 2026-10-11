@@ -69,6 +69,9 @@ object WebApi {
     fun projects(fileKey: String, path: String, text: String, notes: String, state: String, today: String): String =
         WebProjects.build(fileKey, path, text, notes, state, today)
 
+    fun ygdrasil(fileKey: String, path: String, text: String, notes: String, state: String, filter: String, folded: String, today: String): String =
+        WebYgdrasil.build(fileKey, path, text, notes, state, filter, folded, today)
+
     fun projectIgnoreTags(tags: String) = WebProjects.ignoreTags(tags)
 
     fun projectRenameTag(text: String, old: String, new: String): String = WebProjects.renameTag(text, old, new)

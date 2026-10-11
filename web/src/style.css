@@ -654,6 +654,21 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 .row-gap.wrap { flex-wrap: wrap; gap: 8px; }
 .chip.pj-state { display: inline-flex; align-items: center; height: 34px; }
 
+/* Project Ygdrasil: every project in one tree */
+.yg-entry { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); background: var(--card); text-align: left; }
+.yg-entry .pj-tile { background: var(--accent-soft); color: var(--accent-text); }
+.yg-filter { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.yg-filter .seg { align-self: flex-start; }
+.yg-filter .search { width: auto; min-height: 38px; }
+.pj-node.yg-trunk { background: var(--accent); color: #fff; }
+.pj-node.yg-trunk.sel { border-color: var(--accent-text); }
+.pj-node.yg-world { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.yg-folded { padding: 1px 6px; border-radius: 8px; background: var(--raised); color: var(--text2); }
+.yg-link { stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 3 4; opacity: .7; }
+.yg-link.across { stroke: var(--amber); stroke-width: 1.8; stroke-dasharray: 7 5; opacity: .9; }
+.pj-map-layer.far .pj-mtask .ellipsis, .pj-map-layer.far .pj-more { visibility: hidden; }
+.yg-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; pointer-events: none; }
+
 /* A list */
 .pj-ld { display: flex; flex-direction: column; gap: 12px; }
 @media (min-width: 1000px) { .pj-ld { flex-direction: row; gap: 16px; align-items: flex-start; } .pj-ld-items { flex: 1.3; } }

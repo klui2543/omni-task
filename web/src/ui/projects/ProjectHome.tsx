@@ -49,6 +49,7 @@ export function ProjectHome(p: {
   onOpen: (name: string) => void
   onOpenList: (path: string) => void
   onCreateList: () => void
+  onYgdrasil: () => void
 }) {
   const sort = useSortable(p.projects.map((x) => x.name), p.onOrder)
   const byName = new Map(p.projects.map((x, i) => [x.name, { project: x, index: i }]))
@@ -69,6 +70,16 @@ export function ProjectHome(p: {
       </header>
 
       {p.projects.length === 0 && <section class="group empty">ยังไม่มีงานที่ติด Tag</section>}
+      {p.projects.length > 0 && !p.arranging && (
+        <button class="yg-entry" onClick={p.onYgdrasil}>
+          <span class="pj-tile" aria-hidden="true">🌳</span>
+          <span class="grow stack">
+            <span class="strong">Project Ygdrasil</span>
+            <span class="small muted">ทุกโปรเจกต์ในต้นไม้เดียว กรองงานได้ เห็นงานที่รอกันข้ามโปรเจกต์</span>
+          </span>
+          <span class="faint">›</span>
+        </button>
+      )}
       <div class={`pj-grid${p.arranging ? ' arranging' : ''}`} ref={sort.ref as preact.Ref<HTMLDivElement>}>
         {shown.map(({ project, index }) => (
           <Card key={project.name} project={project} index={index} arranging={p.arranging} sort={p.arranging ? sort : undefined}

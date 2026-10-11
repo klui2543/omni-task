@@ -303,14 +303,14 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
 }
 
 @Composable
-private fun ZoomKey(text: String, description: String, onClick: () -> Unit) {
+internal fun ZoomKey(text: String, description: String, onClick: () -> Unit) {
     Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Text(text, color = C.text, fontSize = if (text.length == 1) TS.title else TS.caption)
     }
 }
 
 @Composable
-private fun MapButton(text: String, filled: Boolean = false, onClick: () -> Unit) {
+internal fun MapButton(text: String, filled: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier.height(36.dp).clip(RoundedCornerShape(10.dp)).background(if (filled) C.accent else C.raised).clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
@@ -318,7 +318,7 @@ private fun MapButton(text: String, filled: Boolean = false, onClick: () -> Unit
 }
 
 @Composable
-private fun NameDialog(title: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun NameDialog(title: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,

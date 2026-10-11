@@ -1,5 +1,5 @@
 import { useRef, useState } from 'preact/hooks'
-import type { ProjectsIn } from '../../types'
+import type { ProjectsIn, YgFilter } from '../../types'
 import { settingsBus } from '../../settingsBus'
 
 // What the owner chose on the Projects page: the order of projects, the starred ones, the state of each branch, each
@@ -55,3 +55,28 @@ export const toggleIn = (list: string[], v: string) => (list.includes(v) ? list.
 
 /** The branch states chosen on this device; pages other than Projects leave out the tasks in parked branches. */
 export const branchStates = (): string[] => load().branches
+
+const YG_KEY = 'omni.ygdrasil'
+
+/** Project Ygdrasil's filter and folded limbs, kept on this device between visits. */
+export function useYgdrasilLocal(plain: YgFilter): [{ filter: YgFilter; folded: string[] }, (change: Partial<{ filter: YgFilter; folded: string[] }>) => void] {
+  const [state, setState] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(YG_KEY) ?? '{}')
+      return { filter: { ...plain, ...(saved.filter ?? {}) } as YgFilter, folded: Array.isArray(saved.folded) ? (saved.folded as string[]) : [] }
+    } catch {
+      return { filter: plain, folded: [] as string[] }
+    }
+  })
+  const latest = useRef(state)
+  latest.current = state
+  return [
+    state,
+    (change) => {
+      const next = { ...latest.current, ...change }
+      latest.current = next
+      setState(next)
+      try { localStorage.setItem(YG_KEY, JSON.stringify(next)) } catch { /* just not kept */ }
+    },
+  ]
+}

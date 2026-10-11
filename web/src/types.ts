@@ -267,6 +267,59 @@ export interface ProjectsOut {
   ignored: string[]
 }
 
+/** What Project Ygdrasil shows; see Ygdrasil.Filter in the shared code. */
+export interface YgFilter {
+  show: 'OPEN' | 'ALL' | 'DONE'
+  dates: 'ANY' | 'OVERDUE' | 'TODAY' | 'WEEK' | 'UNDATED'
+  /** Priority names; empty means every priority. */
+  priorities: string[]
+  blockedOnly: boolean
+  starredOnly: boolean
+  parked: boolean
+  links: boolean
+  text: string
+}
+
+/** Something placed on the tree: [x] is its left edge, [y] its centre line. */
+export interface YgSpot {
+  kind: 'TRUNK' | 'LIMB' | 'TASK' | 'MORE'
+  x: number
+  y: number
+  w: number
+  h: number
+  /** The limb's tag (for a task or "more" line, the limb holding it). */
+  tag?: string
+  project?: string
+  path?: string
+  name?: string
+  state?: BranchState
+  done: number
+  total: number
+  key?: string
+  /** "And N more", the tasks under a folded limb, or every task shown (the trunk). */
+  count: number
+  folded: boolean
+}
+
+export interface YgEdge {
+  kind: 'BRANCH' | 'TASK' | 'LINK' | 'LINK_ACROSS'
+  /** An SVG path. */
+  d: string
+  state?: BranchState
+}
+
+export interface YgOut {
+  spots: YgSpot[]
+  edges: YgEdge[]
+  width: number
+  height: number
+  matched: number
+  worlds: number
+  links: number
+  /** Every limb's tag, for folding them all. */
+  tags: string[]
+}
+
 /** A list note read from Drive: its id, path in the vault and text. */
 export interface ListNote {
   id: string
