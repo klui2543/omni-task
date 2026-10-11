@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { BranchOut, BranchState, ProjectOut, Task } from '../../types'
 import { RingMark, useTapOrHold } from './bits'
 
@@ -99,7 +99,10 @@ export function MindMap(p: {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const view = useRef({ scale: 1, pan: { x: 0, y: 0 } })
   view.current = { scale, pan }
+  // Until the owner zooms or drags, the map keeps fitting its box; "fit" hands it back to that.
+  const touched = useRef(false)
   const apply = (s: number, pn: { x: number; y: number }) => {
+    touched.current = true
     view.current = { scale: s, pan: pn }
     setScale(s)
     setPan(pn)
@@ -112,6 +115,7 @@ export function MindMap(p: {
     const s = Math.min(1.2, (w - pad * 2) / layout.width, (h - pad * 2) / layout.height)
     const k = Math.min(2.5, Math.max(0.3, s))
     apply(k, { x: (w - layout.width * k) / 2, y: (h - layout.height * k) / 2 })
+    touched.current = false
   }
   const fitRef = useRef(fit)
   fitRef.current = fit
@@ -121,13 +125,13 @@ export function MindMap(p: {
     apply(s, { x: atPoint.x - (atPoint.x - p0.x) * (s / s0), y: atPoint.y - (atPoint.y - p0.y) * (s / s0) })
   }
 
-  // The map starts fitted to its box, and wheel gestures are read here since the browser's own are passive.
-  useEffect(() => {
+  // The map is fitted before its first frame is drawn (a layout effect, so it never shows at scale 1 first), and again
+  // whenever its box changes size until the owner moves it. Wheel gestures are read here since the browser's own are passive.
+  useLayoutEffect(() => {
     const el = box.current!
-    let first = true
     const measure = () => {
       size.current = { w: el.clientWidth, h: el.clientHeight }
-      if (first && size.current.w) { first = false; fitRef.current() }
+      if (!touched.current && size.current.w) fitRef.current()
     }
     measure()
     const ro = new ResizeObserver(measure)
