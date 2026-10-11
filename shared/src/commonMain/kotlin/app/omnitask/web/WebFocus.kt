@@ -78,6 +78,12 @@ object WebFocus {
         val range: String? = null,
         /** For an event: its page in Google Calendar. */
         val link: String? = null,
+        /** For a task: already ticked off, kept in the plan to be greyed. */
+        val done: Boolean = false,
+        /** For an event: `past`, `active` (the clock is inside it) or `upcoming`. */
+        val phase: String? = null,
+        /** For an active event: how far into it the clock is, 0 to 1, where the red line crosses its card. */
+        val progress: Float = 0f,
     )
 
     @Serializable
@@ -143,13 +149,13 @@ object WebFocus {
         val reviewed = s.reviewed.mapNotNull { (k, v) -> runCatching { LocalDate.parse(v) }.getOrNull()?.let { k to it } }.toMap()
 
         val brief = Focus.build(tasks, today, s.futureCount, s.skippedToday.toSet(), s.dismissed.toSet())
-        val plan = DayPlan.build(tasks, todayEvents, today)
+        val plan = DayPlan.build(tasks, todayEvents, today, includeDone = true)
         val blocked = Projects.blocked(tasks)
         val progress = tasks.filter { it.parent != null && it.status != Status.CANCELLED }.groupBy { it.parent!! }
             .mapValues { (_, kids) -> kids.count { it.status == Status.DONE } to kids.size }
 
         // Done today counts anything ticked today that belonged to today (or was overdue), as on Android.
-        val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem }
+        val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
         val doneToday = tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
         val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
 
@@ -204,15 +210,25 @@ object WebFocus {
         listOfNotNull(if (Focus.isSomeday(t)) tr("พักไว้", "Someday") else null, t.noteName.takeIf { it.isNotEmpty() }).joinToString(", "),
     )
 
-    /** The day plan with its red "now" line placed where Android puts it. */
+    /**
+     * The day plan with its red "now" line placed where Android puts it: before the first timed item still to come,
+     * across the event that is running (the line is then that event's [PlanItem.progress]), or at the end of the
+     * timed items when none is left. Tasks ticked today and events that are over stay in the plan, marked for greying.
+     */
     private fun planOut(
         plan: List<DayPlan.Section>, today: LocalDate, now: LocalDateTime, blocked: Set<Task>, progress: Map<String, Pair<Int, Int>>,
         links: Map<Long, String> = emptyMap(),
     ): List<Section> {
         val nowTime = now.time
-        // The line sits before the first timed item still to come, or after the evening when none is.
-        var nowShown = plan.none { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
-        return plan.map { section ->
+        val inEvent = plan.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
+        var nowShown = inEvent || plan.none { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.items.any { i -> i.time != null } }
+        val out = ArrayList<Pair<DayPlan.Section, ArrayList<PlanItem>>>()
+        plan.forEach { section ->
+            // Untimed work comes after the timed day, so a line not yet placed ends the section before it.
+            if (!nowShown && section.part == DayPlan.Part.ANYTIME && out.isNotEmpty()) {
+                out.last().second += PlanItem("now", hm(nowTime))
+                nowShown = true
+            }
             val items = ArrayList<PlanItem>()
             section.items.forEach { item ->
                 val t = item.time
@@ -224,8 +240,20 @@ object WebFocus {
                     is DayPlan.Item.TaskItem -> taskItem(item, today, item.task in blocked, progress)
                     is DayPlan.Item.EventItem -> {
                         val e = item.event
+                        val phase = DayPlan.phase(e, now)
                         val range = if (e.allDay) tr("ทั้งวัน", "All day") else tr("${hm(e.begin.time)} ถึง ${hm(e.end.time)}", "${hm(e.begin.time)} to ${hm(e.end.time)}")
-                        PlanItem("event", item.time?.let { hm(it) }, title = e.title, range = "$range, Google Calendar", link = links[e.id])
+                        val tail = when (phase) {
+                            DayPlan.Phase.ACTIVE -> {
+                                val left = ChronoUnit.MINUTES.between(now, e.end)
+                                tr(", ตอนนี้ ${hm(nowTime)} เหลือ $left นาที", ", now ${hm(nowTime)}, $left min left")
+                            }
+                            DayPlan.Phase.PAST -> tr(", จบแล้ว", ", ended")
+                            DayPlan.Phase.UPCOMING -> ", Google Calendar"
+                        }
+                        PlanItem(
+                            "event", item.time?.let { hm(it) }, title = e.title, range = range + tail, link = links[e.id],
+                            phase = phase.name.lowercase(), progress = if (phase == DayPlan.Phase.ACTIVE) DayPlan.progress(e, now) else 0f,
+                        )
                     }
                 }
             }
@@ -233,14 +261,20 @@ object WebFocus {
                 items += PlanItem("now", hm(nowTime))
                 nowShown = true
             }
-            Section(section.part.label, section.part == DayPlan.Part.LATE, section.items.count { it is DayPlan.Item.TaskItem }, items)
+            out += section to items
+        }
+        if (!nowShown && out.isNotEmpty()) out.last().second += PlanItem("now", hm(nowTime))
+        return out.map { (section, items) ->
+            Section(section.part.label, section.part == DayPlan.Part.LATE, section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }, items)
         }
     }
 
     private fun taskItem(item: DayPlan.Item.TaskItem, today: LocalDate, blocked: Boolean, progress: Map<String, Pair<Int, Int>>): PlanItem {
         val t = item.task
         val late = t.isOpen && t.due?.let { it < today } == true
+        val done = t.status == Status.DONE
         val lead = when {
+            done -> tr("เสร็จแล้ว", "Done")
             late -> t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") }
             t.due == today -> tr("ครบวันนี้", "Due today")
             else -> tr("นัดวันนี้", "Scheduled today")
@@ -253,6 +287,7 @@ object WebFocus {
         return PlanItem(
             "task", item.time?.let { hm(it) }, t.key, t.title, lead, late,
             if (sub.isEmpty()) null else ", " + sub.joinToString(", "), blocked,
+            done = done,
         )
     }
 }

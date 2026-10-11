@@ -1,19 +1,19 @@
 /* The Android app's light palette (style A in the mockups). */
 :root {
-  --bg: #f7f7f8;
+  --bg: #f4f6f9;
   --card: #fff;
-  --border: #e4e4e8;
-  --raised: #f0f0f3;
-  --divider: #ebebef;
-  --control: #d5d6dc;
-  --text: #1b1b1f;
-  --text2: #3c3f45;
-  --muted: #5e626a;
-  --faint: #6e727a;
-  --accent: #5e6ad2;
-  --accent-soft: #ecedfa;
-  --accent-text: #4f5bc4;
-  --selected: #f4f4fc;
+  --border: #dfe4eb;
+  --raised: #edf0f5;
+  --divider: #e8ecf1;
+  --control: #cdd4dd;
+  --text: #15191f;
+  --text2: #363d48;
+  --muted: #566070;
+  --faint: #667080;
+  --accent: #1f6feb;
+  --accent-soft: #e6f0fe;
+  --accent-text: #1858c4;
+  --selected: #f0f6ff;
   --lime: #26a269;
   --lime-soft: #e3f4ea;
   --lime-text: #1d7a4f;
@@ -353,6 +353,16 @@ button.fcard { display: flex; align-items: center; gap: 12px; padding: 12px 16px
 .etext { display: flex; flex-direction: column; }
 .etitle { color: var(--teal-text); font-weight: 500; }
 .erange { font-size: 12.5px; color: var(--teal-text); }
+/* The day against the clock: finished work and events that are over stay, greyed; the red line crosses the event that is on. */
+.prow.done { opacity: .55; }
+.prow.done .ttitle { text-decoration: line-through; color: var(--muted); }
+.prow.event.past .ptime, .prow.event.past .etitle, .prow.event.past .erange { color: var(--faint); }
+.prow.event.past .ebox { background: var(--raised); }
+.prow.event.past .ebar { background: var(--faint); }
+.ebox { position: relative; }
+.prow.event.active .ebox { background: linear-gradient(to bottom, color-mix(in srgb, var(--teal-text) 16%, var(--teal-soft)) var(--p), var(--teal-soft) var(--p)); }
+.prow.event.active .ebox::after { content: ""; position: absolute; left: 0; right: 0; top: var(--p); height: 1.5px; background: var(--red); }
+.prow.event.active .ebox::before { content: ""; position: absolute; left: 0; top: var(--p); width: 7px; height: 7px; margin-top: -3px; border-radius: 50%; background: var(--red); z-index: 1; }
 .suggest, .sidecard { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .sug { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--divider); padding-top: 10px; }
 .sug-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -733,9 +743,9 @@ input.pj-focus-input { border: 1.5px solid var(--accent); border-radius: 12px; p
 html, body { font-family: var(--app-font, Sarabun, system-ui, "Noto Sans Thai", sans-serif); }
 main.page { zoom: var(--text-scale, 1); }
 :root[data-theme=dark] {
-  --bg: #0e0e10; --card: #161619; --border: #26262b; --raised: #1f1f23; --divider: #232328; --control: #34343b;
-  --text: #ededef; --text2: #c9cbd1; --muted: #9da1aa; --faint: #7e838d;
-  --accent: #7c85f2; --accent-soft: #24263f; --accent-text: #a3a9f7; --selected: #1b1c2c;
+  --bg: #0b0d10; --card: #13161b; --border: #232830; --raised: #1b2027; --divider: #1f242b; --control: #303843;
+  --text: #e9edf2; --text2: #c5ccd6; --muted: #97a0ad; --faint: #78818f;
+  --accent: #4c9aff; --accent-soft: #14243d; --accent-text: #8cc0ff; --selected: #101c30;
   --lime: #4cb782; --lime-soft: #17291f; --lime-text: #4cb782;
   --red: #f2555a; --red-soft: #3a1d1f; --red-text: #f2555a;
   --amber: #f2c94c; --amber-soft: #2e2814; --amber-text: #f2c94c; --blue: #60a5fa;
@@ -751,12 +761,12 @@ main.page { zoom: var(--text-scale, 1); }
   --amber: #ffc266; --amber-soft: #33281a; --amber-text: #ffc266; --blue: #7fb2ff;
   --teal-soft: #16302d; --teal-text: #8cccc4;
 }
-:root[data-theme=dark] .bar { background: rgb(20 20 23 / .94); }
+:root[data-theme=dark] .bar { background: rgb(19 22 27 / .94); }
 :root[data-palette=midnight] .bar { background: rgb(23 26 35 / .94); }
 :root[data-theme=dark] .chip.warn { border-color: #6b2f33; }
 :root[data-palette=midnight] button.primary, :root[data-palette=midnight] .bar button[aria-current=page], :root[data-palette=midnight] .fab,
 :root[data-palette=midnight] .segmented button[aria-checked=true], :root[data-palette=midnight] .as-bubble { color: #0d0f14; }
-:root[data-theme=dark] .as-bubble, :root[data-theme=dark] .segmented button[aria-checked=true] { color: #fff; }
+:root[data-theme=dark] .as-bubble, :root[data-theme=dark] .segmented button[aria-checked=true], :root[data-theme=dark] button.primary, :root[data-theme=dark] .bar button[aria-current=page], :root[data-theme=dark] .fab { color: #06101c; }
 
 /* ---------- Settings ---------- */
 .set-cols { display: flex; gap: 14px; align-items: flex-start; }

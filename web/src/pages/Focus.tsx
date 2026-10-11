@@ -133,16 +133,16 @@ export function FocusPage(p: PageProps) {
     if (it.type === 'event') {
       const Box = evTag(it.link, 'div')
       return (
-        <div key={`ev${i}`} class="prow event">
+        <div key={`ev${i}`} class={`prow event ${it.phase ?? 'upcoming'}`}>
           <span class="ptime">{it.time}</span>
-          <Box class="ebox" {...evLink(it.link)}><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></Box>
+          <Box class="ebox" style={it.phase === 'active' ? { '--p': `${Math.round((it.progress ?? 0) * 100)}%` } : undefined} {...evLink(it.link)}><span class="ebar" /><span class="etext"><span class="etitle">{it.title}</span><span class="erange">{it.range}</span></span></Box>
         </div>
       )
     }
     const t = task(it.key)
     if (!t) return null
     return (
-      <div key={it.key} class="prow">
+      <div key={it.key} class={`prow${it.done ? ' done' : ''}`}>
         <span class="ptime">{it.time}</span>
         <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
         <button class="pbody" onClick={() => openTask(t)}>

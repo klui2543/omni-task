@@ -39,7 +39,8 @@ test('ticking a task changes only its line in the note', async ({ page }) => {
   await signInAndPick(page)
 
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ส่งรายงาน/ }).click()
-  await expect(page.getByText('ส่งรายงาน')).toHaveCount(0)
+  // It stays on the day's timeline, greyed, instead of vanishing.
+  await expect(page.locator('.prow.done', { hasText: 'ส่งรายงาน' })).toBeVisible()
   expect(file.text).toBe(TASKS.replace('📅 2026-10-07', '📅 2026-10-07 ✅ 2026-10-08').replace('- [ ] ส่งรายงาน', '- [x] ส่งรายงาน'))
 })
 

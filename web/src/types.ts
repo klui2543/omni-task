@@ -115,6 +115,12 @@ export interface PlanItem {
   range?: string
   /** For an event: its page in Google Calendar. */
   link?: string
+  /** For a task: already ticked off; it stays in the plan, greyed. */
+  done?: boolean
+  /** For an event: where it stands against the clock. */
+  phase?: 'past' | 'active' | 'upcoming'
+  /** For an active event: how far into it the clock is, 0 to 1. */
+  progress?: number
 }
 
 export interface Pick {
