@@ -26,13 +26,11 @@ h2{font-size:14px;color:var(--muted);font-weight:500;margin:26px 0 8px}
 .w .e{border-left:3px solid var(--blue);padding-left:8px}
 </style></head><body><div class="wrap">
 
-<h2>หน้าโฟกัส: นัดทั้งวันอยู่บนสุด แยกจากงาน</h2>
+<h2>หน้าโฟกัส: นัดทั้งวันอยู่บนสุด ใต้หัว "วันนี้"</h2>
 <div class="card">
- <div class="head"><span>นัดทั้งวัน</span></div>
- <div class="ad">
-  <div class="chip">วันหยุดชดเชย</div>
-  <div class="chip">ประชุมวิชาการ<small>วันที่ 2 จาก 3</small></div>
- </div>
+ <div class="head"><span>วันนี้</span></div>
+ <div class="ev"><b>วันหยุดชดเชย</b><span>ทั้งวัน</span></div>
+ <div class="ev"><b>ประชุมวิชาการ</b><span>ทั้งวัน (วันที่ 2 จาก 3)</span></div>
  <div class="sep"></div>
  <div class="head"><span>เช้า</span><span>1</span></div>
  <div class="task"><span class="time">09:00</span><div class="box"></div>ส่งรายงานเวร</div>
@@ -44,13 +42,13 @@ h2{font-size:14px;color:var(--muted);font-weight:500;margin:26px 0 8px}
  <div class="task"><span class="time"></span><div class="box"></div>ซื้อของเข้าบ้าน</div>
  <div class="task"><span class="time"></span><div class="box"></div>โทรหาแม่</div>
 </div>
-<div class="note">นัดทั้งวัน (และนัดหลายวันที่คาบวันนี้) ขึ้นเป็นป้ายเรียงกันด้านบนสุดใต้หัว "นัดทั้งวัน" แตะป้ายเพื่อดูรายละเอียดเหมือนเดิม<br>"ไม่ระบุเวลา" เหลือแต่งาน ไม่มีนัดปนแล้ว</div>
+<div class="note">นัดทั้งวัน (และนัดหลายวันที่คาบวันนี้) อยู่บนสุดใต้หัว "วันนี้" หน้าตาเหมือนนัดปกติ แต่ตรงที่เป็นเวลาเขียนว่า "ทั้งวัน"<br>"ไม่ระบุเวลา" เหลือแต่งาน ไม่มีนัดปนแล้ว</div>
 
 <h2>Widget: แบบเดียวกัน</h2>
 <div class="w">
- <div class="h">นัดทั้งวัน</div>
- <div class="r e">วันหยุดชดเชย</div>
- <div class="r e">ประชุมวิชาการ <span style="color:var(--muted)">วันที่ 2 จาก 3</span></div>
+ <div class="h">วันนี้</div>
+ <div class="r e"><span class="t" style="width:44px">ทั้งวัน</span>วันหยุดชดเชย</div>
+ <div class="r e"><span class="t" style="width:44px">ทั้งวัน</span>ประชุมวิชาการ <span style="color:var(--muted)">(2 จาก 3)</span></div>
  <div class="r" style="margin-top:6px"><span class="t">09:00</span>ส่งรายงานเวร</div>
  <div class="now" style="padding:2px 0"><span>10:42</span><i></i></div>
  <div class="r e"><span class="t">11:00</span>O11 รอบ 3</div>
@@ -59,5 +57,5 @@ h2{font-size:14px;color:var(--muted);font-weight:500;margin:26px 0 8px}
  <div class="r"><span class="t"></span>ซื้อของเข้าบ้าน</div>
  <div class="r"><span class="t"></span>โทรหาแม่</div>
 </div>
-<div class="note">widget มีที่น้อย นัดทั้งวันเลยเป็นแถวละรายการ ไม่ใช่ป้ายเรียงกัน</div>
+<div class="note">ใน widget ช่องเวลาของนัดทั้งวันเขียนว่า "ทั้งวัน" แทนเวลา</div>
 </div></body></html>
