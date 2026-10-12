@@ -18,6 +18,7 @@ type Dialog =
   | { k: 'create' }
   | { k: 'include' }
   | { k: 'icon' }
+  | { k: 'deleteList' }
   | { k: 'name'; title: string; done: (name: string) => void }
 
 /**
@@ -231,6 +232,18 @@ export function ProjectsPage(p: PageProps) {
     setDialog(null)
     if (note && list) listAction(() => p.vault.updateList(note, emoji, list.categories))
   }
+  const deleteList = () => {
+    const note = list && noteOf(list)
+    setDialog(null)
+    if (!note || !list) return
+    const name = list.name
+    home()
+    p.run(async () => {
+      const res = await p.vault.deleteList(note, list.tag)
+      if (res.ok) say(`ลบ ${name} แล้ว`)
+      return res
+    })
+  }
   const include = (picked: Task[], cat: string | null) => {
     if (!list) return
     setDialog(null)
@@ -302,8 +315,9 @@ export function ProjectsPage(p: PageProps) {
         <button class="ghost" onClick={back}>‹ กลับ</button>
         <div class="grow">
           <h1>{list.name}</h1>
-          <span class="small muted">แตะเพื่อติ๊กว่าทำหรือดูแล้ว</span>
+          <span class="small muted">แตะวงกลมเพื่อติ๊กว่าทำหรือดูแล้ว</span>
         </div>
+        <button class="ghost small-btn danger" onClick={() => setDialog({ k: 'deleteList' })}>ลบรายการ</button>
       </header>
       <ListDetail
         list={list} task={task} selected={current?.key} busy={p.busy} category={category} onCategory={setCategory}
@@ -345,6 +359,23 @@ export function ProjectsPage(p: PageProps) {
 
         {dialog?.k === 'rename' && project && <RenameProjectDialog project={project} busy={p.busy} onRename={renameProject} onClose={() => setDialog(null)} />}
         {dialog?.k === 'create' && <CreateListDialog busy={p.busy} onCreate={createList} onClose={() => setDialog(null)} />}
+        {dialog?.k === 'deleteList' && list && (() => {
+          const own = list.items.filter((i) => i.key.startsWith(list.key + '#')).length
+          const pulled = list.items.length - own
+          return (
+            <div class="scrim" onClick={() => setDialog(null)}>
+              <div class="dialog" role="alertdialog" aria-modal="true" aria-label={`ลบ ${list.name}?`} onClick={(e) => e.stopPropagation()}>
+                <h2>ลบ {list.name}?</h2>
+                <p class="muted">ลบไฟล์ {list.path.split('/').pop()} พร้อม {own} รายการในนั้น (ไปอยู่ในถังขยะของ Google Drive)</p>
+                {pulled > 0 && <p class="muted">งานที่ดึงมาจากโน้ตอื่น {pulled} งานจะอยู่ที่เดิม แค่เอา #{list.tag} ออก</p>}
+                <div class="dialog-actions">
+                  <button class="ghost" onClick={() => setDialog(null)}>ยกเลิก</button>
+                  <button class="primary danger-fill" disabled={p.busy} onClick={deleteList}>ลบ</button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
         {dialog?.k === 'icon' && list && <IconPickerDialog selected={list.emoji} onPick={setIcon} onClose={() => setDialog(null)} />}
         {dialog?.k === 'include' && list && (
           <IncludeDialog list={list} pool={pool} startCategory={category} busy={p.busy} onAdd={include} onClose={() => setDialog(null)} />

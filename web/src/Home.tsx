@@ -126,7 +126,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   /** The task as last read: an edit queued behind another one works on the line that one left. */
   const fresh = (t: Task) => {
-    const now = latest.current?.byKey.get(t.key)
+    const now = latest.current?.find(t.key)
     return now && now.title === t.title ? now : t
   }
   const runNow = async (action: () => Promise<unknown>) => {

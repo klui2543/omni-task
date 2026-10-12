@@ -48,6 +48,19 @@ object WebNotes {
         return if (today == null) found else Recurrence.withTodayCopies(found, today)
     }
 
+    /**
+     * The items of the list notes among [text] (a [MANY] list), each marked with its list's name as Android marks
+     * them; they show only when a list is chosen in the filter. One note's text has none.
+     */
+    fun listItems(fileKey: String, text: String, today: LocalDate? = null): List<Task> {
+        if (fileKey != MANY) return emptyList()
+        val found = json.decodeFromString<List<Note>>(text).filter { isRead(it.path) }.flatMap { n ->
+            val list = OmniList.parse(n.path, n.text) ?: return@flatMap emptyList()
+            VaultText.parseFile(n.key, n.path, n.text).map { it.copy(list = list.name) }
+        }
+        return if (today == null) found else Recurrence.withTodayCopies(found, today)
+    }
+
     /** A task as an edit finds it again: its note, its line as read and where that line was. */
     @Serializable
     data class Ref(val key: String, val raw: String, val lineIndex: Int)

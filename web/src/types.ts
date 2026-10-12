@@ -36,6 +36,8 @@ export interface Task {
   /** The task's 🆔, and the ids it waits on (⛔). */
   id?: string | null
   dependsOn?: string[]
+  /** The list note the task is an item of, by name (only list items read for the filter have one). */
+  list?: string | null
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
@@ -45,6 +47,9 @@ export interface Query {
   tags?: string[]
   buckets?: Bucket[]
   kinds?: string[]
+  /** Note names (without .md) and list names to show, as Android's filter sheet. */
+  notes?: string[]
+  lists?: string[]
   text?: string
   groupBy?: 'DATE' | 'NOTE' | 'PRIORITY' | 'TAG' | 'STATUS' | 'NONE'
   sorts?: { by: string; ascending: boolean }[]
@@ -109,6 +114,7 @@ export interface FocusIn {
   futureCount: number
   countdown: string | null
   tonightBed: { evening: string; time: string } | null
+  tonightWake?: { evening: string; time: string } | null
   profile: string | null
   events: { id: number; title: string; begin: string; end: string; allDay: boolean; link?: string }[]
   branches?: string[]
@@ -143,7 +149,7 @@ export interface Pick {
 /** The Focus page as the shared logic builds it; see WebFocus.Out. */
 export interface FocusOut {
   ring: { done: number; total: number; overdue: number; events: number }
-  third: { kind: 'night' | 'free'; minutes: number; night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string } }
+  third: { kind: 'night' | 'free'; minutes: number; night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string; becauseAt?: string; wakePicked?: boolean } }
   countdown?: { key: string; title: string; text: string; late: boolean }
   notices: string[]
   plan: { label: string; late: boolean; tasks: number; items: PlanItem[] }[]
@@ -157,6 +163,8 @@ export interface FocusOut {
   countdownChoices: Pick[]
   bedtime: string
   evening: string
+  /** The usual wake time or tonight's pick. */
+  wake: string
   softDate: string
 }
 

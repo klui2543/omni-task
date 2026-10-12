@@ -56,6 +56,6 @@ test('an item opened from a list names the list note in the edit pane', async ({
   drive.omniNote('Bucket list.md', '---\nomni-list: true\nicon: 🏔️\ncategories: เที่ยว\ntag: bucketlist\n---\n# Bucket list\n\n- [ ] ไปดูแสงเหนือ #bucketlist #เที่ยว\n')
   await page.evaluate(() => { location.hash = '/projects' })
   await page.getByRole('button', { name: /Bucket list/ }).click()
-  await page.getByRole('button', { name: 'แก้ ไปดูแสงเหนือ' }).click()
+  await page.getByRole('button', { name: 'เปิด ไปดูแสงเหนือ' }).click()
   await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' })).toContainText('Bucket list.md บรรทัด')
 })

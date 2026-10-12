@@ -13,6 +13,9 @@ export const taskFilePath: string = api.taskFile()
 export const loadTasks = (fileKey: string, path: string, text: string): Task[] =>
   JSON.parse(api.loadTasks(fileKey, path, text, today()))
 
+/** The items of the list notes among [text] (a list of notes), each with its list's name. */
+export const loadListItems = (fileKey: string, text: string): Task[] => JSON.parse(api.loadListItems(fileKey, text, today()))
+
 /** The list as Android shows it for [query]: groups of task keys, plus each parent's subtask progress. */
 export const listTasks = (fileKey: string, path: string, text: string, query: Query): TaskList =>
   JSON.parse(api.list(fileKey, path, text, today(), JSON.stringify(query)))
@@ -129,6 +132,8 @@ export const listIconThemes = (): { label: string; emoji: string[] }[] => JSON.p
 export const createListNote = (name: string, icon: string, categories: string[]) => edited(api.listCreate(name, icon, JSON.stringify(categories)))
 export const updateListNote = (text: string, path: string, icon: string, categories: string[]) =>
   edited(api.listUpdate(text, path, icon, JSON.stringify(categories)))
+/** [text] with the tag [tag] taken off every task line (a deleted list's pulled-in tasks). */
+export const dropTag = (text: string, tag: string) => edited(api.projectDropTag(text, tag))
 export const addListItem = (text: string, path: string, title: string, category: string | null) =>
   edited(api.listAddItem(text, path, title, category ?? undefined, today()))
 export const includeInList = (text: string, tasks: Task[], tag: string, category: string | null) =>

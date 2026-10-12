@@ -221,12 +221,12 @@ test('the mind map shows branches and tasks, sets states, adds, renames and dele
   await expect.poll(() => file.text).toMatch(/- \[ \] ขอทุน .*#peddose\/ทุน-วิจัย.*2026-10-09/)
   await expect(page.locator('.pj-mtask', { hasText: 'ขอทุน' })).toBeVisible()
 
-  // Tapping a task ticks it; its branch counts it.
-  await page.locator('.pj-mtask', { hasText: 'ขอทุน' }).click()
+  // Tapping a task's ring ticks it; its branch counts it.
+  await page.getByRole('checkbox', { name: 'ติ๊กเสร็จ ขอทุน' }).click()
   await expect.poll(() => file.text).toMatch(/- \[x\] ขอทุน .*✅ 2026-10-08/)
 
-  // A right click (a long press on a touch screen) opens the task instead.
-  await page.locator('.pj-mtask', { hasText: 'ลองหน้าเว็บ' }).click({ button: 'right' })
+  // Anywhere else on the card opens the task instead, and nothing is ticked.
+  await page.locator('.pj-mtask', { hasText: 'ลองหน้าเว็บ' }).getByText('ลองหน้าเว็บ').click()
   await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' })).toContainText('ลองหน้าเว็บ')
   expect(file.text).toContain('- [ ] ลองหน้าเว็บ')
   await page.getByRole('dialog', { name: 'แก้ไขงาน' }).getByRole('button', { name: 'ปิด' }).click()
@@ -310,8 +310,8 @@ test('a list shows its items with categories, ticks into its own note and adds n
   await expect(items.filter({ hasText: 'ไปเชียงราย' })).toBeVisible()
   expect(bucket!.text).toContain('# Bucket list')
 
-  // Tapping an item ticks it, in the note it lives in.
-  await page.getByRole('checkbox', { name: 'ติ๊ก ไปดูแสงเหนือ' }).click()
+  // Tapping an item's ring ticks it, in the note it lives in.
+  await page.getByRole('checkbox', { name: 'ติ๊กเสร็จ ไปดูแสงเหนือ' }).click()
   await expect.poll(() => bucket!.text).toContain('- [x] ไปดูแสงเหนือ #bucketlist #เที่ยว ✅ 2026-10-08')
   await expect(page.getByRole('checkbox', { name: 'ยกเลิกการติ๊ก ไปดูแสงเหนือ' })).toBeVisible()
 })
@@ -319,7 +319,8 @@ test('a list shows its items with categories, ticks into its own note and adds n
 test('an item of a list opens the edit pane, and edits and deletes go to the list note', async ({ page }) => {
   const { bucket } = await start(page)
   await page.getByRole('button', { name: /Bucket list/ }).click()
-  await page.getByRole('button', { name: 'แก้ วิ่งฮาล์ฟมาราธอน' }).click()
+  // A tap on the item (not its ring) opens it.
+  await page.getByRole('button', { name: 'เปิด วิ่งฮาล์ฟมาราธอน' }).click()
   const pane = page.getByRole('dialog', { name: 'แก้ไขงาน' })
   await expect(pane).toContainText('วิ่งฮาล์ฟมาราธอน')
   await pane.getByRole('button', { name: /ความสำคัญ/ }).click()

@@ -1,5 +1,5 @@
 import {
-  addTask, focus, archiveAppend, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
+  addTask, focus, archiveAppend, dropTag, loadListItems, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
   restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
 } from './core'
 import { Drive, DriveError, DriveFile, FOLDER, Offline, sameName, type Versioned } from './drive'
@@ -653,6 +653,25 @@ export class Vault {
     return this.editProject((text) => updateListNote(text, note.path, icon, categories), note.id)
   }
 
+  /**
+   * Deletes a list note with its items (to Drive's trash). Tasks pulled in from other notes stay where they are and
+   * only lose the list's tag, so they do not turn into a project of their own; as Android does.
+   */
+  async deleteList(note: ListNote, tag: string): Promise<ProjectEditResult> {
+    const main = await this.file()
+    const others = this.notes.filter((n) => n.key !== note.id && n.text.includes('#' + tag)).map((n) => n.key)
+    let pulled = 0
+    for (const id of new Set([main, ...others])) {
+      const r = await this.editProject((text) => dropTag(text, tag), id)
+      if (!r.ok) return r
+      pulled += r.changed ?? 0
+    }
+    await this.drive.trash(note.id)
+    this.wroteOther()
+    this.staleLists()
+    return { ok: true, changed: pulled }
+  }
+
   addListItem(note: ListNote, title: string, category: string | null) {
     return this.editProject((text) => addListItem(text, note.path, title, category), note.id)
   }
@@ -767,6 +786,7 @@ const MEMO_MS = 5 * 60_000
 
 export class Snapshot {
   readonly byKey: Map<string, Task>
+  private items: Task[] | null = null
 
   constructor(
     readonly fileId: string,
@@ -778,6 +798,16 @@ export class Snapshot {
     readonly notes: NoteText[] = [],
   ) {
     this.byKey = new Map(tasks.map((t) => [t.key, t]))
+  }
+
+  /** The list notes' items, read only when asked (the list filter): they are not among [tasks], as on Android. */
+  listItems(): Task[] {
+    return (this.items ??= this.notes.length ? loadListItems(this.source().key, this.source().text) : [])
+  }
+
+  /** A task by key, among the tasks or (once read) the list notes' items. */
+  find(key: string): Task | undefined {
+    return this.byKey.get(key) ?? (key.startsWith(this.fileId + '#') ? undefined : this.listItems().find((t) => t.key === key))
   }
 
   /** The same task note with [notes] as the other notes. */

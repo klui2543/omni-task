@@ -77,7 +77,7 @@ export function FocusPage(p: PageProps) {
   const f: FocusOut | null = useMemo(
     () => p.snapshot?.focus({
       now: minute, skippedToday: skippedToday(local), dismissed: local.dismissed, reviewed: local.reviewed, futureCount: local.futureCount,
-      countdown: local.countdown, tonightBed: local.tonightBed, profile, events,
+      countdown: local.countdown, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, profile, events,
     }) ?? null,
     [p.snapshot, local, profile, events, minute],
   )
@@ -238,7 +238,8 @@ export function FocusPage(p: PageProps) {
                         <span>นอน {night.bedAt} ตื่น {night.wakeAt}</span>
                         <span class={`pill ${sleepColor}`}>ได้นอน {hm(night.sleep)}</span>
                       </span>
-                      {night.because && <span class="muted micro">ตื่นก่อน {night.because} 1 ชม.</span>}
+                      {night.wakePicked ? <span class="muted micro">ตั้งเวลาตื่นเองสำหรับคืนนี้</span>
+                        : night.because && <span class="muted micro">ตื่นก่อน {night.because} 1 ชม.</span>}
                     </span>
                     <span class="chev">›</span>
                   </button>
@@ -388,7 +389,12 @@ export function FocusPage(p: PageProps) {
         {dialog === 'bed' && f && (
           <BedtimeDialog
             time={f.bedtime}
-            onSave={(time) => setLocal((x) => ({ ...x, tonightBed: { evening: f.evening, time } }))}
+            wake={f.third.night?.wakeAt ?? f.wake}
+            wakePicked={!!f.third.night?.wakePicked}
+            onSave={(time, wake) => setLocal((x) => ({
+              ...x, tonightBed: { evening: f.evening, time },
+              tonightWake: wake === undefined ? x.tonightWake : wake === null ? null : { evening: f.evening, time: wake },
+            }))}
             onClose={() => setDialog(null)}
           />
         )}

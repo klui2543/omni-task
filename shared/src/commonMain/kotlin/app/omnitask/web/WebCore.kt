@@ -71,6 +71,8 @@ object WebCore {
         /** The task's `🆔` and the ids it waits on (`⛔`), for the "waits on" field. */
         val id: String? = null,
         val dependsOn: List<String> = emptyList(),
+        /** The list note the task is an item of (Bucket list...), by name. */
+        val list: String? = null,
     )
 
     @Serializable
@@ -96,8 +98,20 @@ object WebCore {
         start = t.start?.toString(), reminderOn = t.reminderOn?.name,
         linkNames = t.links, attachmentNames = t.attachments,
         note = t.filePath.ifEmpty { null }, todayCopy = t.todayCopy,
-        id = t.id, dependsOn = t.dependsOn,
+        id = t.id, dependsOn = t.dependsOn, list = t.list,
     )
+
+    /** The tasks a query reads: those of the notes, and the list notes' items when a list is chosen; parked work left out. */
+    internal fun pool(fileKey: String, path: String, text: String, day: LocalDate, q: QueryDto): List<Task> {
+        val items = if (q.lists.isEmpty()) emptyList() else WebNotes.listItems(fileKey, text, day)
+        return withoutParked(WebNotes.tasks(fileKey, path, text, day) + items, q.branches)
+    }
+
+    /** The list notes' items as JSON (see [WebNotes.listItems]). */
+    fun loadListItems(fileKey: String, text: String, today: String): String {
+        val day = LocalDate.parse(today)
+        return json.encodeToString(WebNotes.listItems(fileKey, text, day).map { dto(it, day) })
+    }
 
     /** The tasks of one note as JSON. [fileKey] identifies the note in each task's key. */
     fun loadTasks(fileKey: String, path: String, text: String, today: String): String {
@@ -120,6 +134,9 @@ object WebCore {
         val tags: List<String> = emptyList(),
         val buckets: List<String> = emptyList(),
         val kinds: List<String> = emptyList(),
+        /** Note names (without .md) and list names to show, as Android's filter sheet. */
+        val notes: List<String> = emptyList(),
+        val lists: List<String> = emptyList(),
         val text: String = "",
         val groupBy: String = "DATE",
         /** Sort levels in order, each a [SortBy] name and whether it runs ascending. */
@@ -146,22 +163,8 @@ object WebCore {
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
         val day = LocalDate.parse(today)
         val q = json.decodeFromString<QueryDto>(query)
-        val tasks = withoutParked(WebNotes.tasks(fileKey, path, text, day), q.branches)
-        fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
-        val sorts = q.sorts.mapNotNull { s -> SortBy.entries.firstOrNull { it.name == s.by }?.let { it to s.ascending } }
-        val main = sorts.firstOrNull() ?: (SortBy.DUE to true)
-        val query = TaskQuery(
-            statuses = pick(q.statuses, Status.entries.toTypedArray()),
-            priorities = pick(q.priorities, Priority.entries.toTypedArray()),
-            tags = q.tags.toSet(),
-            buckets = pick(q.buckets, DateBucket.entries.toTypedArray()),
-            kinds = pick(q.kinds, TaskKind.entries.toTypedArray()),
-            text = q.text,
-            groupBy = GroupBy.entries.firstOrNull { it.name == q.groupBy } ?: GroupBy.DATE,
-            sortBy = main.first,
-            ascending = main.second,
-            thenBy = sorts.drop(1),
-        )
+        val tasks = pool(fileKey, path, text, day, q)
+        val query = WebViews.queryOf(q, hideDone = true)
         val groups = query.run(tasks, day).map { g -> GroupDto(g.label, g.tone.name, g.tasks.map { it.key }) }
         val progress = tasks.filter { it.parent != null && it.status != Status.CANCELLED }.groupBy { it.parent!! }
             .mapValues { (_, kids) -> ProgressDto(kids.count { it.status == Status.DONE }, kids.size) }

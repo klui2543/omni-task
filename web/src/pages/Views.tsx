@@ -69,19 +69,24 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
   const all = p.snapshot?.tasks ?? []
   const current: Task | null = selected
     ? (() => {
-        const byKey = p.snapshot?.byKey.get(selected.key)
+        const byKey = p.snapshot?.find(selected.key)
         return byKey?.title === selected.title ? byKey : all.find((t) => t.title === selected.title) ?? null
       })()
     : null
   const open = (t: Task) => setSelected({ key: t.key, title: t.title })
 
+  // The notes and list notes the filter can narrow to, as on Android's filter sheet.
+  const filterNotes = useMemo(() => [...new Set((p.snapshot?.tasks ?? []).map((t) => (t.note ?? '').split('/').pop()!.replace(/\.md$/i, '')).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')), [p.snapshot])
+  const filterLists = useMemo(() => [...new Set((p.snapshot?.listItems() ?? []).map((t) => t.list ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')), [p.snapshot])
   // Each active filter as a chip that takes it off, as on the Tasks page.
   const active: [string, () => void][] = [
     ...query.kinds.map((k): [string, () => void] => [labelOf(KINDS, k), () => setQuery({ ...query, kinds: query.kinds.filter((x) => x !== k) })]),
     ...query.buckets.map((k): [string, () => void] => [labelOf(BUCKETS, k), () => setQuery({ ...query, buckets: query.buckets.filter((x) => x !== k) })]),
     ...query.priorities.map((k): [string, () => void] => [labelOf(PRIORITIES, k), () => setQuery({ ...query, priorities: query.priorities.filter((x) => x !== k) })]),
     ...(p.scope ? [] : query.tags.map((k): [string, () => void] => ['#' + k, () => setQuery({ ...query, tags: query.tags.filter((x) => x !== k) })])),
-    ...(filterCount({ ...query, kinds: [], buckets: [], priorities: [], tags: [] })
+    ...query.lists.map((k): [string, () => void] => [k, () => setQuery({ ...query, lists: query.lists.filter((x) => x !== k) })]),
+    ...query.notes.map((k): [string, () => void] => [k, () => setQuery({ ...query, notes: query.notes.filter((x) => x !== k) })]),
+    ...(filterCount({ ...query, kinds: [], buckets: [], priorities: [], tags: [], notes: [], lists: [] })
       ? [[query.statuses.map((s) => labelOf(STATUSES, s)).join(', ') || 'ทุกสถานะ', () => setQuery({ ...query, statuses: DEFAULT_QUERY.statuses })] as [string, () => void]]
       : []),
   ]
@@ -90,7 +95,7 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
 
   const ctx: ViewCtx | null = out && {
     p, out, today: day, open, selectedKey: current?.key,
-    task: (key) => p.snapshot?.byKey.get(key),
+    task: (key) => p.snapshot?.find(key),
   }
 
   return (
@@ -176,7 +181,7 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
           <StatusQuickAdd {...p} status={adding.status} statusLabel={labelOf(STATUSES, adding.status)} onClose={() => setAdding(null)} />
         )}
         {overlay === 'filter' && (
-          <FilterPanel query={query} tags={tags} shown={out?.shown ?? 0} onChange={setQuery} onClose={() => setOverlay(null)}
+          <FilterPanel query={query} tags={tags} notes={filterNotes} lists={filterLists} shown={out?.shown ?? 0} onChange={setQuery} onClose={() => setOverlay(null)}
             hideDone={{ on: hideDone, set: (on) => setHide(on ? 'yes' : 'no') }} />
         )}
         {overlay === 'sort' && <SortDialog query={query} onChange={setQuery} onClose={() => setOverlay(null)} noGroup />}

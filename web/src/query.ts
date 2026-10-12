@@ -9,6 +9,8 @@ export const DEFAULT_QUERY: ListQuery = {
   tags: [],
   buckets: [],
   kinds: [],
+  notes: [],
+  lists: [],
   groupBy: 'DATE',
   sorts: [{ by: 'DUE', ascending: true }],
 }
@@ -39,7 +41,7 @@ export const PRIORITY_DOT: Record<Task['priority'], string> = {
 
 /** How many filters are on, for the "กรอง 2" on the button. Statuses count only when changed from the default. */
 export const filterCount = (q: ListQuery) =>
-  q.kinds.length + q.buckets.length + q.priorities.length + q.tags.length +
+  q.kinds.length + q.buckets.length + q.priorities.length + q.tags.length + q.notes.length + q.lists.length +
   (sameSet(q.statuses, DEFAULT_QUERY.statuses) ? 0 : 1)
 
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))

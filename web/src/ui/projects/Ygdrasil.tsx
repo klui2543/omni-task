@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Task, YgFilter, YgOut, YgSpot } from '../../types'
-import { RingMark } from './bits'
+import { RingButton } from './bits'
 import { STATE_COLOR, STATE_LABEL } from './MindMap'
 import { usePanZoom } from './panZoom'
 
@@ -46,16 +46,16 @@ function useHold(onTap: () => void, onLift: (x: number, y: number) => void, onCo
 }
 
 /**
- * A task on the tree: a tap ticks it, a right click opens it. Held, it lifts: drag it onto another project or branch
- * to move it there, or let go where it is to open it.
+ * A task on the tree: a tap on its ring ticks it, a tap anywhere else (or a right click) opens it. Held, it lifts:
+ * drag it onto another project or branch to move it there, or let go where it is to open it.
  */
 function TaskSpot(p: { task: Task; spot: YgSpot; busy: boolean; onTick: () => void; onOpen: () => void; onLift: (x: number, y: number) => void }) {
-  const hold = useHold(p.onTick, p.onLift, p.onOpen)
+  const hold = useHold(p.onOpen, p.onLift, p.onOpen)
   const done = p.task.status === 'DONE'
   return (
-    <div class="pj-mtask-wrap" style={{ left: `${p.spot.x}px`, top: `${p.spot.y - p.spot.h / 2}px`, width: `${p.spot.w}px`, height: `${p.spot.h}px` }}>
-      <button class={`pj-mtask${done ? ' done' : ''}`} disabled={p.busy} aria-label={`${done ? 'ยกเลิกการติ๊ก' : 'ติ๊กเสร็จ'} ${p.task.title}`} {...hold}>
-        <RingMark task={p.task} />
+    <div class={`pj-mtask-wrap pj-mtask${done ? ' done' : ''}`} style={{ left: `${p.spot.x}px`, top: `${p.spot.y - p.spot.h / 2}px`, width: `${p.spot.w}px`, height: `${p.spot.h}px` }}>
+      <RingButton task={p.task} busy={p.busy} onTick={p.onTick} />
+      <button class="pj-mtask-open" aria-label={`เปิด ${p.task.title}`} {...hold}>
         <span class="ellipsis">{p.task.title}</span>
       </button>
     </div>
