@@ -2,6 +2,7 @@ package app.omnitask.web
 
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
+import app.omnitask.model.Behavior
 import app.omnitask.model.Focus
 import app.omnitask.model.Insight
 import app.omnitask.model.Planner
@@ -46,6 +47,8 @@ object WebAssistant {
         val doneLog: List<String> = emptyList(),
         /** Ids of insights the owner said no to. */
         val declined: List<String> = emptyList(),
+        /** The behavior log ([Behavior]): the file's text and the events this device has not sent yet, one per line. */
+        val behavior: String? = null,
         /** The insight being answered (for [insightYes]). */
         val insightId: String? = null,
         val futureCount: Int = 1,
@@ -144,12 +147,14 @@ object WebAssistant {
         val at = runCatching { LocalDateTime.parse(e.substringBefore('|')) }.getOrNull() ?: return@mapNotNull null
         val kind = Planner.Kind.entries.firstOrNull { it.name == e.substringAfter('|') } ?: return@mapNotNull null
         Insight.Done(at, kind)
-    }
+    }.plus(Behavior.doneLog(Behavior.parse(s.behavior))).distinct()
+
+    private fun declined(s: StateIn): Set<String> = s.declined.toSet() + Behavior.declined(Behavior.parse(s.behavior))
 
     private fun next(fileKey: String, path: String, text: String, s: StateIn): Insight.Ask? {
         val today = LocalDateTime.parse(s.now).date
         val tasks = WebNotes.tasks(fileKey, path, text, today)
-        return Insight.next(tasks, log(s), Profile.parse(s.profile), today, s.declined.toSet())
+        return Insight.next(tasks, log(s), Profile.parse(s.profile), today, declined(s))
     }
 
     /**

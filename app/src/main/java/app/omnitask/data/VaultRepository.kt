@@ -134,6 +134,9 @@ class VaultRepository(private val context: Context) {
         if (out != text) writePath(treeUri, path, out)
     }
 
+    /** Changes a vault file by its path as [update] does: [change] gets the text (null when missing) and returns the new one, or null to leave it. */
+    fun editPath(treeUri: Uri, path: String, change: (String?) -> String?) = update(treeUri, path, change)
+
     /** Adds the phone's lines of a kept clash to the end of their note; false when it is gone or not a note. */
     fun putBackClash(id: String): Boolean = DriveLink.use(context) { it.putBackLost(id) }
 

@@ -1,38 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { AgendaOut, PlanOut, Proposal, Ranked } from './assistantCore'
 
-// What the Assistant keeps on this device (Android keeps the same in its preferences): the log of when work got done,
-// the questions answered "no", and the conversation of the session.
-
-const DONE_KEY = 'omni.doneLog'
-const DECLINED_KEY = 'omni.declinedInsights'
-
-const read = <T>(key: string, fallback: T): T => {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback
-  } catch {
-    return fallback
-  }
-}
-const write = (key: string, value: unknown) => {
-  try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* just not kept */ }
-}
-
-const pad = (n: number) => String(n).padStart(2, '0')
-/** A moment in the device's own time zone as `yyyy-MM-ddTHH:mm:ss`. */
-const stamp = (d: Date) =>
-  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-
-export const doneLog = {
-  get: (): string[] => read<string[]>(DONE_KEY, []),
-  /** Remembers when work gets done and what kind it was, so the assistant can notice the owner's rhythm (the last 200). */
-  add: (kind: string, at = new Date()) => write(DONE_KEY, [...doneLog.get(), `${stamp(at)}|${kind}`].sort().slice(-200)),
-}
-
-export const declined = {
-  get: (): string[] => read<string[]>(DECLINED_KEY, []),
-  add: (id: string) => write(DECLINED_KEY, [...new Set([...declined.get(), id])]),
-}
+// The conversation of the Assistant's session. When work got done and the questions answered "no" are in the
+// behavior log the devices share (behavior.ts).
 
 /** One entry of the conversation. */
 export type Chat =

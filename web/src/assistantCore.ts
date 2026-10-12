@@ -4,7 +4,6 @@ import { WebAssistantApi } from './kotlin/OmniTask-shared.mjs'
 import { today } from './core'
 import type { EditResult } from './types'
 import type { Snapshot } from './vault'
-import { doneLog } from './assistantState'
 import './assistantVault'
 
 const api = WebAssistantApi.getInstance()
@@ -23,8 +22,8 @@ export interface AssistState {
   now: string
   profile: string | null
   events: EventIn[]
-  doneLog: string[]
-  declined: string[]
+  /** The behavior log's text, with what waits on this device (behavior.ts). */
+  behavior: string
   insightId?: string
   futureCount?: number
   skippedToday?: string[]
@@ -158,6 +157,3 @@ export const scheduleTasks = (noteText: string, items: { raw: string; lineIndex:
 
 export const sweep = (live: string, archive: string, days: number): { text: string; archive: string; titles: string[] } | null =>
   run(api.sweep(live, archive, days, today()))
-
-/** Remembers that a task of this title was just done, so the assistant can notice when the owner does which kind of work. */
-export const logDone = (title: string) => doneLog.add(kindOf(title))

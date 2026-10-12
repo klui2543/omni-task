@@ -217,14 +217,47 @@ test('saying no to a question is remembered on this device', async ({ page }) =>
   expect(profileText(drive)).toBe(Profile)
 })
 
-test('ticking a task logs when it was done, for the next pattern', async ({ page }) => {
-  await open(page, { profile: Profile })
+test('ticking a task goes into the behavior log in the vault, for the next pattern', async ({ page }) => {
+  const { drive } = await open(page, { profile: Profile })
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
   await expect(page.getByRole('img', { name: 'เสร็จแล้ว 1 จาก 4' })).toBeVisible()
-  // Logged once the tick is written, which may be just after the page shows it.
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('omni.doneLog') ?? '[]').length)).toBe(1)
-  const log = await page.evaluate(() => JSON.parse(localStorage.getItem('omni.doneLog') ?? '[]'))
-  expect(log[0]).toMatch(/^2026-10-08T09:20:\d\d\|(DEEP|GENERAL|QUICK|MOVE|ERRAND)$/)
+  // Sent a few seconds after the tick, with anything else done meanwhile.
+  await expect.poll(() => drive.textOf('omni-behavior.json'), { timeout: 15_000 }).toContain('"ev":"done"')
+  const lines = drive.textOf('omni-behavior.json')!.trim().split('\n')
+  expect(lines[0]).toBe('{"omni":"behavior","version":1}')
+  const e = JSON.parse(lines[1])
+  expect(e).toMatchObject({ ev: 'done', src: 'web', title: 'ทบทวนเคส' })
+  expect(e.at).toMatch(/^2026-10-08T09:20:\d\d$/)
+})
+
+test('the log in the vault, written by any device, is what the assistant learns from', async ({ page }) => {
+  const { drive } = await openAssistant(page, {
+    profile: Profile,
+    before: (d) => {
+      const line = (day: number) => JSON.stringify({ id: `a${day}`, at: `2026-10-0${day}T14:10:00`, ev: 'done', src: 'android', kind: 'DEEP' })
+      d.omniNote('omni-behavior.json', ['{"omni":"behavior","version":1}', ...[1, 2, 3, 4, 5, 6].map(line)].join('\n') + '\n')
+    },
+  })
+  await expect(page.getByText('ดูเหมือนคุณปิดงานที่ใช้สมองได้บ่อยช่วง 12:00 ถึง 15:00 (6 จาก 6 งาน)')).toBeVisible()
+  await page.getByRole('button', { name: 'ไม่ใช่' }).click()
+  await expect(page.getByText('จำไว้ไหม?')).toHaveCount(0)
+  // The "no" reaches the file, so Android does not ask either.
+  await expect.poll(() => drive.textOf('omni-behavior.json'), { timeout: 15_000 }).toContain('"ev":"decline"')
+  expect(drive.textOf('omni-behavior.json')).toContain('"id":"a6"')
+})
+
+test('the log this device kept before the file goes into it once', async ({ page }) => {
+  const done = (day: number) => `2026-10-0${day}T14:10:00|DEEP`
+  // Seeded once: the sign-in may load the page again, and the log must not come back after it went into the file.
+  await page.addInitScript((log) => {
+    if (sessionStorage.getItem('seeded')) return
+    sessionStorage.setItem('seeded', '1')
+    localStorage.setItem('omni.doneLog', JSON.stringify(log))
+  }, [1, 2].map(done))
+  const { drive } = await open(page, { profile: Profile })
+  await expect.poll(() => drive.textOf('omni-behavior.json')).toContain('"id":"done:2026-10-02T14:10:00:DEEP"')
+  expect(drive.textOf('omni-behavior.json')!.trim().split('\n')).toHaveLength(3)
+  expect(await page.evaluate(() => localStorage.getItem('omni.doneLog'))).toBeNull()
 })
 
 test('a profile older than a month is asked about again', async ({ page }) => {

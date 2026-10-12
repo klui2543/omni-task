@@ -23,6 +23,14 @@ Every push to `main` builds a debug APK with GitHub Actions; download it from th
 Code in `shared/` cannot use java.time, `String.format`, `(?i)` in a regex or an unescaped `]` outside a regex set;
 its tests run on the JVM and on JS (`gradle :shared:allTests`), and `RegexPortabilityTest` checks the regexes.
 
+## What the assistant learns from
+
+`📁 Folder/หลังบ้าน/Omni/omni-behavior.json` logs what the owner does on every device (a task added, done or moved
+to another day, a reminder snoozed, swiped away or opened, a "no" to the assistant). The file holds one JSON event
+per line and is only ever added to, so two devices writing at once join cleanly. Events from more than 90 days ago
+are dropped. The logic is in `shared/.../model/Behavior.kt`; Android keeps events waiting in `BehaviorLog.kt`, and
+the web in `web/src/behavior.ts`, until they are written to the file.
+
 ## Google Drive for the Omni folder (Android)
 
 Settings > Google Drive connects the Omni folder (`📁 Folder/หลังบ้าน/Omni`) on Drive. From then on the app reads and

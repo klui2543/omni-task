@@ -15,8 +15,10 @@ import app.omnitask.MainActivity
 import app.omnitask.widget.OmniWidgets
 import kotlinx.coroutines.runBlocking
 import app.omnitask.R
+import app.omnitask.data.BehaviorLog
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultRepository
+import app.omnitask.model.Behavior
 import app.omnitask.model.Lang
 import app.omnitask.model.load
 import app.omnitask.model.tr
@@ -44,12 +46,14 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handle(context: Context, intent: Intent) {
+        // A reminder swiped away only goes into the behavior log; nothing else needs doing.
+        if (intent.action == ACTION_DISMISS) return learn(context, intent, Behavior.DISMISS)
         ensureChannels(context)
         when (intent.action) {
             ACTION_ALARM -> onAlarm(context, intent)
             ACTION_DONE -> onDone(context, intent)
-            ACTION_SNOOZE_HOUR -> snooze(context, intent, LocalDateTime.now().plusHours(1))
-            ACTION_SNOOZE_DAY -> snooze(context, intent, LocalDateTime.now().plusDays(1))
+            ACTION_SNOOZE_HOUR -> snooze(context, intent, LocalDateTime.now().plusHours(1), 60)
+            ACTION_SNOOZE_DAY -> snooze(context, intent, LocalDateTime.now().plusDays(1), 24 * 60)
         }
         // Boot, package update and every alarm all end the same way: a fresh plan.
         Scheduler.reschedule(context, Scheduler.loadVaultTasks(context))
@@ -68,7 +72,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 val raw = intent.getStringExtra(Scheduler.EXTRA_RAW) ?: return
                 val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw } ?: return
                 if (!task.isOpen) return
-                val b = base(context, CHANNEL_TASKS, title, text)
+                val b = base(context, CHANNEL_TASKS, title, text, reminded = raw)
+                b.setDeleteIntent(action(context, ACTION_DISMISS, intent))
                 b.addAction(0, tr("เสร็จ", "Done"), action(context, ACTION_DONE, intent))
                 b.addAction(0, tr("อีก 1 ชม.", "In 1 hour"), action(context, ACTION_SNOOZE_HOUR, intent))
                 b.addAction(0, tr("พรุ่งนี้", "Tomorrow"), action(context, ACTION_SNOOZE_DAY, intent))
@@ -98,6 +103,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val raw = intent.getStringExtra(Scheduler.EXTRA_RAW) ?: return
         val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw }
         if (task != null && task.isOpen) {
+            BehaviorLog.record(context, Behavior.of(Behavior.DONE, task, LocalDateTime.now(), BehaviorLog.SRC))
             runCatching {
                 val repo = VaultRepository(context)
                 // A repeating task also gets its next occurrence; if its rule can't be read it stays open.
@@ -108,8 +114,9 @@ class AlarmReceiver : BroadcastReceiver() {
         cancel(context, intent)
     }
 
-    private fun snooze(context: Context, intent: Intent, at: LocalDateTime) {
+    private fun snooze(context: Context, intent: Intent, at: LocalDateTime, minutes: Int) {
         val id = intent.getStringExtra(Scheduler.EXTRA_ID) ?: return
+        learn(context, intent, Behavior.SNOOZE, minutes)
         Scheduler.scheduleOneOff(
             context,
             PlannedAlarm(
@@ -123,14 +130,23 @@ class AlarmReceiver : BroadcastReceiver() {
         cancel(context, intent)
     }
 
+    /** Notes in the behavior log what was done with the reminder of the task line the alarm carries. */
+    private fun learn(context: Context, intent: Intent, ev: String, minutes: Int? = null) {
+        val task = intent.getStringExtra(Scheduler.EXTRA_RAW)?.let { TaskLine.parse(it) } ?: return
+        BehaviorLog.record(context, Behavior.of(ev, task, LocalDateTime.now(), BehaviorLog.SRC, min = minutes))
+    }
+
     private fun cancel(context: Context, intent: Intent) {
         intent.getStringExtra(Scheduler.EXTRA_ID)?.let { NotificationManagerCompat.from(context).cancel(it.hashCode()) }
     }
 
-    private fun base(context: Context, channel: String, title: String, text: String): NotificationCompat.Builder {
+    /** [reminded]: the task line of a task reminder, so opening the app from it is noted in the behavior log. */
+    private fun base(context: Context, channel: String, title: String, text: String, reminded: String? = null): NotificationCompat.Builder {
+        val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        reminded?.let { launch.putExtra(MainActivity.EXTRA_REMINDED, it) }
         val open = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE,
+            context, reminded?.hashCode() ?: 0, launch,
+            if (reminded != null) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notify)
@@ -165,6 +181,7 @@ class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_DONE = "app.omnitask.DONE"
         const val ACTION_SNOOZE_HOUR = "app.omnitask.SNOOZE_HOUR"
         const val ACTION_SNOOZE_DAY = "app.omnitask.SNOOZE_DAY"
+        const val ACTION_DISMISS = "app.omnitask.DISMISS"
 
         const val CHANNEL_TASKS = "tasks"
         const val CHANNEL_CALENDAR = "calendar"

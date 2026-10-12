@@ -15,6 +15,15 @@ import type { BranchOp, BranchResult, ListNote, ProjectEditResult, ProjectsIn, P
 import { MANY, NoteIndex, NoteText, samePath } from './noteIndex'
 import { customKindTags } from './kinds'
 import { WebNotesApi } from './kotlin/OmniTask-shared.mjs'
+import { learn } from './behavior'
+
+/** Notes what was done in the behavior log once the edit went through; the edit's result passes on as it is. */
+const learnIf = (when: boolean, note: () => void) => <T extends { ok: boolean }>(res: T): T => {
+  if (when && res.ok) {
+    try { note() } catch { /* the log never stands in the way of an edit */ }
+  }
+  return res
+}
 
 /** A task taken out of the note (deleted or archived), and where it was, so it can be put back. */
 export interface Cut {
@@ -366,20 +375,23 @@ export class Vault {
   }
 
   toggle(task: Task, withSubtasks = false) {
-    return this.edit((text) => toggle(text, task, withSubtasks), noteOf(task))
+    return this.edit((text) => toggle(text, task, withSubtasks), noteOf(task)).then(learnIf(task.open, () => learn.done(task)))
   }
 
   add(sentence: string) {
-    return this.edit((text) => addTask(text, sentence))
+    return this.edit((text) => addTask(text, sentence)).then(learnIf(true, () => learn.created(sentence)))
   }
 
   /** Adds a task that starts in [status] (the "+" on a Kanban column). */
   addInStatus(sentence: string, status: Task['status']) {
-    return this.edit((text) => addTaskInStatus(text, sentence, status))
+    return this.edit((text) => addTaskInStatus(text, sentence, status)).then(learnIf(true, () => learn.created(sentence)))
   }
 
   change(task: Task, op: EditOp) {
-    return this.edit((text) => editTask(text, task, op), noteOf(task))
+    return this.edit((text) => editTask(text, task, op), noteOf(task)).then(learnIf(true, () => {
+      if (op.op === 'date') learn.moved(task, op.field, op.value)
+      if (op.op === 'status' && op.value === 'DONE' && task.open) learn.done(task)
+    }))
   }
 
   /** Deletes the task with its description and subtasks; the cut is kept for undo. */
@@ -690,7 +702,7 @@ export class Vault {
 
   /** A task in a project or branch: the title is read like quick add and gets the tag. */
   addTagged(tag: string, title: string) {
-    return this.editProject((text) => addTagged(text, tag, title))
+    return this.editProject((text) => addTagged(text, tag, title)).then(learnIf(true, () => learn.created(`${title} #${tag.replace(/^#/, '')}`)))
   }
 
   /** "Do in order" on or off for the project's open tasks, written as 🆔 and ⛔ in the notes they are in. */

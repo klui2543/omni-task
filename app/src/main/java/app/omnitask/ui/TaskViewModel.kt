@@ -17,6 +17,7 @@ import app.omnitask.CrashLog
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.DriveLink
 import app.omnitask.data.ImageAttach
+import app.omnitask.data.BehaviorLog
 import app.omnitask.data.SettingsSync
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
@@ -26,6 +27,8 @@ import app.omnitask.drive.OmniDrive
 import app.omnitask.drive.sameName
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.Behavior
+import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Insight
 import app.omnitask.model.Appearance
 import app.omnitask.model.Branches
@@ -270,6 +273,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = VaultRepository(app)
     private val prefs = app.getSharedPreferences("omnitask", Context.MODE_PRIVATE)
 
+    /** The behavior log as last read from the vault ([BehaviorLog]), and the pending send of what was just done. */
+    private var behavior: List<BehaviorEvent> = emptyList()
+    private var behaviorSend: kotlinx.coroutines.Job? = null
+
     private val _state = MutableStateFlow(
         fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse), drive = DriveUi(on = DriveLink.isOn(app)))),
     )
@@ -412,6 +419,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 Lang.load(getApplication())
                 Appearance.load(getApplication())
                 _state.update { fromPrefs(it) }
+            }
+            // What the owner did on every device, for the assistant to learn from; what this phone kept goes out first.
+            behavior = withContext(Dispatchers.IO) {
+                runCatching { BehaviorLog.sync(getApplication(), repo, vault) }.getOrElse { (behavior + BehaviorLog.waiting(getApplication())).distinctBy { e -> e.id } }
             }
             val swept = withContext(Dispatchers.IO) { runCatching { sweepIfDue(vault) }.getOrDefault(emptyList()) }
             val result = withContext(Dispatchers.IO) {
@@ -829,7 +840,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setReminder(task: Task, time: kotlinx.datetime.LocalTime?, on: ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
 
-    fun setDate(task: Task, field: DateField, value: LocalDate?) = edit(task) { TaskLine.setDate(it, field, value) }
+    fun setDate(task: Task, field: DateField, value: LocalDate?) {
+        learn(Behavior.moved(task, field.name, value, LocalDateTime.now(), BehaviorLog.SRC))
+        edit(task) { TaskLine.setDate(it, field, value) }
+    }
 
     fun setNotify(settings: NotifySettings) {
         Scheduler.saveSettings(getApplication(), settings)
@@ -1309,8 +1323,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val today = LocalDate.now()
                 val line = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) } +
                     (link?.let { "\n    - $it" } ?: "")
-                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) }
+                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) }.map { line }
             }
+            result.getOrNull()?.let { noteCreated(it) }
             val text = result.fold(
                 { tr("เพิ่มงานแล้ว: ${draft.title}", "Added: ${draft.title}") },
                 { e -> tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}") },
@@ -1537,6 +1552,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             saveProfile(ask.apply(p).copy(remembered = (p.remembered + ask.remember).distinct()))
         } else {
             prefs.edit().putStringSet(KEY_DECLINED, declined() + ask.id).apply()
+            learn(Behavior.declined(ask.id, LocalDateTime.now(), BehaviorLog.SRC))
         }
         _state.update { it.copy(insight = null) }
     }
@@ -1586,6 +1602,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(branchStates = next) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) } }
+            if (result.isSuccess) noteCreated(line)
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("สร้าง branch ไม่ได้: ", "Cannot add the branch: ") + e.message) } }
             reload()
         }
@@ -1608,6 +1625,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val line = TaskLine.addTag(QuickAdd.parse(title, today).line(today), node.tag)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) } }
+            if (result.isSuccess) noteCreated(line)
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เพิ่มงานไม่ได้: ", "Cannot add the task: ") + e.message) } }
             reload()
         }
@@ -1752,19 +1770,35 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun declined() = prefs.getStringSet(KEY_DECLINED, emptySet()).orEmpty().toSet()
+    private fun declined() = prefs.getStringSet(KEY_DECLINED, emptySet()).orEmpty().toSet() + Behavior.declined(behaviorNow())
 
-    private fun doneLog(): List<Insight.Done> = prefs.getStringSet(KEY_DONE_LOG, emptySet()).orEmpty().mapNotNull { e ->
-        val at = runCatching { LocalDateTime.parse(e.substringBefore('|')) }.getOrNull() ?: return@mapNotNull null
-        val kind = Planner.Kind.entries.firstOrNull { it.name == e.substringAfter('|') } ?: return@mapNotNull null
-        Insight.Done(at, kind)
+    /** Every event of the behavior log: the vault's, any this phone has not sent yet, and the old preference log until it is brought in. */
+    private fun behaviorNow(): List<BehaviorEvent> {
+        val old = prefs.getStringSet(KEY_DONE_LOG, emptySet()).orEmpty().mapNotNull { Behavior.legacyDone(it, BehaviorLog.SRC) }
+        return (behavior + BehaviorLog.waiting(getApplication()) + old).distinctBy { it.id }
     }
 
+    private fun doneLog(): List<Insight.Done> = Behavior.doneLog(behaviorNow())
+
     /** Remembers when work gets done, so the assistant can notice the owner's rhythm. */
-    private fun logDone(task: Task) {
-        val entry = "${LocalDateTime.now().withNano(0)}|${Planner.kindOf(task.title).name}"
-        val kept = prefs.getStringSet(KEY_DONE_LOG, emptySet()).orEmpty().sorted().takeLast(199)
-        prefs.edit().putStringSet(KEY_DONE_LOG, (kept + entry).toSet()).apply()
+    private fun logDone(task: Task) = learn(Behavior.of(Behavior.DONE, task, LocalDateTime.now(), BehaviorLog.SRC))
+
+    /** A task line just added, as a "create" event. */
+    private fun noteCreated(line: String) {
+        TaskLine.parse(line.substringBefore('\n'))?.let { learn(Behavior.of(Behavior.CREATE, it, LocalDateTime.now(), BehaviorLog.SRC)) }
+    }
+
+    /** Keeps [event] for the behavior log and sends it to the vault a little later, with any others made meanwhile. */
+    private fun learn(event: BehaviorEvent?) {
+        event ?: return
+        val app = getApplication<Application>()
+        BehaviorLog.record(app, event)
+        val vault = _state.value.vault ?: return
+        behaviorSend?.cancel()
+        behaviorSend = viewModelScope.launch {
+            delay(5_000)
+            withContext(Dispatchers.IO) { runCatching { BehaviorLog.sync(app, repo, vault) } }.onSuccess { behavior = it }
+        }
     }
 
     /** One write to the vault at a time, so a second quick edit finds the line the first one wrote. */

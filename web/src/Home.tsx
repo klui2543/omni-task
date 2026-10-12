@@ -5,6 +5,7 @@ import { clashes, type Clash } from './offline'
 import { appendLines } from './safeWrite'
 import { settingsBus } from './settingsBus'
 import { SettingsSync } from './settingsSync'
+import { BehaviorSync } from './behavior'
 import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
 import { AssistantPage } from './pages/Assistant'
@@ -14,7 +15,6 @@ import { QuickAdd, TasksPage } from './pages/Tasks'
 import { createEvent, readEvents, type NewEvent } from './calendar'
 import { calendarCache } from './calendarCache'
 import { listCalendars } from './calendar'
-import { logDone } from './assistantCore'
 import { sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
 import type { Task } from './types'
@@ -94,6 +94,9 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   const [settingsRev, setSettingsRev] = useState(0)
   const pullSettings = () => settings.pull().then((changed) => { if (changed) setSettingsRev((r) => r + 1) }, () => {})
   useEffect(() => settingsBus.listen(() => { settings.push().catch(() => {}) }), [settings])
+  /** The behavior log the devices share (behavior.ts): what waits here goes out on load and after each event. */
+  const behavior = useMemo(() => new BehaviorSync(p.drive, p.vaultId, (path) => vault.ensureFolders(path)), [vault])
+  const sendBehavior = () => { behavior.send().catch(() => {}) }
   // The add button in the middle of the bottom bar: a new task from any page.
   const [adding, setAdding] = useState(false)
 
@@ -163,7 +166,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     }
   }
   // A reload asks Drive and Google for everything again; the pages keep showing what they have until it is read.
-  const reload = () => { vault.clearCaches(); calendar.stale(); pullSettings(); return run(async () => undefined) }
+  const reload = () => { vault.clearCaches(); calendar.stale(); pullSettings(); sendBehavior(); return run(async () => undefined) }
 
   // An edit shows at once, on the note as last read, while it is written to Drive.
   useEffect(() => {
@@ -224,7 +227,6 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     const ask = snapshot != null && offersFinish(t, snapshot.tasks, withSubtasks)
     run(async () => {
       const res = await vault.toggle(fresh(t), withSubtasks)
-      if (res.ok && t.open) logDone(t.title)
       if (res.ok && ask) setFinished(t)
       return res
     })
