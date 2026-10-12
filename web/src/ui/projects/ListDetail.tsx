@@ -1,20 +1,19 @@
 import { useState } from 'preact/hooks'
 import type { ListOut, Task } from '../../types'
-import { RingMark, useTapOrHold } from './bits'
+import { RingButton } from './bits'
 
+/** One item: its ring ticks it, the rest of the row opens it. */
 function Item(p: { task: Task; sub: string; selected: boolean; busy: boolean; onTick: () => void; onOpen: () => void }) {
-  const hold = useTapOrHold(p.onTick, p.onOpen)
   const done = p.task.status === 'DONE'
   return (
     <li class={`pj-item${p.selected ? ' selected' : ''}`}>
-      <button class="pj-item-main" role="checkbox" aria-checked={done} disabled={p.busy} aria-label={`${done ? 'ยกเลิกการติ๊ก' : 'ติ๊ก'} ${p.task.title}`} {...hold}>
-        <span class="pj-item-ring"><RingMark task={p.task} /></span>
+      <span class="pj-item-ring"><RingButton task={p.task} busy={p.busy} onTick={p.onTick} /></span>
+      <button class="pj-item-main" aria-label={`เปิด ${p.task.title}`} onClick={p.onOpen}>
         <span class="grow stack">
           <span class={`ttitle${done || p.task.status === 'CANCELLED' ? ' struck' : ''}`}>{p.task.title}</span>
           {p.sub && <span class="small muted">{p.sub}</span>}
         </span>
       </button>
-      <button class="link quiet pj-edit" aria-label={`แก้ ${p.task.title}`} onClick={p.onOpen}>แก้</button>
     </li>
   )
 }
@@ -71,7 +70,7 @@ export function ListDetail(p: {
             return t ? <Item key={i.key} task={t} sub={i.sub} selected={p.selected === i.key} busy={p.busy} onTick={() => p.onTick(t)} onOpen={() => p.onOpen(t)} /> : null
           })}
         </ul>
-        <p class="small muted pj-foot">เก็บใน {l.path} และงานที่ติด #{l.tag} แตะเพื่อติ๊ก กดค้างเพื่อแก้</p>
+        <p class="small muted pj-foot">เก็บใน {l.path} และงานที่ติด #{l.tag} แตะวงกลมเพื่อติ๊ก แตะชื่อเพื่อเปิดดูและแก้</p>
       </section>
     </div>
   )

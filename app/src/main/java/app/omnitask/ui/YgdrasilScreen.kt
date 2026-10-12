@@ -314,19 +314,22 @@ fun YgdrasilScreen(
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
                                     .alpha(if (carry?.task == t) 0.35f else 1f)
-                                    // A tap ticks; held, the task lifts and follows the finger (the drag consumes the
-                                    // touch, so neither the tap nor the map's own drag sees it).
-                                    .pointerInput(t) { detectTapGestures(onTap = { vm.toggleDone(t) }) }
+                                    // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
+                                    // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
+                                    .pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }
                                     .carries(Carry(t, from, t.title), s.y - s.h / 2, s.x)
-                                    .padding(horizontal = 6.dp),
+                                    .padding(end = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(
-                                    Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
-                                        .border(1.5.dp, if (done) C.lime else priorityTint(t.priority), CircleShape),
-                                )
+                                // The ring is a button of its own, a little larger than it looks.
+                                Box(Modifier.size(28.dp).clip(CircleShape).clickable { vm.toggleDone(t) }, contentAlignment = Alignment.Center) {
+                                    Box(
+                                        Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
+                                            .border(1.5.dp, if (done) C.lime else priorityTint(t.priority), CircleShape),
+                                    )
+                                }
                                 if (!far) Text(
-                                    t.title, Modifier.padding(start = 8.dp), color = if (done) C.faint else C.text2, fontSize = TS.caption,
+                                    t.title, Modifier.padding(start = 2.dp), color = if (done) C.faint else C.text2, fontSize = TS.caption,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (done) TextDecoration.LineThrough else null,
                                 )
                             }

@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -131,16 +130,19 @@ fun LazyListScope.listDetail(
         val done = t.status == Status.DONE
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card)
-                .combinedClickable(onClick = { vm.toggleDone(t) }, onLongClick = { onOpen(t) })
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                // A tap opens the item; its ring, a button of its own, ticks it.
+                .clickable { onOpen(t) }
+                .padding(end = 12.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(20.dp).clip(CircleShape).background(if (done) C.lime else Color.Transparent)
-                    .border(2.dp, if (done) C.lime else C.faint, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { if (done) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(12.dp)) }
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Box(Modifier.size(44.dp).clip(CircleShape).clickable { vm.toggleDone(t) }, contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(20.dp).clip(CircleShape).background(if (done) C.lime else Color.Transparent)
+                        .border(2.dp, if (done) C.lime else C.faint, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { if (done) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(12.dp)) }
+            }
+            Column(Modifier.weight(1f).padding(start = 2.dp)) {
                 Text(
                     t.title, color = if (done) C.muted else C.text, fontSize = TS.body,
                     textDecoration = if (done) TextDecoration.LineThrough else null,
@@ -153,7 +155,7 @@ fun LazyListScope.listDetail(
     }
     item(key = "list-file") {
         Text(
-            tr("เก็บใน ${list.path} และงานที่ติด #${list.tag} แตะเพื่อติ๊ก กดค้างเพื่อแก้", "Saved in ${list.path}, plus tasks tagged #${list.tag}. Tap to tick, long-press to edit"),
+            tr("เก็บใน ${list.path} และงานที่ติด #${list.tag} แตะวงกลมเพื่อติ๊ก แตะชื่อเพื่อเปิดดูและแก้", "Saved in ${list.path}, plus tasks tagged #${list.tag}. Tap the ring to tick, the name to open"),
             Modifier.padding(start = 4.dp, top = 4.dp), color = C.faint, fontSize = TS.caption,
         )
     }

@@ -702,7 +702,10 @@ body:has(.page.pj.mapping) .bar, body:has(.page.pj.mapping) .ai-fab { display: n
 .pj-dot.big { width: 9px; height: 9px; }
 .pj-state .pj-dot { margin-right: 6px; }
 .pj-mtask-wrap { position: absolute; }
-.pj-mtask { display: flex; align-items: center; gap: 8px; width: 100%; height: 100%; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; color: var(--text2); touch-action: none; }
+.pj-mtask { display: flex; align-items: center; gap: 2px; padding: 0 2px; border-radius: 8px; font-size: 13px; color: var(--text2); }
+.pj-mtask-open { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; border: 0; background: transparent; padding: 0 4px 0 2px; text-align: left; font: inherit; color: inherit; touch-action: none; border-radius: 6px; }
+.ring-btn { flex: none; width: 28px; height: 28px; border: 0; background: transparent; padding: 0; display: grid; place-items: center; border-radius: 50%; touch-action: manipulation; }
+.ring-btn:hover { background: var(--accent-soft); }
 .pj-mtask:hover { background: rgb(255 255 255 / .6); }
 .pj-mtask.done { color: var(--faint); text-decoration: line-through; }
 .pj-mtask .ring { width: 15px; height: 15px; border-width: 1.5px; flex: none; }
@@ -746,9 +749,9 @@ body:has(.page.pj.mapping) .bar, body:has(.page.pj.mapping) .ai-fab { display: n
 .pj-item { display: flex; align-items: center; border-bottom: 1px solid var(--divider); }
 .pj-item.selected { background: var(--selected); }
 .pj-item-main { flex: 1; min-width: 0; min-height: 54px; border: 0; background: transparent; display: flex; align-items: center; gap: 12px; padding: 0; text-align: left; }
-.pj-item-ring { flex: none; width: 22px; display: grid; place-items: center; }
+.pj-item-ring { flex: none; width: 32px; display: grid; place-items: center; }
+.pj-item-ring .ring-btn { width: 36px; height: 36px; }
 .pj-item .ttitle.struck { color: var(--muted); text-decoration: line-through; }
-.pj-edit { flex: none; min-height: 36px; font-size: 13px; }
 .pj-foot { margin: 0; padding: 12px 0; }
 
 /* Dialogs of the page */

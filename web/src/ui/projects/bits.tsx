@@ -1,5 +1,3 @@
-import type { JSX } from 'preact'
-import { useRef } from 'preact/hooks'
 import type { Task } from '../../types'
 
 export const shortDate = (iso: string) => new Date(iso + 'T00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
@@ -12,30 +10,16 @@ export function RingMark({ task }: { task: Task }) {
 }
 
 /**
- * A tap that ticks and a long press (or a right click) that opens, as Android's list items and mind map tasks do.
- * A press that turned into a long one does not also tick.
+ * The ring of a task card, a button of its own: a tap on it ticks the task, while a tap anywhere else on the card
+ * opens it. Pressing it never starts a drag of the card or the map.
  */
-export function useTapOrHold(onTap: () => void, onHold: () => void, ms = 500) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const held = useRef(false)
-  const clear = () => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = null
-  }
-  return {
-    onPointerDown: (e: JSX.TargetedPointerEvent<HTMLElement>) => {
-      if (e.button) return
-      held.current = false
-      clear()
-      timer.current = setTimeout(() => { held.current = true; timer.current = null; onHold() }, ms)
-    },
-    onPointerUp: clear,
-    onPointerLeave: clear,
-    onPointerCancel: clear,
-    onContextMenu: (e: Event) => { e.preventDefault(); clear(); held.current = true; onHold() },
-    onClick: (e: Event) => {
-      if (held.current) { held.current = false; e.preventDefault(); return }
-      onTap()
-    },
-  }
+export function RingButton({ task, busy, onTick }: { task: Task; busy: boolean; onTick: () => void }) {
+  const done = task.status === 'DONE'
+  return (
+    <button class="ring-btn" role="checkbox" aria-checked={done} disabled={busy} aria-label={`${done ? 'ยกเลิกการติ๊ก' : 'ติ๊กเสร็จ'} ${task.title}`}
+      onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onTick() }}>
+      <RingMark task={task} />
+    </button>
+  )
 }
+

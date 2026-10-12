@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { BranchOut, BranchState, ProjectOut, Task } from '../../types'
-import { RingMark, useTapOrHold } from './bits'
+import { RingButton } from './bits'
 import { usePanZoom } from './panZoom'
 
 /** Sizes on the map, in pixels. Tasks sit in the next column, above the branch's own sub-branches. */
@@ -55,12 +55,11 @@ const curve = (x1: number, y1: number, x2: number, y2: number) => {
 }
 
 function TaskNode(p: { task: Task; x: number; y: number; busy: boolean; onTick: () => void; onOpen: () => void }) {
-  const hold = useTapOrHold(p.onTick, p.onOpen)
   const done = p.task.status === 'DONE'
   return (
-    <div class="pj-mtask-wrap" style={{ left: `${p.x}px`, top: `${p.y - TASK_H / 2}px`, width: `${TASK_W}px`, height: `${TASK_H}px` }}>
-      <button class={`pj-mtask${done ? ' done' : ''}`} disabled={p.busy} aria-label={`${done ? 'ยกเลิกการติ๊ก' : 'ติ๊กเสร็จ'} ${p.task.title}`} {...hold}>
-        <RingMark task={p.task} />
+    <div class={`pj-mtask-wrap pj-mtask${done ? ' done' : ''}`} style={{ left: `${p.x}px`, top: `${p.y - TASK_H / 2}px`, width: `${TASK_W}px`, height: `${TASK_H}px` }}>
+      <RingButton task={p.task} busy={p.busy} onTick={p.onTick} />
+      <button class="pj-mtask-open" aria-label={`เปิด ${p.task.title}`} onClick={p.onOpen} onContextMenu={(e) => { e.preventDefault(); p.onOpen() }}>
         <span class="ellipsis">{p.task.title}</span>
       </button>
     </div>
@@ -69,7 +68,7 @@ function TaskNode(p: { task: Task; x: number; y: number; busy: boolean; onTick: 
 
 /**
  * A project's branches as a mind map that fills the page: drag to move, pinch or the buttons to zoom. Tap a
- * branch for its actions underneath; tap a task to tick it, long-press (or right click) to open it.
+ * branch for its actions underneath; tap a task's ring to tick it, anywhere else on it to open it.
  */
 export function MindMap(p: {
   project: ProjectOut

@@ -315,7 +315,7 @@ export function ProjectsPage(p: PageProps) {
         <button class="ghost" onClick={back}>‹ กลับ</button>
         <div class="grow">
           <h1>{list.name}</h1>
-          <span class="small muted">แตะเพื่อติ๊กว่าทำหรือดูแล้ว</span>
+          <span class="small muted">แตะวงกลมเพื่อติ๊กว่าทำหรือดูแล้ว</span>
         </div>
         <button class="ghost small-btn danger" onClick={() => setDialog({ k: 'deleteList' })}>ลบรายการ</button>
       </header>

@@ -5,7 +5,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -225,15 +224,18 @@ fun MindMapScreen(root: Branches.Node, vm: TaskViewModel, onOpen: (Task) -> Unit
                             val done = t.status == Status.DONE
                             Row(
                                 Modifier.offset(m.x.dp, (m.y - TASK_H / 2).dp).width(TASK_W.dp).height(TASK_H.dp).clip(RoundedCornerShape(8.dp))
-                                    .combinedClickable(onClick = { vm.toggleDone(t) }, onLongClick = { onOpen(t) }).padding(horizontal = 6.dp),
+                                    // A tap opens the task; its ring, a button of its own, ticks it.
+                                    .clickable { onOpen(t) }.padding(end = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(
-                                    Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
-                                        .border(1.5.dp, if (done) C.lime else C.faint, CircleShape),
-                                )
+                                Box(Modifier.size(28.dp).clip(CircleShape).clickable { vm.toggleDone(t) }, contentAlignment = Alignment.Center) {
+                                    Box(
+                                        Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
+                                            .border(1.5.dp, if (done) C.lime else C.faint, CircleShape),
+                                    )
+                                }
                                 Text(
-                                    t.title, Modifier.padding(start = 8.dp), color = if (done) C.faint else C.text2, fontSize = TS.caption,
+                                    t.title, Modifier.padding(start = 2.dp), color = if (done) C.faint else C.text2, fontSize = TS.caption,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (done) TextDecoration.LineThrough else null,
                                 )
                             }

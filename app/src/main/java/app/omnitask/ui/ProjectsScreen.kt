@@ -164,7 +164,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Text(
                         when {
                             open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
-                            openList != null -> tr("แตะเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap to tick what you've done or watched")
+                            openList != null -> tr("แตะวงกลมเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap the ring to tick what you've done or watched")
                             else -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
                         },
                         color = C.muted, fontSize = TS.caption,

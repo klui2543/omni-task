@@ -89,8 +89,8 @@ test('a world folds, takes a new task and opens its mind map', async ({ page }) 
   await expect.poll(() => file.text).toContain('ทดสอบบนมือถือ #peddose/แอป/มือถือ')
   await expect(task(page, 'ทดสอบบนมือถือ')).toBeVisible()
 
-  // Ticking a task on the tree writes it.
-  await task(page, 'ทำหน้าเว็บ').click()
+  // Ticking a task's ring on the tree writes it.
+  await page.getByRole('checkbox', { name: 'ติ๊กเสร็จ ทำหน้าเว็บ' }).click()
   await expect.poll(() => file.text).toContain('- [x] ทำหน้าเว็บ #peddose/แอป/เว็บ ✅ 2026-10-08')
 
   await limb(page, '#Siriraj').click()
@@ -131,7 +131,7 @@ test('a task held and dragged onto another project moves there, tag and all', as
   const { file } = await start(page)
   const from = (await task(page, 'ทำหน้าเว็บ').boundingBox())!
   const to = (await limb(page, '#Siriraj').boundingBox())!
-  await page.mouse.move(from.x + 30, from.y + from.height / 2)
+  await page.mouse.move(from.x + 60, from.y + from.height / 2)
   await page.mouse.down()
   await page.waitForTimeout(700)
   await expect(page.locator('.yg-ghost')).toContainText('ทำหน้าเว็บ')
@@ -143,7 +143,7 @@ test('a task held and dragged onto another project moves there, tag and all', as
   await expect(page.getByRole('status')).toContainText('ย้าย "ทำหน้าเว็บ" ไป #Siriraj แล้ว')
   // Held and let go where it is, it opens instead, and nothing is ticked.
   const box = (await task(page, 'ทำหน้าคำนวณ').boundingBox())!
-  await page.mouse.move(box.x + 30, box.y + box.height / 2)
+  await page.mouse.move(box.x + 60, box.y + box.height / 2)
   await page.mouse.down()
   await page.waitForTimeout(700)
   await page.mouse.up()
@@ -156,7 +156,7 @@ test('an edit shows at once on a slow connection, and is written after', async (
   drive.latency = 1500
   const writes = () => drive.requests.filter((r) => r.startsWith('PATCH')).length
   const before = writes()
-  await task(page, 'ทำหน้าเว็บ').click()
+  await page.getByRole('checkbox', { name: 'ติ๊กเสร็จ ทำหน้าเว็บ' }).click()
   // Ticked on the page (so it leaves the tree of open tasks) well before Drive has answered even the first read.
   await expect(task(page, 'ทำหน้าเว็บ')).toHaveCount(0, { timeout: 1000 })
   expect(writes()).toBe(before)
@@ -191,4 +191,11 @@ test('a project opened from the tree comes back to the tree', async ({ page }) =
   await expect(page.getByRole('heading', { level: 1, name: '#peddose' })).toBeVisible()
   await page.getByRole('button', { name: '‹ กลับ' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Project Ygdrasil' })).toBeVisible()
+})
+
+test('a tap on a task card opens it; only its ring ticks it', async ({ page }) => {
+  const { file } = await start(page)
+  await task(page, 'ทำหน้าคำนวณ').getByText('ทำหน้าคำนวณ').click()
+  await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' }).getByRole('heading', { name: 'ทำหน้าคำนวณ' })).toBeVisible()
+  expect(file.text).toContain('- [ ] ทำหน้าคำนวณ #peddose/แอป/มือถือ')
 })
