@@ -5,6 +5,7 @@ import app.omnitask.data.VaultText
 import app.omnitask.model.Behavior
 import app.omnitask.model.Focus
 import app.omnitask.model.Insight
+import app.omnitask.model.Learned
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.ReminderOn
@@ -154,7 +155,7 @@ object WebAssistant {
     private fun next(fileKey: String, path: String, text: String, s: StateIn): Insight.Ask? {
         val today = LocalDateTime.parse(s.now).date
         val tasks = WebNotes.tasks(fileKey, path, text, today)
-        return Insight.next(tasks, log(s), Profile.parse(s.profile), today, declined(s))
+        return Insight.next(tasks, log(s), Profile.parse(s.profile), today, declined(s), Behavior.parse(s.behavior))
     }
 
     /**
@@ -311,10 +312,11 @@ object WebAssistant {
     @Serializable
     data class ReviewOut(val title: String, val lines: List<String>)
 
-    /** The last seven days in three lines. */
+    /** The last seven days in three lines, and the work that keeps being moved. */
     fun weekly(fileKey: String, path: String, text: String, stateJson: String): String {
-        val today = LocalDateTime.parse(parse(stateJson).now).date
-        val m = Digest.weekly(WebNotes.tasks(fileKey, path, text, today), today)
+        val s = parse(stateJson)
+        val today = LocalDateTime.parse(s.now).date
+        val m = Digest.weekly(WebNotes.tasks(fileKey, path, text, today), today, Behavior.parse(s.behavior))
         return json.encodeToString(ReviewOut(m.title, m.lines))
     }
 
@@ -340,6 +342,10 @@ object WebAssistant {
                             appendLine("- นัด: ${item.event.title} ${if (item.event.allDay) "ทั้งวัน" else hm(item.event.begin.time) + " ถึง " + hm(item.event.end.time)}")
                     }
                 }
+            }
+            Learned.summary(tasks, Behavior.parse(s.behavior), today).takeIf { it.isNotEmpty() }?.let { lines ->
+                appendLine("[พฤติกรรม 4 สัปดาห์]")
+                lines.forEach { appendLine("- $it") }
             }
             appendLine("[งานที่ยังไม่เสร็จทั้งหมด]")
             tasks.filter { it.isOpen }.take(60).forEach { appendLine(it.raw.trim()) }

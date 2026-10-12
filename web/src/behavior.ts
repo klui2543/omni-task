@@ -76,6 +76,16 @@ export const learn = {
   declined: (ask: string) => keep(api.behaviorDeclined(ask, stamp())),
 }
 
+/** What tasks like the quick-add [sentence] usually came with: chips whose words are added to the sentence. */
+export const quickHints = (sentence: string, profile: string | null): { label: string; words: string }[] => {
+  if (!sentence.trim()) return []
+  try {
+    return JSON.parse(api.behaviorHints(sentence, today(), behaviorText(), profile))
+  } catch {
+    return []
+  }
+}
+
 /** The log as the assistant reads it: the file as last read, with what waits on this device and its old log. */
 export const behaviorText = (): string => [fileText ?? '', ...read(WAITING_KEY), ...oldLines()].join('\n')
 

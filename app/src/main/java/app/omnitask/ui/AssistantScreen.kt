@@ -124,7 +124,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         input = ""
     }
     fun askClaude(question: String) {
-        val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, question + "\n\n" + snapshot(state))
+        val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, question + "\n\n" + snapshot(state, vm.habits()))
         try {
             context.startActivity(Intent(share).setPackage("com.anthropic.claude"))
         } catch (_: ActivityNotFoundException) {
@@ -819,8 +819,8 @@ private fun reason(t: Task, state: UiState): String {
     }
 }
 
-/** A plain-text picture of today for Claude: profile, timeline and the open list. */
-private fun snapshot(state: UiState): String {
+/** A plain-text picture of today for Claude: profile, timeline, the owner's habits ([habits]) and the open list. */
+private fun snapshot(state: UiState, habits: List<String>): String {
     val hm = DateTimeFormatter.ofPattern("HH:mm")
     val plan = DayPlan.build(state.tasks, state.todayEvents, state.today)
     return buildString {
@@ -837,6 +837,10 @@ private fun snapshot(state: UiState): String {
                     is DayPlan.Item.EventItem -> appendLine("- นัด: ${item.event.title} ${if (item.event.allDay) "ทั้งวัน" else item.event.begin.format(hm) + " ถึง " + item.event.end.format(hm)}")
                 }
             }
+        }
+        if (habits.isNotEmpty()) {
+            appendLine("[พฤติกรรม 4 สัปดาห์]")
+            habits.forEach { appendLine("- $it") }
         }
         appendLine("[งานที่ยังไม่เสร็จทั้งหมด]")
         state.tasks.filter { it.isOpen }.take(60).forEach { appendLine(it.raw.trim()) }

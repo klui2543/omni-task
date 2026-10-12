@@ -30,6 +30,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Behavior
 import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Insight
+import app.omnitask.model.Learned
 import app.omnitask.model.Appearance
 import app.omnitask.model.Branches
 import app.omnitask.model.Projects
@@ -458,7 +459,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     conflicts = result.getOrNull()?.conflicts ?: it.conflicts,
                     vaultName = vaultName,
                     profile = profile,
-                    insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined()),
+                    insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined(), behaviorNow()),
                     drive = driveUi(it.drive, result.getOrNull()?.drive),
                     message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") }
                         ?: result.getOrNull()?.drive?.lost?.takeIf { l -> l.isNotEmpty() }?.let { l ->
@@ -1035,7 +1036,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val tasks = swapNote(s.tasks, task.fileUri, here.filterNot { Branches.isParked(it, s.branchStates) })
             val parked = swapNote(s.parked, task.fileUri, here.filter { Branches.isParked(it, s.branchStates) })
             val items = swapNote(s.listItems, task.fileUri, fresh.filter { it.list != null })
-            s.copy(tasks = tasks, parked = parked, listItems = items, insight = Insight.next(tasks + parked + items, doneLog(), s.profile, LocalDate.now(), declined()))
+            s.copy(tasks = tasks, parked = parked, listItems = items, insight = Insight.next(tasks + parked + items, doneLog(), s.profile, LocalDate.now(), declined(), behaviorNow()))
         }
         settleJob?.cancel()
         settleJob = viewModelScope.launch {
@@ -1497,7 +1498,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reviewWeek() {
         val s = _state.value
-        val m = Digest.weekly(s.tasks, s.today)
+        val m = Digest.weekly(s.tasks, s.today, behaviorNow())
         _state.update { it.copy(chat = it.chat + Chat.Asked(tr("ทบทวนสัปดาห์นี้", "Review this week")) + Chat.Review(m.title, m.lines)) }
     }
 
@@ -1779,6 +1780,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun doneLog(): List<Insight.Done> = Behavior.doneLog(behaviorNow())
+
+    /** What tasks like [draft] usually came with, as chips for the quick-add sheet ([Learned.hints]). */
+    fun quickHints(draft: QuickAdd.Draft): List<Learned.Hint> = Learned.hints(draft, behaviorNow(), _state.value.profile, _state.value.today)
+
+    /** How the owner has worked lately, for the picture handed to Claude ([Learned.summary]). */
+    fun habits(): List<String> = Learned.summary(_state.value.tasks, behaviorNow(), _state.value.today)
 
     /** Remembers when work gets done, so the assistant can notice the owner's rhythm. */
     private fun logDone(task: Task) = learn(Behavior.of(Behavior.DONE, task, LocalDateTime.now(), BehaviorLog.SRC))

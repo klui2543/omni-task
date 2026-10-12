@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { quickPreview, today } from '../core'
+import { onBehavior, quickHints } from '../behavior'
 import { pendingQuestion } from '../assistantState'
 import type { PageProps } from '../Home'
 import { BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, SORTS, STATUSES, filterCount, labelOf, storedQuery } from '../query'
@@ -246,6 +247,10 @@ export function QuickAdd(p: PageProps & { onClose: () => void }) {
   const used = (g: string) => sentence.split(/\s+/).includes('#' + g)
   const read_ = useMemo(() => quickPreview(sentence, lists, allTags), [sentence, lists, allTags])
   const picking = read_.token != null && read_.picks.length > 0
+  // What tasks like this one usually came with before (behavior.ts): a tap adds its words to the sentence.
+  const [logRev, setLogRev] = useState(0)
+  useEffect(() => onBehavior(() => setLogRev((n) => n + 1)), [])
+  const hints = useMemo(() => (target || picking ? [] : quickHints(sentence, p.vault.peekProfile() ?? null)), [sentence, target, picking, logRev])
 
   const pick = (k: QuickPick) => {
     const before = sentence.slice(0, sentence.length - (read_.token!.length + 1)).trimEnd()
@@ -362,6 +367,16 @@ export function QuickAdd(p: PageProps & { onClose: () => void }) {
               </div>
             )}
           </>
+        )}
+        {hints.length > 0 && (
+          <div class="chips quick-hints" role="group" aria-label="เคยใส่กับงานแบบนี้">
+            <span class="muted small">เคยใส่กับงานแบบนี้</span>
+            {hints.map((h) => (
+              <button type="button" key={h.words} class="chip" onClick={() => { setSentence(`${sentence.trimEnd()} ${h.words} `); input.current?.focus() }}>
+                + {h.label}
+              </button>
+            ))}
+          </div>
         )}
         {chips.length > 0 && (
           <div class="chips quick-read" aria-label="อ่านได้ว่า">

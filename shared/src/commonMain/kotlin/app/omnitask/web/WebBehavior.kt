@@ -2,10 +2,13 @@ package app.omnitask.web
 
 import app.omnitask.data.TaskLine
 import app.omnitask.model.Behavior
+import app.omnitask.model.Learned
+import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /**
@@ -49,6 +52,19 @@ object WebBehavior {
     /** The log this device kept before the file (`at|KIND` entries, as a JSON list) as event lines. */
     fun legacy(entries: String): String =
         json.decodeFromString<List<String>>(entries).mapNotNull { Behavior.legacyDone(it, SRC) }.joinToString("\n") { Behavior.line(it) }
+
+    @Serializable
+    data class HintOut(val label: String, val words: String)
+
+    /**
+     * What tasks like the quick-add [sentence] usually came with ([Learned.hints]), as chips that add their words to
+     * the sentence. [behavior] is the log's text, [profile] the profile note's.
+     */
+    fun hints(sentence: String, today: String, behavior: String?, profile: String?): String {
+        val day = LocalDate.parse(today)
+        val hints = Learned.hints(QuickAdd.parse(sentence, day), Behavior.parse(behavior), Profile.parse(profile), day)
+        return json.encodeToString(ListSerializer(HintOut.serializer()), hints.map { HintOut(it.label, it.words) })
+    }
 
     /** The file's text (null when there is none yet) with the event [lines] added. */
     fun merge(text: String?, lines: String, today: String): String =

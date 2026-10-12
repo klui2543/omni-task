@@ -930,3 +930,4 @@ a.ebox:hover, a.tpill.ev:hover, a.tblock.ev:hover, a.teal-text:hover { filter: b
 .layout-bar::-webkit-scrollbar { display: none; }
 .layout-bar > * { flex: none; }
 .layout-chips { flex-wrap: nowrap; }
+.quick-hints { align-items: center; }

@@ -20,6 +20,9 @@ object BehaviorLog {
 
     private const val WAITING = "behavior-waiting.jsonl"
 
+    /** The vault's file as last synced, for the summaries the alarms post with the app closed. */
+    private const val CACHE = "behavior-cache.jsonl"
+
     /** The keys of the log this phone kept in its preferences before the file, brought in by [sync]. */
     private const val PREFS = "omnitask"
     private const val KEY_OLD_LOG = "doneLog"
@@ -33,6 +36,12 @@ object BehaviorLog {
     fun record(context: Context, event: BehaviorEvent?) {
         event ?: return
         synchronized(lock) { runCatching { file(context).appendText(Behavior.line(event) + "\n") } }
+    }
+
+    /** Every event as of the last [sync], with those still waiting; read without the network. */
+    fun cached(context: Context): List<BehaviorEvent> {
+        val kept = Behavior.parse(runCatching { File(context.filesDir, CACHE).takeIf { it.exists() }?.readText() }.getOrNull())
+        return (kept + waiting(context)).distinctBy { it.id }
     }
 
     /** The events not yet in the vault. */
@@ -69,6 +78,7 @@ object BehaviorLog {
         }
         // The old log now lives in the file; it no longer grows here, nor travels in the settings file.
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_OLD_LOG).apply()
+        now?.let { runCatching { File(context.filesDir, CACHE).writeText(it) } }
         (Behavior.parse(now) + waiting(context)).distinctBy { it.id }
     }
 }

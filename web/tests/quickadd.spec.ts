@@ -93,3 +93,23 @@ test('the sentence goes to the assistant to find a time for it', async ({ page }
   await expect(page.getByText('อยากไปวิ่ง ควรไปตอนไหนดี')).toBeVisible()
   await expect(page.getByText('งานนี้น่าจะใช้เวลาประมาณเท่าไร')).toBeVisible()
 })
+
+test('a task like ones added before offers what they usually had', async ({ page }) => {
+  const made = (day: number) => JSON.stringify({
+    id: `c${day}`, at: `2026-10-0${day}T08:00:00`, ev: 'create', src: 'android', title: 'ซื้อของเข้าบ้าน', tags: ['บ้าน'], remind: '18:00',
+  })
+  const { file } = await open(page, {
+    now: at(9, 20),
+    before: (d) => d.omniNote('omni-behavior.json', ['{"omni":"behavior","version":1}', made(1), made(2), made(3)].join('\n') + '\n'),
+  })
+  const add = await sheet(page)
+  await add.getByLabel('งานใหม่').fill('ซื้อของเข้าบ้าน')
+  const hints = add.getByRole('group', { name: 'เคยใส่กับงานแบบนี้' })
+  await expect(hints.getByRole('button', { name: '+ #บ้าน' })).toBeVisible()
+  await hints.getByRole('button', { name: '+ #บ้าน' }).click()
+  await hints.getByRole('button', { name: '+ เตือน 18:00' }).click()
+  await expect(add.getByLabel('งานใหม่')).toHaveValue('ซื้อของเข้าบ้าน #บ้าน 18:00 ')
+  await expect(hints).toHaveCount(0)
+  await add.getByRole('button', { name: 'เพิ่ม', exact: true }).click()
+  await expect.poll(() => file.text).toContain('- [ ] ซื้อของเข้าบ้าน #บ้าน #remind-at-due ⏰ 18:00 ➕ 2026-10-08')
+})

@@ -31,6 +31,16 @@ per line and is only ever added to, so two devices writing at once join cleanly.
 are dropped. The logic is in `shared/.../model/Behavior.kt`; Android keeps events waiting in `BehaviorLog.kt`, and
 the web in `web/src/behavior.ts`, until they are written to the file.
 
+`shared/.../model/Learned.kt` reads the log with rules (no AI). It finds:
+
+- tasks moved to a later day three times or more (in the daily and weekly summaries)
+- work that usually slips, when it is due today or tomorrow (in the daily summary)
+- what tasks like a new one usually came with (chips in quick add)
+- the habits handed to Claude with "ask Claude"
+
+A kind of work whose reminders keep being put off by an hour is asked about first. A yes is written to the profile
+note (`- เตือนช้าลง:`), and only new tasks of that kind are then offered a later reminder.
+
 ## Google Drive for the Omni folder (Android)
 
 Settings > Google Drive connects the Omni folder (`📁 Folder/หลังบ้าน/Omni`) on Drive. From then on the app reads and

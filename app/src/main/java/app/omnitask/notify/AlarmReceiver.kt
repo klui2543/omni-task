@@ -81,11 +81,11 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             AlarmKind.EVENT -> post(context, id, base(context, CHANNEL_CALENDAR, title, text))
             AlarmKind.DIGEST -> {
-                val msg = Digest.daily(Scheduler.loadVaultTasks(context), LocalDate.now(), Scheduler.loadSettings(context)) ?: return
+                val msg = Digest.daily(Scheduler.loadVaultTasks(context), LocalDate.now(), Scheduler.loadSettings(context), BehaviorLog.cached(context)) ?: return
                 post(context, "digest", inbox(base(context, CHANNEL_DIGEST, msg.title, msg.lines.first()), msg.lines))
             }
             AlarmKind.WEEKLY -> {
-                val msg = Digest.weekly(Scheduler.loadVaultTasks(context), LocalDate.now())
+                val msg = Digest.weekly(Scheduler.loadVaultTasks(context), LocalDate.now(), BehaviorLog.cached(context))
                 post(context, "weekly", inbox(base(context, CHANNEL_DIGEST, msg.title, msg.lines.first()), msg.lines))
             }
             AlarmKind.TEST -> post(

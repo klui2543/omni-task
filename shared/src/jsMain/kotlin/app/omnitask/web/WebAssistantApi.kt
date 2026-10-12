@@ -52,5 +52,8 @@ object WebAssistantApi {
 
     fun behaviorLegacy(entries: String): String = WebBehavior.legacy(entries)
 
+    fun behaviorHints(sentence: String, today: String, behavior: String?, profile: String?): String =
+        WebBehavior.hints(sentence, today, behavior, profile)
+
     fun behaviorMerge(text: String?, lines: String, today: String): String = WebBehavior.merge(text, lines, today)
 }
