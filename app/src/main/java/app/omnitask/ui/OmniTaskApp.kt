@@ -158,13 +158,17 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     BackHandler(enabled = screen != Screen.FOCUS) { screen = Screen.FOCUS }
 
-    val width = LocalConfiguration.current.screenWidthDp
+    val config = LocalConfiguration.current
+    val width = config.screenWidthDp
     val wide = width >= WIDE_DP
     val twoPane = width >= TWO_PANE_DP
+    // The unfolded Find N is wide but close to square: its menu stays in the bottom bar, as when folded, and only an
+    // opened task sits beside the page. Tablets and landscape (a wider shape) keep the rail on the left.
+    val rail = wide && maxOf(width, config.screenHeightDp).toFloat() / minOf(width, config.screenHeightDp).coerceAtLeast(1) > SQUARE_RATIO
     val open: (app.omnitask.model.Task) -> Unit = { editingKey = it.key }
     // On a phone the menu's items live in the "More" sheet on the bottom bar, where the thumb reaches; the rail layout keeps the menu at the top.
     val menu: @Composable () -> Unit = {
-        if (wide) AppMenu(
+        if (rail) AppMenu(
             urgentRule = state.urgentRule,
             onUrgent = vm::setUrgentRule,
             onNotify = { notifyOpen = true },
@@ -178,7 +182,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val fullPage = remember { mutableIntStateOf(0) }
     // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
-    val dock = if (wide || fullPage.intValue > 0) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val dock = if (rail || fullPage.intValue > 0) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     val content: @Composable () -> Unit = {
         CompositionLocalProvider(LocalFullPage provides fullPage, LocalDockClearance provides dock) {
@@ -222,8 +226,19 @@ fun OmniTaskApp(vm: TaskViewModel) {
     // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
     val popupLift = (if (fullPage.intValue > 0) 0.dp else DOCK_HEIGHT) + if (screen != Screen.AI && fullPage.intValue == 0) 84.dp else 12.dp
 
-    if (wide) {
-        // Landscape, tablet or unfolded: the nav becomes a rail on the left and an opened task sits on the right.
+    // An opened task beside the page (wide screens), under the same close button as the sheet.
+    val editPane: @Composable () -> Unit = {
+        if (wide && twoPane && editing != null) {
+            Box(Modifier.width(400.dp).fillMaxHeight().background(C.card).statusBarsPadding()) {
+                CompositionLocalProvider(LocalPane provides true) {
+                    EditSheet(editing, state, vm, onDismiss = { editingKey = null }, onOpen = open)
+                }
+            }
+        }
+    }
+
+    if (rail) {
+        // Landscape or tablet: the nav becomes a rail on the left and an opened task sits on the right.
         CompositionLocalProvider(LocalNavClearance provides 24.dp) {
             Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
                 NavRail(screen, onAdd = { adding = QuickAddRequest() }) { screen = it }
@@ -235,30 +250,27 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     }
                     state.finished?.let { t -> FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
                 }
-                if (twoPane && editing != null) {
-                    Box(Modifier.width(400.dp).fillMaxHeight().background(C.card).statusBarsPadding()) {
-                        CompositionLocalProvider(LocalPane provides true) {
-                            EditSheet(editing, state, vm, onDismiss = { editingKey = null }, onOpen = open)
-                        }
-                    }
-                }
+                editPane()
             }
         }
     } else {
-        Box(Modifier.fillMaxSize().background(C.bg)) {
-            content()
-            if (fullPage.intValue == 0) DockNav(
-                selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.AI,
-                onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { screen = Screen.MORE },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-            assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = DOCK_HEIGHT + 16.dp))
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
-                Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
+        Row(Modifier.fillMaxSize().background(C.bg).then(if (wide) Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)) else Modifier)) {
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                content()
+                if (fullPage.intValue == 0) DockNav(
+                    selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.AI,
+                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { screen = Screen.MORE },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+                assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = DOCK_HEIGHT + 16.dp))
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
+                    Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
+                }
+                state.finished?.let { t ->
+                    FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
+                }
             }
-            state.finished?.let { t ->
-                FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
-            }
+            editPane()
         }
     }
 
@@ -470,8 +482,11 @@ val FabClearance = 76.dp
 /** Bottom space the floating nav needs; on wide screens the nav sits at the side and only a margin is left. */
 val LocalNavClearance = staticCompositionLocalOf { 100.dp }
 
-/** Width from which the app lays out for landscape, tablets and the unfolded Find N: nav rail on the left. */
+/** Width from which the app lays out for landscape, tablets and the unfolded Find N: an opened task beside the page, and a rail on the left unless the shape is square (see [SQUARE_RATIO]). */
 private const val WIDE_DP = 600
+
+/** Longest side over the shortest, up to which a wide screen counts as square (the unfolded Find N is about 1.1) and keeps the bottom bar. */
+private const val SQUARE_RATIO = 1.3f
 
 /** Width from which an opened task shows beside the list instead of in a sheet. */
 private const val TWO_PANE_DP = 720
