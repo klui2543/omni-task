@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import * as A from '../assistantCore'
 import { keepChatForReturn, pendingQuestion, useChat, type Chat } from '../assistantState'
-import { behaviorText, learn } from '../behavior'
+import { behaviorText, learn, onBehavior } from '../behavior'
 import { Auth, CALENDAR_SCOPE, CALENDAR_WRITE_SCOPE } from '../auth'
 import { CalendarError, localIso, type NewEvent } from '../calendar'
 import { today } from '../core'
@@ -86,7 +86,10 @@ export function AssistantPage(p: PageProps) {
     now: localIso(new Date()), profile: profileText ?? null, events, behavior: behaviorText(),
     futureCount: local.futureCount, skippedToday: [], ...extra,
   })
-  const insight = useMemo(() => (snap && profile?.exists && !profile.stale ? A.insight(snap, state()) : null), [snap, profile, events, answered])
+  // The behavior log may come in after the page is drawn: the question is looked for again then.
+  const [logRev, setLogRev] = useState(0)
+  useEffect(() => onBehavior(() => setLogRev((n) => n + 1)), [])
+  const insight = useMemo(() => (snap && profile?.exists && !profile.stale ? A.insight(snap, state()) : null), [snap, profile, events, answered, logRev])
 
   useEffect(() => { end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }) }, [chat.length])
 

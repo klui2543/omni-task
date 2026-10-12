@@ -43,6 +43,18 @@ const oldLines = (): string[] => {
 
 /** The file's text as last read or written here; null until then. */
 let fileText: string | null = null
+const listeners = new Set<() => void>()
+const setFile = (text: string) => {
+  if (text === fileText) return
+  fileText = text
+  listeners.forEach((l) => l())
+}
+
+/** Calls [l] whenever the file is read anew or written; returns the way to stop. */
+export const onBehavior = (l: () => void) => {
+  listeners.add(l)
+  return () => { listeners.delete(l) }
+}
 let sync: BehaviorSync | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -98,14 +110,14 @@ export class BehaviorSync {
       if (!file && !sending) return
       const text = api.behaviorMerge(file?.text ?? null, sending, today())
       if (file && text === file.text) {
-        fileText = text
+        setFile(text)
       } else if (!file) {
         this.fileId = await this.drive.createText(await this.ensureFolders(omniDirPath), NAME, text, 'application/json')
-        fileText = text
+        setFile(text)
       } else {
         if ((await this.drive.version(file.id)) !== file.version) continue
         await this.drive.writeText(file.id, text, 'application/json')
-        fileText = text
+        setFile(text)
       }
       // Lines kept while this was sent stay for the next time.
       write(WAITING_KEY, read(WAITING_KEY).filter((l) => !waiting.includes(l)))
