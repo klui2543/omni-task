@@ -52,13 +52,14 @@ object Focus {
     }
 
     /**
-     * Open tasks with no deadline whose review is due: they were made (or last reviewed) longer ago
+     * Open tasks with no deadline whose review is due: they were made (or last reviewed or explained) longer ago
      * than [reviewEvery]. Oldest first, so the longest-ignored work gets looked at first.
      */
     fun toReview(tasks: List<Task>, today: LocalDate, reviewed: Map<String, LocalDate>): List<Task> =
         tasks.filter { t -> t.isOpen && t.parent == null && t.due == null && !isWaiting(t) && (t.scheduled == null || t.scheduled < today) }
             .mapNotNull { t ->
-                val base = listOfNotNull(t.created, reviewed[t.title]).maxOrNull()
+                // Writing down why it is still open counts as a look at it.
+                val base = listOfNotNull(t.created, reviewed[t.title], StuckLog.last(t)).maxOrNull()
                 if (base == null || ChronoUnit.DAYS.between(base, today) >= reviewEvery(t)) t to (base ?: LocalDate.EARLIEST) else null
             }
             .sortedBy { it.second }

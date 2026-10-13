@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -282,6 +285,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 if (fullPage.intValue == 0) DockNav(
                     selected = screen, showAsk = askShown,
                     onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.ask(it); screen = Screen.AI },
+                    presets = askPresets(state, vm),
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
                 SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
@@ -299,6 +303,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
     if (editing != null && !(wide && twoPane)) {
         EditSheet(editing, state, vm, onDismiss = { editingKey = null }, onOpen = open)
     }
+    // Waits for the tasks to load, so opening from the notification never shows an empty deck first.
+    if (state.askStuck && state.tasks.isNotEmpty()) StuckDeck(state, vm, onOpen = open) { vm.requestStuck(false) }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
     state.crash?.let { report -> CrashDialog(report, vm::dismissCrash) }
     state.closingParent?.let { parent ->
@@ -401,9 +407,10 @@ private val ASK_HEIGHT = 67.dp
 
 /**
  * The bottom bar on a phone, flush with the screen's edge so every button is in the thumb's reach. On top, a line to
- * type a question for the assistant, beside the add button that turns into Send once something is typed (left out on
- * the assistant's own page, which has its input there); under it the four tabs as words, the current one bold with a
- * short line beneath. It rides up with the keyboard.
+ * type a question for the assistant, with Send once something is typed (left out on the assistant's own page, which
+ * has its input there); under it the tabs as words around the add button in the middle. While the keyboard is up the
+ * tabs step aside: the line rides up with it when it is the one typed in, with ready questions above it, and otherwise
+ * the whole bar goes, so it never covers the field being typed in (the assistant's own, a search).
  */
 @Composable
 private fun DockNav(
@@ -412,9 +419,17 @@ private fun DockNav(
     onSelect: (Screen) -> Unit,
     onAdd: () -> Unit,
     onAsk: (String) -> Unit,
+    presets: List<AskPreset>,
     modifier: Modifier = Modifier,
 ) {
     var question by rememberSaveable { mutableStateOf("") }
+    val focus = LocalFocusManager.current
+    var typingHere by remember { mutableStateOf(false) }
+    // The line leaves with the assistant's page while focused, and would otherwise be thought typed in still.
+    LaunchedEffect(showAsk) { if (!showAsk) typingHere = false }
+    // By the keyboard's height: isImeVisible reads true until the first insets arrive, which hid the bar at start.
+    val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    if (keyboard && !(showAsk && typingHere)) return
     val send = {
         if (question.isNotBlank()) {
             onAsk(question.trim())
@@ -423,6 +438,12 @@ private fun DockNav(
     }
     Column(modifier.fillMaxWidth().background(C.card).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.cardBorder))
+        // While the line is typed in, the ready questions float up above it with the keyboard; one opens the assistant.
+        if (showAsk && typingHere) PresetRow(presets, Modifier.padding(top = 10.dp)) {
+            question = ""
+            focus.clearFocus()
+            onSelect(Screen.AI)
+        }
         if (showAsk) Row(
             Modifier.fillMaxWidth().height(ASK_HEIGHT - 1.dp).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -432,7 +453,8 @@ private fun DockNav(
                 value = question,
                 onValueChange = { question = it },
                 modifier = Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(C.bg)
-                    .border(1.dp, C.control, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp),
+                    .border(1.dp, C.control, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp)
+                    .onFocusChanged { typingHere = it.isFocused },
                 textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                 cursorBrush = SolidColor(C.accent),
                 singleLine = true,
@@ -445,21 +467,25 @@ private fun DockNav(
                     }
                 },
             )
-            val typing = question.isNotBlank()
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm && !typing) C.raised else C.accent)
-                    .clickable { if (typing) send() else onAdd() },
+            if (question.isNotBlank()) Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable { send() },
                 contentAlignment = Alignment.Center,
-            ) {
-                if (typing) Icon(Ic.send, tr("ส่งถึงผู้ช่วย", "Send to the assistant"), tint = C.onAccent, modifier = Modifier.size(20.dp))
-                else Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp))
-            }
+            ) { Icon(Ic.send, tr("ส่งถึงผู้ช่วย", "Send to the assistant"), tint = C.onAccent, modifier = Modifier.size(20.dp)) }
         }
+        if (keyboard) return@Column
         if (showAsk) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(C.divider))
         Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            listOf(Screen.FOCUS, Screen.TASKS, Screen.PROJECTS, Screen.MORE).forEach { s ->
-                DockItem(if (s == Screen.PROJECTS) tr("โปรเจกต์", "Projects") else s.label, s == selected, { onSelect(s) }, Modifier.weight(1f))
+            DockItem(Screen.FOCUS.label, selected == Screen.FOCUS, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
+            DockItem(Screen.TASKS.label, selected == Screen.TASKS, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
+            // Adding a task, in the middle of the tabs where it always was.
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(width = 56.dp, height = 38.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp)) }
             }
+            DockItem(tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
+            DockItem(Screen.MORE.label, selected == Screen.MORE, { onSelect(Screen.MORE) }, Modifier.weight(1f))
         }
     }
 }

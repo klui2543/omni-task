@@ -79,4 +79,6 @@ export interface ProjectsIn {
   starred: string[]
   branches: string[]
   kindTags: string[]
+  /** The tags the owner made projects; missing until chosen once, when every first tag still names one. */
+  projectTags?: string[]
 }

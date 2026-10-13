@@ -119,6 +119,15 @@ class WebAssistantTest {
         assertTrue(kind("จัดลำดับงานทั้งหมดให้หน่อย").contains("\"kind\":\"rank\""))
         assertTrue(kind("อยากเขียน proposal 2 ชม. ควรทำตอนไหน").contains("\"kind\":\"slots\""))
         assertTrue(kind("อยากไปวิ่งสัปดาห์นี้ ควรไปตอนไหนดี").contains("\"kind\":\"duration\""))
+        // A question about what there is looks ahead; it is never taken as new work to find time for.
+        assertTrue(kind("พรุ่งนี้ทำอะไร").contains("\"kind\":\"agenda\",\"from\":\"2026-10-09\",\"to\":\"2026-10-09\""), kind("พรุ่งนี้ทำอะไร"))
+        assertTrue(kind("พรุ่งนี้ทำงานอะไร").contains("\"kind\":\"agenda\""))
+        assertTrue(kind("วันนี้มีนัดไหม").contains("\"kind\":\"agenda\""))
+        assertTrue(kind("what do I have tomorrow?").contains("\"kind\":\"agenda\""))
+        assertTrue(kind("งานไหนเลยกำหนดบ้าง").contains("\"kind\":\"rank\""))
+        // Something to do, said plainly or with "when", still finds time for it.
+        assertTrue(kind("ต้องไปธนาคาร พรุ่งนี้ตอนไหนดี").contains("\"kind\":\"duration\""))
+        assertTrue(kind("ต้องทำรายงานส่งหัวหน้า").contains("\"kind\":\"duration\""))
         // With no range named, a look-ahead covers the next seven days.
         assertTrue(kind("มีอะไรบ้าง").contains("\"from\":\"2026-10-08\",\"to\":\"2026-10-14\""))
     }

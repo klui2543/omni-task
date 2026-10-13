@@ -19,6 +19,10 @@ const BAR: [Page, string][] = [
   ['projects', 'โปรเจกต์'],
   ['settings', 'ตั้งค่า'],
 ]
+/** Ready questions that float up above the line while it is typed in, worded so the assistant reads them right. */
+const PRESETS = [
+  'วันนี้มีอะไรบ้าง', 'พรุ่งนี้มีอะไรบ้าง', 'จัดลำดับงานทั้งหมดให้หน่อย', 'สัปดาห์หน้ามีอะไรบ้าง', 'วางแผนสัปดาห์หน้าให้หน่อย', 'เดือนหน้ามีอะไรบ้าง',
+]
 const PAGES: Page[] = ['focus', 'tasks', 'projects', 'assistant', 'settings']
 
 const pageOf = (hash: string): Page => {
@@ -49,35 +53,46 @@ export type Sync = { state: 'ok' | 'busy' | 'off' | 'offline'; at: Date | null; 
 const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 /**
- * The line to type a question for the assistant: Send once something is typed, otherwise the add button beside it
- * (the bottom bar's; the side bar has its own above it). The assistant asks it as soon as the tasks are there, as it
- * does for a question sent from quick add.
+ * The line to type a question for the assistant, with Send once something is typed and the ready questions floating
+ * up above it while it is typed in ([below] it in the side bar, so the line does not move under a tap). The assistant
+ * asks it as soon as the tasks are there, as it does for a question sent from quick add.
  */
-function AskLine(p: { class: string; withAdd: boolean; onAdd: () => void; onNavigate: (p: Page) => void }) {
+function AskLine(p: { class: string; below?: boolean; onNavigate: (p: Page) => void }) {
   const [question, setQuestion] = useState('')
+  const [typing, setTyping] = useState(false)
+  const send = (q: string) => {
+    pendingQuestion.set(q)
+    setQuestion('')
+    setTyping(false)
+    p.onNavigate('assistant')
+  }
   const ask = (e: Event) => {
     e.preventDefault()
     const q = question.trim()
-    if (!q) return p.withAdd ? p.onAdd() : undefined
-    pendingQuestion.set(q)
-    setQuestion('')
-    p.onNavigate('assistant')
+    if (q) send(q)
   }
+  const presets = typing && (
+    <div class={`as-chips ${p.below ? 'side-presets' : 'dock-presets'}`} role="toolbar" aria-label="คำถามสำเร็จรูป">
+      {PRESETS.map((q) => <button key={q} type="button" class="as-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => send(q)}>{q}</button>)}
+    </div>
+  )
   return (
-    <form class={p.class} onSubmit={ask}>
-      <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} />
-      {question.trim()
-        ? <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>
-        : p.withAdd && <button type="button" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>}
-    </form>
+    <>
+      {!p.below && presets}
+      <form class={p.class} onSubmit={ask}>
+        <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
+        {question.trim() && <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>}
+      </form>
+      {p.below && presets}
+    </>
   )
 }
 
 /**
  * A sidebar on wide screens (computer, iPad across) and a floating bar at the bottom on narrow ones
- * (iPad upright, phone), as on Android: a line to type a question for the assistant beside the add button (left
- * out on the assistant's own page), and under it the tabs as words. The side bar has the add button at its top, as
- * Android's side rail does, and the line to the assistant under it, so both are on every page at every width.
+ * (iPad upright, phone), as on Android: a line to type a question for the assistant (left out on the assistant's own
+ * page), and under it the tabs as words around the add button in the middle. The side bar has the add button at its
+ * top, as Android's side rail does, and the line to the assistant under it, so both are on every page at every width.
  * A thin bar runs along the top while the vault is read or written.
  */
 export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
@@ -95,7 +110,7 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         </div>
         <div class="side-add">
           <button class="primary" onClick={p.onAdd}>+ เพิ่มงาน</button>
-          {p.page !== 'assistant' && <AskLine class="side-ask" withAdd={false} onAdd={p.onAdd} onNavigate={p.onNavigate} />}
+          {p.page !== 'assistant' && <AskLine class="side-ask" below onNavigate={p.onNavigate} />}
         </div>
         <div class="side-items">
           {TABS.map(([page, label]) => (
@@ -115,11 +130,13 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         {p.children}
       </div>
       <div class="dock">
-        {p.page !== 'assistant' && <AskLine class="dock-ask" withAdd onAdd={p.onAdd} onNavigate={p.onNavigate} />}
+        {p.page !== 'assistant' && <AskLine class="dock-ask" onNavigate={p.onNavigate} />}
         <nav class="bar" aria-label="เมนูหลัก">
-          {BAR.map(([page, label]) => (
-            <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
-          ))}
+          {BAR.map(([page, label], i) => [
+            // Adding a task, in the middle of the tabs where it always was.
+            i === 2 && <button key="add" class="bar-add" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>,
+            <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>,
+          ])}
         </nav>
       </div>
     </div>

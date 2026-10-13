@@ -41,3 +41,4 @@
 /* The kind manager over the edit panel. */
 .dialog.kind-manager { width: min(460px, 100%); max-height: 86vh; }
 .kind-manager-body { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
+.side-presets { margin-top: 8px; }

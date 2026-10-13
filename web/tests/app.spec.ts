@@ -269,6 +269,12 @@ test('Settings (narrow) leads to the assistant; a question typed at the bottom g
     await expect(page.getByText('ว่างตอนไหนบ้าง').first()).toBeVisible()
     // The assistant is the page itself: no line to ask it over the page.
     await expect(ask).toHaveCount(0)
+    // Tapping the line brings up ready questions; one asks the assistant straight away.
+    await page.evaluate(() => { location.hash = '/tasks' })
+    await ask.click()
+    await page.getByRole('toolbar', { name: 'คำถามสำเร็จรูป' }).getByRole('button', { name: 'พรุ่งนี้มีอะไรบ้าง' }).click()
+    await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
+    await expect(page.getByText('พรุ่งนี้มีอะไรบ้าง').first()).toBeVisible()
   }
   // An old address of More opens Settings, where the assistant is too (on a narrow screen; the side bar has it on a wide one).
   await page.evaluate(() => { location.hash = '/more' })

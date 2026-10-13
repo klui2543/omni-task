@@ -49,6 +49,7 @@ import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
@@ -138,9 +139,13 @@ data class UiState(
     val reviewed: Map<String, LocalDate> = emptyMap(),
     /** Set when something outside the screens (a widget, a shortcut) asks for the quick-add sheet. */
     val quickAdd: QuickAddRequest? = null,
+    /** Set when the weekly notification is opened: ask why each long-open task is still open. */
+    val askStuck: Boolean = false,
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** The tags the owner made projects (see [Projects.chosen]); null until chosen once. */
+    val projectTags: Set<String>? = null,
     /** Branch states by (project, path), and the tasks hidden because their branch is parked. */
     val branchStates: Map<Pair<String, String>, Branches.State> = emptyMap(),
     val parked: List<Task> = emptyList(),
@@ -304,6 +309,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         hiddenCalendars = CalendarReader.hiddenIds(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        // The project logic reads the choice too, so it is applied wherever the settings are.
+        projectTags = prefs.getStringSet(KEY_PROJECT_TAGS, null)?.toSet().also { Projects.chosen = it },
         countdown = prefs.getString(KEY_COUNTDOWN, null),
         foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
         branchStates = Branches.parse(prefs.getStringSet(KEY_BRANCHES, emptySet()).orEmpty()),
@@ -446,6 +453,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
+            // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
+            if (_state.value.projectTags == null) {
+                result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
+            }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -963,6 +974,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(reviewed = kept) }
     }
 
+    /**
+     * Writes why the task is still open, dated today, on a line under it (see [StuckLog]). It takes the write lock
+     * first, so a review choice made with it is written after it and neither overwrites the other.
+     */
+    fun noteStuck(task: Task, reason: String) {
+        if (reason.isBlank()) return
+        val line = StuckLog.line(LocalDate.now(), reason)
+        viewModelScope.launch {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.addSubLine(task, line) } } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")) } }
+            if (result.isSuccess) reloadNote(task) else reload()
+        }
+    }
+
     enum class ReviewAction { THIS_WEEK, FUTURE, SOMEDAY, KEEP, DROP }
 
     fun review(task: Task, action: ReviewAction) {
@@ -1094,6 +1119,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val next = _state.value.starred.let { if (project in it) it - project else it + project }
         prefs.edit().putStringSet(KEY_STARRED, next).apply()
         _state.update { it.copy(starred = next) }
+    }
+
+    /** Makes [tag] a project, or (off) a plain tag again; the task lines stay as they are. */
+    fun setProject(tag: String, on: Boolean) {
+        val s = _state.value
+        val now = s.projectTags ?: Projects.seed(s.tasks + s.parked)
+        saveProjectTags(if (on) now + tag else now - tag)
+    }
+
+    private fun saveProjectTags(tags: Set<String>) {
+        prefs.edit().putStringSet(KEY_PROJECT_TAGS, tags).apply()
+        Projects.chosen = tags
+        _state.update { it.copy(projectTags = tags) }
     }
 
     /**
@@ -1319,6 +1357,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
 
+    fun requestStuck(on: Boolean) = _state.update { it.copy(askStuck = on) }
+
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
     fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {
         val vault = _state.value.vault ?: return
@@ -1341,23 +1381,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Assistant ----
 
-    /** Reads what the owner asked for: a look-ahead, a plan for a range, a ranking, or time for something new. */
+    /** Reads what the owner asked for ([Planner.askOf]): a look-ahead, a plan for a range, a ranking, or time for something new. */
     fun ask(text: String) {
-        val t = text.lowercase()
         val today = LocalDate.now()
         val range = Planner.rangeOf(text, today)
-        when {
-            listOf("วางแผน", "plan ").any { it in "$t " } && !t.startsWith("plan my day") ->
-                planRange(range ?: (today to today.plusDays(6)), text)
-            listOf("มีอะไร", "what's on", "whats on", "what do i have", "agenda").any { it in t } ->
-                showAgenda(range ?: (today to today.plusDays(6)), text)
-            listOf("จัดลำดับ", "ทำอะไรก่อน", "ควรทำอะไร", "prioritize", "priorities", "what first").any { it in t } -> rankAll(text)
-            Planner.explicitMinutes(text) != null -> {
+        when (Planner.askOf(text)) {
+            Planner.Ask.PLAN -> planRange(range ?: (today to today.plusDays(6)), text)
+            Planner.Ask.AGENDA -> showAgenda(range ?: (today to today.plusDays(6)), text)
+            Planner.Ask.RANK -> rankAll(text)
+            Planner.Ask.SLOTS -> {
                 val s = _state.value
                 val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
                 _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
             }
-            else -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
+            Planner.Ask.DURATION -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
         }
     }
 
@@ -1647,7 +1684,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
-            result.onSuccess { saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag)) }
+            result.onSuccess {
+                saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag))
+                // A branch dropped on the trunk becomes a project of its own.
+                _state.value.projectTags?.let { tags -> saveProjectTags(tags + newTag.substringBefore('/')) }
+            }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
             reload()
         }
@@ -1704,6 +1745,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) name else k }
                 val strict = s.strictProjects.map { if (it == old) name else it }.toSet()
                 val branches = s.branchStates.mapKeys { (k, _) -> if (k.first == old) name to k.second else k }
+                s.projectTags?.let { saveProjectTags(it - old + name) }
                 prefs.edit()
                     .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
                     .putStringSet(KEY_STARRED, starred)
@@ -1877,6 +1919,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+        const val KEY_PROJECT_TAGS = "projectTags"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_COUNTDOWN = "focus.countdown"

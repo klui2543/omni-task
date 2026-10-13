@@ -95,7 +95,7 @@ export default class OmniYgdrasil extends Plugin {
     return null
   }
 
-  /** The choices Android and the web keep in omni-settings.json: project order, stars, branch states, own kinds. */
+  /** The choices Android and the web keep in omni-settings.json: which tags are projects, order, stars, branch states, own kinds. */
   private async projectsState(): Promise<ProjectsIn> {
     const state: ProjectsIn = { order: [], starred: [], branches: [], kindTags: [] }
     for (const dir of [core.omniDirPath, core.legacyOmniDirPath]) {
@@ -106,6 +106,7 @@ export default class OmniYgdrasil extends Plugin {
         state.order = (s.projectOrder?.string ?? '').split('\n').filter((x: string) => x)
         state.starred = s.starredProjects?.set ?? []
         state.branches = s.branchStates?.set ?? []
+        if (Array.isArray(s.projectTags?.set)) state.projectTags = s.projectTags.set
         state.kindTags = (s.customKinds?.set ?? []).map((e: string) => e.split('\t')).filter((p: string[]) => p.length === 3 && p[2].trim()).map((p: string[]) => p[2])
       } catch { /* a settings file being written; the defaults do */ }
       break

@@ -76,11 +76,13 @@ button.link { border: 0; background: none; color: var(--accent-text); min-height
 }
 /* The bottom of a narrow screen, as on Android: a line to ask the assistant beside the add button, a hairline, then the tabs as words. */
 .dock { position: fixed; left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); background: rgb(255 255 255 / .96); border: 1px solid var(--border); border-radius: 20px; padding: 10px 10px 4px; z-index: 5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.dock-presets { margin-bottom: 8px; }
 .dock-ask { display: flex; gap: 8px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--divider); }
 .dock-ask input { flex: 1; min-width: 0; height: 44px; box-sizing: border-box; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 0 14px; font: inherit; font-size: 15px; }
 .dock-ask button { flex: none; width: 44px; height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: #fff; font-size: 22px; line-height: 1; }
-.bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.bar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .bar button { height: 46px; border: 0; border-radius: 12px; font-size: 14px; line-height: 1.2; background: transparent; color: var(--faint); padding: 0 2px; }
+.bar button.bar-add { justify-self: center; align-self: center; width: 56px; height: 38px; border-radius: 14px; background: var(--accent); color: #fff; font-size: 22px; }
 .bar button[aria-current=page] { color: var(--text); font-weight: 600; text-decoration: underline 2px var(--accent); text-underline-offset: 7px; }
 .wide-only { display: none; }
 
@@ -638,6 +640,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 .page.pj .head > .ghost, .page.pj .head > .primary { flex: none; height: 38px; min-height: 38px; padding: 0 14px; }
 .pj-h1-small { font-size: 22px !important; }
 .pj-h2 { margin: 8px 0 0; font-size: 15px; font-weight: 500; color: var(--text2); }
+.pj-others { display: flex; flex-direction: column; gap: 8px; }
+.pj-others .chip .muted { margin-left: 6px; }
 .pj-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 @media (min-width: 1000px) { .pj-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1380px) { .pj-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
@@ -864,9 +868,9 @@ main.page { zoom: var(--text-scale, 1); }
 :root[data-theme=dark] .dock { background: rgb(22 22 24 / .94); }
 :root[data-palette=midnight] .dock { background: rgb(23 26 35 / .94); }
 :root[data-theme=dark] .chip.warn { border-color: #5a2f2d; }
-:root[data-palette=midnight] button.primary, :root[data-palette=midnight] .dock-ask button,
+:root[data-palette=midnight] button.primary, :root[data-palette=midnight] .dock-ask button, :root[data-palette=midnight] .bar button.bar-add,
 :root[data-palette=midnight] .segmented button[aria-checked=true], :root[data-palette=midnight] .as-bubble { color: #0d0f14; }
-:root[data-theme=dark] .as-bubble, :root[data-theme=dark] .segmented button[aria-checked=true], :root[data-theme=dark] button.primary, :root[data-theme=dark] .dock-ask button { color: #0e1118; }
+:root[data-theme=dark] .as-bubble, :root[data-theme=dark] .segmented button[aria-checked=true], :root[data-theme=dark] button.primary, :root[data-theme=dark] .dock-ask button, :root[data-theme=dark] .bar button.bar-add { color: #0e1118; }
 
 /* The quiet look (graphite, not the first look): one grey ring for every open task with the priority as a small dot after
    the title, and calendar events as a flat line at the side without a fill. */

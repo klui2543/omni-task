@@ -1,11 +1,11 @@
 // The choices the web shares with Android, through Android's own settings file in the vault (`omni-settings.json` in
-// the Omni folder): the projects page (order, stars, branch states, task order, "do in order"), the task kinds, what
-// counts as urgent, the archive choices, the Focus page's choices (countdown, future work, suggestions waved away,
-// reviews, tonight's sleep), saved filters, folded groups and columns, the look, task reminders on or off and when
-// each repeating task was done. Android writes every setting it has with a `savedAt` time and reads the file back
-// when it is newer than its last sync; the web does the same with the keys it understands and leaves every other key
-// as Android wrote it. Everything else the web remembers stays on this device.
-import { legacyOmniDirPath, omniDirPath } from './core'
+// the Omni folder): the projects page (which tags are projects, order, stars, branch states, task order, "do in
+// order"), the task kinds, what counts as urgent, the archive choices, the Focus page's choices (countdown, future
+// work, suggestions waved away, reviews, tonight's sleep), saved filters, folded groups and columns, the look, task
+// reminders on or off and when each repeating task was done. Android writes every setting it has with a `savedAt`
+// time and reads the file back when it is newer than its last sync; the web does the same with the keys it
+// understands and leaves every other key as Android wrote it. Everything else the web remembers stays on this device.
+import { applyProjectTags, legacyOmniDirPath, omniDirPath } from './core'
 import { Drive, DriveError, type Versioned } from './drive'
 import { focusLocal } from './focusState'
 import { DEFAULT_QUERY, type SavedFilter } from './query'
@@ -46,7 +46,7 @@ const json = <T>(key: string, fallback: T): T => {
 const URGENT = ['TWO_DAYS', 'THREE_DAYS', 'THIS_WEEK']
 const sorted = (xs: string[]) => [...xs].sort()
 
-interface Projects { order: string[]; starred: string[]; branches: string[]; taskOrder: Record<string, string[]>; strict: string[] }
+interface Projects { order: string[]; starred: string[]; branches: string[]; taskOrder: Record<string, string[]>; strict: string[]; projectTags?: string[] }
 const NO_PROJECTS: Projects = { order: [], starred: [], branches: [], taskOrder: {}, strict: [] }
 
 /** This device's choices, as Android keys and values. */
@@ -62,6 +62,8 @@ export function localSettings(): Record<string, Value> {
     customKinds: { set: sorted(k.custom) },
     hiddenKinds: { set: sorted(k.hidden) },
   }
+  // Only once chosen: an empty set would turn every project into a plain tag on Android.
+  if (p.projectTags) out.projectTags = { set: sorted(p.projectTags) }
   const urgent = get('omni.urgent')
   if (urgent && URGENT.includes(urgent)) out.urgentRule = { string: urgent }
   const days = get('omni.archiveDays')
@@ -156,9 +158,11 @@ export function applySettings(s: Record<string, Value>) {
   }
   if (set('strictProjects')) p.strict = set('strictProjects')!
   if (set('branchStates')) p.branches = set('branchStates')!
+  if (set('projectTags')) p.projectTags = set('projectTags')!
   if (set('customKinds')) k.custom = set('customKinds')!
   if (set('hiddenKinds')) k.hidden = set('hiddenKinds')!
   put('omni.projects', JSON.stringify(p))
+  applyProjectTags(p.projectTags)
   put('omni.kinds', JSON.stringify(k))
   const urgent = s.urgentRule?.string
   if (urgent && URGENT.includes(urgent)) put('omni.urgent', urgent)

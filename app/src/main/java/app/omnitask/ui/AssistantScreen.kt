@@ -61,6 +61,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -74,6 +76,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.Task
+import app.omnitask.model.StuckLog
 import app.omnitask.model.tr
 import kotlinx.datetime.DayOfWeek
 import java.time.Instant
@@ -101,6 +104,8 @@ private val EXAMPLES: List<String>
 fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val context = LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
+    var typing by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
     var interviewing by rememberSaveable { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var custom by remember { mutableStateOf<CustomRequest?>(null) }
@@ -248,8 +253,11 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
 
         val ime = WindowInsets.isImeVisible
-        // Once the conversation has started the big cards give way to this row, so the chat keeps the space.
-        if (state.chat.isNotEmpty() && !ime) {
+        // While the field is typed in, the ready questions float up above it with the keyboard.
+        if (typing) {
+            PresetRow(askPresets(state, vm), Modifier.padding(top = 6.dp)) { input = ""; focus.clearFocus() }
+        } else if (state.chat.isNotEmpty() && !ime) {
+            // Once the conversation has started the big cards give way to this row, so the chat keeps the space.
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -277,7 +285,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             BasicTextField(
                 value = input,
                 onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).onFocusChanged { typing = it.isFocused },
                 textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                 cursorBrush = SolidColor(C.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -310,6 +318,35 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             onAgenda = { from, to -> vm.showAgenda(from to to, tr("ช่วงนี้มีอะไรบ้าง", "What's on in this range?")); pickingRange = false },
             onPlan = { from, to -> vm.planRange(from to to, tr("วางแผนช่วงนี้ให้หน่อย", "Plan this range")); pickingRange = false },
         )
+    }
+}
+
+/** A ready question, offered while typing to the assistant so the common ones need no typing (and are never misread). */
+class AskPreset(val label: String, val run: () -> Unit)
+
+fun askPresets(state: UiState, vm: TaskViewModel): List<AskPreset> {
+    val today = state.today
+    val tomorrow = today.plusDays(1)
+    return listOf(
+        AskPreset(tr("วันนี้มีอะไร", "Today")) { vm.showAgenda(today to today, tr("วันนี้มีอะไรบ้าง", "What's on today?")) },
+        AskPreset(tr("พรุ่งนี้มีอะไร", "Tomorrow")) { vm.showAgenda(tomorrow to tomorrow, tr("พรุ่งนี้มีอะไรบ้าง", "What's on tomorrow?")) },
+        AskPreset(tr("จัดลำดับวันนี้", "Plan today"), vm::planToday),
+        AskPreset(tr("จัดลำดับทั้งหมด", "Prioritize all")) { vm.rankAll() },
+        AskPreset(tr("สัปดาห์หน้ามีอะไร", "Next week")) { vm.showAgenda(nextWeek(today), tr("สัปดาห์หน้ามีอะไรบ้าง", "What's on next week?")) },
+        AskPreset(tr("วางแผนสัปดาห์หน้า", "Plan next week")) { vm.planRange(nextWeek(today), tr("วางแผนสัปดาห์หน้าให้หน่อย", "Plan next week")) },
+        AskPreset(tr("เดือนหน้ามีอะไร", "Next month")) { vm.showAgenda(nextMonth(today), tr("เดือนหน้ามีอะไรบ้าง", "What's on next month?")) },
+        AskPreset(tr("ทบทวนสัปดาห์", "Weekly review"), vm::reviewWeek),
+    )
+}
+
+/** The presets as a row of chips that scrolls sideways, shown above a field while it is typed in. */
+@Composable
+fun PresetRow(presets: List<AskPreset>, modifier: Modifier = Modifier, onPicked: () -> Unit) {
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        presets.forEach { p -> QuickChip(p.label) { p.run(); onPicked() } }
     }
 }
 
@@ -842,5 +879,9 @@ private fun snapshot(state: UiState, habits: List<String>): String {
         }
         appendLine("[งานที่ยังไม่เสร็จทั้งหมด]")
         state.tasks.filter { it.isOpen }.take(60).forEach { appendLine(it.raw.trim()) }
+        StuckLog.summary(state.tasks).takeIf { it.isNotEmpty() }?.let { lines ->
+            appendLine("[ทำไมงานยังค้าง (บันทึกของเจ้าของ)]")
+            lines.forEach { appendLine("- $it") }
+        }
     }
 }
