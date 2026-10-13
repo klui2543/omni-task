@@ -120,6 +120,10 @@ A tag is a project only when the owner made it one on this page: the "แท็�
 one, and "เลิกเป็นโปรเจกต์" in a project's header turns it back into a plain tag (the task lines never change). The
 first time, the projects every first tag named before are kept as the choice, so none disappears.
 
+Which project, list, mind map, project view or Ygdrasil is open is kept in the address (`src/ui/projects/route.ts`,
+e.g. `#/projects/project/<name>/map`), so the browser's back steps out in the order of Android's back button (a project
+opened from Ygdrasil goes back to the tree) and each screen can be linked to.
+
 What the owner chooses on this page (which tags are projects, the order of projects, the starred ones, the state of
 each branch, each project's task order, "do in order") is kept on this device (localStorage `omni.projects`) and travels with Android
 through `omni-settings.json`; see "Settings shared with Android" below.
@@ -135,10 +139,32 @@ tab-separated `name, emoji, tag` form) and travel with Android through `omni-set
 ## Settings shared with Android
 
 `src/settingsSync.ts` reads and writes Android's settings file, `omni-settings.json` in the Omni folder, for the choices
-both apps have: the Projects page (which tags are projects, order, stars, branch states, task order, "do in order"), the task kinds, what
-counts as urgent, the archive days and whether ticking done asks. The file is read when the page opens and on every
-reload; it wins when its `savedAt` is newer than this device's last sync, as on Android. A change here is written
-1.5 seconds later (quick changes become one write), with every key Android wrote left as it was and `savedAt` later
-than the file's own, so a phone whose clock runs ahead still takes it. Nothing is written before the file was read
-once, so the iPad never overwrites the phone's choices with its defaults. The look, the calendars shown and the
-assistant's memory stay on each device.
+both apps have: the Projects page (which tags are projects, order, stars, branch states, task order, "do in order"), the
+task kinds, what counts as urgent, the archive days and whether ticking done asks, the Focus page's choices (the
+countdown, how much future work, suggestions waved away, reviews, tonight's bed and wake times and whether the wake
+time came from the watch), saved filters, folded groups and Kanban columns, the look (font, size, theme, colour set,
+in Android's upper-case names), task reminders on or off, and the dates each repeating task was done. The morning
+summary's choices are read from the file and never written. The file is read when the page opens and on every
+reload; it wins when its `savedAt` is newer than this device's last sync, as on Android, and the first time this
+version meets a key it takes the phone's value even from an older file. A change here is written 1.5 seconds later
+(quick changes become one write), with every key Android wrote left as it was and `savedAt` later than the file's
+own, so a phone whose clock runs ahead still takes it. Nothing is written before the file was read once, so the iPad
+never overwrites the phone's choices with its defaults. The calendars shown and the assistant's memory stay on each
+device.
+
+## Reminders
+
+A browser on the iPad cannot schedule a notification for later, and sending one would need a server of ours, so the
+web reminds only while it is open (`src/reminders.ts`, `src/ui/Reminders.tsx`). The times come from the shared
+`AlarmPlan`, as on Android (a task's ⏰ or 🎯 time, parked branches left out). At each one a banner shows with เสร็จ,
+อีก 1 ชั่วโมง and พรุ่งนี้ (a snooze is kept on this device for that reminder only), and a system notification too once
+Settings > การแจ้งเตือน allowed it (on the iPad only for the app added to the Home Screen). Reminders that came due
+while the page was away show on return, up to 12 hours back. The app icon carries the count of overdue work and work
+due today where the browser allows a badge. Snoozing, letting go and opening a reminder go into the behavior log, as
+on Android. The assistant shows the morning summary (Android's digest) as a card.
+
+## Images
+
+A picked photo is saved as WebP in the Attachments folder, as on Android, without its EXIF data and with a smaller
+copy offered when it is large. Safari cannot write WebP from a canvas, so there the image is encoded with a
+WebAssembly encoder (`@jsquash/webp`), loaded only when it is needed.
