@@ -5,7 +5,8 @@ import { behaviorText, learn, onBehavior } from '../behavior'
 import { Auth, CALENDAR_SCOPE, CALENDAR_WRITE_SCOPE } from '../auth'
 import { CalendarError, localIso, type NewEvent } from '../calendar'
 import { today } from '../core'
-import { useFocusLocal } from '../focusState'
+import { skippedToday, useFocusLocal } from '../focusState'
+import { notifyChoice } from '../settingsNotify'
 import type { PageProps } from '../Home'
 import { EditPanel } from '../ui/EditPanel'
 import { CalendarWriteDialog, CustomTimeDialog, RangeDialog } from '../ui/assistant/AssistantDialogs'
@@ -20,6 +21,7 @@ const WRITE_DENIED = 'Google ยังไม่อนุญาตให้ลง
 
 const EXAMPLES = ['อยากไปวิ่งสัปดาห์นี้ ควรไปตอนไหนดี', 'อยากเขียน proposal 2 ชม. ควรทำตอนไหน', 'ต้องไปธนาคาร พรุ่งนี้ตอนไหนดี']
 const CLAUDE_QUESTION = 'ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน'
+const NOTHING_TODAY = 'ไม่มีงานเลยกำหนด ครบวันนี้ หรือคนรอ'
 
 const iso = (d: Date) => d.toLocaleDateString('en-CA')
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
@@ -82,14 +84,19 @@ export function AssistantPage(p: PageProps) {
   const profile = useMemo(() => (profileText === undefined ? null : A.profileOf(profileText)), [profileText])
   const snap = p.snapshot
 
+  // Today's list leaves out the future work skipped for today on Focus, as Android's does.
+  const notify = notifyChoice.get()
   const state = (extra: Partial<A.AssistState> = {}): A.AssistState => ({
     now: localIso(new Date()), profile: profileText ?? null, events, behavior: behaviorText(),
-    futureCount: local.futureCount, skippedToday: [], ...extra,
+    futureCount: local.futureCount, skippedToday: skippedToday(local),
+    notify: { overdue: notify.overdue, dueToday: notify.dueToday, waiting: notify.waiting }, ...extra,
   })
   // The behavior log may come in after the page is drawn: the question is looked for again then.
   const [logRev, setLogRev] = useState(0)
   useEffect(() => onBehavior(() => setLogRev((n) => n + 1)), [])
   const insight = useMemo(() => (snap && profile?.exists && !profile.stale ? A.insight(snap, state()) : null), [snap, profile, events, answered, logRev])
+  // The morning summary Android sends as a notification; here it is a card the owner opens (the web cannot send it on time).
+  const digest = useMemo(() => (snap ? A.daily(snap, state()) : null), [snap, logRev])
 
   useEffect(() => { end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }) }, [chat.length])
 
@@ -177,6 +184,11 @@ export function AssistantPage(p: PageProps) {
     if (!snap) return
     const r = A.weekly(snap, state())
     push({ t: 'asked', text: 'ทบทวนสัปดาห์นี้' }, { t: 'review', title: r.title, lines: r.lines })
+  }
+  const morning = () => {
+    if (!snap) return
+    const r = A.daily(snap, state())
+    push({ t: 'asked', text: 'สรุปเช้านี้' }, { t: 'review', title: r?.title ?? 'แผนวันนี้', lines: r?.lines ?? [NOTHING_TODAY] })
   }
 
   const showAgenda = async ([from, to]: [string, string], asked: string) => {
@@ -314,12 +326,14 @@ export function AssistantPage(p: PageProps) {
   const sources = `อ่านจาก ${[profile?.exists ? 'โปรไฟล์.md' : null, `งาน ${openCount} รายการ`, connected ? 'Google Calendar' : null].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' และ $1')}`
   const t0 = today()
   const quick = [
+    { title: 'สรุปเช้านี้', sub: digest?.title ?? NOTHING_TODAY, run: morning, wide: true },
     { title: 'สัปดาห์หน้ามีอะไร', sub: 'งานและนัดทั้งหมด', run: () => showAgenda(nextWeek(), 'สัปดาห์หน้ามีอะไรบ้าง') },
     { title: 'วางแผนสัปดาห์หน้า', sub: 'จัดงานที่ยังไม่มีวันลงช่องว่าง', run: () => planRange(nextWeek(), 'วางแผนสัปดาห์หน้าให้หน่อย') },
     { title: 'จัดลำดับวันนี้', sub: 'ตามงานและนัดวันนี้', run: planToday },
     { title: 'ทบทวนสัปดาห์', sub: 'สรุป 7 วันที่ผ่านมา', run: reviewWeek },
   ]
   const chips: [string, () => void][] = [
+    ['สรุปเช้านี้', morning],
     ['จัดลำดับวันนี้', planToday],
     ['จัดลำดับทั้งหมด', () => rankAll()],
     ['สัปดาห์หน้ามีอะไร', () => showAgenda(nextWeek(), 'สัปดาห์หน้ามีอะไรบ้าง')],
@@ -392,7 +406,7 @@ export function AssistantPage(p: PageProps) {
               </section>
               <div class="as-quick">
                 {quick.map((q) => (
-                  <button key={q.title} class="as-qcard" disabled={!snap} onClick={q.run}><span class="medium">{q.title}</span><span class="muted small">{q.sub}</span></button>
+                  <button key={q.title} class={`as-qcard${'wide' in q ? ' wide' : ''}`} disabled={!snap} onClick={q.run}><span class="medium">{q.title}</span><span class="muted small">{q.sub}</span></button>
                 ))}
                 <button class="as-qcard wide" disabled={!snap} onClick={() => askClaude(CLAUDE_QUESTION)}>
                   <span class="medium">ถาม Claude</span>
