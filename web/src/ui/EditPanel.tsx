@@ -9,6 +9,7 @@ import type { EditOp, KindPicker, Task } from '../types'
 import { fileName, needsChoice, prepare, sizeLabel, type Prepared } from '../image'
 import { linkText, resolveLink, searchNotes } from '../vault'
 import { KindManager } from './KindManager'
+import { StuckBlock, StuckDialog, StuckLogDialog, StuckPath } from './Stuck'
 import { Check, metaOf } from './TaskRow'
 
 /** A date [days] after [iso], as YYYY-MM-DD. */
@@ -62,6 +63,9 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const [folds, setFolds] = useState<Record<string, boolean>>({})
   const [sub, setSub] = useState('')
   const [askDelete, setAskDelete] = useState(false)
+  // Why it is still open: the box to write a new note, and the log of every task's notes.
+  const [noting, setNoting] = useState(false)
+  const [stuckLog, setStuckLog] = useState(false)
   // The kinds were changed in the manager: the field shows the new choices.
   const [, setKindsRev] = useState(0)
   // A different task closes what was open. Not on the first render: that effect runs after paint, and a tap on a
@@ -72,6 +76,7 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
     shown.current = t.key
     setOpen(null)
     setAskDelete(false)
+    setNoting(false)
   }, [t.key])
 
   const change = (op: EditOp) => p.run(() => p.vault.change(p.fresh(t), op))
@@ -79,6 +84,8 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const subs = all.filter((c) => c.parent === t.key)
   const parent = t.parent ? all.find((c) => c.key === t.parent) : null
   const doneSubs = subs.filter((c) => c.status === 'DONE').length
+  // The task's stuck path (made, every note, every finished subtask); not for a list's item.
+  const stuck = p.snapshot?.stuckTask(t.key) ?? null
   // The first open task this one waits on (⛔), as Android's "waits on" field.
   const waitsOn = waitingOn(t, all)
   // Every tag in the vault (most used first), for the Tag field to search, as Android's add-tag dialog.
@@ -146,6 +153,8 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
       </div>
 
       <Description {...p} task={t} onSave={(text) => change({ op: 'describe', value: text })} />
+      {/* A late, old or already explained task shows why it is still open right here; others keep it folded below. */}
+      {stuck?.matters && <StuckBlock task={stuck} onAdd={() => setNoting(true)} onLog={() => setStuckLog(true)} />}
 
       <div class="segmented" role="radiogroup" aria-label="สถานะ">
         {STATUSES.map(([s, label]) => (
@@ -205,6 +214,18 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
       </div>
 
       <div class="folds">
+        {stuck && !stuck.matters && (
+          <Fold label="ทำไมยังค้าง" summary={stuck.last ? `${stuck.notes} บันทึก, ล่าสุด ${shortDate(stuck.last)}` : 'ยังไม่มีบันทึก'}
+            open={!!folds.stuck} onToggle={() => setFolds({ ...folds, stuck: !folds.stuck })}>
+            <div class="stuck-fold">
+              <StuckPath events={stuck.events.filter((e) => e.step !== 'START')} />
+              <div class="stuck-actions">
+                <button class="link" onClick={() => setNoting(true)}>+ จดว่าติดอะไร</button>
+                <button class="link quiet" onClick={() => setStuckLog(true)}>ดูทุกงาน</button>
+              </div>
+            </div>
+          </Fold>
+        )}
         <Fold label="โน้ตที่เกี่ยวข้อง" summary={t.linkNames.length ? `${t.linkNames.length} โน้ต` : ''} open={!!folds.notes} onToggle={() => setFolds({ ...folds, notes: !folds.notes })}>
           <LinkedNotes {...p} task={t} onChange={change} />
         </Fold>
@@ -222,6 +243,11 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
           <div class="fold-row"><span class="fold-label">ต้องรอ</span><span class="muted">{waitsOn ?? 'ไม่มี'}</span></div>
         </Fold>
       </div>
+      {noting && stuck && <StuckDialog task={stuck} onSave={(text) => change({ op: 'stuck', value: text })} onClose={() => setNoting(false)} />}
+      {stuckLog && p.snapshot && (
+        <StuckLogDialog view={p.snapshot.stuck()} onClose={() => setStuckLog(false)}
+          onOpen={(key) => { setStuckLog(false); const o = p.snapshot?.byKey.get(key); if (o) p.onOpen(o) }} />
+      )}
     </div>
   )
 }

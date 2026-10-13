@@ -7,6 +7,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Profile
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
 import app.omnitask.model.tr
@@ -89,6 +90,9 @@ object WebFocus {
         val phase: String? = null,
         /** For an active event: how far into it the clock is, 0 to 1, where the red line crosses its card. */
         val progress: Float = 0f,
+        /** For a task late or open a long while: [extra] starts with when it last moved, and [weeks] has a bar a week. */
+        val stuck: Boolean = false,
+        val weeks: List<String> = emptyList(),
     )
 
     @Serializable
@@ -232,7 +236,7 @@ object WebFocus {
                 third = third,
                 countdown = countdown,
                 notices = brief.warnings,
-                plan = planOut(plan, today, now, blocked, progress, s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }),
+                plan = planOut(plan, today, now, blocked, progress, s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }, tasks),
                 suggestions = brief.suggestions.map { SuggestionOut(it.id, it.task.key, it.kind.name, it.task.title, it.text) },
                 waiting = brief.waiting.map { WaitingOut(it.key, Focus.waitingFor(it), Focus.ageDays(it, today)) },
                 future = brief.future.map { it.key },
@@ -266,7 +270,7 @@ object WebFocus {
      */
     private fun planOut(
         plan: List<DayPlan.Section>, today: LocalDate, now: LocalDateTime, blocked: Set<Task>, progress: Map<String, Pair<Int, Int>>,
-        links: Map<Long, String> = emptyMap(),
+        links: Map<Long, String> = emptyMap(), tasks: List<Task> = emptyList(),
     ): List<Section> {
         val nowTime = now.time
         val inEvent = plan.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
@@ -286,7 +290,7 @@ object WebFocus {
                     nowShown = true
                 }
                 items += when (item) {
-                    is DayPlan.Item.TaskItem -> taskItem(item, today, item.task in blocked, progress)
+                    is DayPlan.Item.TaskItem -> taskItem(item, today, item.task in blocked, progress, tasks)
                     is DayPlan.Item.EventItem -> {
                         val e = item.event
                         val phase = DayPlan.phase(e, now)
@@ -317,13 +321,19 @@ object WebFocus {
         }
     }
 
-    private fun taskItem(item: DayPlan.Item.TaskItem, today: LocalDate, blocked: Boolean, progress: Map<String, Pair<Int, Int>>): PlanItem {
+    private fun taskItem(
+        item: DayPlan.Item.TaskItem, today: LocalDate, blocked: Boolean, progress: Map<String, Pair<Int, Int>>, tasks: List<Task>,
+    ): PlanItem {
         val t = item.task
         val late = t.isOpen && t.due?.let { it < today } == true
         val done = t.status == Status.DONE
+        // Late or long-open: how it has moved (a bar a week) and when it last did, one tap from writing why (StuckLog).
+        val stuck = !done && StuckLog.matters(t, today)
+        val subs = if (stuck) WebStuck.subtasksOf(t, tasks) else emptyList()
         // Every row is today's, so "due today" would only repeat: a lead is for overdue work only, and a finished task is a title.
         val lead = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
         val sub = if (done) emptyList() else listOfNotNull(
+            if (stuck) WebStuck.status(t, subs, today) else null,
             if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
             Projects.projectOf(t),
             progress[t.key]?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
@@ -331,7 +341,7 @@ object WebFocus {
         return PlanItem(
             "task", item.time?.let { hm(it) }, t.key, t.title, lead, late,
             if (sub.isEmpty()) null else sub.joinToString(", "), blocked,
-            done = done,
+            done = done, stuck = stuck, weeks = if (stuck) StuckLog.weeks(t, subs, today).map { it.name } else emptyList(),
         )
     }
 }

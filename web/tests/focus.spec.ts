@@ -159,7 +159,7 @@ test('the usual sleep times come from the profile note', async ({ page }) => {
 
 test('a task on Focus opens the edit pane', async ({ page }) => {
   const { file } = await open(page)
-  await page.getByRole('button', { name: 'ส่งรายงาน' }).click()
+  await page.getByRole('button', { name: 'ส่งรายงาน', exact: true }).click()
   const pane = page.getByRole('dialog', { name: 'แก้ไขงาน' })
   await expect(pane).toBeVisible()
   await expect(pane.getByText('ส่งรายงาน')).toBeVisible()

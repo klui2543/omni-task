@@ -12,6 +12,7 @@ import app.omnitask.model.TaskKind
 import app.omnitask.model.TaskQuery
 import app.omnitask.model.Recurrence
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.Projects
@@ -303,6 +304,11 @@ object WebCore {
                 VaultText.edit(text, task) { lines, i -> VaultText.addSubLine(lines, i, "![[$name]]") }
             }
             "unimage" -> VaultText.edit(text, task) { lines, i -> VaultText.removeSubLine(lines, i, "![[${op.value!!}") }
+            // Why the task is still open, dated today, on a line under it (see StuckLog), as Android's noteStuck writes it.
+            "stuck" -> {
+                val reason = value ?: return fail("empty")
+                VaultText.edit(text, task) { lines, i -> VaultText.addSubLine(lines, i, StuckLog.line(day, reason)) }
+            }
             // The description went to its own note (value: its name): the lines go, a link to it takes their place.
             "moveDescription" -> {
                 val name = value ?: return fail("empty")

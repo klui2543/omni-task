@@ -106,6 +106,8 @@ export type EditOp =
   /** The direct subtasks in a new order: their lines as a JSON list. */
   | { op: 'order'; value: string }
   | { op: 'quadrant'; value: Quadrant; field: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK' }
+  /** Why the task is still open: a dated line under it (Android's stuck log). */
+  | { op: 'stuck'; value: string }
 
 export type Kind = 'NORMAL' | 'WAITING' | 'FUTURE' | 'SOMEDAY'
 
@@ -144,6 +146,9 @@ export interface PlanItem {
   phase?: 'past' | 'active' | 'upcoming'
   /** For an active event: how far into it the clock is, 0 to 1. */
   progress?: number
+  /** For a task late or open a long while: [extra] starts with when it last moved, and [weeks] has a bar a week. */
+  stuck?: boolean
+  weeks?: StuckWeek[]
 }
 
 export interface Pick {
@@ -435,4 +440,39 @@ export interface QuickPreview {
   /** The "#word" being typed, without the #. */
   token?: string | null
   picks: QuickPick[]
+}
+
+/* ---------- Stuck log (WebStuck) ---------- */
+
+/** What one of a task's weeks held: nothing, a note, or a finished subtask. */
+export type StuckWeek = 'NONE' | 'NOTE' | 'DONE'
+
+/** One point on a task's path: made, a note, a subtask finished; [text] is what is shown beside the dot. */
+export interface StuckEvent {
+  day: string
+  step: 'START' | 'NOTE' | 'DONE'
+  text: string
+}
+
+export interface StuckTask {
+  key: string
+  title: string
+  /** Late, open 21 days or more, or already explained: the path goes up front. */
+  matters: boolean
+  notes: number
+  last: string | null
+  events: StuckEvent[]
+  /** When it last moved, or that nothing is noted yet. */
+  status: string
+  weeks: StuckWeek[]
+  done: number
+  total: number
+  age: number | null
+}
+
+export interface StuckView {
+  /** Open a long while with nothing written, the one waiting longest first. */
+  toAsk: { key: string; title: string; age: number | null }[]
+  /** Every task with notes, its path without the start, the most recently explained first. */
+  log: { key: string; title: string; open: boolean; age: number | null; events: StuckEvent[] }[]
 }

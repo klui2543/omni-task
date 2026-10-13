@@ -18,7 +18,7 @@ test('the new layout: Omni note.md, its archive and conflict copies sit together
   expect(archive.text).toContain('# Omni note Archive')
   expect(drive.nodes.some((n) => n.name === 'TaskForge Archive.md')).toBe(false)
 
-  await page.getByRole('button', { name: 'ส่งรายงาน' }).click()
+  await page.getByRole('button', { name: 'ส่งรายงาน', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' })).toContainText('Omni note.md บรรทัด')
 })
 

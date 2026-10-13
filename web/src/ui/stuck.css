@@ -1,0 +1,49 @@
+/* The stuck log (Stuck.tsx): a path down the left with a dot a point, in the theme's quiet colours. */
+
+.stuck-path { --stuck-hole: var(--card); position: relative; list-style: none; margin: 0; padding: 0 0 0 20px; }
+.stuck-point { position: relative; display: flex; flex-direction: column; padding: 2px 0 8px; }
+.stuck-point:last-child { padding-bottom: 0; }
+/* The line runs from each dot down to the next one, so it never hangs past the last. */
+.stuck-point:not(:last-child)::after { content: ""; position: absolute; left: -15px; top: 12px; bottom: -12px; width: 2px; background: var(--control); }
+.stuck-point::before {
+  content: ""; position: absolute; left: -20px; top: 6px; width: 12px; height: 12px; box-sizing: border-box; border-radius: 6px;
+  background: var(--stuck-hole); border: 2px solid var(--faint); z-index: 1;
+}
+.stuck-point.done::before, .stuck-point.now::before { background: var(--accent); border-color: var(--accent); }
+.stuck-day { font-size: 11.5px; color: var(--faint); }
+.stuck-text { font-size: 14px; color: var(--text2); overflow-wrap: anywhere; }
+.stuck-point.done .stuck-text { color: var(--text); }
+
+.stuck-field {
+  margin-top: 4px; width: 100%; min-height: 44px; box-sizing: border-box; border: 0; border-radius: 12px; padding: 11px 12px;
+  background: var(--raised); color: var(--text); font: inherit; font-size: 14px; line-height: 1.45; resize: vertical;
+}
+.stuck-field:focus { outline: 2px solid var(--accent-line); }
+.stuck-chips { gap: 6px; }
+
+.week-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 16px; }
+.week-bars i { display: block; width: 6px; height: 5px; border-radius: 2px; background: var(--control); }
+.week-bars i.note { background: var(--faint); }
+.week-bars i.done { height: 14px; background: var(--accent); }
+
+/* A Focus row of late or long-open work: the bars beside it and its "moved N days ago" line both open the path. */
+.pstack { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pstack .pbody { min-height: 28px; }
+.stuck-line { border: 0; background: transparent; padding: 0 0 4px; text-align: left; border-radius: 6px; }
+.stuck-bars { flex: none; width: 80px; height: 36px; border: 0; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: flex-end; padding: 0; }
+
+.stuck-log { display: flex; flex-direction: column; gap: 4px; }
+.stuck-log-task { display: flex; flex-direction: column; gap: 6px; width: 100%; border: 0; background: transparent; text-align: left; padding: 10px 0 6px; border-radius: 10px; }
+.stuck-log-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; color: var(--text); }
+.stuck-log-head .closed { color: var(--faint); }
+
+.stuck-block { display: flex; flex-direction: column; gap: 6px; background: var(--raised); border-radius: 14px; padding: 10px 12px; }
+.stuck-block .stuck-path { --stuck-hole: var(--raised); margin-top: 4px; }
+.stuck-block-head { display: flex; align-items: center; gap: 8px; }
+.bar-track.stuck-bar { display: block; width: 100%; height: 5px; background: var(--control); }
+.bar-track.stuck-bar .bar-fill { background: var(--accent); }
+.stuck-now-row { display: flex; align-items: center; gap: 8px; }
+.stuck-fold { display: flex; flex-direction: column; gap: 6px; }
+.stuck-fold .stuck-actions { display: flex; gap: 16px; }
+.review-why { display: flex; flex-direction: column; gap: 6px; }
+.as-card .as-stuck { color: var(--accent-text); min-height: 32px; }

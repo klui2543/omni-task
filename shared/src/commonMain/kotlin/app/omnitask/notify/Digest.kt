@@ -64,7 +64,7 @@ object Digest {
     }
 
     /** Tasks open a long while with no word on why: the weekly review asks, and opening it goes to the questions. */
-    private fun stuckLine(tasks: List<Task>, today: LocalDate): List<String> {
+    fun stuckLine(tasks: List<Task>, today: LocalDate): List<String> {
         val n = StuckLog.toAsk(tasks, today).size
         return if (n == 0) emptyList() else listOf(tr("ค้างนาน $n งาน แตะเพื่อจดว่าติดอะไร", "$n tasks open a long time. Tap to note what holds them up"))
     }

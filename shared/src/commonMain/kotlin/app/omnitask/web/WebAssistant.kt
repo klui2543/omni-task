@@ -315,15 +315,18 @@ object WebAssistant {
         return json.encodeToString(proposals.map { Proposal(it.task.key, it.task.title, it.task.raw, it.task.lineIndex, it.slot.day.toString(), hm(it.slot.start), it.minutes) })
     }
 
+    /** [stuckAt]: the line about long-open tasks nobody has explained (a tap there asks about each), or -1. */
     @Serializable
-    data class ReviewOut(val title: String, val lines: List<String>)
+    data class ReviewOut(val title: String, val lines: List<String>, val stuckAt: Int = -1)
 
     /** The last seven days in three lines, and the work that keeps being moved. */
     fun weekly(fileKey: String, path: String, text: String, stateJson: String): String {
         val s = parse(stateJson)
         val today = LocalDateTime.parse(s.now).date
-        val m = Digest.weekly(WebNotes.tasks(fileKey, path, text, today), today, Behavior.parse(s.behavior))
-        return json.encodeToString(ReviewOut(m.title, m.lines))
+        val tasks = WebNotes.tasks(fileKey, path, text, today)
+        val m = Digest.weekly(tasks, today, Behavior.parse(s.behavior))
+        val stuck = Digest.stuckLine(tasks, today).firstOrNull()
+        return json.encodeToString(ReviewOut(m.title, m.lines, stuck?.let { m.lines.indexOf(it) } ?: -1))
     }
 
     /**

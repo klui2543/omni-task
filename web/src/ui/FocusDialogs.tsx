@@ -1,6 +1,7 @@
-import { useState } from 'preact/hooks'
-import type { Kind, Pick } from '../types'
+import { useEffect, useState } from 'preact/hooks'
+import type { Kind, Pick, StuckEvent, StuckView } from '../types'
 import { KIND_LABEL } from '../focusState'
+import { StuckChips, StuckField, StuckLogDialog, StuckPath } from './Stuck'
 
 /** The shell every Focus dialog shares: centred on wide screens, a sheet from the bottom on narrow ones. */
 export function Sheet(p: { title: string; onClose: () => void; children: preact.ComponentChildren }) {
@@ -22,23 +23,40 @@ const Search = (p: { value: string; onInput: (v: string) => void }) => (
 
 export type ReviewAction = 'THIS_WEEK' | 'FUTURE' | 'SOMEDAY' | 'KEEP' | 'DROP'
 
-/** One task at a time: decide, and it leaves the queue until its next review. */
+/**
+ * One task at a time: decide, and it leaves the queue until its next review. Before the choice it asks what holds the
+ * task up (optional, with Android's quick picks); what is written goes under the task with whichever choice comes next.
+ */
 export function ReviewDialog(p: {
   left: number
   handled: number
-  task: { title: string; kind: Kind; age?: number; last?: string } | null
-  onAct: (a: ReviewAction) => void
+  task: { key: string; title: string; kind: Kind; age?: number; last?: string } | null
+  /** The task's last two notes or finished subtasks. */
+  path: StuckEvent[]
+  /** The stuck log, read when it is opened. */
+  log: () => StuckView
+  onAct: (a: ReviewAction, why: string) => void
   onOpen: () => void
+  onOpenKey: (key: string) => void
   onClose: () => void
 }) {
   const t = p.task
   const lastDate = t?.last ? new Date(t.last + 'T00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : null
+  const [why, setWhy] = useState('')
+  const [showLog, setShowLog] = useState(false)
+  useEffect(() => setWhy(''), [t?.key])
+  const act = (a: ReviewAction) => { p.onAct(a, why); setWhy('') }
+  if (showLog) return <StuckLogDialog view={p.log()} onOpen={(key) => { p.onClose(); p.onOpenKey(key) }} onClose={() => setShowLog(false)} />
   return (
     <Sheet title={t ? `ทบทวนงาน (เหลือ ${p.left})` : 'ทบทวนครบแล้ว'} onClose={p.onClose}>
       {!t ? (
         <>
           <p class="muted">{p.handled > 0 ? `จัดการไป ${p.handled} งาน งานที่เหลือจะกลับมาเมื่อถึงรอบ` : 'ไม่มีงานค้างทบทวน'}</p>
-          <div class="dialog-actions"><button class="ghost" onClick={p.onClose}>ปิด</button></div>
+          <div class="dialog-actions">
+            <button class="ghost" onClick={() => setShowLog(true)}>บันทึกงานค้าง</button>
+            <span class="grow" />
+            <button class="ghost" onClick={p.onClose}>ปิด</button>
+          </div>
         </>
       ) : (
         <>
@@ -49,16 +67,27 @@ export function ReviewDialog(p: {
                 .filter(Boolean).join(', ')}
             </span>
           </div>
+          {p.path.length > 0 && <StuckPath events={p.path} />}
+          {/* Optional: written down with whichever choice comes next, before it. */}
+          <div class="review-why">
+            <span class="muted">ติดอะไรอยู่ (ไม่ใส่ก็ได้)</span>
+            <StuckField text={why} onChange={setWhy} />
+            <StuckChips text={why} onChange={setWhy} />
+          </div>
           <span class="muted">ยังอยากทำไหม</span>
           <div class="review-actions">
-            <button class="rv lime" onClick={() => p.onAct('THIS_WEEK')}>ทำเสาร์นี้</button>
-            {t.kind !== 'FUTURE' && <button class="rv accent" onClick={() => p.onAct('FUTURE')}>ลงทุนอนาคต</button>}
-            {t.kind !== 'SOMEDAY' && <button class="rv amber" onClick={() => p.onAct('SOMEDAY')}>พักไว้ก่อน</button>}
-            <button class="rv plain" onClick={() => p.onAct('KEEP')}>เก็บไว้แบบเดิม</button>
-            <button class="rv red" onClick={() => p.onAct('DROP')}>ทิ้ง</button>
+            <button class="rv lime" onClick={() => act('THIS_WEEK')}>ทำเสาร์นี้</button>
+            {t.kind !== 'FUTURE' && <button class="rv accent" onClick={() => act('FUTURE')}>ลงทุนอนาคต</button>}
+            {t.kind !== 'SOMEDAY' && <button class="rv amber" onClick={() => act('SOMEDAY')}>พักไว้ก่อน</button>}
+            <button class="rv plain" onClick={() => act('KEEP')}>เก็บไว้แบบเดิม</button>
+            <button class="rv red" onClick={() => act('DROP')}>ทิ้ง</button>
           </div>
           <span class="muted small">ทิ้ง = ทำเครื่องหมายยกเลิก [-] บรรทัดยังอยู่ในไฟล์</span>
-          <div class="dialog-actions"><button class="ghost" onClick={p.onClose}>พอก่อน</button></div>
+          <div class="dialog-actions">
+            <button class="ghost" onClick={() => setShowLog(true)}>บันทึกงานค้าง</button>
+            <span class="grow" />
+            <button class="ghost" onClick={p.onClose}>พอก่อน</button>
+          </div>
         </>
       )}
     </Sheet>

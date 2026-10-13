@@ -10,6 +10,7 @@ import { EditPanel } from '../ui/EditPanel'
 import { CountdownDialog, FutureDialog, ReviewAction, ReviewDialog, SleepTimeDialog } from '../ui/FocusDialogs'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { PagedCard } from '../ui/PagedCard'
+import { StuckDialog, WeekBars } from '../ui/Stuck'
 import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
 import '../ui/focusSleep.css'
@@ -43,6 +44,8 @@ export function FocusPage(p: PageProps) {
   const [handled, setHandled] = useState(0)
   const [hidden, setHidden] = useState<string[]>([])
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
+  // The late or long-open task whose path is open, to write why it is still open.
+  const [explaining, setExplaining] = useState<string | null>(null)
   const [urgent, setUrgent] = useState(urgentRule.get)
   const connected = Auth.granted(CALENDAR_SCOPE)
 
@@ -106,8 +109,10 @@ export function FocusPage(p: PageProps) {
     else if (s.kind === 'SOFT_DATE') change(t, { op: 'date', field: 'SCHEDULED', value: f!.softDate })
     else setKind(t, 'FUTURE')
   }
-  const review = (t: Task, a: ReviewAction) => {
+  const review = (t: Task, a: ReviewAction, why: string) => {
     setHandled((n) => n + 1)
+    // What holds it up is written first, so the choice is made on the line that has it (and the note counts as a look).
+    if (why.trim()) change(t, { op: 'stuck', value: why })
     if (a === 'KEEP') markReviewed(t)
     else if (a === 'FUTURE') setKind(t, 'FUTURE')
     else if (a === 'SOMEDAY') setKind(t, 'SOMEDAY')
@@ -154,20 +159,35 @@ export function FocusPage(p: PageProps) {
     const t = task(it.key)
     if (!t) return null
     const meta = !it.done && (it.time || it.lead || it.extra)
+    const lead = meta && (
+      <>
+        {it.time && <span class="ptm">{it.time}</span>}
+        {it.time && (it.lead || it.extra) ? ', ' : ''}
+        {it.lead && <span class="late">{it.lead}</span>}
+        {it.lead && it.extra ? ', ' : ''}
+        {it.extra}
+      </>
+    )
+    const title = <span class="tline"><span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
+    // Late or long-open: a bar a week beside it and "moved N days ago" on its line, both one tap from writing why.
+    if (it.stuck && !it.done) {
+      return (
+        <div key={it.key} class="prow">
+          <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
+          <div class="pstack">
+            <button class="pbody" onClick={() => openTask(t)}>{title}</button>
+            <button class="plead stuck-line" aria-label={`ติดอะไร: ${t.title}`} onClick={() => setExplaining(t.key)}>{lead}</button>
+          </div>
+          <button class="stuck-bars" aria-label={`ความเป็นไปของ ${t.title}`} onClick={() => setExplaining(t.key)}><WeekBars weeks={it.weeks ?? []} /></button>
+        </div>
+      )
+    }
     return (
       <div key={it.key} class={`prow${it.done ? ' done' : ''}`}>
         <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
         <button class="pbody" onClick={() => openTask(t)}>
-          <span class="tline"><span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
-          {meta && (
-            <span class="plead">
-              {it.time && <span class="ptm">{it.time}</span>}
-              {it.time && (it.lead || it.extra) ? ', ' : ''}
-              {it.lead && <span class="late">{it.lead}</span>}
-              {it.lead && it.extra ? ', ' : ''}
-              {it.extra}
-            </span>
-          )}
+          {title}
+          {meta && <span class="plead">{lead}</span>}
         </button>
       </div>
     )
@@ -388,12 +408,21 @@ export function FocusPage(p: PageProps) {
           <ReviewDialog
             left={f.review.length}
             handled={handled}
-            task={reviewTop && reviewTask ? { title: reviewTask.title, kind: reviewTop.kind, age: reviewTop.age, last: reviewTop.last } : null}
-            onAct={(a) => reviewTask && review(reviewTask, a)}
+            task={reviewTop && reviewTask ? { key: reviewTask.key, title: reviewTask.title, kind: reviewTop.kind, age: reviewTop.age, last: reviewTop.last } : null}
+            path={reviewTask ? (p.snapshot?.stuckTask(reviewTask.key)?.events ?? []).filter((e) => e.step !== 'START').slice(-2) : []}
+            log={() => p.snapshot!.stuck()}
+            onAct={(a, why) => reviewTask && review(reviewTask, a, why)}
             onOpen={() => reviewTask && openTask(reviewTask)}
+            onOpenKey={(key) => { const t = task(key); if (t) openTask(t) }}
             onClose={() => setDialog(null)}
           />
         )}
+        {explaining && (() => {
+          const t = task(explaining)
+          const info = p.snapshot?.stuckTask(explaining)
+          if (!t || !info) return null
+          return <StuckDialog task={info} onSave={(text) => change(t, { op: 'stuck', value: text })} onClose={() => setExplaining(null)} />
+        })()}
         {dialog === 'countdown' && f && (
           <CountdownDialog choices={f.countdownChoices} current={local.countdown} onPick={(title) => setLocal((x) => ({ ...x, countdown: title }))} onClose={() => setDialog(null)} />
         )}
