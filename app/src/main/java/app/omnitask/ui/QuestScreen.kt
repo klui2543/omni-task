@@ -72,6 +72,7 @@ import app.omnitask.quest.Quests
 import app.omnitask.quest.SkillKind
 import app.omnitask.quest.Slot
 import app.omnitask.quest.Stat
+import app.omnitask.quest.Story
 import app.omnitask.quest.Tribe
 import app.omnitask.time.*
 import kotlinx.coroutines.delay
@@ -130,7 +131,7 @@ private val ZONE_FOES = mapOf(
 )
 
 private enum class QuestTab(private val th: String, private val en: String) {
-    QUESTS("เควส", "Quests"), GEAR("อุปกรณ์", "Gear"), SHOP("ร้านค้า", "Shop"), SKILLS("สกิล", "Skills"), HERO("ตัวละคร", "Character");
+    QUESTS("เควส", "Quests"), STORY("เนื้อเรื่อง", "Story"), GEAR("อุปกรณ์", "Gear"), SHOP("ร้านค้า", "Shop"), SKILLS("สกิล", "Skills"), HERO("ตัวละคร", "Character");
 
     val label get() = tr(th, en)
 }
@@ -150,6 +151,19 @@ fun QuestScreen(state: UiState, vm: TaskViewModel, onIdle: () -> Unit, onBack: (
     val board = remember(state.tasks, state.questArchive, state.events, q, state.questMoves) { state.questBoard(q) }
     val gold = q.balance(xp)
     var tab by rememberSaveable { mutableStateOf(QuestTab.QUESTS) }
+    val facts = remember(state.tasks, state.events, q, xp.level, state.today) { state.storyFacts(q, xp) }
+    val cast = Story.Cast(q.name, q.tribe ?: Tribe.LUNA, q.mascot ?: q.tribe ?: Tribe.LUNA, Quests.mainBranch(state.tasks + state.questArchive, state.today))
+    val openScenes = remember(facts) { Story.open(facts) }
+    var playing by rememberSaveable { mutableStateOf<String?>(null) }
+    // The story begins as soon as the character is made.
+    LaunchedEffect(q.begun) { if (q.begun && "c1-1" !in q.seen) playing = "c1-1" }
+    playing?.let { Story.scene(it) }?.let { scene ->
+        SceneScreen(scene, cast) { finished ->
+            if (finished && scene.id !in q.seen) vm.questAct(QuestLog.SCENE, a = scene.id, gold = scene.gold)
+            playing = null
+        }
+        return
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding(),
@@ -190,13 +204,19 @@ fun QuestScreen(state: UiState, vm: TaskViewModel, onIdle: () -> Unit, onBack: (
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 QuestTab.entries.forEach { t ->
-                    val badge = if (t == QuestTab.QUESTS) board.count { it.claimable }.takeIf { it > 0 }?.let { " $it" } ?: "" else ""
+                    val count = when (t) {
+                        QuestTab.QUESTS -> board.count { it.claimable }
+                        QuestTab.STORY -> openScenes.size
+                        else -> 0
+                    }
+                    val badge = if (count > 0) " $count" else ""
                     Chip(t.label + badge, tab == t, { tab = t })
                 }
             }
         }
         when (tab) {
             QuestTab.QUESTS -> items(board, key = { it.id }) { quest -> QuestRow(quest) { vm.questAct(QuestLog.CLAIM, a = quest.id, gold = quest.gold) } }
+            QuestTab.STORY -> item { StoryTab(state, q, xp, facts, cast, openScenes) { playing = it } }
             QuestTab.GEAR -> item { GearTab(q, xp.level, vm) }
             QuestTab.SHOP -> item { ShopTab(q, xp.level, gold, vm) }
             QuestTab.SKILLS -> item { SkillsTab(q, xp.level, vm) }
@@ -834,5 +854,157 @@ private fun IdlePicker(state: UiState, vm: TaskViewModel) {
                 Text("⚔️", Modifier.padding(start = 8.dp), fontSize = 18.sp)
             }
         }
+    }
+}
+
+/** What the story knows of the owner's real progress and day. */
+fun UiState.storyFacts(q: QuestState, xp: QuestXp.Result): Story.Facts {
+    val shifts = profile.shiftWords.map { it.lowercase() }.filter { it.isNotBlank() }
+    return Story.Facts(
+        level = xp.level,
+        sessions = q.sessions.size,
+        focusSeconds = q.sessions.sumOf { it.seconds },
+        bossSlain = q.bossSlain,
+        weeklyDone = q.weeklyDone,
+        seen = q.seen,
+        today = today,
+        shiftToday = todayEvents.any { e -> shifts.any { it in e.title.lowercase() } },
+        busyWeek = tasks.count { it.isOpen && it.parent == null && it.due?.let { d -> d >= today && d <= today.plusDays(6) } == true } >= 7,
+    )
+}
+
+@Composable
+private fun StoryTab(state: UiState, q: QuestState, xp: QuestXp.Result, facts: Story.Facts, cast: Story.Cast, open: List<Story.Scene>, onPlay: (String) -> Unit) {
+    val now = LocalDateTime.now()
+    val day = remember(state.tasks, state.events, q, xp) {
+        val doneToday = (state.tasks + state.parked).filter { it.done == state.today && it.list == null }
+        Story.Day(
+            today = state.today,
+            doneToday = doneToday.size,
+            lastDone = doneToday.lastOrNull()?.title,
+            overdue = state.tasks.count { it.isOpen && it.parent == null && (it.due ?: it.scheduled)?.let { d -> d < state.today } == true },
+            focusMinutes = q.secondsOn(state.today) / 60,
+            topRealm = xp.earned.filter { it.day >= state.today.minusDays(7) && it.realm != null }.groupingBy { it.realm!! }.eachCount().maxByOrNull { it.value }?.key,
+            shiftToday = facts.shiftToday,
+            nextEvent = state.todayEvents.filter { !it.allDay && it.begin > now }.minByOrNull { it.begin }?.title,
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // The friends who have joined so far, each with a word for today.
+        val friends = buildList {
+            add(Story.Speaker.ORRIN)
+            if ("c1-3" in q.seen) add(Story.Speaker.LEO)
+            if ("c1-4" in q.seen) add(Story.Speaker.CELINE)
+        }
+        SettingsGroup(tr("เพื่อนในกิลด์", "Guild friends")) {
+            friends.forEachIndexed { i, who ->
+                if (i > 0) Divider()
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.Top) {
+                    Text(who.emoji, fontSize = 22.sp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(who.label, color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                        Text(Story.talk(who, day, cast), color = C.text, fontSize = TS.body)
+                    }
+                }
+            }
+        }
+        if (open.isNotEmpty()) {
+            SettingsGroup(tr("ฉากใหม่", "New scenes")) {
+                open.forEachIndexed { i, scene ->
+                    if (i > 0) Divider()
+                    SceneRow(scene, tr("ดู", "Play"), filled = true) { onPlay(scene.id) }
+                }
+            }
+        }
+        Story.next(facts)?.let { next ->
+            Card {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔒", fontSize = 20.sp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(next.title, color = C.text2, fontSize = TS.body)
+                        Text(tr("ปลดล็อกเมื่อ: ${next.unlock.hint}", "Opens when: ${next.unlock.hint}"), color = C.muted, fontSize = TS.caption)
+                    }
+                }
+            }
+        }
+        Story.chapters.entries.sortedBy { if (it.key == 0) 99 else it.key }.forEach { (chapter, title) ->
+            val seen = Story.scenes.filter { it.chapter == chapter && it.id in q.seen }
+            if (seen.isNotEmpty()) SettingsGroup(title) {
+                seen.forEachIndexed { i, scene ->
+                    if (i > 0) Divider()
+                    SceneRow(scene, tr("ดูอีกครั้ง", "Replay"), filled = false) { onPlay(scene.id) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SceneRow(scene: Story.Scene, action: String, filled: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(if (scene.event) "🎉" else "📖", fontSize = 20.sp)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(scene.title, color = C.text, fontSize = TS.body)
+            Text(Story.chapters[scene.chapter].orEmpty(), color = C.muted, fontSize = TS.caption)
+        }
+        SmallAction(action, filled = filled, onClick = onClick)
+    }
+}
+
+/** A story scene, one line at a time: tap to go on, and the last tap ends it. */
+@Composable
+private fun SceneScreen(scene: Story.Scene, cast: Story.Cast, onDone: (finished: Boolean) -> Unit) {
+    BackHandler { onDone(false) }
+    var shown by rememberSaveable(scene.id) { mutableIntStateOf(1) }
+    val lines = scene.lines.take(shown)
+    val last = shown >= scene.lines.size
+    Column(
+        Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().padding(14.dp)
+            .clickable { if (last) onDone(true) else shown++ },
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SquareButton(Ic.close, tr("ปิด", "Close"), { onDone(false) })
+            Column(Modifier.padding(start = 12.dp)) {
+                Text(scene.title, style = MaterialTheme.typography.titleLarge, color = C.text)
+                Text(Story.chapters[scene.chapter].orEmpty(), color = C.muted, fontSize = TS.caption)
+            }
+        }
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), reverseLayout = false) {
+            items(lines.size) { i ->
+                val line = lines[i]
+                val text = Story.fill(line.text, cast)
+                if (line.who == Story.Speaker.NARRATOR) {
+                    Text(text, Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), color = C.text2, fontSize = TS.body, textAlign = TextAlign.Center)
+                } else {
+                    val emoji = if (line.who == Story.Speaker.MASCOT) cast.mascot.emoji else if (line.who == Story.Speaker.HERO) "🙂" else line.who.emoji
+                    val name = Story.fill(line.who.label, cast)
+                    val color = when (line.who) {
+                        Story.Speaker.MASCOT -> cast.mascot.tint
+                        Story.Speaker.HERO -> cast.tribe.tint
+                        Story.Speaker.LEO -> Tribe.IGNIS.tint
+                        Story.Speaker.CELINE -> Tribe.LUNA.tint
+                        Story.Speaker.MIST -> C.muted
+                        else -> C.accentText
+                    }
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(color.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+                            Text(emoji, fontSize = 20.sp)
+                        }
+                        Column(
+                            Modifier.weight(1f).padding(start = 10.dp).clip(RoundedCornerShape(14.dp)).background(C.card)
+                                .border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)).padding(12.dp),
+                        ) {
+                            Text(name, color = color, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                            Text(text, color = if (line.who == Story.Speaker.MIST) C.muted else C.text, fontSize = TS.body)
+                        }
+                    }
+                }
+            }
+        }
+        Text(
+            if (last) tr("แตะเพื่อจบฉาก (ได้ 🪙 ${scene.gold} ครั้งแรก)", "Tap to finish (🪙 ${scene.gold} the first time)") else tr("แตะเพื่ออ่านต่อ", "Tap to continue"),
+            Modifier.fillMaxWidth(), color = C.accentText, fontSize = TS.caption, textAlign = TextAlign.Center,
+        )
     }
 }

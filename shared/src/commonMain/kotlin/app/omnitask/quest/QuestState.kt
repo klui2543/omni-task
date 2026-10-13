@@ -46,6 +46,8 @@ object QuestLog {
     const val LEARN = "learn"
     const val LOADOUT = "loadout"
     const val CLAIM = "claim"
+    /** A story scene watched to the end: [QuestAction.a] the scene, with its gold. */
+    const val SCENE = "scene"
     /** A timed work session: [QuestAction.a] the task, [QuestAction.n] seconds, gold and kills won, [QuestAction.b] a drop. */
     const val IDLE = "idle"
 
@@ -109,6 +111,7 @@ data class QuestState(
     val learned: Set<String> = emptySet(),
     val loadout: List<String> = emptyList(),
     val claimed: Set<String> = emptySet(),
+    val seen: Set<String> = emptySet(),
     val goldIn: Long = 0,
     val goldOut: Long = 0,
     val sessions: List<Session> = emptyList(),
@@ -122,6 +125,9 @@ data class QuestState(
     fun skillPoints(level: Int) = (level - 1 - learned.size).coerceAtLeast(0)
 
     fun secondsOn(day: LocalDate) = sessions.filter { it.day == day }.sumOf { it.seconds }
+
+    val bossSlain get() = claimed.any { it.endsWith(":boss") }
+    val weeklyDone get() = claimed.any { it.startsWith("w:") }
 
     /** Mascots this character can have by their side: their own tribe's, then more as they grow. */
     fun mascots(level: Int): List<Tribe> {
@@ -167,6 +173,7 @@ data class QuestState(
         QuestLog.LEARN -> QuestWorld.skill(a.a)?.let { copy(learned = learned + it.id) } ?: this
         QuestLog.LOADOUT -> copy(loadout = a.a.orEmpty().split(',').filter { it.isNotBlank() && it in learned })
         QuestLog.CLAIM -> if (a.a != null && a.a !in claimed) copy(claimed = claimed + a.a, goldIn = goldIn + (a.gold ?: 0)) else this
+        QuestLog.SCENE -> if (a.a != null && a.a !in seen) copy(seen = seen + a.a, goldIn = goldIn + (a.gold ?: 0)) else this
         QuestLog.IDLE -> {
             val day = a.time?.date
             if (day == null) this else copy(
