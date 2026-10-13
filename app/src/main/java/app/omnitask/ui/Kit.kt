@@ -62,7 +62,7 @@ import app.omnitask.time.*
 val TH: Locale get() = Lang.locale
 val SHORT_DATE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("d MMM", TH)
 
-/** Stroke icons drawn from 24×24 path data, matching the mockups. */
+/** Stroke icons drawn from 24×24 path data. Kept to the few that work as buttons; labels say the rest in words. */
 object Ic {
     private fun icon(name: String, vararg paths: String, width: Float = 1.9f): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
@@ -76,7 +76,6 @@ object Ic {
 
     val focus = icon("focus", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 7.5a4.5 4.5 0 1 0 0.01 0Z")
     val tasks = icon("tasks", "M9 6h11M9 12h11M9 18h11", "M4.5 6h0.01M4.5 12h0.01M4.5 18h0.01")
-    val views = icon("views", "M4 4h7v7H4Z", "M13 4h7v7h-7Z", "M4 13h7v7H4Z", "M13 13h7v7h-7Z")
     val folder = icon("folder", "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z")
     val spark = icon("spark", "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z")
     val plus = icon("plus", "M12 5v14M5 12h14", width = 2.2f)
@@ -85,40 +84,21 @@ object Ic {
     val filter = icon("filter", "M4 5h16l-6 7.5V19l-4-2v-4.5Z")
     val camera = icon("camera", "M4 8h3l2-2.5h6L17 8h3v11H4Z", "M12 9.5a3.5 3.5 0 1 0 0.01 0Z")
     val image = icon("image", "M3.5 5h17v14h-17Z", "M3.5 16l5-5 4 4 3-3 5 5")
-    val lock = icon("lock", "M5 11h14v9H5Z", "M8 11V8a4 4 0 0 1 8 0v3")
     val check = icon("check", "M5 12.5l4.5 4.5L19 7.5", width = 2.8f)
     val close = icon("close", "M6 6l12 12M18 6L6 18", width = 2f)
     val back = icon("back", "M15 6l-6 6 6 6", width = 2f)
     val next = icon("next", "M9 6l6 6-6 6", width = 2f)
     val send = icon("send", "M5 12h14M13 6l6 6-6 6", width = 2.2f)
-    val bell = icon("bell", "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z", "M10 20.5h4")
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
-    val flag = icon("flag", "M5 21V4h11l-2 4 2 4H5")
-    val calendar = icon("calendar", "M3.5 5h17v15h-17Z", "M3.5 10h17M8 3v4M16 3v4")
     val pen = icon("pen", "M4 20l1-4 11-11 3 3-11 11Z", "M14 7l3 3")
-    val moon = icon("moon", "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z")
-    val sun = icon("sun", "M12 8a4 4 0 1 0 0.01 0Z", "M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4")
-    val watch = icon("watch", "M8 6.5h8v11H8Z", "M9.5 6.5l0.7-3h3.6l0.7 3M9.5 17.5l0.7 3h3.6l0.7-3")
-    val branch = icon("branch", "M6 3.5v12", "M6 15.5a2.5 2.5 0 1 0 0.01 0Z", "M18 3.5a2.5 2.5 0 1 0 0.01 0Z", "M18 8.5c0 4.5-12 2.5-12 7")
     val archive = icon("archive", "M3.5 4.5h17v4h-17Z", "M5 8.5v11h14v-11", "M10 12.5h4")
     val trash = icon("trash", "M4 7h16", "M9.5 7V4.5h5V7", "M6.5 7l1 13h9l1-13", "M10 11v5.5M14 11v5.5")
-    val clock = icon("clock", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 7.5V12l3 2")
-    val hourglass = icon("hourglass", "M7 3.5h10M7 20.5h10", "M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5", "M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5")
-    val repeat = icon("repeat", "M4 11V9a3 3 0 0 1 3-3h12l-3-3", "M20 13v2a3 3 0 0 1-3 3H5l3 3")
-    val hash = icon("hash", "M9 4l-2 16M17 4l-2 16M4.5 9h15M3.5 15h15")
-    val target = icon("target", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z")
-    val footsteps = icon("footsteps", "M5 16l5-5 3 3 6-6", "M14 8h5v5")
     val grip = icon("grip", "M9 6h0.01M9 12h0.01M9 18h0.01M15 6h0.01M15 12h0.01M15 18h0.01", width = 3f)
-    val more = icon("more", "M5 12h0.01M12 12h0.01M19 12h0.01", width = 3f)
     val star = icon("star", "M12 3.5l2.6 5.4 5.9 0.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-0.8Z")
     val up = icon("up", "M6 15l6-6 6 6", width = 2f)
     val down = icon("down", "M6 9l6 6 6-6", width = 2f)
     val mic = icon("mic", "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
-    val link = icon("link", "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1", "M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1")
-    val share = icon("share", "M12 4v11", "M7 9l5-5 5 5", "M5 14v5h14v-5")
     val grid = icon("grid", "M5 5h4v4H5Z", "M15 5h4v4h-4Z", "M5 15h4v4H5Z", "M15 15h4v4h-4Z")
-    val gear = icon("gear", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z", "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8")
-    val folderOpen = icon("folderOpen", "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v1", "M3.5 18.5l2.5-8h15l-2.5 8Z")
 }
 
 @Composable
@@ -266,11 +246,10 @@ fun SquareButton(icon: ImageVector, description: String, onClick: () -> Unit, fi
 fun TodayButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier.height(42.dp).clip(RoundedCornerShape(12.dp)).background(C.raised)
-            .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp),
+            .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Ic.calendar, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-        Text(tr("วันนี้", "Today"), Modifier.padding(start = 6.dp), color = C.accentText, fontSize = TS.body, maxLines = 1)
+        Text(tr("วันนี้", "Today"), color = C.accentText, fontSize = TS.body, maxLines = 1)
     }
 }
 
@@ -303,9 +282,9 @@ data class Meta(val text: String, val bg: Color, val fg: Color, val icon: ImageV
 
 /** The small labels under a task title. */
 fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolean = false, progress: Pair<Int, Int>? = null): List<Meta> = buildList {
-    progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else Color.Transparent, if (done == all) C.lime else C.muted, Ic.tasks)) }
+    progress?.let { (done, all) -> add(Meta("$done/$all", if (done == all) C.limeSoft else Color.Transparent, if (done == all) C.lime else C.muted)) }
     val open = t.isOpen
-    if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber, Ic.lock))
+    if (blockedBy != null) add(Meta(tr("รอ $blockedBy", "Waiting on $blockedBy"), C.amberSoft, C.amber))
     t.due?.let { d ->
         val late = open && d < today
         val text = when {
@@ -319,16 +298,16 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
         add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), Color.Transparent, C.muted))
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
-    t.reminderTime?.let { add(Meta("%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted, Ic.bell)) }
-    t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted, Ic.repeat)) }
+    t.reminderTime?.let { add(Meta(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
+    t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
     if (!compact) {
         val project = Projects.projectOf(t)
         t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
             if (tag == project) add(Meta(tag, Color.Transparent, C.tealText)) else add(Meta("#$tag", Color.Transparent, C.accentText))
         }
     }
-    if (t.attachments.isNotEmpty()) add(Meta(t.attachments.size.toString(), Color.Transparent, C.muted, Ic.image))
-    if (t.links.isNotEmpty()) add(Meta(t.links.size.toString(), Color.Transparent, C.muted, Ic.link))
+    if (t.attachments.isNotEmpty()) add(Meta(tr("รูป ${t.attachments.size}", "${t.attachments.size} img"), Color.Transparent, C.muted))
+    if (t.links.isNotEmpty()) add(Meta(tr("ลิงก์ ${t.links.size}", "${t.links.size} links"), Color.Transparent, C.muted))
 }
 
 @OptIn(ExperimentalLayoutApi::class)

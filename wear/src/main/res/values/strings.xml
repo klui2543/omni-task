@@ -10,4 +10,6 @@
     <string name="wake_up">ตื่นได้แล้ว</string>
     <string name="snooze">+5 นาที</string>
     <string name="stop">หยุด</string>
+    <string name="test">ลองปลุกใน 1 นาที</string>
+    <string name="test_set">จะลองปลุกตอน %1$s</string>
 </resources>

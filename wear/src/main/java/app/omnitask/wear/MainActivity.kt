@@ -1,6 +1,9 @@
 package app.omnitask.wear
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -54,9 +57,14 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private var at by mutableStateOf<LocalDateTime?>(null)
     private var editing by mutableStateOf<LocalTime?>(null)
+    private var testAt by mutableStateOf<LocalDateTime?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Without it the ring still buzzes and sounds, but its screen cannot come up over the watch face.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
+        }
         at = WakeAlarm.at(this)
         setContent {
             val time = editing
@@ -97,11 +105,18 @@ class MainActivity : ComponentActivity() {
                 if (sleep > 0) Pill(stringResource(R.string.sleep, hm(sleep)), if (sleep < 5 * 60) W.red else W.lime)
                 Pill(stringResource(R.string.tap_to_edit), W.muted)
             }
+            val test = testAt
+            Label(
+                if (test == null) stringResource(R.string.test) else stringResource(R.string.test_set, test.format(HM)), W.muted, 11,
+                modifier = Modifier.padding(top = 10.dp).clickable { testAt = WakeAlarm.test(this@MainActivity) }.padding(4.dp),
+            )
         }
     }
 
     override fun onResume() {
         super.onResume()
+        // Puts the saved time back in the alarm clock, in case something (an update, a force stop) cleared it.
+        WakeAlarm.schedule(this)
         at = WakeAlarm.at(this)
         Wearable.getDataClient(this).getDataItems(Uri.parse("wear://*${WakeAlarm.PATH}")).addOnSuccessListener { items ->
             items.forEach { WakeAlarm.fromPhone(this, DataMapItem.fromDataItem(it).dataMap) }

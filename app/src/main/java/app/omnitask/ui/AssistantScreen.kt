@@ -532,8 +532,7 @@ private fun AskCard(title: String, badge: String, body: String, noLabel: String,
     Card(color = C.accentDeep, border = C.accentLine) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-                Text(title, Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
+                Text(title, Modifier.weight(1f), color = C.accentText, fontSize = TS.caption)
                 Text(badge, color = C.muted, fontSize = TS.caption)
             }
             Text(body, Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body, lineHeight = 1.4.em)
@@ -563,8 +562,7 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
     Card(color = C.accentDeep, border = C.accentLine) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-                Text(if (first) tr("ขอรู้จักกันก่อน", "Getting to know you") else tr("ปรับโปรไฟล์", "Update profile"), Modifier.weight(1f).padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
+                Text(if (first) tr("ขอรู้จักกันก่อน", "Getting to know you") else tr("ปรับโปรไฟล์", "Update profile"), Modifier.weight(1f), color = C.accentText, fontSize = TS.caption)
                 Text(tr("4 ข้อ", "4 questions"), color = C.muted, fontSize = TS.caption)
             }
             Text(

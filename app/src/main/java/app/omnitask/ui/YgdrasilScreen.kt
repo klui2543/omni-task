@@ -474,10 +474,7 @@ private fun FilterGroup(title: String, content: @Composable () -> Unit) {
 fun YgdrasilEntry(onClick: () -> Unit) {
     Card(Modifier.clickable(onClick = onClick)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft), contentAlignment = Alignment.Center) {
-                Icon(Ic.branch, null, tint = C.accentText, modifier = Modifier.size(20.dp))
-            }
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Column(Modifier.weight(1f)) {
                 Text("Project Ygdrasil", color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
                 Text(
                     tr("ทุกโปรเจกต์ในต้นไม้เดียว กรองงานได้ เห็นงานที่รอกันข้ามโปรเจกต์", "Every project in one tree, filtered, with waits across projects"),

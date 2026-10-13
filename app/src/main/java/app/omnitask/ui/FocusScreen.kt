@@ -164,13 +164,11 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
                         if (lastNight != null) {
                             Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Ic.sun, null, tint = C.accentText, modifier = Modifier.size(15.dp))
-                                Text(tr("เมื่อคืนได้นอน ${hm(lastNight)}", "${hm(lastNight)} of sleep last night"), Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption)
+                                Text(tr("เมื่อคืนได้นอน ${hm(lastNight)}", "${hm(lastNight)} of sleep last night"), color = C.muted, fontSize = TS.caption)
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Ic.moon, null, tint = C.accentText, modifier = Modifier.size(15.dp))
-                            Text(tr("คืนนี้", "Tonight"), Modifier.weight(1f).padding(start = 8.dp), color = C.muted, fontSize = TS.caption)
+                            Text(tr("คืนนี้", "Tonight"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
                             Text(
                                 tr("ได้นอน ${hm(night.sleep)}", "${hm(night.sleep)} of sleep"),
                                 Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 2.dp),
@@ -215,14 +213,13 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                 .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(if (on) Ic.check else Ic.watch, null, tint = tint, modifier = Modifier.size(15.dp))
                             Text(
                                 when {
                                     state.alarmFailed -> tr("ส่งไม่ถึงนาฬิกา แตะเพื่อลองใหม่", "Did not reach the watch, tap to retry")
                                     on -> tr("นาฬิกาจะปลุก ${night.wakeAt.format(HM)}", "The watch rings at ${night.wakeAt.format(HM)}")
                                     else -> tr("ปลุกที่นาฬิกา ${night.wakeAt.format(HM)}", "Ring the watch at ${night.wakeAt.format(HM)}")
                                 },
-                                Modifier.padding(start = 8.dp), color = if (on || state.alarmFailed) tint else C.text,
+                                color = if (on || state.alarmFailed) tint else C.text,
                                 fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -231,7 +228,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 }
                 run {
                     // The pinned countdown: any task, counted to its date (and time on the day).
-                    FooterRow(Ic.hourglass, onClick = { pickingCountdown = true }) {
+                    FooterRow(onClick = { pickingCountdown = true }) {
                         if (countdown == null) {
                             Text(tr("ตั้งนับถอยหลังถึงงานสำคัญ", "Count down to an important task"), color = C.faint, fontSize = TS.caption)
                         } else {
@@ -313,8 +310,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             item {
                 Card {
                     Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Ic.spark, null, tint = C.accentText, modifier = Modifier.size(15.dp))
-                        Text(tr("ข้อเสนอ", "Suggestions"), Modifier.padding(start = 6.dp), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                        Text(tr("ข้อเสนอ", "Suggestions"), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                     }
                     brief.suggestions.forEachIndexed { i, s ->
                         if (i > 0) Divider(start = 12.dp)
@@ -339,7 +335,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Each card shows one task at a time: swipe for the next, or tap the head to see them all at once.
                 if (showWaiting) PagedCard(
-                    Ic.clock, C.amber, C.amberSoft, tr("คนรออยู่", "Waiting"), brief.waiting,
+                    C.amber, tr("คนรออยู่", "Waiting"), brief.waiting,
                     tr("ติด #รอ/ชื่อ ให้งานที่มีคนรอ", "Tag tasks people wait on with #รอ/name"), onOpen, Modifier.weight(1f),
                 ) { t ->
                     val age = Focus.ageDays(t, today)
@@ -350,7 +346,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     )
                 }
                 if (showFuture) PagedCard(
-                    Ic.up, C.accentText, C.accentSoft, tr("ลงทุนอนาคต", "Future"), brief.future,
+                    C.accentText, tr("ลงทุนอนาคต", "Future"), brief.future,
                     tr("เลือกงานที่สำคัญต่ออนาคต แต่ไม่มีเดดไลน์", "Pick work that matters for the future but has no deadline"), onOpen, Modifier.weight(1f),
                     more = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -386,7 +382,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun <T : Task> PagedCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, soft: Color, title: String, list: List<T>, empty: String,
+    tint: Color, title: String, list: List<T>, empty: String,
     onOpen: (Task) -> Unit, modifier: Modifier = Modifier, more: (@Composable () -> Unit)? = null, content: @Composable (T) -> Unit,
 ) {
     val pager = androidx.compose.foundation.pager.rememberPagerState { list.size }
@@ -418,7 +414,7 @@ private fun <T : Task> PagedCard(
     Card(modifier) {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 12.dp)) {
             Box(Modifier.clip(RoundedCornerShape(8.dp)).clickable { all = true }) {
-                CardHead(icon, tint, soft, title, if (list.size > 1) "${pager.currentPage + 1}/${list.size}" else list.size.takeIf { it > 0 }?.toString())
+                CardHead(tint, title, if (list.size > 1) "${pager.currentPage + 1}/${list.size}" else list.size.takeIf { it > 0 }?.toString())
             }
             if (list.isEmpty()) {
                 // The same two lines and caption line a task takes, so an empty card is as tall as a full one.
@@ -495,12 +491,11 @@ private fun SleepTile(label: String, time: String, modifier: Modifier, day: Stri
 
 /** The line under the summary: tonight's sleep, or the pinned countdown during the day. */
 @Composable
-private fun FooterRow(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun FooterRow(onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 14.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = C.accentText, modifier = Modifier.padding(end = 8.dp).size(15.dp))
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, content = content)
         Icon(Ic.next, null, tint = C.faint, modifier = Modifier.padding(start = 6.dp).size(12.dp))
     }
@@ -515,14 +510,11 @@ private fun SmallButton(text: String, filled: Boolean, modifier: Modifier = Modi
     ) { Text(text, color = if (filled) C.onAccent else C.text2, fontSize = TS.caption, fontWeight = if (filled) FontWeight.Medium else FontWeight.Normal, maxLines = 1) }
 }
 
-/** A card's title row: an icon in a soft circle, the name, and a count. */
+/** A card's title row: the name in the card's colour, and a count. */
 @Composable
-private fun CardHead(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, soft: Color, title: String, count: String?) {
+private fun CardHead(tint: Color, title: String, count: String?) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(24.dp).clip(CircleShape).background(soft), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
-        }
-        Text(title, Modifier.weight(1f).padding(start = 8.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Text(title, Modifier.weight(1f), color = tint, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
         if (count != null) Text(count, color = C.muted, fontSize = TS.caption)
     }
 }
@@ -576,10 +568,9 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
             val clock = if (done) null else item.time
             if (clock != null || lateText != null || rest.isNotEmpty()) {
                 Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // The time leads the line as a small clock label, as the reminder does on the Tasks page.
+                    // The time leads the line.
                     clock?.let {
-                        Icon(Ic.clock, null, tint = C.muted, modifier = Modifier.size(12.dp))
-                        Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", Modifier.padding(start = 3.dp), color = C.muted, fontSize = TS.caption)
+                        Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", color = C.muted, fontSize = TS.caption)
                     }
                     if (lateText != null) Text(lateText, color = C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                     if (rest.isNotEmpty()) Text((if (lateText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -638,10 +629,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
 @Composable
 private fun Notice(text: String, onClose: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(C.amberSoft).padding(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 2.dp), verticalAlignment = Alignment.Top) {
-        Box(Modifier.size(26.dp).clip(CircleShape).background(C.amber.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
-            Icon(Ic.bell, null, tint = C.amber, modifier = Modifier.size(16.dp))
-        }
-        Text(text, Modifier.weight(1f).padding(start = 8.dp, top = 3.dp), color = C.text, fontSize = TS.body)
+        Text(text, Modifier.weight(1f).padding(start = 4.dp, top = 3.dp), color = C.text, fontSize = TS.body)
         Box(Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
             Icon(Ic.close, tr("ซ่อน", "Hide"), tint = C.muted, modifier = Modifier.size(13.dp))
         }

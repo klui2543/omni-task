@@ -338,10 +338,7 @@ fun BranchSection(root: Branches.Node, onMap: () -> Unit) {
     val branches = root.flatten().drop(1)
     Card(Modifier.clickable(onClick = onMap)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft), contentAlignment = Alignment.Center) {
-                Icon(Ic.branch, null, tint = C.accentText, modifier = Modifier.size(20.dp))
-            }
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Column(Modifier.weight(1f)) {
                 Text(tr("Mind map ของโปรเจกต์", "Project mind map"), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
                 Text(
                     if (branches.isEmpty()) tr("ยังไม่มีกิ่ง แตะเพื่อแตกกิ่งแรก", "No branches yet. Tap to add the first")

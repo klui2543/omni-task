@@ -133,7 +133,6 @@ fun OrderedTaskList(
                         val line = meta(t)
                         if (line.isNotEmpty()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (isLocked) Icon(Ic.lock, null, tint = C.amber, modifier = Modifier.padding(end = 4.dp).size(12.dp))
                                 Text(
                                     line, color = if (isLocked) C.amber else if (isNext) C.accentText else C.faint,
                                     fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,

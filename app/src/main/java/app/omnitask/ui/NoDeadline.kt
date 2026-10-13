@@ -271,8 +271,7 @@ fun ReviewPrompt(state: UiState, onStart: () -> Unit) {
         Modifier.fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(C.card).clickable(onClick = onStart).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Ic.refresh, null, tint = C.accentText, modifier = Modifier.size(18.dp))
-        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+        Column(Modifier.weight(1f).padding(start = 2.dp)) {
             Text(tr("$n งานไม่มีเดดไลน์ถึงรอบทบทวน", "$n tasks without a deadline are due for review"), color = C.text, fontSize = TS.body)
             Text(tr("ทีละงาน ทำ พัก หรือทิ้ง ใช้ไม่ถึง 2 นาที", "One at a time: do, park or drop. Under 2 minutes."), color = C.muted, fontSize = TS.caption)
         }
