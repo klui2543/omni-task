@@ -157,6 +157,8 @@ data class UiState(
     val tonightWake: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     /** The wake alarm last sent to the watch, as the night's evening and the time. */
     val alarmSet: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
+    /** The day and time the watch alarm rings, set here or on the watch. */
+    val alarmAt: LocalDateTime? = null,
     /** The last send did not reach a watch with Omni. */
     val alarmFailed: Boolean = false,
     /** Tonight's wake time was set on the watch. */
@@ -311,6 +313,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         tonightBed = nightPref(KEY_TONIGHT_BED),
         tonightWake = nightPref(KEY_TONIGHT_WAKE),
         alarmSet = nightPref(KEY_ALARM_SET),
+        alarmAt = alarmAtPref(),
         wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false),
         projectTaskOrder = prefs.getStringSet(KEY_PROJECT_TASKS, emptySet()).orEmpty().associate { e ->
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
@@ -326,7 +329,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         // A wake time set on the watch lands here from WatchListener.
         if (key in WATCH_KEYS) {
             _state.update {
-                it.copy(tonightWake = nightPref(KEY_TONIGHT_WAKE), alarmSet = nightPref(KEY_ALARM_SET), wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false), alarmFailed = false)
+                it.copy(tonightWake = nightPref(KEY_TONIGHT_WAKE), alarmSet = nightPref(KEY_ALARM_SET), alarmAt = alarmAtPref(), wakeFromWatch = prefs.getBoolean(KEY_WAKE_FROM_WATCH, false), alarmFailed = false)
             }
         }
         if (key == null || key in SYNC_IGNORED) return@OnSharedPreferenceChangeListener
@@ -1739,17 +1742,38 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Sends tonight's wake time to the watch, which rings it (the phone stays quiet); null [wakeAt] cancels it. */
-    fun setWakeAlarm(evening: LocalDate, wakeAt: LocalDateTime?, sleepMinutes: Long = 0) {
+    fun setWakeAlarm(evening: LocalDate?, wakeAt: LocalDateTime?, sleepMinutes: Long = 0) {
         viewModelScope.launch {
             val reached = withContext(Dispatchers.IO) { WatchAlarm.send(getApplication(), wakeAt, sleepMinutes) }
-            val set = wakeAt?.let { evening to it.time }
-            if (reached) prefs.edit().apply { if (set == null) remove(KEY_ALARM_SET) else putString(KEY_ALARM_SET, nightValue(set.first, set.second)) }.apply()
+            // Tied to a night only when it is that night's wake time; an alarm later in the day stands alone.
+            val set = if (evening == null) null else wakeAt?.let { evening to it.time }
+            if (reached) prefs.edit().apply {
+                if (set == null) remove(KEY_ALARM_SET) else putString(KEY_ALARM_SET, nightValue(set.first, set.second))
+                if (wakeAt == null) remove(KEY_ALARM_AT) else putString(KEY_ALARM_AT, wakeAt.toString())
+            }.apply()
             _state.update {
-                if (reached) it.copy(alarmSet = set, alarmFailed = false)
+                if (reached) it.copy(alarmSet = set, alarmAt = wakeAt, alarmFailed = false)
                 else it.copy(alarmFailed = true, message = tr("ส่งไม่ถึงนาฬิกา ดูว่าเชื่อมต่ออยู่และลง Omni บนนาฬิกาแล้ว", "Could not reach the watch. Check it is connected and has Omni"))
             }
         }
     }
+
+    /**
+     * Sets the watch alarm for any day and time, as an alarm clock does (null turns it off). A morning alarm is also
+     * that night's wake time, so the sleep card counts from it.
+     */
+    fun setAlarm(at: LocalDateTime?, sleepMinutes: Long = 0) {
+        if (at != null && at.time < kotlinx.datetime.LocalTime(12, 0)) {
+            val evening = at.date.minusDays(1)
+            setTonightWake(evening, at.time)
+            setWakeAlarm(evening, at, sleepMinutes)
+        } else {
+            setWakeAlarm(null, at, sleepMinutes)
+        }
+    }
+
+    private fun alarmAtPref(): LocalDateTime? =
+        prefs.getString(KEY_ALARM_AT, null)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }?.takeIf { it > LocalDateTime.now() }
 
     private fun nightValue(evening: LocalDate, time: kotlinx.datetime.LocalTime) = "$evening ${"%02d:%02d".format(time.hour, time.minute)}"
 
@@ -1866,7 +1890,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_TONIGHT_WAKE = WatchAlarm.KEY_TONIGHT_WAKE
         const val KEY_ALARM_SET = WatchAlarm.KEY_ALARM_SET
         const val KEY_WAKE_FROM_WATCH = WatchAlarm.KEY_WAKE_FROM_WATCH
-        private val WATCH_KEYS = setOf(KEY_TONIGHT_WAKE, KEY_ALARM_SET, KEY_WAKE_FROM_WATCH)
+        const val KEY_ALARM_AT = WatchAlarm.KEY_ALARM_AT
+        private val WATCH_KEYS = setOf(KEY_TONIGHT_WAKE, KEY_ALARM_SET, KEY_WAKE_FROM_WATCH, KEY_ALARM_AT)
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"

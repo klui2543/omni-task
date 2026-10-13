@@ -62,18 +62,20 @@ object WakeAlarm {
     /** Where a time set on the watch goes, so the phone counts tonight's sleep from it. */
     const val TO_PHONE = "/wake/watch"
 
-    /** Sets the alarm from the watch itself, for the next [time] to come, and tells the phone. */
-    fun setOnWatch(context: Context, time: LocalTime): LocalDateTime {
-        val now = LocalDateTime.now()
-        var at = now.toLocalDate().atTime(time)
-        if (at <= now) at = at.plusDays(1)
+    /** The next [time] to come: today while it is still ahead, else tomorrow, as an alarm clock does. */
+    fun next(time: LocalTime, now: LocalDateTime = LocalDateTime.now()): LocalDateTime {
+        val at = now.toLocalDate().atTime(time)
+        return if (at > now) at else at.plusDays(1)
+    }
+
+    /** Sets the alarm from the watch itself, for [at] (a day and a time), and tells the phone. */
+    fun setOnWatch(context: Context, at: LocalDateTime) {
         set(context, at, sleep = 0)
         val request = PutDataMapRequest.create(TO_PHONE).apply {
             dataMap.putString("at", at.toString())
             dataMap.putLong("sent", System.currentTimeMillis())
         }.asPutDataRequest().setUrgent()
         Wearable.getDataClient(context).putDataItem(request)
-        return at
     }
 
     /** Puts the saved time in the system alarm clock, or clears it. Also run after a reboot or an update. */

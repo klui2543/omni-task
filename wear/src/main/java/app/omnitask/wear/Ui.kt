@@ -18,6 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 /** The phone app's dark colours, so the two read as one app. */
 object W {
@@ -47,3 +53,24 @@ fun RoundButton(text: String, background: Color, onClick: () -> Unit) {
 
 /** 4:52 for 292 minutes. */
 fun hm(minutes: Long) = "%d:%02d".format(minutes / 60, minutes % 60)
+
+val H: DateTimeFormatter = DateTimeFormatter.ofPattern("HH")
+val M: DateTimeFormatter = DateTimeFormatter.ofPattern("mm")
+
+/** Today, Tomorrow, or the weekday and date for a day further on. */
+@Composable
+fun dayWord(day: LocalDate): String {
+    val today = LocalDate.now()
+    return when (day) {
+        today -> stringResource(R.string.today)
+        today.plusDays(1) -> stringResource(R.string.tomorrow)
+        else -> day.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))
+    }
+}
+
+/** How long until [at], like "7 hr 20 min", for the line under the alarm. */
+@Composable
+fun until(at: LocalDateTime): String {
+    val minutes = ChronoUnit.MINUTES.between(LocalDateTime.now(), at).coerceAtLeast(0) + 1
+    return stringResource(R.string.hours_minutes, minutes / 60, minutes % 60)
+}

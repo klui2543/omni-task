@@ -204,24 +204,37 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                                 }
                             }
                         }
-                        val on = alarm != null && !state.alarmFailed
+                        // The watch alarm, for any day and time; tapping opens it set like a clock's, starting from
+                        // tonight's wake time when there is none.
+                        val alarmAt = state.alarmAt?.takeIf { it > now }
+                        val on = alarmAt != null && !state.alarmFailed
                         val tint = when { on -> C.lime; state.alarmFailed -> C.red; else -> C.accentText }
+                        var editingAlarm by remember { mutableStateOf(false) }
+                        if (editingAlarm) AlarmDialog(
+                            initial = alarmAt ?: night.wakeAt, isSet = alarmAt != null,
+                            onSet = { at -> vm.setAlarm(at, if (at == night.wakeAt) night.sleep else 0) },
+                            onOff = { vm.setAlarm(null) },
+                        ) { editingAlarm = false }
                         Row(
                             Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
                                 .background(if (on) C.lime.copy(alpha = 0.12f) else C.raised)
-                                .clickable { vm.setWakeAlarm(eve, if (on) null else night.wakeAt, night.sleep) }
+                                .clickable { editingAlarm = true }
                                 .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 when {
                                     state.alarmFailed -> tr("ส่งไม่ถึงนาฬิกา แตะเพื่อลองใหม่", "Did not reach the watch, tap to retry")
-                                    on -> tr("นาฬิกาจะปลุก ${night.wakeAt.format(HM)}", "The watch rings at ${night.wakeAt.format(HM)}")
-                                    else -> tr("ปลุกที่นาฬิกา ${night.wakeAt.format(HM)}", "Ring the watch at ${night.wakeAt.format(HM)}")
+                                    alarmAt != null -> tr(
+                                        "นาฬิกาจะปลุก${alarmDay(alarmAt.date, today)} ${alarmAt.format(HM)}",
+                                        "The watch rings ${alarmDay(alarmAt.date, today)} at ${alarmAt.format(HM)}",
+                                    )
+                                    else -> tr("ตั้งปลุกที่นาฬิกา", "Set the watch alarm")
                                 },
-                                color = if (on || state.alarmFailed) tint else C.text,
+                                Modifier.weight(1f), color = if (on || state.alarmFailed) tint else C.text,
                                 fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
+                            if (alarmAt != null && !state.alarmFailed) Text(tr("อีก ${untilAlarm(alarmAt, now)}", "in ${untilAlarm(alarmAt, now)}"), color = C.muted, fontSize = TS.caption, maxLines = 1)
                         }
                     }
                     Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
