@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stuck log C colors</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0B0C0F;color:#F3F4F8;font-family:system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px 60px}
+.page{max-width:1560px;margin:0 auto}
+h1{font-size:22px;font-weight:600;margin:0 0 4px}
+.lead{color:#AEB3C2;font-size:13px;margin:0 0 6px;line-height:1.6}
+/* palettes */
+.p1{--bg:#0D0F14;--card:#151821;--border:#222736;--raised:#1F2330;--sunken:#12141B;--control:#2C3140;--text:#F3F4F8;--text2:#CDD1DB;--muted:#AEB3C2;--faint:#858B9D;--late:#CDD1DB;--mark:#AEB3C2;--done:#F3F4F8;--now:#F3F4F8;--link:#F3F4F8;--chipOn:#2C3140;--chipOnLine:#858B9D;--save:#F3F4F8}
+.p2{--bg:#0D0F14;--card:#151821;--border:#222736;--raised:#1F2330;--sunken:#12141B;--control:#2C3140;--text:#F3F4F8;--text2:#CDD1DB;--muted:#AEB3C2;--faint:#858B9D;--late:#FF8A80;--mark:#858B9D;--done:#C7BEFF;--now:#A99CFF;--link:#C7BEFF;--chipOn:#2A2550;--chipOnLine:#A99CFF;--save:#A99CFF}
+.p3{--bg:#0E0E10;--card:#161618;--border:#26262A;--raised:#1E1E22;--sunken:#121214;--control:#34343A;--text:#ECECEE;--text2:#C4C4C9;--muted:#8E8E96;--faint:#7A7A83;--late:#D9726C;--mark:#7A7A83;--done:#9DB4D3;--now:#9DB4D3;--link:#B4C6DF;--chipOn:#1D2330;--chipOnLine:#9DB4D3;--save:#9DB4D3}
+.set{margin-top:34px;padding:20px;border-radius:24px;background:var(--bg);border:1px solid #1c1f28}
+.set>h2{font-size:16px;font-weight:600;margin:0 0 2px;color:var(--text)}
+.set>p{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.cap2{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 0 10px}
+.head{font-size:12.5px;color:var(--late);padding:10px 16px 4px;display:flex;justify-content:space-between}
+.task{display:flex;gap:10px;padding:7px 14px 7px 12px;align-items:flex-start}
+.ring{width:20px;height:20px;border-radius:50%;border:2px solid var(--faint);flex:none;margin-top:2px}
+.tb{flex:1;min-width:0}
+.t{font-size:15px;color:var(--text)}.meta{font-size:12px;color:var(--muted);margin-top:1px}.late{color:var(--late);font-weight:500}
+.mini{display:flex;gap:3px;align-items:flex-end;height:16px}
+.mini i{display:block;width:6px;height:5px;border-radius:2px;background:var(--control)}
+.mini i.m{background:var(--mark)}
+.mini i.d{height:14px;background:var(--done)}
+.dlg{background:var(--raised);border-radius:26px;padding:20px 20px 14px;color:var(--text)}
+.dlg .title{font-size:19px;margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{height:32px;display:flex;align-items:center;padding:0 12px;border-radius:16px;border:1px solid var(--control);font-size:13.5px;color:var(--text2)}
+.chip.on{background:var(--chipOn);border-color:var(--chipOnLine);color:var(--text)}
+.field{margin-top:4px;background:var(--sunken);border-radius:12px;padding:11px 12px;font-size:14px;min-height:44px}
+.ph{color:var(--faint)}
+.btns{display:flex;justify-content:flex-end;gap:18px;margin-top:14px;font-size:14px}
+.save{color:var(--save);font-weight:500}.g{color:var(--text2)}
+.sheet{background:var(--card);border-radius:24px 24px 0 0;padding:16px 16px 18px;border:1px solid var(--border);color:var(--text)}
+.sheet .tt{font-size:20px;margin:2px 0}
+.box{margin-top:10px;background:var(--sunken);border-radius:14px;padding:10px 12px}
+.cap{font-size:12px;color:var(--muted)}
+.bar{height:5px;border-radius:3px;background:var(--control);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:5px;background:var(--done)}
+.tl{position:relative;padding-left:18px;margin-top:6px}
+.tl:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--control)}
+.tli{position:relative;padding:4px 0 8px}
+.tli:before{content:"";position:absolute;left:-17px;top:9px;width:10px;height:10px;border-radius:5px;background:var(--raised);border:2px solid var(--mark)}
+.tli.dn:before{background:var(--done);border-color:var(--done)}
+.tli.now:before{border-color:var(--now);background:var(--now)}
+.tli.st:before{border-color:var(--faint);background:var(--sunken)}
+.tli .d{font-size:11.5px;color:var(--faint)}.tli .r{font-size:13.5px;color:var(--text2);margin-top:1px}
+.tli.dn .r{color:var(--text)}
+.link{color:var(--link);font-size:14px}
+.group{font-size:13px;color:var(--text);margin:12px 0 2px;display:flex;justify-content:space-between}
+.group span:last-child{font-size:12px;color:var(--muted)}
+.key{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin-top:10px}
+.key span{display:flex;align-items:center;gap:6px}
+.key i{width:10px;height:10px;border-radius:5px;display:inline-block}
+</style></head><body><div class="page">
+<h1>แบบ C ไทม์ไลน์: 3 ชุดสี</h1>
+<p class="lead">หน้าตาเหมือนกันทุกชุด ต่างกันแค่สี<br>1 ไม่มีสีเลย, 2 ใช้สีหลักของแอปสีเดียว, 3 สีสงบ (ตามธีม Calm ของแอป)</p>
+<div id="sets"></div>
+</div>
+
+<template id="screens">
+<div class="row">
+ <div>
+  <div class="cap2">หน้าโฟกัส</div>
+  <div class="card">
+   <div class="head"><span>ค้างอยู่</span><span>3</span></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+     <div class="t">ทำเว็บร้าน</div>
+     <div class="mini"><i></i><i class="m"></i><i></i><i class="d"></i><i></i><i class="m"></i><i></i><i></i></div>
+    </div>
+    <div class="meta"><span class="late">เลย 12 วัน</span>, ขยับล่าสุด 12 วันก่อน</div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+     <div class="t">ส่งเอกสารเบิก</div>
+     <div class="mini"><i></i><i></i></div>
+    </div>
+    <div class="meta"><span class="late">เลย 3 วัน</span>, ยังไม่ได้จด</div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+     <div class="t">นัดหมอฟัน</div>
+     <div class="mini"><i class="m"></i></div>
+    </div>
+    <div class="meta"><span class="late">เลย 1 วัน</span>, ขยับล่าสุดวันนี้</div>
+   </div></div>
+  </div>
+  <div class="key"><span><i style="background:var(--control)"></i>สัปดาห์ที่ไม่มีอะไร</span><span><i style="background:var(--mark)"></i>จดเหตุผล</span><span><i style="background:var(--done)"></i>งานย่อยเสร็จ</span></div>
+ </div>
+
+ <div>
+  <div class="cap2">หน้าต่างจดเหตุผล</div>
+  <div class="dlg">
+   <div class="title">ทำเว็บร้าน</div>
+   <div class="tl">
+    <div class="tli st"><div class="d">1 ส.ค.</div><div class="r">เริ่มงาน</div></div>
+    <div class="tli"><div class="d">2 ก.ย.</div><div class="r">รอคนอื่น: รอรูปสินค้าจากพี่เอ</div></div>
+    <div class="tli dn"><div class="d">20 ก.ย.</div><div class="r">งานย่อยเสร็จ: ได้รูปสินค้า</div></div>
+    <div class="tli"><div class="d">1 ต.ค.</div><div class="r">ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</div></div>
+    <div class="tli now"><div class="d">วันนี้</div><div class="field"><span class="ph">ตอนนี้ติดอะไร</span></div></div>
+   </div>
+   <div class="chips"><div class="chip">รอคนอื่น</div><div class="chip on">ไม่รู้จะเริ่มยังไง</div><div class="chip">งานใหญ่เกิน</div><div class="chip">ไม่มีเวลา</div><div class="chip">ไม่มีแรง</div><div class="chip">เป็นงานยาวอยู่แล้ว</div></div>
+   <div class="btns"><span class="g">ยกเลิก</span><span class="save">บันทึก</span></div>
+  </div>
+ </div>
+
+ <div>
+  <div class="cap2">หน้าแก้ไขงาน</div>
+  <div class="sheet">
+   <div class="tt">ทำเว็บร้าน</div>
+   <div class="box"><div class="cap">รายละเอียด</div><div style="font-size:14px;margin-top:4px">ใช้ธีมเดิม</div></div>
+   <div class="box">
+    <div style="display:flex;justify-content:space-between"><span class="cap">ความเป็นไป</span><span class="cap">งานย่อย 4/7</span></div>
+    <div class="bar"><i style="width:57%"></i></div>
+    <div class="tl" style="margin-top:10px">
+     <div class="tli st"><div class="d">1 ส.ค.</div><div class="r">เริ่มงาน</div></div>
+     <div class="tli"><div class="d">2 ก.ย.</div><div class="r">รอรูปสินค้าจากพี่เอ</div></div>
+     <div class="tli dn"><div class="d">20 ก.ย.</div><div class="r">ได้รูปสินค้า</div></div>
+     <div class="tli"><div class="d">1 ต.ค.</div><div class="r">ยังไม่รู้จะจัดหน้ายังไง</div></div>
+     <div class="tli now"><div class="d">วันนี้</div><div class="r link">+ จด</div></div>
+    </div>
+   </div>
+  </div>
+ </div>
+
+ <div>
+  <div class="cap2">หน้ารวมบันทึก</div>
+  <div class="dlg">
+   <div class="title">บันทึกงานค้าง</div>
+   <div class="group"><span>ทำเว็บร้าน</span><span>เปิดมา 73 วัน</span></div>
+   <div class="tl">
+    <div class="tli"><div class="d">2 ก.ย.</div><div class="r">รอรูปสินค้าจากพี่เอ</div></div>
+    <div class="tli dn"><div class="d">20 ก.ย.</div><div class="r">ได้รูปสินค้า</div></div>
+    <div class="tli"><div class="d">1 ต.ค.</div><div class="r">ยังไม่รู้จะจัดหน้ายังไง</div></div>
+   </div>
+   <div class="group"><span>ส่งเอกสารเบิก</span><span>เปิดมา 9 วัน</span></div>
+   <div class="tl">
+    <div class="tli"><div class="d">13 ต.ค.</div><div class="r">รอลายเซ็นหัวหน้า</div></div>
+   </div>
+   <div class="btns"><span class="g">ปิด</span></div>
+  </div>
+ </div>
+</div>
+</template>
+
+<script>
+const sets=[
+ ["p1","ชุด 1: ไม่มีสี","ขาว เทา ดำ ล้วน งานย่อยที่เสร็จเป็นจุดขาวทึบ \"เลยกำหนด\" ก็เป็นสีเทา"],
+ ["p2","ชุด 2: สีหลักของแอปสีเดียว","ม่วงอ่อนของแอปใช้กับงานย่อยที่เสร็จ วันนี้ และปุ่ม ที่เหลือเป็นเทา คงสีแดงไว้แค่คำว่า \"เลย X วัน\" เหมือนหน้าอื่นของแอป"],
+ ["p3","ชุด 3: สีสงบ","ฟ้าอมเทาจากธีม Calm ของแอป สีน้อยกว่าชุด 2"]
+];
+const tpl=document.getElementById("screens");
+for(const [cls,title,desc] of sets){
+ const s=document.createElement("div");s.className="set "+cls;
+ s.innerHTML="<h2>"+title+"</h2><p>"+desc+"</p>";
+ s.appendChild(tpl.content.cloneNode(true));
+ document.getElementById("sets").appendChild(s);
+}
+</script>
+</body></html>
