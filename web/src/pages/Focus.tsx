@@ -153,7 +153,7 @@ export function FocusPage(p: PageProps) {
           <span class="tline"><span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
           {meta && (
             <span class="plead">
-              {it.time && <span class="ptm"><svg class="clk" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0.01 0Z M12 7.5V12l3 2" /></svg>{it.time}</span>}
+              {it.time && <span class="ptm">{it.time}</span>}
               {it.time && (it.lead || it.extra) ? ', ' : ''}
               {it.lead && <span class="late">{it.lead}</span>}
               {it.lead && it.extra ? ', ' : ''}

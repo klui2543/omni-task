@@ -98,10 +98,11 @@ class QueryAndPlanTest {
             t("- [ ] นัดไว้แล้วครบทีหลัง ⏳ 2026-10-05 📅 2026-10-10"),
             t("- [ ] นัดไว้แล้วครบวันนี้ ⏳ 2026-10-05 📅 2026-10-07"),
             t("- [ ] นัดพรุ่งนี้ ⏳ 2026-10-08"),
+            t("- [ ] How to ดูหุ้น #อนาคต #remind-at-scheduled 🎯 13:30 ⏳ 2026-10-05"),
         )
         val plan = DayPlan.build(tasks, emptyList(), today)
         assertEquals(listOf(DayPlan.Part.LATE, DayPlan.Part.ANYTIME), plan.map { it.part })
-        assertEquals(listOf("นัดไว้เมื่อวาน", "นัดไว้แล้วครบทีหลัง"), plan[0].items.map { (it as DayPlan.Item.TaskItem).task.title })
+        assertEquals(listOf("นัดไว้เมื่อวาน", "นัดไว้แล้วครบทีหลัง", "How to ดูหุ้น"), plan[0].items.map { (it as DayPlan.Item.TaskItem).task.title })
         assertEquals(listOf("นัดไว้แล้วครบวันนี้"), plan[1].items.map { (it as DayPlan.Item.TaskItem).task.title })
     }
 

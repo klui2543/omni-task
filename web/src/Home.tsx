@@ -10,7 +10,6 @@ import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
 import { AssistantPage } from './pages/Assistant'
 import { ProjectsPage } from './pages/Projects'
-import { MorePage } from './pages/More'
 import { QuickAdd, TasksPage } from './pages/Tasks'
 import { createEvent, readEvents, type NewEvent } from './calendar'
 import { calendarCache } from './calendarCache'
@@ -286,7 +285,6 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
       {page === 'focus' ? <FocusPage key={settingsRev} {...props} />
         : page === 'tasks' ? <TasksPage key={settingsRev} {...props} />
         : page === 'projects' ? <ProjectsPage key={settingsRev} {...props} />
-        : page === 'more' ? <MorePage key={settingsRev} {...props} />
         : page === 'assistant' ? <AssistantPage key={settingsRev} {...props} />
         : <SettingsPage key={settingsRev} {...props} />}
 

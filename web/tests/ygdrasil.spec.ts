@@ -120,8 +120,8 @@ test('on a phone the tree opens readable from the trunk, and "fit" shows all of 
   expect(trunk.x).toBeGreaterThanOrEqual(map.x)
   expect(trunk.y).toBeGreaterThanOrEqual(map.y)
   expect(trunk.y + trunk.height).toBeLessThanOrEqual(map.y + map.height)
-  // The map takes the whole screen: the bottom bar and the round assistant button step aside, so nothing covers the panel.
-  await expect(page.getByRole('button', { name: 'เปิดผู้ช่วย' })).toHaveCount(0)
+  // The map takes the whole screen: the bottom bar and its line to ask the assistant step aside, so nothing covers the panel.
+  await expect(page.getByRole('textbox', { name: 'ถามผู้ช่วย' })).toHaveCount(0)
   await expect(page.getByRole('navigation', { name: 'เมนูหลัก' })).toHaveCount(0)
   await page.getByRole('button', { name: 'พอดีจอ' }).click()
   expect(await scale()).toBeLessThan(0.6)
