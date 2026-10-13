@@ -16,8 +16,8 @@ class StuckLogTest {
     private val file = listOf(
         "- [ ] ทำเว็บร้าน #peddose ➕ 2026-08-01",
         "    - ใช้ธีมเดิม",
-        "    - 🧱 2026-10-01 ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง",
-        "    - 🧱 2026-09-02 รอคนอื่น: รอรูปสินค้าจากพี่เอ",
+        "    - ค้าง 2026-10-01 ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง",
+        "    - ค้าง 2026-09-02 รอคนอื่น: รอรูปสินค้าจากพี่เอ",
         "    - [ ] เลือกธีม",
         "- [ ] เขียนบทความ ➕ 2026-09-01",
         "- [ ] ล้างรถ 🔁 every week ➕ 2026-01-01",
@@ -45,16 +45,18 @@ class StuckLogTest {
         val lines = file.toMutableList()
         VaultText.describe(lines, 0, "ธีมใหม่")
         assertEquals("    - ธีมใหม่", lines[1])
-        assertTrue(lines.contains("    - 🧱 2026-09-02 รอคนอื่น: รอรูปสินค้าจากพี่เอ"))
-        assertTrue(lines.contains("    - 🧱 2026-10-01 ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง"))
+        assertTrue(lines.contains("    - ค้าง 2026-09-02 รอคนอื่น: รอรูปสินค้าจากพี่เอ"))
+        assertTrue(lines.contains("    - ค้าง 2026-10-01 ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง"))
     }
 
     @Test
     fun lineIsOneLineAndReadsBack() {
         val line = StuckLog.line(today, "  รอสเปก\nจากลูกค้า ")
-        assertEquals("🧱 2026-10-13 รอสเปก จากลูกค้า", line)
+        assertEquals("ค้าง 2026-10-13 รอสเปก จากลูกค้า", line)
         assertEquals(StuckLog.Entry(today, "รอสเปก จากลูกค้า"), StuckLog.parse(line))
         assertNull(StuckLog.parse("ใช้ธีมเดิม"))
+        // Starting with the word is not enough: the date has to follow it.
+        assertNull(StuckLog.parse("ค้างจ่ายค่าโฮสต์ 300 บาท"))
     }
 
     @Test

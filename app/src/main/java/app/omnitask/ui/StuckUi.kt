@@ -106,7 +106,7 @@ fun StuckDialog(task: Task, onSave: (String) -> Unit, onDismiss: () -> Unit) {
                 }
                 StuckInput(text) { text = it }
                 Text(
-                    tr("บันทึกเป็นบรรทัด ${StuckLog.MARK} ใต้งานใน Obsidian พร้อมวันที่", "Saved as a dated ${StuckLog.MARK} line under the task in Obsidian"),
+                    tr("บันทึกเป็นบรรทัด \"${StuckLog.MARK} วันที่\" ใต้งานใน Obsidian", "Saved under the task in Obsidian as a \"${StuckLog.MARK} date\" line"),
                     Modifier.padding(top = 8.dp), color = C.faint, fontSize = TS.caption,
                 )
             }
@@ -252,7 +252,7 @@ fun StuckLine(task: Task, onExplain: () -> Unit) {
             Text(tr("ติดอะไรอยู่? แตะเพื่อจด", "What holds it up? Tap to note"), color = C.accentText, fontSize = TS.caption, maxLines = 1)
         } else {
             Text(
-                "${StuckLog.MARK} " + last.reason.ifEmpty { tr("(ไม่ได้เขียนเหตุผล)", "(no reason written)") },
+                last.reason.ifEmpty { tr("(ไม่ได้เขียนเหตุผล)", "(no reason written)") },
                 Modifier.weight(1f, fill = false), color = C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Text(

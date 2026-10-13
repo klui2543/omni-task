@@ -4,13 +4,14 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
 
 /**
- * Why a task has stayed open so long, in the owner's words, dated: `- 🧱 2026-10-13 รอคนอื่น: รอรูปจากพี่เอ` on a
+ * Why a task has stayed open so long, in the owner's words, dated: `- ค้าง 2026-10-13 รอคนอื่น: รอรูปจากพี่เอ` on a
  * line under the task. Kept in the vault next to the task (it moves to the archive with it), so it reads in
  * Obsidian and anyone reading the vault (Claude included) sees the history; the apps gather the lines into a log by date.
  */
 object StuckLog {
 
-    const val MARK = "🧱"
+    /** The word that starts the line, a date right after it, so a description line that merely starts with it is left alone. */
+    const val MARK = "ค้าง"
 
     data class Entry(val day: LocalDate, val reason: String)
 
@@ -30,7 +31,7 @@ object StuckLog {
     /** Open this long (from ➕, or from the last note) with nothing written: the weekly notification asks why. */
     const val ASK_AFTER_DAYS = 21L
 
-    private val LINE = Regex("""^$MARK️?\s*(\d{4}-\d{2}-\d{2})\s*:?\s*(.*)$""")
+    private val LINE = Regex("""^$MARK\s+(\d{4}-\d{2}-\d{2})\s*:?\s*(.*)$""")
 
     /** The note line for [reason] written on [day], on one line so it stays a single note under the task. */
     fun line(day: LocalDate, reason: String): String = "$MARK $day ${reason.trim().replace(Regex("""\s*\n\s*"""), " ")}"
@@ -41,7 +42,7 @@ object StuckLog {
         return Entry(day, m.groupValues[2].trim())
     }
 
-    fun isNote(note: String) = note.trim().startsWith(MARK)
+    fun isNote(note: String) = parse(note) != null
 
     /** The task's notes, oldest first. */
     fun entries(task: Task): List<Entry> = task.notes.mapNotNull { parse(it) }.sortedBy { it.day }
