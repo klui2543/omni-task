@@ -6,6 +6,7 @@ import { Main } from './Home'
 import { FoundVault, findVaults } from './vault'
 import { clearNoteIndex } from './noteIndex'
 import { offlineStore } from './offline'
+import { Reminders } from './ui/Reminders'
 
 type Stage = 'setup' | 'signin' | 'vault' | 'ready'
 
@@ -61,15 +62,19 @@ export function App({ authError }: { authError: string | null }) {
       />
     )
   return (
-    <Main
-      drive={drive!}
-      vaultId={vaultId!}
-      onSignIn={signIn}
-      onConnectCalendar={() => auth!.signIn('select_account', CALENDAR_SCOPE)}
-      onAllowCalendarWrite={() => auth!.signIn('select_account', `${CALENDAR_SCOPE} ${CALENDAR_WRITE_SCOPE}`)}
-      onSignOut={() => { auth!.signOut(); setSignedIn(false); offlineStore.clear(); clearNoteIndex().finally(() => location.reload()) }}
-      onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
-    />
+    <>
+      <Main
+        drive={drive!}
+        vaultId={vaultId!}
+        onSignIn={signIn}
+        onConnectCalendar={() => auth!.signIn('select_account', CALENDAR_SCOPE)}
+        onAllowCalendarWrite={() => auth!.signIn('select_account', `${CALENDAR_SCOPE} ${CALENDAR_WRITE_SCOPE}`)}
+        onSignOut={() => { auth!.signOut(); setSignedIn(false); offlineStore.clear(); clearNoteIndex().finally(() => location.reload()) }}
+        onChangeVault={() => { config.vaultId = null; config.taskFileId = null; setVaultId(null) }}
+      />
+      {/* Task reminders over every page, while the app is open (ui/Reminders.tsx). */}
+      <Reminders />
+    </>
   )
 }
 
