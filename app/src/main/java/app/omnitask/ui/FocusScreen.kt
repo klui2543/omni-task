@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
 import app.omnitask.model.Countdown
+import app.omnitask.model.StuckLog
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -558,6 +559,10 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
     val late = t.isLate(today)
     // A task already ticked off stays on the timeline, greyed out.
     val done = t.status == Status.DONE
+    var explaining by remember(t.key) { mutableStateOf(false) }
+    // Late or long-open: how it has moved (a bar a week) and when it last did, one tap from writing why.
+    val stuck = !done && StuckLog.matters(t, today)
+    val subs = if (stuck) state.subtasksOf(t) else emptyList()
     Row(
         Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 6.dp, end = 10.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.Top,
@@ -574,13 +579,17 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
             // Every row here is today's, so "due today" would only repeat. A finished task is one line.
             val lateText = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
             val rest = if (done) "" else listOfNotNull(
+                if (stuck) stuckStatus(t, subs, today) else null,
                 if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
                 Projects.projectOf(t),
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
             ).joinToString(", ")
             val clock = if (done) null else item.time
             if (clock != null || lateText != null || rest.isNotEmpty()) {
-                Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.padding(top = 1.dp).then(if (stuck) Modifier.clip(RoundedCornerShape(6.dp)).clickable { explaining = true } else Modifier),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     // The time leads the line.
                     clock?.let {
                         Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", color = C.muted, fontSize = TS.caption)
@@ -590,7 +599,9 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                 }
             }
         }
+        if (stuck) WeekBarsButton(StuckLog.weeks(t, subs, today)) { explaining = true }
     }
+    if (explaining) StuckDialog(t, state.subtasksOf(t), today, { vm.noteStuck(t, it) }) { explaining = false }
 }
 
 /**

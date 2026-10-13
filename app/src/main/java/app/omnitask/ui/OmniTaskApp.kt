@@ -303,6 +303,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
     if (editing != null && !(wide && twoPane)) {
         EditSheet(editing, state, vm, onDismiss = { editingKey = null }, onOpen = open)
     }
+    // Waits for the tasks to load, so opening from the notification never shows an empty deck first.
+    if (state.askStuck && state.tasks.isNotEmpty()) StuckDeck(state, vm, onOpen = open) { vm.requestStuck(false) }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
     state.crash?.let { report -> CrashDialog(report, vm::dismissCrash) }
     state.closingParent?.let { parent ->

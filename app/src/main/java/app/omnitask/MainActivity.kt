@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
-    /** Widgets open the app with an action: type a task, say it, or go straight to the assistant. */
+    /** Widgets and notifications open the app with an action: type a task, say it, go to the assistant, or note stuck tasks. */
     private fun handle(intent: Intent?) {
         // Opened from a task reminder: noted in the behavior log, so the assistant learns which reminders work.
         intent?.getStringExtra(EXTRA_REMINDED)?.let { raw ->
@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
             ACTION_ADD -> viewModel.requestQuickAdd(QuickAddRequest())
             ACTION_VOICE -> viewModel.requestQuickAdd(QuickAddRequest(voice = true))
             ACTION_ASSISTANT -> viewModel.requestQuickAdd(QuickAddRequest(assistant = true))
+            ACTION_STUCK -> viewModel.requestStuck(true)
             else -> return
         }
         intent.removeExtra(EXTRA_ACTION)
@@ -88,6 +89,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_ADD = "add"
         const val ACTION_VOICE = "voice"
         const val ACTION_ASSISTANT = "assistant"
+        /** From the weekly review: ask why each long-open task is still open. */
+        const val ACTION_STUCK = "stuck"
     }
 
     // Obsidian or the sync app may have changed files while the app was in the background.

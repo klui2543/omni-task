@@ -49,6 +49,7 @@ import app.omnitask.model.Priority
 import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
@@ -138,6 +139,8 @@ data class UiState(
     val reviewed: Map<String, LocalDate> = emptyMap(),
     /** Set when something outside the screens (a widget, a shortcut) asks for the quick-add sheet. */
     val quickAdd: QuickAddRequest? = null,
+    /** Set when the weekly notification is opened: ask why each long-open task is still open. */
+    val askStuck: Boolean = false,
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
@@ -963,6 +966,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(reviewed = kept) }
     }
 
+    /**
+     * Writes why the task is still open, dated today, on a line under it (see [StuckLog]). It takes the write lock
+     * first, so a review choice made with it is written after it and neither overwrites the other.
+     */
+    fun noteStuck(task: Task, reason: String) {
+        if (reason.isBlank()) return
+        val line = StuckLog.line(LocalDate.now(), reason)
+        viewModelScope.launch {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.addSubLine(task, line) } } }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")) } }
+            if (result.isSuccess) reloadNote(task) else reload()
+        }
+    }
+
     enum class ReviewAction { THIS_WEEK, FUTURE, SOMEDAY, KEEP, DROP }
 
     fun review(task: Task, action: ReviewAction) {
@@ -1318,6 +1335,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
+
+    fun requestStuck(on: Boolean) = _state.update { it.copy(askStuck = on) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
     fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {

@@ -20,6 +20,7 @@ import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultRepository
 import app.omnitask.model.Behavior
 import app.omnitask.model.Lang
+import app.omnitask.model.StuckLog
 import app.omnitask.model.load
 import app.omnitask.model.tr
 import kotlinx.datetime.LocalDate
@@ -85,8 +86,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 post(context, "digest", inbox(base(context, CHANNEL_DIGEST, msg.title, msg.lines.first()), msg.lines))
             }
             AlarmKind.WEEKLY -> {
-                val msg = Digest.weekly(Scheduler.loadVaultTasks(context), LocalDate.now(), BehaviorLog.cached(context))
-                post(context, "weekly", inbox(base(context, CHANNEL_DIGEST, msg.title, msg.lines.first()), msg.lines))
+                val tasks = Scheduler.loadVaultTasks(context)
+                val msg = Digest.weekly(tasks, LocalDate.now(), BehaviorLog.cached(context))
+                // With long-open tasks nobody has explained, opening the review goes straight to asking about them.
+                val ask = if (StuckLog.toAsk(tasks, LocalDate.now()).isNotEmpty()) MainActivity.ACTION_STUCK else null
+                post(context, "weekly", inbox(base(context, CHANNEL_DIGEST, msg.title, msg.lines.first(), openAction = ask), msg.lines))
             }
             AlarmKind.TEST -> post(
                 context, id,
@@ -140,13 +144,18 @@ class AlarmReceiver : BroadcastReceiver() {
         intent.getStringExtra(Scheduler.EXTRA_ID)?.let { NotificationManagerCompat.from(context).cancel(it.hashCode()) }
     }
 
-    /** [reminded]: the task line of a task reminder, so opening the app from it is noted in the behavior log. */
-    private fun base(context: Context, channel: String, title: String, text: String, reminded: String? = null): NotificationCompat.Builder {
+    /**
+     * [reminded]: the task line of a task reminder, so opening the app from it is noted in the behavior log.
+     * [openAction]: what the app does when opened from it ([MainActivity.EXTRA_ACTION]).
+     */
+    private fun base(context: Context, channel: String, title: String, text: String, reminded: String? = null, openAction: String? = null): NotificationCompat.Builder {
         val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         reminded?.let { launch.putExtra(MainActivity.EXTRA_REMINDED, it) }
+        openAction?.let { launch.putExtra(MainActivity.EXTRA_ACTION, it) }
+        val extras = reminded != null || openAction != null
         val open = PendingIntent.getActivity(
-            context, reminded?.hashCode() ?: 0, launch,
-            if (reminded != null) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_IMMUTABLE,
+            context, reminded?.hashCode() ?: openAction?.hashCode() ?: 0, launch,
+            if (extras) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notify)

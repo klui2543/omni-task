@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stuck log variants</title>
+<style>
+:root{--bg:#0D0F14;--card:#151821;--border:#222736;--raised:#1F2330;--sunken:#12141B;--control:#2C3140;--divider:#1E222D;--text:#F3F4F8;--text2:#CDD1DB;--muted:#AEB3C2;--faint:#858B9D;--accent:#A99CFF;--accentSoft:#2A2550;--accentText:#C7BEFF;--lime:#B9F26B;--limeSoft:#2B3A1A;--red:#FF8A80;--redSoft:#3A1F22;--amber:#FFC266;--amberSoft:#33281A;--blue:#7FB2FF}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px 60px}
+.page{max-width:1560px;margin:0 auto}
+h1{font-size:22px;font-weight:600;margin:0 0 4px}
+.lead{color:var(--muted);font-size:13px;margin:0 0 8px;line-height:1.6}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 6px}
+.legend span{font-size:12.5px;padding:6px 10px;border-radius:10px;background:var(--card);border:1px solid var(--border);color:var(--text2)}
+.legend b{color:var(--accentText);margin-right:4px}
+section{margin-top:34px}
+section>h2{font-size:16px;font-weight:600;margin:0 0 2px}
+section>p{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px}
+.v{min-width:0}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.tag b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--accentSoft);color:var(--accentText);font-size:12px}
+.note{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.55}
+/* building blocks */
+.card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 0 10px}
+.head{font-size:12.5px;color:var(--red);padding:10px 16px 4px;display:flex;justify-content:space-between}
+.task{display:flex;gap:10px;padding:7px 14px 7px 12px;align-items:flex-start}
+.ring{width:20px;height:20px;border-radius:50%;border:2px solid var(--faint);flex:none;margin-top:2px}
+.tb{flex:1;min-width:0}
+.t{font-size:15px}.meta{font-size:12px;color:var(--muted);margin-top:1px}.late{color:var(--red);font-weight:500}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlg{background:var(--raised);border-radius:26px;padding:20px 20px 14px}
+.dlg .title{font-size:19px;margin-bottom:6px}
+.sub{font-size:12.5px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{height:34px;display:flex;align-items:center;padding:0 13px;border-radius:17px;border:1px solid var(--control);font-size:14px;color:var(--text2)}
+.chip.on{background:var(--accentSoft);border-color:var(--accent);color:var(--text)}
+.field{margin-top:10px;background:var(--sunken);border-radius:12px;padding:12px;font-size:14px;min-height:48px;line-height:1.45}
+.ph{color:var(--faint)}
+.btns{display:flex;justify-content:flex-end;gap:18px;margin-top:14px;font-size:14px}
+.p{color:var(--accent)}.g{color:var(--text2)}
+.sheet{background:var(--card);border-radius:24px 24px 0 0;padding:16px 16px 18px;border:1px solid var(--border)}
+.sheet .tt{font-size:20px;margin:2px 0}
+.box{margin-top:10px;background:var(--sunken);border-radius:14px;padding:10px 12px}
+.cap{font-size:12px;color:var(--muted)}
+.hist{display:flex;gap:10px;font-size:12.5px;padding:3px 0}.hist .d{color:var(--faint);width:44px;flex:none}.hist .r{color:var(--text2)}
+.link{color:var(--accentText);font-size:14px}
+.seg{display:flex;gap:6px;margin-top:12px}.seg div{flex:1;text-align:center;font-size:13px;padding:8px 0;border-radius:10px;background:var(--sunken);color:var(--muted)}.seg .on{background:var(--accentSoft);color:var(--text)}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:11px;font-size:11.5px;white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:3px;display:inline-block;flex:none}
+/* timeline */
+.tl{position:relative;padding-left:18px;margin-top:6px}
+.tl:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--control)}
+.tli{position:relative;padding:4px 0 8px}
+.tli:before{content:"";position:absolute;left:-17px;top:9px;width:10px;height:10px;border-radius:5px;background:var(--raised);border:2px solid var(--faint)}
+.tli.now:before{border-color:var(--accent);background:var(--accentSoft)}
+.tli.start:before{border-color:var(--lime)}
+.tli .d{font-size:11.5px;color:var(--faint)}.tli .r{font-size:13.5px;color:var(--text2);margin-top:1px}
+.mini{display:flex;gap:3px;align-items:flex-end;height:18px}
+.mini i{display:block;width:6px;border-radius:2px;background:var(--control)}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.big div{border-radius:14px;padding:12px;font-size:14px;background:var(--sunken);border:1px solid var(--border);color:var(--text2)}
+.big small{display:block;font-size:11.5px;color:var(--faint);margin-top:2px}
+.toast{margin-top:12px;background:#2b2f3c;border-radius:12px;padding:10px 12px;font-size:13px;display:flex;justify-content:space-between}
+.bar{height:6px;border-radius:3px;background:var(--raised);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:6px}
+.group{font-size:12px;color:var(--muted);margin:12px 0 4px;display:flex;justify-content:space-between}
+.ent{padding:6px 0}.ent .n{font-size:14px}.ent .r{font-size:12.5px;color:var(--text2)}
+.done{color:var(--faint)}
+</style></head><body><div class="page">
+
+<h1>บันทึกงานค้าง: 4 แบบให้เลือก</h1>
+<p class="lead">ทุกหน้าจอมี 4 แบบเรียง A ถึง D เลือกได้แยกแต่ละหน้าจอ ผสมกันได้ เช่น โฟกัสแบบ B กับหน้าต่างจดแบบ D</p>
+<div class="legend">
+ <span><b>A</b>เรียบ ข้อมูลน้อย</span>
+ <span><b>B</b>เด่น มีสีและป้าย</span>
+ <span><b>C</b>ไทม์ไลน์ เห็นว่าเดินมายังไง</span>
+ <span><b>D</b>จดเร็ว แตะเดียวจบ</span>
+</div>
+
+<!-- ============ 1. FOCUS ============ -->
+<section>
+<h2>1. หน้าโฟกัส: การ์ด "ค้างอยู่"</h2>
+<p>งานที่เลยกำหนด หรือเปิดมาเกิน 21 วัน</p>
+<div class="row">
+
+ <div class="v"><div class="tag"><b>A</b>เรียบ</div>
+  <div class="card">
+   <div class="head"><span>ค้างอยู่</span><span>3</span></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">ทำเว็บร้าน</div>
+    <div class="meta ell"><span class="late">เลย 12 วัน</span>, ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">ส่งเอกสารเบิก</div>
+    <div class="meta"><span class="late">เลย 3 วัน</span></div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">นัดหมอฟัน</div>
+    <div class="meta ell"><span class="late">เลย 1 วัน</span>, รอคนอื่น: รอคลินิกโทรกลับ</div>
+   </div></div>
+  </div>
+  <div class="note">เหตุผลล่าสุดต่อท้ายบรรทัดเดิม ไม่เพิ่มบรรทัด<br>แตะงานเปิดหน้าแก้ไขงาน จดได้จากที่นั่น</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>B</b>เด่น</div>
+  <div class="card">
+   <div class="head"><span>ค้างอยู่</span><span>3</span></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">ทำเว็บร้าน</div>
+    <div class="meta"><span class="late">เลย 12 วัน</span>, peddose</div>
+    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+     <span class="pill" style="background:var(--amberSoft);color:var(--amber)">ไม่รู้จะเริ่มยังไง</span>
+     <span class="pill" style="background:var(--sunken);color:var(--muted)">จด 2 ครั้ง</span>
+    </div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">ส่งเอกสารเบิก</div>
+    <div class="meta"><span class="late">เลย 3 วัน</span></div>
+    <div style="margin-top:6px"><span class="pill" style="border:1px dashed var(--accent);color:var(--accentText)">+ ติดอะไร</span></div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">นัดหมอฟัน</div>
+    <div class="meta"><span class="late">เลย 1 วัน</span></div>
+    <div style="margin-top:6px"><span class="pill" style="background:var(--redSoft);color:var(--red)">รอคนอื่น</span></div>
+   </div></div>
+  </div>
+  <div class="note">เหตุผลเป็นป้ายสีตามประเภท<br>รอคนอื่น แดง, ไม่รู้จะเริ่ม เหลือง, งานยาว เขียว<br>แตะป้ายเปิดหน้าต่างจด</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>C</b>ไทม์ไลน์</div>
+  <div class="card">
+   <div class="head"><span>ค้างอยู่</span><span>3</span></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+     <div class="t">ทำเว็บร้าน</div>
+     <div class="mini"><i style="height:6px"></i><i style="height:6px;background:var(--amber)"></i><i style="height:6px"></i><i style="height:12px;background:var(--lime)"></i><i style="height:6px;background:var(--amber)"></i></div>
+    </div>
+    <div class="meta"><span class="late">เลย 12 วัน</span>, เปิดมา 73 วัน, ขยับล่าสุด 12 วันก่อน</div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+     <div class="t">ส่งเอกสารเบิก</div>
+     <div class="mini"><i style="height:6px"></i><i style="height:6px"></i></div>
+    </div>
+    <div class="meta"><span class="late">เลย 3 วัน</span>, ยังไม่ได้จด</div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+     <div class="t">นัดหมอฟัน</div>
+     <div class="mini"><i style="height:6px;background:var(--red)"></i></div>
+    </div>
+    <div class="meta"><span class="late">เลย 1 วัน</span>, ขยับล่าสุดวันนี้</div>
+   </div></div>
+  </div>
+  <div class="note">แท่งเล็กขวามือ: หนึ่งแท่งต่อสัปดาห์<br>แท่งสูงเขียว = งานย่อยเสร็จ, จุดสี = วันที่จดเหตุผล<br>เห็นทันทีว่างานยาวที่ยังเดิน หรือนิ่งอยู่</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>D</b>จดเร็ว</div>
+  <div class="card">
+   <div class="head"><span>ค้างอยู่</span><span>3</span></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">ทำเว็บร้าน</div>
+    <div class="meta ell"><span class="late">เลย 12 วัน</span>, ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้า</div>
+   </div></div>
+   <div class="task" style="background:var(--sunken);margin:2px 8px;border-radius:14px;padding:10px 10px"><div class="ring"></div><div class="tb">
+    <div class="t">ส่งเอกสารเบิก</div>
+    <div class="meta"><span class="late">เลย 3 วัน</span>, ติดอะไร?</div>
+    <div class="chips" style="margin-top:8px;gap:5px">
+     <div class="chip" style="height:30px;font-size:13px">รอคนอื่น</div><div class="chip" style="height:30px;font-size:13px">ไม่มีเวลา</div><div class="chip" style="height:30px;font-size:13px">งานใหญ่เกิน</div><div class="chip" style="height:30px;font-size:13px">อื่นๆ</div>
+    </div>
+   </div></div>
+   <div class="task"><div class="ring"></div><div class="tb">
+    <div class="t">นัดหมอฟัน</div>
+    <div class="meta ell"><span class="late">เลย 1 วัน</span>, รอคนอื่น: รอคลินิกโทรกลับ</div>
+   </div></div>
+  </div>
+  <div class="note">งานที่ยังไม่เคยจด ตัวเลือกขึ้นใต้งานเลย แตะเดียวบันทึกทันที<br>"อื่นๆ" เปิดช่องพิมพ์ จดแล้วตัวเลือกหายไป</div>
+ </div>
+
+</div></section>
+
+<!-- ============ 2. EXPLAIN ============ -->
+<section>
+<h2>2. หน้าต่างจดเหตุผล</h2>
+<p>เปิดจากหน้าโฟกัส หน้าแก้ไขงาน และแจ้งเตือนวันอาทิตย์ (ใช้หน้าตาเดียวกันทุกที่)</p>
+<div class="row">
+
+ <div class="v"><div class="tag"><b>A</b>เรียบ</div>
+  <div class="dlg">
+   <div class="title">ทำเว็บร้าน</div>
+   <div class="sub">ติดอะไรอยู่</div>
+   <div class="field"><span class="ph">เขียนสั้นๆ ก็พอ</span></div>
+   <div class="sub" style="margin-top:12px">ครั้งก่อน 1 ต.ค.: ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</div>
+   <div class="btns"><span class="g">ยกเลิก</span><span class="p">บันทึก</span></div>
+  </div>
+  <div class="note">ช่องพิมพ์อย่างเดียว ไม่มีตัวเลือก<br>เห็นแค่ครั้งล่าสุด ประวัติดูได้จากหน้าแก้ไขงาน</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>B</b>เด่น</div>
+  <div class="dlg">
+   <div class="title">ทำไมยังค้างอยู่</div>
+   <div class="sub">ทำเว็บร้าน, เปิดมา 73 วัน</div>
+   <div class="chips">
+    <div class="chip" style="border-color:#FF8A8066"><span class="dot" style="background:var(--red);margin-right:7px"></span>รอคนอื่น</div>
+    <div class="chip on"><span class="dot" style="background:var(--amber);margin-right:7px"></span>ไม่รู้จะเริ่มยังไง</div>
+    <div class="chip"><span class="dot" style="background:var(--amber);margin-right:7px"></span>งานใหญ่เกิน</div>
+    <div class="chip"><span class="dot" style="background:var(--blue);margin-right:7px"></span>ไม่มีเวลา</div>
+    <div class="chip"><span class="dot" style="background:var(--blue);margin-right:7px"></span>ไม่มีแรง</div>
+    <div class="chip"><span class="dot" style="background:var(--lime);margin-right:7px"></span>เป็นงานยาวอยู่แล้ว</div>
+   </div>
+   <div class="field">ต้องเลือกธีมก่อน</div>
+   <div class="btns"><span class="g">ยกเลิก</span><span class="p">บันทึก</span></div>
+  </div>
+  <div class="note">จุดสีบอกกลุ่ม: แดง ติดคนอื่น, เหลือง ติดที่ตัวงาน, ฟ้า ติดที่เวลาและแรง, เขียว ไม่ได้ติด แค่ยาว<br>สีเดียวกับป้ายในหน้าโฟกัสแบบ B</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>C</b>ไทม์ไลน์</div>
+  <div class="dlg">
+   <div class="title">ทำเว็บร้าน</div>
+   <div class="tl">
+    <div class="tli start"><div class="d">1 ส.ค.</div><div class="r">เริ่มงาน</div></div>
+    <div class="tli"><div class="d">2 ก.ย.</div><div class="r">รอคนอื่น: รอรูปสินค้าจากพี่เอ</div></div>
+    <div class="tli start"><div class="d">20 ก.ย.</div><div class="r" style="color:var(--lime)">งานย่อยเสร็จ: ได้รูปสินค้า</div></div>
+    <div class="tli"><div class="d">1 ต.ค.</div><div class="r">ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</div></div>
+    <div class="tli now"><div class="d">วันนี้</div>
+     <div class="field" style="margin-top:4px"><span class="ph">ตอนนี้ติดอะไร</span></div>
+    </div>
+   </div>
+   <div class="chips" style="margin-top:4px"><div class="chip">รอคนอื่น</div><div class="chip">ไม่รู้จะเริ่มยังไง</div><div class="chip">งานใหญ่เกิน</div><div class="chip">อื่นๆ</div></div>
+   <div class="btns"><span class="g">ยกเลิก</span><span class="p">บันทึก</span></div>
+  </div>
+  <div class="note">เหตุผลกับงานย่อยที่เสร็จเรียงในเส้นเดียวกัน<br>ช่องจดใหม่อยู่ปลายเส้น เห็นว่างานเดินมาถึงไหนก่อนจด</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>D</b>จดเร็ว</div>
+  <div class="dlg">
+   <div class="title">ส่งเอกสารเบิก ติดอะไร?</div>
+   <div class="big">
+    <div>รอคนอื่น<small>ย้ายไปการ์ดคนรอ</small></div>
+    <div>ไม่รู้จะเริ่มยังไง<small>ให้ตั้งก้าวแรก</small></div>
+    <div>งานใหญ่เกิน<small>ให้แตกงานย่อย</small></div>
+    <div>ไม่มีเวลา<small>ให้นัดวันทำ</small></div>
+    <div>ไม่มีแรง<small>เลื่อนไปพรุ่งนี้</small></div>
+    <div>เป็นงานยาว<small>ไม่ต้องเตือนบ่อย</small></div>
+   </div>
+   <div class="field" style="min-height:40px"><span class="ph">หรือพิมพ์เอง</span></div>
+   <div class="btns"><span class="g">ข้าม</span></div>
+  </div>
+  <div class="note">แตะปุ่มใหญ่ปุ่มเดียว บันทึกทันทีแล้วปิด<br>บรรทัดเล็กใต้ปุ่มคือสิ่งที่แอปช่วยต่อ (แตะครั้งที่สองถ้าอยากทำ)</div>
+ </div>
+
+</div></section>
+
+<!-- ============ 3. TASK SHEET ============ -->
+<section>
+<h2>3. หน้าแก้ไขงาน</h2>
+<p>ส่วน "ทำไมยังค้าง" ใต้รายละเอียด</p>
+<div class="row">
+
+ <div class="v"><div class="tag"><b>A</b>เรียบ</div>
+  <div class="sheet">
+   <div class="tt">ทำเว็บร้าน</div>
+   <div class="box"><div class="cap">รายละเอียด</div><div style="font-size:14px;margin-top:4px">ใช้ธีมเดิม</div></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 4px 0">
+    <span class="cap">ติดอยู่ 1 ต.ค.: ยังไม่รู้จะจัดหน้ายังไง</span><span class="link" style="font-size:13px">จด</span>
+   </div>
+   <div class="seg"><div>ยังไม่ทำ</div><div class="on">กำลังทำ</div><div>เสร็จ</div><div>ยกเลิก</div></div>
+  </div>
+  <div class="note">บรรทัดเดียว ครั้งล่าสุด<br>แตะบรรทัดเห็นทั้งหมด</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>B</b>เด่น</div>
+  <div class="sheet">
+   <div class="tt">ทำเว็บร้าน</div>
+   <div class="box" style="background:var(--amberSoft);border:1px solid #FFC26640">
+    <div style="display:flex;justify-content:space-between"><span class="cap" style="color:var(--amber)">ติดอยู่ 12 วัน</span><span class="cap">จด 2 ครั้ง</span></div>
+    <div style="font-size:15px;margin-top:4px">ไม่รู้จะเริ่มยังไง</div>
+    <div style="font-size:13px;color:var(--text2)">ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</div>
+    <div style="display:flex;gap:16px;margin-top:8px"><span class="link">จดใหม่</span><span class="link" style="color:var(--text2)">ดูทั้งหมด</span></div>
+   </div>
+   <div class="box"><div class="cap">รายละเอียด</div><div style="font-size:14px;margin-top:4px">ใช้ธีมเดิม</div></div>
+   <div class="seg"><div>ยังไม่ทำ</div><div class="on">กำลังทำ</div><div>เสร็จ</div><div>ยกเลิก</div></div>
+  </div>
+  <div class="note">กล่องสีอยู่บนสุด เหนือรายละเอียด สีตามกลุ่มเหตุผล</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>C</b>ไทม์ไลน์</div>
+  <div class="sheet">
+   <div class="tt">ทำเว็บร้าน</div>
+   <div class="box"><div class="cap">รายละเอียด</div><div style="font-size:14px;margin-top:4px">ใช้ธีมเดิม</div></div>
+   <div class="box">
+    <div style="display:flex;justify-content:space-between"><span class="cap">ความเป็นไป</span><span class="cap">งานย่อย 4/7</span></div>
+    <div class="bar"><i style="width:57%;background:var(--lime)"></i></div>
+    <div class="tl" style="margin-top:10px">
+     <div class="tli start"><div class="d">1 ส.ค.</div><div class="r">เริ่มงาน</div></div>
+     <div class="tli"><div class="d">2 ก.ย.</div><div class="r">รอรูปสินค้าจากพี่เอ</div></div>
+     <div class="tli start"><div class="d">20 ก.ย.</div><div class="r" style="color:var(--lime)">ได้รูปสินค้า</div></div>
+     <div class="tli"><div class="d">1 ต.ค.</div><div class="r">ยังไม่รู้จะจัดหน้ายังไง</div></div>
+     <div class="tli now"><div class="d">วันนี้</div><div class="r link">+ จด</div></div>
+    </div>
+   </div>
+  </div>
+  <div class="note">รวมงานย่อยที่เสร็จกับเหตุผลที่จดเป็นเส้นเดียว<br>บอกได้ว่าเป็นงานยาวที่เดินอยู่ หรือติดจริง</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>D</b>จดเร็ว</div>
+  <div class="sheet">
+   <div class="tt">ทำเว็บร้าน</div>
+   <div class="box"><div class="cap">รายละเอียด</div><div style="font-size:14px;margin-top:4px">ใช้ธีมเดิม</div></div>
+   <div class="box">
+    <div class="cap">ตอนนี้ติดอะไร (ล่าสุด 1 ต.ค.: ยังไม่รู้จะจัดหน้า)</div>
+    <div class="chips" style="gap:5px">
+     <div class="chip" style="height:30px;font-size:13px">ยังเหมือนเดิม</div><div class="chip" style="height:30px;font-size:13px">รอคนอื่น</div><div class="chip" style="height:30px;font-size:13px">งานใหญ่เกิน</div><div class="chip" style="height:30px;font-size:13px">ไม่มีเวลา</div><div class="chip" style="height:30px;font-size:13px">อื่นๆ</div>
+    </div>
+   </div>
+   <div class="seg"><div>ยังไม่ทำ</div><div class="on">กำลังทำ</div><div>เสร็จ</div><div>ยกเลิก</div></div>
+  </div>
+  <div class="note">ตัวเลือกอยู่ในหน้าเลย แตะเดียวบันทึก<br>"ยังเหมือนเดิม" จดเหตุผลเดิมซ้ำพร้อมวันที่วันนี้</div>
+ </div>
+
+</div></section>
+
+<!-- ============ 4. LOG ============ -->
+<section>
+<h2>4. หน้ารวมบันทึกงานค้าง</h2>
+<p>ทุกงาน ดูย้อนหลัง</p>
+<div class="row">
+
+ <div class="v"><div class="tag"><b>A</b>เรียบ ตามวันที่</div>
+  <div class="dlg">
+   <div class="title">บันทึกงานค้าง</div>
+   <div class="group"><span>13 ต.ค.</span></div>
+   <div class="ent"><div class="n">เขียนบทความ</div><div class="r">งานใหญ่เกิน</div></div>
+   <div class="ent"><div class="n">ส่งเอกสารเบิก</div><div class="r">รอคนอื่น: รอลายเซ็นหัวหน้า</div></div>
+   <div class="group"><span>1 ต.ค.</span></div>
+   <div class="ent"><div class="n">ทำเว็บร้าน</div><div class="r">ยังไม่รู้จะจัดหน้ายังไง</div></div>
+   <div class="group"><span>2 ก.ย.</span></div>
+   <div class="ent"><div class="n">ทำเว็บร้าน</div><div class="r">รอคนอื่น: รอรูปสินค้าจากพี่เอ</div></div>
+   <div class="ent"><div class="n done">จองโรงแรมเชียงใหม่</div><div class="r">ไม่มีเวลา</div></div>
+  </div>
+  <div class="note">แบบที่ทำไว้ตอนนี้</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>B</b>เด่น สรุปก่อน</div>
+  <div class="dlg">
+   <div class="title">ติดเพราะอะไรบ่อย</div>
+   <div class="sub">30 วันที่ผ่านมา, 9 บันทึก</div>
+   <div style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;font-size:13.5px"><span>รอคนอื่น</span><span class="sub">4</span></div><div class="bar"><i style="width:80%;background:var(--red)"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-top:10px"><span>ไม่รู้จะเริ่มยังไง</span><span class="sub">3</span></div><div class="bar"><i style="width:60%;background:var(--amber)"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-top:10px"><span>ไม่มีเวลา</span><span class="sub">1</span></div><div class="bar"><i style="width:20%;background:var(--blue)"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-top:10px"><span>เป็นงานยาวอยู่แล้ว</span><span class="sub">1</span></div><div class="bar"><i style="width:20%;background:var(--lime)"></i></div>
+   </div>
+   <div class="group" style="margin-top:16px"><span>ล่าสุด</span><span class="link" style="font-size:12px">ดูทั้งหมด</span></div>
+   <div class="ent"><div class="n">เขียนบทความ</div><div class="r">13 ต.ค., งานใหญ่เกิน</div></div>
+  </div>
+  <div class="note">เห็นภาพรวมก่อนว่าติดเรื่องอะไรมากที่สุด แตะแถบเพื่อกรอง</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>C</b>ไทม์ไลน์ ตามงาน</div>
+  <div class="dlg">
+   <div class="title">บันทึกงานค้าง</div>
+   <div class="group"><span>ทำเว็บร้าน</span><span>เปิดมา 73 วัน</span></div>
+   <div class="tl">
+    <div class="tli"><div class="d">2 ก.ย.</div><div class="r">รอรูปสินค้าจากพี่เอ</div></div>
+    <div class="tli start"><div class="d">20 ก.ย.</div><div class="r" style="color:var(--lime)">ได้รูปสินค้า</div></div>
+    <div class="tli now"><div class="d">1 ต.ค.</div><div class="r">ยังไม่รู้จะจัดหน้ายังไง</div></div>
+   </div>
+   <div class="group"><span>ส่งเอกสารเบิก</span><span>เปิดมา 9 วัน</span></div>
+   <div class="tl">
+    <div class="tli now"><div class="d">13 ต.ค.</div><div class="r">รอลายเซ็นหัวหน้า</div></div>
+   </div>
+  </div>
+  <div class="note">จัดกลุ่มตามงาน แต่ละงานเป็นเส้นของตัวเอง</div>
+ </div>
+
+ <div class="v"><div class="tag"><b>D</b>จดเร็ว คิวที่ต้องจด</div>
+  <div class="dlg">
+   <div class="title">ยังไม่ได้จด 3 งาน</div>
+   <div class="ent" style="display:flex;justify-content:space-between;align-items:center"><div><div class="n">เขียนบทความ</div><div class="r">เปิดมา 42 วัน</div></div><span class="link">จด</span></div>
+   <div class="ent" style="display:flex;justify-content:space-between;align-items:center"><div><div class="n">จัดตู้เสื้อผ้า</div><div class="r">เปิดมา 30 วัน</div></div><span class="link">จด</span></div>
+   <div class="ent" style="display:flex;justify-content:space-between;align-items:center"><div><div class="n">อ่านหนังสือ Atomic Habits</div><div class="r">เปิดมา 25 วัน</div></div><span class="link">จด</span></div>
+   <div class="group" style="margin-top:14px"><span>จดแล้ว</span><span class="link" style="font-size:12px">ดูตามวันที่</span></div>
+   <div class="ent"><div class="n">ทำเว็บร้าน</div><div class="r">1 ต.ค., ยังไม่รู้จะจัดหน้ายังไง</div></div>
+  </div>
+  <div class="note">บนสุดคืองานที่ยังไม่ได้อธิบาย จดต่อกันได้เลย</div>
+ </div>
+
+</div></section>
+
+</div></body></html>
