@@ -446,7 +446,7 @@ test('a parked branch is left out of Focus, the task list and the views, but sta
   })
   await page.reload()
   await page.evaluate(() => { location.hash = '/tasks' })
-  await expect(page.getByText('ส่งรายงานความก้าวหน้า')).toBeVisible()
+  await expect(page.getByText('ส่งรายงานความก้าวหน้า', { exact: true })).toBeVisible()
   await expect(page.getByText('ทำหน้าคำนวณ')).toHaveCount(0)
   await expect(page.getByText('ทำหน้าเว็บ', { exact: true })).toHaveCount(0)
   await page.evaluate(() => { location.hash = '/views' })

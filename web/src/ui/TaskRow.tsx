@@ -10,11 +10,15 @@ interface Meta {
 const shortDate = (iso: string) =>
   new Date(iso + 'T00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 
-/** The small labels under a task title, in the order and wording of Android's task rows. */
-export function metaOf(t: Task, progress?: { done: number; total: number }): Meta[] {
+/**
+ * The small labels under a task title, in the order and wording of Android's task rows. [waitingOn] is the open task
+ * a blocked one waits on (⛔), said first in amber.
+ */
+export function metaOf(t: Task, progress?: { done: number; total: number }, waitingOn?: string): Meta[] {
   const day = today()
   const out: Meta[] = []
   if (progress) out.push({ text: `${progress.done}/${progress.total}`, tone: progress.done === progress.total ? 'lime' : 'plain' })
+  if (waitingOn) out.push({ text: `รอ ${waitingOn}`, tone: 'amber' })
   if (t.due) {
     const late = t.open && t.due < day
     const text = t.due === day ? 'ครบวันนี้' : late ? `เลย ${shortDate(t.due)}` : `ครบ ${shortDate(t.due)}`
@@ -70,18 +74,20 @@ export function Check({ task, disabled, onToggle }: { task: Task; disabled?: boo
 export function TaskRow(p: {
   task: Task
   progress?: { done: number; total: number }
+  /** The title of the open task this one waits on: its title is greyed, as on Android. */
+  waitingOn?: string
   busy: boolean
   selected?: boolean
   onToggle: () => void
   onOpen?: () => void
 }) {
   const t = p.task
-  const meta = metaOf(t, p.progress)
+  const meta = metaOf(t, p.progress, p.waitingOn)
   return (
     <li class={`trow${t.open ? '' : ' done'}${p.selected ? ' selected' : ''}`}>
       <Check task={t} disabled={p.busy} onToggle={p.onToggle} />
       <button class="trow-body" onClick={p.onOpen}>
-        <span class="tline"><span class="ttitle">{t.title}</span><PriorityDot task={t} /></span>
+        <span class="tline"><span class={`ttitle${p.waitingOn ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
         {t.preview && <span class="tpreview">{t.preview}</span>}
         {meta.length > 0 && (
           <span class="pills">

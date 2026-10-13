@@ -1,0 +1,43 @@
+/* What was added to match the Android app: the reading bar, the side bar's add button and assistant line, the edit
+   panel's description, numbered subtasks, linked notes and pick lists, and the kind manager. Colours come from the
+   theme's variables in style.css, so the dark looks follow. */
+
+/* A thin bar along the top while the vault is read or written, at every width (Android's progress line). */
+.top-progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 30; overflow: hidden; background: transparent; pointer-events: none; }
+.top-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; background: var(--accent); animation: top-progress 1.1s ease-in-out infinite; }
+@keyframes top-progress { to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .top-progress::after { animation: none; left: 0; width: 100%; opacity: .6; } }
+
+/* The side bar (wide screens): add a task at its top, as Android's side rail, and the line to ask the assistant. */
+.side-add { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.side-add > button.primary { width: 100%; min-height: 40px; border-radius: 12px; }
+.side-ask { display: flex; gap: 6px; }
+.side-ask input { flex: 1; min-width: 0; height: 38px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 0 10px; font: inherit; font-size: 14px; }
+.side-ask input:focus { outline: none; border-color: var(--accent); }
+.side-ask button { flex: none; width: 38px; height: 38px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font-size: 18px; line-height: 1; }
+:root[data-theme=dark] .side-ask button { color: #0e1118; }
+:root[data-palette=midnight] .side-ask button { color: #0d0f14; }
+
+/* The description: text to tap, then a box with Cancel and Save. */
+.desc-head { display: flex; align-items: center; min-height: 28px; gap: 8px; }
+.desc-head .link { min-height: 28px; }
+.desc-text { border: 1px solid var(--border); border-radius: 12px; background: var(--raised); color: var(--text2); text-align: left; padding: 8px 12px; font: inherit; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 40px; cursor: text; }
+.desc-text.faint { color: var(--faint); }
+.edit-desc.editing textarea { margin: 0; padding: 8px 12px; border-radius: 12px; border-color: var(--accent); background: var(--card); color: var(--text); }
+.edit-desc.editing .dialog-actions { padding-top: 4px; }
+.edit-desc.editing .dialog-actions button { min-height: 36px; }
+
+/* Subtasks numbered in the order to do them: the next one filled, a done one green. */
+.sub-n { width: 22px; height: 22px; font-size: 12px; margin-right: 2px; }
+.pj-n.done { background: var(--lime-soft); color: var(--lime-text); }
+.sub-row .ttitle.blocked { color: var(--muted); }
+
+/* Linked notes: the name, and under it the folder (or that the note is not there yet). */
+.link-name { min-width: 0; gap: 0; padding: 4px 0; }
+
+/* Long lists of choices (every tag of the vault, names already used) scroll inside the panel. */
+.pick-list { max-height: 168px; overflow-y: auto; }
+
+/* The kind manager over the edit panel. */
+.dialog.kind-manager { width: min(460px, 100%); max-height: 86vh; }
+.kind-manager-body { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
