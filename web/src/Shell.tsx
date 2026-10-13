@@ -18,6 +18,10 @@ const BAR: [Page, string][] = [
   ['projects', 'โปรเจกต์'],
   ['settings', 'ตั้งค่า'],
 ]
+/** Ready questions that float up above the line while it is typed in, worded so the assistant reads them right. */
+const PRESETS = [
+  'วันนี้มีอะไรบ้าง', 'พรุ่งนี้มีอะไรบ้าง', 'จัดลำดับงานทั้งหมดให้หน่อย', 'สัปดาห์หน้ามีอะไรบ้าง', 'วางแผนสัปดาห์หน้าให้หน่อย', 'เดือนหน้ามีอะไรบ้าง',
+]
 const PAGES: Page[] = ['focus', 'tasks', 'projects', 'assistant', 'settings']
 
 const pageOf = (hash: string): Page => {
@@ -58,14 +62,18 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
     : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
     : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
   const [question, setQuestion] = useState('')
-  const ask = (e: Event) => {
-    e.preventDefault()
-    const q = question.trim()
-    if (!q) return
+  const [typing, setTyping] = useState(false)
+  const send = (q: string) => {
     // The assistant asks it as soon as the tasks are there, as it does for a question sent from quick add.
     pendingQuestion.set(q)
     setQuestion('')
+    setTyping(false)
     p.onNavigate('assistant')
+  }
+  const ask = (e: Event) => {
+    e.preventDefault()
+    const q = question.trim()
+    if (q) send(q)
   }
   return (
     <div class="shell">
@@ -92,9 +100,14 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         {p.children}
       </div>
       <div class="dock">
+        {p.page !== 'assistant' && typing && (
+          <div class="as-chips dock-presets" role="toolbar" aria-label="คำถามสำเร็จรูป">
+            {PRESETS.map((q) => <button key={q} type="button" class="as-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => send(q)}>{q}</button>)}
+          </div>
+        )}
         {p.page !== 'assistant' && (
           <form class="dock-ask" onSubmit={ask}>
-            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} />
+            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
             {question.trim() && <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>}
           </form>
         )}

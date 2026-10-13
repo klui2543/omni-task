@@ -76,6 +76,7 @@ button.link { border: 0; background: none; color: var(--accent-text); min-height
 }
 /* The bottom of a narrow screen, as on Android: a line to ask the assistant beside the add button, a hairline, then the tabs as words. */
 .dock { position: fixed; left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); background: rgb(255 255 255 / .96); border: 1px solid var(--border); border-radius: 20px; padding: 10px 10px 4px; z-index: 5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.dock-presets { margin-bottom: 8px; }
 .dock-ask { display: flex; gap: 8px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--divider); }
 .dock-ask input { flex: 1; min-width: 0; height: 44px; box-sizing: border-box; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 0 14px; font: inherit; font-size: 15px; }
 .dock-ask button { flex: none; width: 44px; height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: #fff; font-size: 22px; line-height: 1; }

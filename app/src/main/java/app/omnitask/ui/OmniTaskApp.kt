@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -284,6 +285,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 if (fullPage.intValue == 0) DockNav(
                     selected = screen, showAsk = askShown,
                     onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.ask(it); screen = Screen.AI },
+                    presets = askPresets(state, vm),
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
                 SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
@@ -405,8 +407,8 @@ private val ASK_HEIGHT = 67.dp
  * The bottom bar on a phone, flush with the screen's edge so every button is in the thumb's reach. On top, a line to
  * type a question for the assistant, with Send once something is typed (left out on the assistant's own page, which
  * has its input there); under it the tabs as words around the add button in the middle. While the keyboard is up the
- * tabs step aside: the line rides up with it when it is the one typed in, and otherwise the whole bar goes, so it never
- * covers the field being typed in (the assistant's own, a search).
+ * tabs step aside: the line rides up with it when it is the one typed in, with ready questions above it, and otherwise
+ * the whole bar goes, so it never covers the field being typed in (the assistant's own, a search).
  */
 @Composable
 private fun DockNav(
@@ -415,9 +417,11 @@ private fun DockNav(
     onSelect: (Screen) -> Unit,
     onAdd: () -> Unit,
     onAsk: (String) -> Unit,
+    presets: List<AskPreset>,
     modifier: Modifier = Modifier,
 ) {
     var question by rememberSaveable { mutableStateOf("") }
+    val focus = LocalFocusManager.current
     var typingHere by remember { mutableStateOf(false) }
     // The line leaves with the assistant's page while focused, and would otherwise be thought typed in still.
     LaunchedEffect(showAsk) { if (!showAsk) typingHere = false }
@@ -432,6 +436,12 @@ private fun DockNav(
     }
     Column(modifier.fillMaxWidth().background(C.card).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.cardBorder))
+        // While the line is typed in, the ready questions float up above it with the keyboard; one opens the assistant.
+        if (showAsk && typingHere) PresetRow(presets, Modifier.padding(top = 10.dp)) {
+            question = ""
+            focus.clearFocus()
+            onSelect(Screen.AI)
+        }
         if (showAsk) Row(
             Modifier.fillMaxWidth().height(ASK_HEIGHT - 1.dp).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -51,6 +51,7 @@ export function AssistantPage(p: PageProps) {
   const [note, setNote] = useState('')
   const [interviewing, setInterviewing] = useState(false)
   const [input, setInput] = useState('')
+  const [typing, setTyping] = useState(false)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [writing, setWriting] = useState(false)
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
@@ -432,13 +433,14 @@ export function AssistantPage(p: PageProps) {
         </div>
 
         <div class="as-foot">
-          {chat.length > 0 && (
+          {/* The shortcuts also float up while the field is typed in; pressing one keeps the field from losing focus first. */}
+          {(chat.length > 0 || typing) && (
             <div class="as-chips" role="toolbar" aria-label="ทางลัด">
-              {chips.map(([label, run]) => <button key={label} class="as-chip" disabled={!snap} onClick={run}>{label}</button>)}
+              {chips.map(([label, run]) => <button key={label} class="as-chip" disabled={!snap} onMouseDown={(e) => e.preventDefault()} onClick={run}>{label}</button>)}
             </div>
           )}
           <form class="as-input" onSubmit={(e) => { e.preventDefault(); ask(input) }}>
-            <input aria-label="ข้อความถึงผู้ช่วย" placeholder="อยากทำอะไร หรือถามเรื่องงาน" value={input} onInput={(e) => setInput(e.currentTarget.value)} />
+            <input aria-label="ข้อความถึงผู้ช่วย" placeholder="อยากทำอะไร หรือถามเรื่องงาน" value={input} onInput={(e) => setInput(e.currentTarget.value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
             <button class="primary round-send" type="submit" disabled={!input.trim() || !snap}>ส่ง</button>
           </form>
         </div>
