@@ -10,11 +10,13 @@ import { FocusPage } from './pages/Focus'
 import { SettingsPage } from './pages/Settings'
 import { AssistantPage } from './pages/Assistant'
 import { ProjectsPage } from './pages/Projects'
-import { QuickAdd, TasksPage } from './pages/Tasks'
+import { TasksPage } from './pages/Tasks'
+import { QuickAdd } from './ui/QuickAdd'
+import { loadTasks } from './core'
 import { createEvent, readEvents, type NewEvent } from './calendar'
 import { calendarCache } from './calendarCache'
 import { listCalendars } from './calendar'
-import { sweepIfDue, sweptNotice } from './settingsDevice'
+import { archiveDays, sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
 import { useProjectsAddress } from './ui/projects/route'
 import type { Task } from './types'
@@ -64,13 +66,20 @@ export const askOnDone = {
 
 /**
  * Asks "archive or delete?" only where Android does: a top-level task that does not repeat, is not project
- * work, and has no work still open under it.
+ * work or a list item, and has no work still open under it.
  */
 const offersFinish = (t: Task, tasks: Task[], withSubtasks: boolean) => {
-  if (!askOnDone.get() || !t.open || t.parent || t.recurrence || t.project) return false
+  if (!askOnDone.get() || !t.open || t.parent || t.list || t.recurrence || t.project) return false
   const below = (key: string): Task[] => tasks.filter((c) => c.parent === key).flatMap((c) => [c, ...below(c.key)])
   return withSubtasks ? below(t.key).every((c) => !c.open || c.parent === t.key) : below(t.key).every((c) => !c.open)
 }
+
+/** The next round of a repeating task just ticked: its date as the note [text] now has it, or null when not found. */
+const nextRound = (text: string, t: Task): string | null => {
+  const moved = loadTasks('', '', text).find((c) => c.lineIndex === t.lineIndex && !c.todayCopy)
+  return moved?.due ?? moved?.scheduled ?? moved?.start ?? null
+}
+const shortDate = (iso: string) => new Date(iso + 'T00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 
 export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onConnectCalendar: () => void; onAllowCalendarWrite: () => void; onSignOut: () => void; onChangeVault: () => void }) {
   const vault = useMemo(() => new Vault(p.drive, p.vaultId, config.taskFileId), [p.drive, p.vaultId])
@@ -227,10 +236,14 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
   }
   const close = (t: Task, withSubtasks: boolean) => {
     const ask = snapshot != null && offersFinish(t, snapshot.tasks, withSubtasks)
+    const repeats = t.open && !!t.recurrence
     run(async () => {
-      const res = await vault.toggle(fresh(t), withSubtasks)
+      const now = fresh(t)
+      const res = await vault.toggle(now, withSubtasks)
       if (res.ok && ask) setFinished(t)
-      return res
+      // A repeating task moved on: say to when, as Android does.
+      const next = res.ok && repeats && res.text ? nextRound(res.text, now) : null
+      return next ? { ...res, notice: `เสร็จแล้ว รอบถัดไป ${shortDate(next)}` } : res
     })
   }
   /** Deletes or archives a task; the cut is kept so the bar can put it back. */
@@ -308,7 +321,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
         <div class="toast" role="status">
           <div class="toast-text">
             <div class="ellipsis">เสร็จแล้ว: {finishedNow.title}</div>
-            <div class="muted small">เก็บเข้าคลัง หรือลบออกจากโน้ตเลยไหม</div>
+            <div class="muted small">{archiveDays.get() > 0 ? `ถ้าไม่เลือก จะย้ายเข้าคลังเองหลัง ${archiveDays.get()} วัน` : 'เก็บเข้าคลัง หรือลบออกจากโน้ตเลยไหม'}</div>
           </div>
           <div class="toast-actions">
             <button class="link quiet" onClick={() => setFinished(null)}>ไว้ก่อน</button>

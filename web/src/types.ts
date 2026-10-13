@@ -38,6 +38,8 @@ export interface Task {
   dependsOn?: string[]
   /** The list note the task is an item of, by name (only list items read for the filter have one). */
   list?: string | null
+  /** The linked notes on a line of their own under the task (the ones the edit panel can take off). */
+  linkLines?: string[]
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
@@ -68,6 +70,8 @@ export interface TaskList {
   groups: Group[]
   /** Done and total subtasks per parent key. */
   progress: Record<string, { done: number; total: number }>
+  /** Blocked tasks by key, each with the title of the open task it waits on. */
+  waiting?: Record<string, string>
 }
 
 /** What the shared Kotlin logic answers to an edit: the whole new note text, or why nothing changed. */

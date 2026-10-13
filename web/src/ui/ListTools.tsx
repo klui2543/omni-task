@@ -32,6 +32,8 @@ export function FilterPanel(p: {
   lists?: string[]
   /** Android's "hide done" switch, which only the views honour; both the Tasks and Views pages show it (one shared choice). */
   hideDone?: { on: boolean; set: (on: boolean) => void }
+  /** Empties the page's search box, which "clear all" clears too, as on Android. */
+  onClearText?: () => void
 }) {
   const q = p.query
   const [saved, setSaved] = useState(savedFilters.get)
@@ -61,7 +63,7 @@ export function FilterPanel(p: {
     <Overlay label="กรอง" side onClose={p.onClose}>
       <div class="panel-head">
         <h2>กรอง</h2>
-        <button class="link danger" onClick={() => p.onChange({ ...DEFAULT_QUERY, groupBy: q.groupBy, sorts: q.sorts })}>ล้างทั้งหมด</button>
+        <button class="link danger" onClick={() => { p.onChange({ ...DEFAULT_QUERY, groupBy: q.groupBy, sorts: q.sorts }); p.onClearText?.() }}>ล้างทั้งหมด</button>
       </div>
       {saved.length > 0 && (
         <div class="filter-section">
@@ -69,7 +71,8 @@ export function FilterPanel(p: {
           <div class="chips">
             {saved.map((f) => (
               <span key={f.name} class="chip saved">
-                <button class="chip-main" onClick={() => p.onChange(f.query)}>★ {f.name}</button>
+                {/* A saved filter is only its filters: the grouping and sorting in use stay, as on Android. */}
+                <button class="chip-main" onClick={() => p.onChange({ ...DEFAULT_QUERY, ...f.query, groupBy: q.groupBy, sorts: q.sorts })}>★ {f.name}</button>
                 <button class="chip-x" aria-label={`ลบตัวกรอง ${f.name}`} onClick={() => keep(saved.filter((s) => s.name !== f.name))}>×</button>
               </span>
             ))}

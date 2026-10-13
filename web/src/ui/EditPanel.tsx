@@ -1,12 +1,14 @@
 import type { ComponentChildren } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { describeRule, kindPicker, today } from '../core'
+import { markReviewed } from '../focusState'
 import { customKindTags, kindsStore } from '../kinds'
 import type { PageProps } from '../Home'
 import { PRIORITIES, STATUSES, labelOf } from '../query'
 import type { EditOp, KindPicker, Task } from '../types'
-import { fileName, needsChoice, NotWebp, prepare, sizeLabel, type Prepared } from '../image'
-import { linkText, searchNotes } from '../vault'
+import { fileName, needsChoice, prepare, sizeLabel, type Prepared } from '../image'
+import { linkText, resolveLink, searchNotes } from '../vault'
+import { KindManager } from './KindManager'
 import { Check, metaOf } from './TaskRow'
 
 /** A date [days] after [iso], as YYYY-MM-DD. */
@@ -42,6 +44,13 @@ const TIMES = ['08:00', '12:00', '17:30', '20:00']
 
 type Chip = 'DUE' | 'SCHEDULED' | 'REMIND' | 'REPEAT' | 'PRIORITY' | 'KIND' | 'TAG'
 
+/** The title of the first open task [t] waits on (⛔), as Android's "waits on"; null when it waits on nothing open. */
+const waitingOn = (t: Task, all: Task[]) =>
+  t.dependsOn?.length ? all.find((c) => c.id && c.open && t.dependsOn!.includes(c.id))?.title ?? null : null
+
+/** A tag as Android's TaskLine.normalizeTag writes it: no "#", spaces made dashes. */
+const normalizeTag = (text: string) => text.trim().replace(/^#/, '').trim().replace(/[\s#]+/g, '-')
+
 /**
  * Everything about one task, as in Android's edit sheet: status, dates, reminder, repeat, priority, tags,
  * the description and the subtasks. A pane beside the list on wide screens, a sheet from the bottom on narrow ones.
@@ -51,10 +60,10 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const t = p.task
   const [open, setOpen] = useState<Chip | null>(null)
   const [folds, setFolds] = useState<Record<string, boolean>>({})
-  const [desc, setDesc] = useState(t.description)
   const [sub, setSub] = useState('')
   const [askDelete, setAskDelete] = useState(false)
-  useEffect(() => setDesc(t.description), [t.key, t.description])
+  // The kinds were changed in the manager: the field shows the new choices.
+  const [, setKindsRev] = useState(0)
   // A different task closes what was open. Not on the first render: that effect runs after paint, and a tap on a
   // chip landing before it was undone (the panel looked as if it ignored the tap).
   const shown = useRef(t.key)
@@ -71,8 +80,22 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
   const parent = t.parent ? all.find((c) => c.key === t.parent) : null
   const doneSubs = subs.filter((c) => c.status === 'DONE').length
   // The first open task this one waits on (⛔), as Android's "waits on" field.
-  const waitsOn = t.dependsOn?.length ? all.find((c) => c.id && c.open && t.dependsOn!.includes(c.id))?.title ?? null : null
-  const tagsInUse = [...new Set(all.flatMap((c) => c.tags))].filter((g) => !g.startsWith('remind-at-') && !t.tags.includes(g)).slice(0, 10)
+  const waitsOn = waitingOn(t, all)
+  // Every tag in the vault (most used first), for the Tag field to search, as Android's add-tag dialog.
+  const tagsInUse = useMemo(() => {
+    const count = new Map<string, number>()
+    all.forEach((c) => c.tags.forEach((g) => { if (!g.startsWith('remind-at-')) count.set(g, (count.get(g) ?? 0) + 1) }))
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g)
+  }, [all]).filter((g) => !t.tags.includes(g))
+  // The names on other waiting tasks (#รอ/name), for "who is waiting".
+  const waitNames = useMemo(() => [...new Set(all.flatMap((c) => c.tags).filter((g) => g.startsWith('รอ/') && g.length > 3).map((g) => g.slice(3)))].sort((a, b) => a.localeCompare(b, 'th')), [all])
+  // Tick logic for "done" from the status row too, as Android's setStatus: a repeating task moves on to its next
+  // round, open subtasks are asked about, and a finished task is offered the archive.
+  const setStatus = (s: Task['status']) => {
+    if (t.status === s) return
+    if (s === 'DONE' && t.open) p.tick(t)
+    else change({ op: 'status', value: s })
+  }
 
   // The kinds on offer come from this device's choices (hidden ones are left out unless the task has that kind).
   const kinds = kindPicker(kindsStore.get(), t.raw)
@@ -93,14 +116,15 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
 
   // The note the task is in: the task note, or a list note.
   const noteLabel = t.note ? t.note.split('/').pop() : p.snapshot && t.key.startsWith(p.snapshot.fileId + '#') ? p.snapshot.path.split('/').pop() : p.noteName ?? 'โน้ตลิสต์'
-  const saveDesc = () => { if (desc.trim() !== t.description.trim()) change({ op: 'describe', value: desc }) }
+  // A finished task (project work too) can go to the archive by hand; not a subtask or a list's item, as on Android.
+  const archivable = !t.open && !t.parent && !t.list && !p.noteName
 
   return (
     <div class="edit">
       <div class="edit-top">
         <span class="muted small">{noteLabel} บรรทัด {t.lineIndex + 1}</span>
         <div class="row-gap">
-          <button class="ghost small-btn" onClick={() => { p.onClose(); p.archive(t) }}>เก็บเข้าคลัง</button>
+          {archivable && <button class="ghost small-btn" onClick={() => { p.onClose(); p.archive(t) }}>เก็บเข้าคลัง</button>}
           <button class="ghost small-btn danger" onClick={() => setAskDelete(true)}>ลบงาน</button>
           <button class="ghost small-btn" onClick={p.onClose}>ปิด</button>
         </div>
@@ -121,30 +145,11 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
         <h2 class={t.open ? '' : 'done'}>{t.title}</h2>
       </div>
 
-      <label class="edit-desc">
-        <span class="muted small">รายละเอียด</span>
-        <textarea
-          aria-label="รายละเอียด"
-          placeholder="เพิ่มรายละเอียด"
-          rows={Math.min(8, Math.max(2, desc.split('\n').length))}
-          value={desc}
-          onInput={(e) => setDesc(e.currentTarget.value)}
-          onBlur={saveDesc}
-        />
-      </label>
-      {desc.trim() && (
-        <button class="link quiet small to-note" onClick={() => {
-          const text = desc
-          p.run(async () => {
-            const r = await p.vault.moveDescription(p.fresh(t), text)
-            return r.ok ? { ...r, notice: `ย้ายรายละเอียดไปที่ ${r.path} แล้ว` } : r
-          })
-        }}>ย้ายรายละเอียดไปเป็นโน้ต</button>
-      )}
+      <Description {...p} task={t} onSave={(text) => change({ op: 'describe', value: text })} />
 
       <div class="segmented" role="radiogroup" aria-label="สถานะ">
         {STATUSES.map(([s, label]) => (
-          <button key={s} role="radio" aria-checked={t.status === s} onClick={() => t.status !== s && change({ op: 'status', value: s })}>{label}</button>
+          <button key={s} role="radio" aria-checked={t.status === s} onClick={() => setStatus(s)}>{label}</button>
         ))}
       </div>
 
@@ -175,7 +180,12 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
             </>
           )}
           {open === 'KIND' && (
-            <KindPick picker={kinds} task={t} busy={p.busy} onChange={change} onManage={() => p.onNavigate('settings')} />
+            <KindPick picker={kinds} task={t} busy={p.busy} names={waitNames} onKindsChanged={() => setKindsRev((n) => n + 1)}
+              onChange={(op) => {
+                // A new kind counts as a review of the task, as on Android (and Focus's review card).
+                if (op.op === 'kind') markReviewed(t.title)
+                change(op)
+              }} />
           )}
           {open === 'TAG' && <TagPick own={ownTags} suggest={tagsInUse} busy={p.busy} onAdd={(g) => change({ op: 'addTag', value: g })} onRemove={(g) => change({ op: 'removeTag', value: g })} />}
         </div>
@@ -186,7 +196,7 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
           <span>งานย่อย{subs.length ? ` ${doneSubs}/${subs.length}` : ''}</span>
           {subs.length > 0 && <span class="bar-track"><span class="bar-fill" style={{ width: `${(doneSubs / subs.length) * 100}%` }} /></span>}
         </div>
-        <SubtaskList subs={subs} onOpen={p.onOpen} onTick={p.tick}
+        <SubtaskList subs={subs} all={all} onOpen={p.onOpen} onTick={p.tick}
           onOrder={(order) => change({ op: 'order', value: JSON.stringify(order.map((c) => p.fresh(c).raw)) })} />
         <form class="sub-add" onSubmit={(e) => { e.preventDefault(); if (sub.trim()) { const v = sub; setSub(''); change({ op: 'subtask', value: v }) } }}>
           <span class="accent-text" aria-hidden="true">+</span>
@@ -217,10 +227,60 @@ export function EditPanel(p: PageProps & { task: Task; onOpen: (t: Task) => void
 }
 
 /**
- * The direct subtasks; each can be dragged by its handle (or moved with the arrow keys on it) into a new order,
- * which is written when let go, as Android's drag in the edit sheet.
+ * The description under the title, as Android's: shown as text, tapped to write, then kept with Save or let go with
+ * Cancel. A long one (over 280 characters or 6 lines) can move to a note of its own while it is being written.
  */
-function SubtaskList(p: { subs: Task[]; onOpen: (t: Task) => void; onTick: (t: Task) => void; onOrder: (order: Task[]) => void }) {
+function Description(p: PageProps & { task: Task; onSave: (text: string) => void }) {
+  const t = p.task
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(t.description)
+  useEffect(() => { setEditing(false); setText(t.description) }, [t.key])
+  useEffect(() => { if (!editing) setText(t.description) }, [t.description])
+  const long = text.length > 280 || text.split('\n').length > 6
+  const move = () => {
+    const words = text
+    setEditing(false)
+    p.run(async () => {
+      const r = await p.vault.moveDescription(p.fresh(t), words)
+      return r.ok ? { ...r, notice: `ย้ายรายละเอียดไปที่ ${r.path} แล้ว` } : r
+    })
+  }
+  return (
+    <div class={`edit-desc${editing ? ' editing' : ''}`}>
+      <div class="desc-head">
+        <span class="muted small grow">รายละเอียด</span>
+        {editing && long && <button class="link small" onClick={move}>ย้ายไปโน้ตแยก</button>}
+      </div>
+      {editing ? (
+        <>
+          <textarea
+            aria-label="รายละเอียด"
+            placeholder="เขียนรายละเอียดงาน บรรทัดละเรื่อง"
+            rows={Math.min(10, Math.max(3, text.split('\n').length))}
+            value={text}
+            autoFocus
+            onInput={(e) => setText(e.currentTarget.value)}
+          />
+          <div class="dialog-actions">
+            <button class="ghost" onClick={() => { setText(t.description); setEditing(false) }}>ยกเลิก</button>
+            <button class="primary" disabled={p.busy} onClick={() => { if (text.trim() !== t.description.trim()) p.onSave(text); setEditing(false) }}>บันทึก</button>
+          </div>
+        </>
+      ) : (
+        <button class={`desc-text${t.description ? '' : ' faint'}`} title="แตะเพื่อแก้" onClick={() => setEditing(true)}>
+          {t.description || 'แตะเพื่อเขียนรายละเอียด'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The direct subtasks, numbered 1, 2, 3 in the order to do them, as Android's ordered list: the next open one's number
+ * is filled, a done one's is green, and one still waiting on open work (⛔) is greyed with whom it waits on. Each can
+ * be dragged by its handle (or moved with the arrow keys on it) into a new order, which is written when let go.
+ */
+function SubtaskList(p: { subs: Task[]; all: Task[]; onOpen: (t: Task) => void; onTick: (t: Task) => void; onOrder: (order: Task[]) => void }) {
   const [order, setOrder] = useState<Task[] | null>(null)
   const [held, setHeld] = useState<string | null>(null)
   const list = useRef<HTMLUListElement>(null)
@@ -241,9 +301,14 @@ function SubtaskList(p: { subs: Task[]; onOpen: (t: Task) => void; onTick: (t: T
     const i = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2 })
     return i < 0 ? rows.length - 1 : i
   }
+  const next = shown.find((c) => c.open)
   return (
     <ul class="plain" ref={list}>
-      {shown.map((c, i) => (
+      {shown.map((c, i) => {
+        const done = c.status === 'DONE'
+        const waits = done ? null : waitingOn(c, p.all)
+        const meta = [...(waits ? [`รอ ${waits}`] : []), ...metaOf(c).map((m) => m.text)].join(', ')
+        return (
         <li key={c.key} class={`sub-row${c.open ? '' : ' done'}${held === c.key ? ' held' : ''}`}>
           {p.subs.length > 1 && (
             <button class="sub-handle" aria-label={`ลากเพื่อเรียง ${c.title}`} title="ลากเพื่อเรียง"
@@ -264,19 +329,25 @@ function SubtaskList(p: { subs: Task[]; onOpen: (t: Task) => void; onTick: (t: T
                 commit(next)
               }}>⋮⋮</button>
           )}
+          <span class={`pj-n sub-n${c === next ? ' next' : done ? ' done' : ''}`} aria-label={c === next ? `ลำดับ ${i + 1} ทำถัดไป` : `ลำดับ ${i + 1}`}>{i + 1}</span>
           <Check task={c} onToggle={() => p.onTick(c)} />
           <button class="sub-body" onClick={() => p.onOpen(c)}>
-            <span class="ttitle">{c.title}</span>
-            {metaOf(c).length > 0 && <span class="muted small">{metaOf(c).map((m) => m.text).join(', ')}</span>}
+            <span class={`ttitle${waits ? ' blocked' : ''}`}>{c.title}</span>
+            {meta && <span class={`small ${waits ? 'amber-text' : c === next ? 'accent-text' : 'muted'}`}>{meta}</span>}
           </button>
           <span class="faint" aria-hidden="true">›</span>
         </li>
-      ))}
+        )
+      })}
     </ul>
   )
 }
 
-/** The notes linked under the task: each opens in Obsidian, can be taken off, and any note of the vault can be added. */
+/**
+ * The notes linked under the task: each opens in Obsidian and says which folder it is in (or, in amber, that the note
+ * is not in the vault yet); a link on its own line can be taken off (one written in the task's text stays), and any
+ * note of the vault can be added.
+ */
 function LinkedNotes(p: PageProps & { task: Task; onChange: (op: EditOp) => void }) {
   const t = p.task
   const [vaultName, setVaultName] = useState<string | null>(null)
@@ -285,8 +356,9 @@ function LinkedNotes(p: PageProps & { task: Task; onChange: (op: EditOp) => void
   const [query, setQuery] = useState('')
   const [failed, setFailed] = useState(false)
   useEffect(() => { p.vault.vaultName().then(setVaultName, () => undefined) }, [p.vault])
+  // The vault's notes are read when the fold opens, to say where each linked note is.
   useEffect(() => {
-    if (!picking || paths) return
+    if (paths) return
     setFailed(false)
     p.vault.notePaths().then(setPaths, () => setFailed(true))
   }, [picking])
@@ -294,12 +366,21 @@ function LinkedNotes(p: PageProps & { task: Task; onChange: (op: EditOp) => void
     `obsidian://open?${vaultName ? `vault=${encodeURIComponent(vaultName)}&` : ''}file=${encodeURIComponent(name)}`
   const linked = new Set(t.linkNames)
   const matches = paths ? searchNotes(query, paths).filter((path) => !linked.has(linkText(path, paths))) : []
+  const where = (link: string) => {
+    if (!paths) return null
+    const path = resolveLink(link, paths)
+    if (path === null) return <span class="amber-text small">ยังไม่มีโน้ตนี้</span>
+    return <span class="faint small ellipsis">{path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : 'ราก Vault'}</span>
+  }
   return (
     <>
       {t.linkNames.length ? t.linkNames.map((n) => (
         <div key={n} class="fold-row link-row">
-          <a class="grow accent-text ellipsis" href={href(n)} title="เปิดใน Obsidian">{n}</a>
-          <button class="chip-x" aria-label={`เอาลิงก์ ${n} ออก`} onClick={() => p.onChange({ op: 'unlink', value: n })}>×</button>
+          <span class="grow stack link-name">
+            <a class="accent-text ellipsis" href={href(n)} title="เปิดใน Obsidian">{n.split('/').pop()}</a>
+            {where(n)}
+          </span>
+          {(t.linkLines ?? []).includes(n) && <button class="chip-x" aria-label={`เอาลิงก์ ${n} ออก`} onClick={() => p.onChange({ op: 'unlink', value: n })}>×</button>}
         </div>
       )) : <div class="muted small">ยังไม่มี</div>}
       {!picking ? (
@@ -376,8 +457,8 @@ function Images(p: PageProps & { task: Task }) {
       const prepared = await prepare(file)
       if (needsChoice(prepared)) setChoice(prepared)
       else save(prepared.full)
-    } catch (e) {
-      setError(e instanceof NotWebp ? 'เบราว์เซอร์นี้บันทึกรูปเป็น WebP ไม่ได้ ลองใน Chrome หรือแอป Android' : 'อ่านรูปนี้ไม่ได้')
+    } catch {
+      setError('อ่านรูปนี้ไม่ได้')
     } finally {
       setReading(false)
     }
@@ -525,13 +606,19 @@ function RepeatPick(p: { rule: string | null; busy: boolean; onPick: (v: string 
 const isKindTag = (tag: string, own: string | null) =>
   ['รอ', 'อนาคต', 'สักวัน'].some((k) => tag === k || tag.startsWith(k + '/')) || (!!own && tag.toLowerCase() === own.toLowerCase())
 
-/** The "ประเภท" field of Android's edit sheet: a choice stored as a tag, waiting asks who, and the kinds are managed in Settings. */
-function KindPick(p: { picker: KindPicker; task: Task; busy: boolean; onChange: (op: EditOp) => void; onManage: () => void }) {
+/**
+ * The "ประเภท" field of Android's edit sheet: a choice stored as a tag; waiting asks who (offering the names on other
+ * waiting tasks), and the kinds are managed in a dialog right here.
+ */
+function KindPick(p: { picker: KindPicker; task: Task; busy: boolean; names: string[]; onChange: (op: EditOp) => void; onKindsChanged: () => void }) {
   const k = p.picker
   const [asking, setAsking] = useState(false)
+  const [managing, setManaging] = useState(false)
   const [who, setWho] = useState(k.who ?? '')
   const custom = customKindTags()
   useEffect(() => { setAsking(false); setWho(k.who ?? '') }, [p.task.key, k.current])
+  const wait = (name: string) => { setAsking(false); p.onChange({ op: 'kind', value: 'WAITING', who: name.trim(), custom }) }
+  const names = p.names.filter((n) => !who.trim() || n.toLowerCase().includes(who.trim().toLowerCase()))
   return (
     <>
       <span class="muted small">ประเภทงาน</span>
@@ -547,21 +634,32 @@ function KindPick(p: { picker: KindPicker; task: Task; busy: boolean; onChange: 
           <button key={c.tag} class={`chip${k.customTag === c.tag ? ' on' : ''}`} aria-pressed={k.customTag === c.tag} disabled={p.busy}
             onClick={() => { if (k.customTag !== c.tag) { setAsking(false); p.onChange({ op: 'customKind', value: c.tag, custom }) } }}>{c.label}</button>
         ))}
-        <button class="chip" onClick={p.onManage}>จัดการประเภท</button>
+        <button class="chip" onClick={() => setManaging(true)}>จัดการประเภท</button>
       </div>
       {asking && (
-        <form class="row-gap" onSubmit={(e) => { e.preventDefault(); setAsking(false); p.onChange({ op: 'kind', value: 'WAITING', who: who.trim(), custom }) }}>
-          <input class="field grow" aria-label="ใครรองานนี้" placeholder="ชื่อ (เว้นว่างได้)" value={who} onInput={(e) => setWho(e.currentTarget.value)} autoFocus />
-          <button class="primary" disabled={p.busy}>ตั้งเป็นมีคนรอ</button>
-        </form>
+        <>
+          <form class="row-gap" onSubmit={(e) => { e.preventDefault(); wait(who) }}>
+            <input class="field grow" aria-label="ใครรองานนี้" placeholder="ชื่อ (เว้นว่างได้)" value={who} onInput={(e) => setWho(e.currentTarget.value)} autoFocus />
+            <button class="primary" disabled={p.busy}>ตั้งเป็นมีคนรอ</button>
+          </form>
+          {names.length > 0 && (
+            <div class="chips pick-list" role="group" aria-label="ชื่อที่เคยใช้">
+              {names.map((n) => <button key={n} class="chip" disabled={p.busy} onClick={() => wait(n)}>{n}</button>)}
+            </div>
+          )}
+        </>
       )}
       {k.hint && <span class="muted small">{k.hint}</span>}
+      {managing && <KindManager onChange={p.onKindsChanged} onClose={() => setManaging(false)} />}
     </>
   )
 }
 
+/** The task's own tags, and a box that searches every tag in the vault (or adds a new one), as Android's add-tag dialog. */
 function TagPick(p: { own: string[]; suggest: string[]; busy: boolean; onAdd: (g: string) => void; onRemove: (g: string) => void }) {
   const [text, setText] = useState('')
+  const query = normalizeTag(text).toLowerCase()
+  const matches = p.suggest.filter((g) => !query || g.toLowerCase().includes(query))
   return (
     <>
       <span class="muted small">Tag</span>
@@ -573,15 +671,15 @@ function TagPick(p: { own: string[]; suggest: string[]; busy: boolean; onAdd: (g
           </span>
         ))}
       </div>
-      <form class="row-gap" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { p.onAdd(text); setText('') } }}>
-        <input class="field grow" aria-label="Tag ใหม่" placeholder="เพิ่ม Tag" value={text} onInput={(e) => setText(e.currentTarget.value)} />
-        <button class="ghost" disabled={!text.trim()}>เพิ่ม</button>
+      <form class="row-gap" onSubmit={(e) => { e.preventDefault(); if (normalizeTag(text)) { p.onAdd(normalizeTag(text)); setText('') } }}>
+        <input class="field grow" aria-label="Tag ใหม่" placeholder="ค้นหาหรือเพิ่ม Tag" value={text} onInput={(e) => setText(e.currentTarget.value)} />
+        <button class="ghost" disabled={!normalizeTag(text)}>เพิ่ม</button>
       </form>
-      {p.suggest.length > 0 && (
-        <div class="chips">
-          {p.suggest.map((g) => <button key={g} class="chip" onClick={() => p.onAdd(g)}>#{g}</button>)}
+      {matches.length > 0 ? (
+        <div class="chips pick-list" role="group" aria-label="Tag ในโน้ต">
+          {matches.map((g) => <button key={g} class="chip" onClick={() => { p.onAdd(g); setText('') }}>#{g}</button>)}
         </div>
-      )}
+      ) : query && <span class="muted small">ยังไม่มี Tag นี้ในโน้ต กดเพิ่มเพื่อใช้เป็น Tag ใหม่</span>}
     </>
   )
 }

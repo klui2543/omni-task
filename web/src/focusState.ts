@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { today } from './core'
 import type { Kind } from './types'
 
@@ -31,8 +31,25 @@ const load = (): FocusLocal => {
   }
 }
 
+/** Pages showing the choices, told when one is made elsewhere (the edit panel marks a task reviewed). */
+const watchers = new Set<() => void>()
+
+/** Marks a task reviewed today, as Android does when its kind is changed; the Focus page, if open, sees it at once. */
+export function markReviewed(title: string) {
+  const s = load()
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ ...s, reviewed: { ...s.reviewed, [title]: today() } }))
+    watchers.forEach((w) => w())
+  } catch { /* just not kept */ }
+}
+
 export function useFocusLocal(): [FocusLocal, (change: (s: FocusLocal) => FocusLocal) => void] {
   const [state, setState] = useState<FocusLocal>(load)
+  useEffect(() => {
+    const again = () => setState(load())
+    watchers.add(again)
+    return () => { watchers.delete(again) }
+  }, [])
   return [
     state,
     (change) => {

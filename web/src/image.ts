@@ -16,17 +16,19 @@ export interface Prepared {
 /** Ask only when shrinking would actually help. */
 export const needsChoice = (p: Prepared) => p.reduced !== null && (p.full.size > MAX_BYTES || Math.max(p.width, p.height) > MAX_SIDE)
 
-export class NotWebp extends Error {}
-
 async function encode(source: CanvasImageSource, w: number, h: number): Promise<Blob> {
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
-  canvas.getContext('2d')!.drawImage(source, 0, 0, w, h)
+  const g = canvas.getContext('2d')!
+  g.drawImage(source, 0, 0, w, h)
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', QUALITY))
-  // A browser that cannot write WebP hands back a PNG instead; the vault keeps WebP only.
-  if (!blob || blob.type !== 'image/webp') throw new NotWebp('webp')
-  return blob
+  if (blob && blob.type === 'image/webp') return blob
+  // Safari (the iPad) cannot write WebP from a canvas and hands back a PNG. The same pixels go through libwebp
+  // compiled to WebAssembly instead, fetched only the first time it is needed.
+  const { default: toWebp } = await import('@jsquash/webp/encode.js')
+  const bytes = await toWebp(g.getImageData(0, 0, w, h), { quality: QUALITY * 100 })
+  return new Blob([bytes], { type: 'image/webp' })
 }
 
 export async function prepare(file: Blob): Promise<Prepared> {
