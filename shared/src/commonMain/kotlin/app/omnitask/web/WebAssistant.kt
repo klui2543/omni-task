@@ -179,19 +179,18 @@ object WebAssistant {
     data class RouteOut(val kind: String, val from: String? = null, val to: String? = null)
 
     /**
-     * What a sentence asks for, as Android's chat reads it: `plan` or `agenda` over a range (this week when none is
-     * named), `rank`, `slots` when it says how long it takes, otherwise `duration` (the assistant asks how long first).
+     * What a sentence asks for, as Android's chat reads it ([Planner.askOf]): `plan` or `agenda` over a range (this week
+     * when none is named), `rank`, `slots` when it says how long it takes, `duration` (the assistant asks how long first).
      */
     fun route(request: String, today: String): String {
-        val t = request.lowercase()
         val day = LocalDate.parse(today)
         val range = Planner.rangeOf(request, day) ?: (day to day.plusDays(6))
-        val out = when {
-            listOf("วางแผน", "plan ").any { it in "$t " } && !t.startsWith("plan my day") -> RouteOut("plan", range.first.toString(), range.second.toString())
-            listOf("มีอะไร", "what's on", "whats on", "what do i have", "agenda").any { it in t } -> RouteOut("agenda", range.first.toString(), range.second.toString())
-            listOf("จัดลำดับ", "ทำอะไรก่อน", "ควรทำอะไร", "prioritize", "priorities", "what first").any { it in t } -> RouteOut("rank")
-            Planner.explicitMinutes(request) != null -> RouteOut("slots")
-            else -> RouteOut("duration")
+        val out = when (Planner.askOf(request)) {
+            Planner.Ask.PLAN -> RouteOut("plan", range.first.toString(), range.second.toString())
+            Planner.Ask.AGENDA -> RouteOut("agenda", range.first.toString(), range.second.toString())
+            Planner.Ask.RANK -> RouteOut("rank")
+            Planner.Ask.SLOTS -> RouteOut("slots")
+            Planner.Ask.DURATION -> RouteOut("duration")
         }
         return json.encodeToString(out)
     }
