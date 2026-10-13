@@ -11,6 +11,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
@@ -273,7 +281,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 content()
                 if (fullPage.intValue == 0) DockNav(
                     selected = screen, showAsk = askShown,
-                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { screen = Screen.AI },
+                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.ask(it); screen = Screen.AI },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
                 SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
@@ -389,9 +397,10 @@ private val DOCK_HEIGHT = 52.dp
 private val ASK_HEIGHT = 54.dp
 
 /**
- * The bottom bar on a phone, flush with the screen's edge so every button is in the thumb's reach. On top, a line that
- * opens the assistant beside the add button (left out on the assistant's own page, which has its input there); under
- * it the four tabs as words, the current one bold with a short line beneath.
+ * The bottom bar on a phone, flush with the screen's edge so every button is in the thumb's reach. On top, a line to
+ * type a question for the assistant, beside the add button that turns into Send once something is typed (left out on
+ * the assistant's own page, which has its input there); under it the four tabs as words, the current one bold with a
+ * short line beneath. It rides up with the keyboard.
  */
 @Composable
 private fun DockNav(
@@ -399,32 +408,55 @@ private fun DockNav(
     showAsk: Boolean,
     onSelect: (Screen) -> Unit,
     onAdd: () -> Unit,
-    onAsk: () -> Unit,
+    onAsk: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().background(C.card)) {
+    var question by rememberSaveable { mutableStateOf("") }
+    val send = {
+        if (question.isNotBlank()) {
+            onAsk(question.trim())
+            question = ""
+        }
+    }
+    Column(modifier.fillMaxWidth().background(C.card).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.cardBorder))
         if (showAsk) Row(
             Modifier.fillMaxWidth().height(ASK_HEIGHT).padding(start = 12.dp, end = 12.dp, top = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            BasicTextField(
+                value = question,
+                onValueChange = { question = it },
+                modifier = Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(C.bg)
+                    .border(1.dp, C.control, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp),
+                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
+                cursorBrush = SolidColor(C.accent),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { send() }),
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                        if (question.isEmpty()) Text(tr("ถามผู้ช่วย", "Ask the assistant"), color = C.faint, fontSize = TS.body, maxLines = 1)
+                        inner()
+                    }
+                },
+            )
+            val typing = question.isNotBlank()
             Box(
-                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(C.bg)
-                    .border(1.dp, C.control, RoundedCornerShape(14.dp)).clickable(onClick = onAsk).padding(horizontal = 14.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) { Text(tr("ถามผู้ช่วย", "Ask the assistant"), color = C.faint, fontSize = TS.body, maxLines = 1) }
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm && !typing) C.raised else C.accent)
+                    .clickable { if (typing) send() else onAdd() },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp)) }
+            ) {
+                if (typing) Icon(Ic.send, tr("ส่งถึงผู้ช่วย", "Send to the assistant"), tint = C.onAccent, modifier = Modifier.size(20.dp))
+                else Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp))
+            }
         }
         Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf(Screen.FOCUS, Screen.TASKS, Screen.PROJECTS, Screen.MORE).forEach { s ->
                 DockItem(if (s == Screen.PROJECTS) tr("โปรเจกต์", "Projects") else s.label, s == selected, { onSelect(s) }, Modifier.weight(1f))
             }
         }
-        Box(Modifier.navigationBarsPadding())
     }
 }
 
