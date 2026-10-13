@@ -111,7 +111,8 @@ test('the overview orders open work, says why a task waits and ticking writes th
   await expect(rows.nth(1)).toContainText('รอ ส่งรายงานความก้าวหน้า')
   await expect(rows.nth(1)).toContainText('ล็อก')
   await expect(page.locator('.pj-section', { hasText: 'เสร็จแล้ว' })).toContainText('สรุป requirement')
-  await expect(page.locator('.pj-section', { hasText: 'เสร็จแล้ว' })).toContainText('3 ต.ค.')
+  // A done task is a full task row, as on Android: its tags show, not the day it was done.
+  await expect(page.locator('.pj-section', { hasText: 'เสร็จแล้ว' }).locator('.trow.done')).toContainText('#peddose/research')
 
   // Ticking the first task unlocks the one waiting for it.
   await page.getByRole('checkbox', { name: 'ติ๊กเสร็จ ส่งรายงานความก้าวหน้า' }).click()

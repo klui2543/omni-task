@@ -16,6 +16,7 @@ import { calendarCache } from './calendarCache'
 import { listCalendars } from './calendar'
 import { sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
+import { useProjectsAddress } from './ui/projects/route'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
 
@@ -74,7 +75,9 @@ const offersFinish = (t: Task, tasks: Task[], withSubtasks: boolean) => {
 export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; onConnectCalendar: () => void; onAllowCalendarWrite: () => void; onSignOut: () => void; onChangeVault: () => void }) {
   const vault = useMemo(() => new Vault(p.drive, p.vaultId, config.taskFileId), [p.drive, p.vaultId])
   const calendar = useMemo(() => calendarCache(p.drive), [p.drive])
-  const [page, navigate] = usePage()
+  const [shellPage, navigate] = usePage()
+  // A screen inside Projects has a deeper address (#/projects/project/<name>), still the Projects page.
+  const page = useProjectsAddress(shellPage)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [busy, setBusy] = useState(false)
   const [syncedAt, setSyncedAt] = useState<Date | null>(null)
