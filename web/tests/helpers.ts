@@ -47,13 +47,13 @@ export async function open(page: Page, opts: { now?: Date; note?: string; profil
 
 
 /**
- * Opens the assistant or settings from the menu. The sidebar has both; the narrow bar at the bottom reaches
- * them through "เพิ่มเติม", as on Android.
+ * Opens the assistant or settings from the menu. The sidebar has both; the narrow bar at the bottom has Settings,
+ * which holds the way to the assistant, as on Android.
  */
 export async function goTo(page: Page, name: 'ผู้ช่วย' | 'ตั้งค่า') {
   const nav = page.getByRole('navigation', { name: 'เมนูหลัก' })
   const direct = nav.getByRole('button', { name, exact: true })
   if (await direct.count()) return direct.click()
-  await nav.getByRole('button', { name: 'เพิ่มเติม', exact: true }).click()
+  await nav.getByRole('button', { name: 'ตั้งค่า', exact: true }).click()
   await page.getByRole('main').getByRole('button', { name }).click()
 }

@@ -56,15 +56,25 @@ export function SettingsPage(p: PageProps) {
   const back = () => (history.length > 1 ? history.back() : p.onNavigate('focus'))
   const k = look.scale
 
+  const moreRow = (label: string, onClick: () => void) => (
+    <button class="more-row" onClick={onClick}>
+      <span class="grow">{label}</span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>
+  )
+
   return (
     <main class="page settings">
       <header class="head">
         <div class="row-gap">
-          <button class="ghost" onClick={back}>‹ กลับ</button>
+          <button class="ghost wide-only" onClick={back}>‹ กลับ</button>
           <h1>ตั้งค่า</h1>
         </div>
       </header>
       {note && <section class="notice" role="alert"><span class="grow">{note}</span></section>}
+
+      {/* The way to the assistant on a narrow screen, as in the Android app's Settings tab (the sidebar has its own). */}
+      <section class="fcard more-card narrow-only">{moreRow('ผู้ช่วย', () => p.onNavigate('assistant'))}</section>
 
       <div class="set-cols">
         <div class="set-col">

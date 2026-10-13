@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { NOTE, at, open } from './helpers'
+import { NOTE, at, goTo, open } from './helpers'
 
 test('opens on Focus with the day, who is waiting and the future pick', async ({ page }) => {
   await open(page)
@@ -169,9 +169,9 @@ test('the Focus menu goes to the other pages', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'ตั้งค่า' }).click()
   await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
   await page.goBack()
-  // The assistant is the round button floating over the page, not a button in its header.
+  // The assistant is reached from the menu, not a button in the page's header.
   await expect(page.getByRole('button', { name: '✦ ผู้ช่วย' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'เปิดผู้ช่วย' }).click()
+  await goTo(page, 'ผู้ช่วย')
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
 })
 

@@ -1,7 +1,8 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
+import { pendingQuestion } from './assistantState'
 
-export type Page = 'focus' | 'tasks' | 'projects' | 'more' | 'assistant' | 'settings'
+export type Page = 'focus' | 'tasks' | 'projects' | 'assistant' | 'settings'
 
 /** The sidebar on wide screens: every destination (the assistant included; there is no More there). Settings sits apart at its foot. */
 export const TABS: [Page, string][] = [
@@ -10,19 +11,21 @@ export const TABS: [Page, string][] = [
   ['projects', 'โปรเจกต์/ลิสต์'],
   ['assistant', 'ผู้ช่วย'],
 ]
-/** The bar at the bottom of a narrow screen, as the Android app's: Focus, Tasks, the add button, Projects and More (assistant and settings). */
+/** The tabs at the bottom of a narrow screen, as the Android app's: Focus, Tasks, Projects and Settings (which holds the rest). */
 const BAR: [Page, string][] = [
   ['focus', 'โฟกัส'],
   ['tasks', 'งาน'],
   ['projects', 'โปรเจกต์'],
-  ['more', 'เพิ่มเติม'],
+  ['settings', 'ตั้งค่า'],
 ]
-const PAGES: Page[] = ['focus', 'tasks', 'projects', 'more', 'assistant', 'settings']
+const PAGES: Page[] = ['focus', 'tasks', 'projects', 'assistant', 'settings']
 
 const pageOf = (hash: string): Page => {
   const name = hash.replace(/^#\/?/, '')
   // The Views tab was merged into Tasks (its address still opens the tasks, in the last view).
   if (name === 'views') return 'tasks'
+  // More was folded into Settings.
+  if (name === 'more') return 'settings'
   return PAGES.includes(name as Page) ? (name as Page) : 'focus'
 }
 
@@ -46,15 +49,24 @@ const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minut
 
 /**
  * A sidebar on wide screens (computer, iPad across) and a floating bar at the bottom on narrow ones
- * (iPad upright, phone), as in the mockups. Text only, no icons, like the Android app's labels. The assistant
- * is a round button floating at the bottom right of every page; adding a task is the middle of the bar.
+ * (iPad upright, phone), as on Android: a line to type a question for the assistant beside the add button (Send
+ * once something is typed; left out on the assistant's own page), and under it the tabs as words.
  */
 export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
   const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่'
     : p.sync.state === 'busy' ? 'กำลังซิงก์...'
     : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
     : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
-  const onMore = p.page === 'more' || p.page === 'assistant' || p.page === 'settings'
+  const [question, setQuestion] = useState('')
+  const ask = (e: Event) => {
+    e.preventDefault()
+    const q = question.trim()
+    if (!q) return p.onAdd()
+    // The assistant asks it as soon as the tasks are there, as it does for a question sent from quick add.
+    pendingQuestion.set(q)
+    setQuestion('')
+    p.onNavigate('assistant')
+  }
   return (
     <div class="shell">
       <nav class="side" aria-label="เมนูหลัก">
@@ -79,20 +91,21 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         )}
         {p.children}
       </div>
-      {p.page !== 'assistant' && (
-        <button class="ai-fab" aria-label="เปิดผู้ช่วย" onClick={() => p.onNavigate('assistant')}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" /></svg>
-        </button>
-      )}
-      <nav class="bar" aria-label="เมนูหลัก">
-        {BAR.slice(0, 2).map(([page, label]) => (
-          <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
-        ))}
-        <button class="bar-add" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>
-        {BAR.slice(2).map(([page, label]) => (
-          <button key={page} aria-current={(page === 'more' ? onMore : p.page === page) ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
-        ))}
-      </nav>
+      <div class="dock">
+        {p.page !== 'assistant' && (
+          <form class="dock-ask" onSubmit={ask}>
+            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterKeyHint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} />
+            {question.trim()
+              ? <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>
+              : <button type="button" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>}
+          </form>
+        )}
+        <nav class="bar" aria-label="เมนูหลัก">
+          {BAR.map(([page, label]) => (
+            <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
+          ))}
+        </nav>
+      </div>
     </div>
   )
 }

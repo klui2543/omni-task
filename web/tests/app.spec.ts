@@ -258,14 +258,26 @@ test('the menu moves between pages and the page stays after a reload', async ({ 
   await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
 })
 
-test('More (narrow) has the assistant and settings; the floating button opens the assistant', async ({ page }) => {
+test('Settings (narrow) leads to the assistant; a question typed at the bottom goes to it', async ({ page }) => {
   await setup(page)
   await signInAndPick(page)
-  await page.getByRole('button', { name: 'เปิดผู้ช่วย' }).click()
+  const ask = page.getByRole('textbox', { name: 'ถามผู้ช่วย' })
+  if (await ask.isVisible()) {
+    await ask.fill('ว่างตอนไหนบ้าง')
+    await page.getByRole('button', { name: 'ส่งถึงผู้ช่วย' }).click()
+    await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
+    await expect(page.getByText('ว่างตอนไหนบ้าง').first()).toBeVisible()
+    // The assistant is the page itself: no line to ask it over the page.
+    await expect(ask).toHaveCount(0)
+    // An old address of More opens Settings, where the assistant is too.
+    await page.evaluate(() => { location.hash = '/more' })
+    await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
+    await page.getByRole('main').getByRole('button', { name: 'ผู้ช่วย' }).click()
+  } else {
+    await goTo(page, 'ผู้ช่วย')
+  }
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
-  // The assistant is the page itself: no floating button over it.
-  await expect(page.getByRole('button', { name: 'เปิดผู้ช่วย' })).toHaveCount(0)
-  await page.evaluate(() => { location.hash = '/more' })
+})
   await expect(page.getByRole('heading', { name: 'เพิ่มเติม', level: 1 })).toBeVisible()
   await expect(page.getByRole('main').getByRole('button', { name: 'ผู้ช่วย' })).toBeVisible()
   await expect(page.getByRole('main').getByRole('button', { name: 'ตั้งค่า' })).toBeVisible()
