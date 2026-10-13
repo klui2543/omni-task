@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stuck log mockup</title>
+<style>
+:root{--bg:#0D0F14;--card:#151821;--border:#222736;--raised:#1F2330;--sunken:#12141B;--control:#2C3140;--text:#F3F4F8;--text2:#CDD1DB;--muted:#AEB3C2;--faint:#858B9D;--accent:#A99CFF;--accentSoft:#2A2550;--accentText:#C7BEFF;--lime:#B9F26B;--red:#FF8A80;--amber:#FFC266}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px}
+.grid{display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.col{width:360px;max-width:100%}
+h2{font-size:14px;color:var(--muted);font-weight:500;margin:0 0 8px}
+.note{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.55}
+.card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 0 12px}
+.head{font-size:12.5px;color:var(--red);padding:10px 16px 4px;display:flex;justify-content:space-between}
+.task{display:flex;gap:10px;padding:6px 14px 6px 12px;align-items:flex-start}
+.ring{width:20px;height:20px;border-radius:50%;border:2px solid var(--faint);flex:none;margin-top:2px}
+.t{font-size:15px}.meta{font-size:12px;color:var(--muted);margin-top:1px}.late{color:var(--red);font-weight:500}
+.stuck{font-size:12px;margin-top:3px;display:flex;gap:6px;align-items:center;padding:3px 2px;border-radius:8px}
+.stuck .why{color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.stuck .act{color:var(--accentText);white-space:nowrap}
+.tap{outline:2px dashed #C7BEFF66;outline-offset:2px}
+.dlg{background:var(--raised);border-radius:26px;padding:22px 22px 14px}
+.dlg .title{font-size:20px;margin-bottom:10px}
+.lbl{font-size:12px;color:var(--muted);margin:8px 0 3px}
+.hist{display:flex;gap:10px;font-size:12px;padding:3px 0}.hist .d{color:var(--faint);width:44px;flex:none}.hist .r{color:var(--text2)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{height:34px;display:flex;align-items:center;padding:0 13px;border-radius:17px;border:1px solid var(--control);font-size:14px;color:var(--text2)}
+.chip.on{background:var(--accentSoft);border-color:var(--accent);color:var(--text)}
+.field{margin-top:10px;background:var(--sunken);border-radius:12px;padding:12px;font-size:14px;min-height:56px;line-height:1.45}
+.field .ph{color:var(--faint)}
+.small{font-size:12px;color:var(--faint);margin-top:8px}
+.btns{display:flex;justify-content:flex-end;gap:18px;margin-top:14px;font-size:14px}
+.btns .p{color:var(--accent)}.btns .g{color:var(--text2)}
+.sheet{background:var(--card);border-radius:24px 24px 0 0;padding:16px 16px 20px;border:1px solid var(--border)}
+.sheet .tt{font-size:20px;margin:4px 0 2px}
+.box{margin-top:10px;background:var(--sunken);border-radius:14px;padding:10px 12px}
+.box .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.box .row span:last-child{color:var(--text2)}
+.add{color:var(--accentText);font-size:14px;margin-top:8px}
+.seg{display:flex;gap:6px;margin-top:12px}.seg div{flex:1;text-align:center;font-size:13px;padding:8px 0;border-radius:10px;background:var(--sunken);color:var(--muted)}.seg .on{background:var(--accentSoft);color:var(--text)}
+.rb{display:inline-block;padding:9px 14px;border-radius:12px;font-size:14px;margin:0 4px 6px 0}
+.notif{background:#22252e;border-radius:18px;padding:12px 14px;font-size:13px}
+.notif .app{font-size:11.5px;color:var(--muted);margin-bottom:4px}
+.notif b{font-weight:500;display:block;margin-bottom:4px}
+.notif div{color:var(--text2);padding:1px 0}
+.notif .hl{color:var(--text)}
+.day{font-size:12px;color:var(--muted);margin:12px 0 4px}
+.ent{padding:6px 4px}.ent .n{font-size:14px}.ent .r{font-size:12px;color:var(--text2)}.ent .done{color:var(--faint)}
+</style></head><body>
+<div class="grid">
+
+<div class="col">
+ <h2>1. หน้าโฟกัส: การ์ด "ค้างอยู่"</h2>
+ <div class="card">
+  <div class="head"><span>ค้างอยู่</span><span>3</span></div>
+  <div class="task"><div class="ring"></div><div>
+   <div class="t">ทำเว็บร้าน</div>
+   <div class="meta"><span class="late">เลย 12 วัน</span>, peddose, งานย่อย 4/7</div>
+   <div class="stuck tap"><span class="why">🧱 ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</span><span class="act">ทั้งหมด 2 &nbsp;จดเพิ่ม</span></div>
+  </div></div>
+  <div class="task"><div class="ring"></div><div>
+   <div class="t">ส่งเอกสารเบิก</div>
+   <div class="meta"><span class="late">เลย 3 วัน</span></div>
+   <div class="stuck"><span class="act">ติดอะไรอยู่? แตะเพื่อจด</span></div>
+  </div></div>
+  <div class="task"><div class="ring"></div><div>
+   <div class="t">นัดหมอฟัน</div>
+   <div class="meta"><span class="late">เลย 1 วัน</span></div>
+   <div class="stuck"><span class="why">🧱 รอคนอื่น: รอคลินิกโทรกลับ</span><span class="act">จดเพิ่ม</span></div>
+  </div></div>
+ </div>
+ <div class="note">ใต้งานที่เลยกำหนด เปิดมาเกิน 21 วัน หรือเคยจดไว้ จะมีบรรทัดเหตุผลล่าสุด<br>แตะบรรทัดนี้ (เส้นประ) เปิดหน้าต่างข้อ 2 แตะชื่องานเปิดหน้าแก้ไขงานเหมือนเดิม</div>
+</div>
+
+<div class="col">
+ <h2>2. แตะแล้ว: เห็นทั้งหมด และจดเพิ่มได้ใน 2 แตะ</h2>
+ <div class="dlg">
+  <div class="title">ทำไมยังค้างอยู่</div>
+  <div style="font-size:15px">ทำเว็บร้าน</div>
+  <div class="lbl">ที่จดไว้</div>
+  <div class="hist"><span class="d">1 ต.ค.</span><span class="r">ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</span></div>
+  <div class="hist"><span class="d">2 ก.ย.</span><span class="r">รอคนอื่น: รอรูปสินค้าจากพี่เอ</span></div>
+  <div class="chips">
+   <div class="chip">รอคนอื่น</div><div class="chip on">ไม่รู้จะเริ่มยังไง</div><div class="chip">งานใหญ่เกิน</div>
+   <div class="chip">ไม่มีเวลา</div><div class="chip">ไม่มีแรง</div><div class="chip">เป็นงานยาวอยู่แล้ว</div>
+  </div>
+  <div class="field">ไม่รู้จะเริ่มยังไง: ต้องเลือกธีมก่อน</div>
+  <div class="small">บันทึกเป็นบรรทัด 🧱 ใต้งานใน Obsidian พร้อมวันที่</div>
+  <div class="btns"><span class="g">ยกเลิก</span><span class="p">บันทึก</span></div>
+ </div>
+ <div class="note">แตะตัวเลือกหนึ่งอันแล้วกดบันทึกได้เลย จะพิมพ์ต่อท้ายหรือพิมพ์เองก็ได้<br>แตะตัวเลือกอื่น ระบบเปลี่ยนคำนำหน้าให้ ข้อความที่พิมพ์ไว้ไม่หาย</div>
+</div>
+
+<div class="col">
+ <h2>3. หน้าแก้ไขงาน: อยู่ใต้รายละเอียดเลย</h2>
+ <div class="sheet">
+  <div class="tt">ทำเว็บร้าน</div>
+  <div class="box"><div class="row"><span>รายละเอียด</span></div><div style="font-size:14px;margin-top:4px">ใช้ธีมเดิม</div></div>
+  <div class="box">
+   <div class="row"><span>ทำไมยังค้าง</span><span>ทุกงาน</span></div>
+   <div class="hist"><span class="d">1 ต.ค.</span><span class="r">ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</span></div>
+   <div class="hist"><span class="d">2 ก.ย.</span><span class="r">รอคนอื่น: รอรูปสินค้าจากพี่เอ</span></div>
+   <div class="add">+ จดว่าติดอะไร</div>
+  </div>
+  <div class="seg"><div>ยังไม่ทำ</div><div class="on">กำลังทำ</div><div>เสร็จ</div><div>ยกเลิก</div></div>
+ </div>
+ <div class="note">งานที่เลยกำหนด เก่า หรือเคยจดไว้ เห็นกล่องนี้ทันทีที่เปิด<br>งานทั่วไปยังพับไว้ที่ "ทำไมยังค้าง" ด้านล่าง "ทุกงาน" เปิดหน้ารวมตามวันที่ (ข้อ 6)</div>
+</div>
+
+<div class="col">
+ <h2>4. หน้าทบทวนงาน: ช่องจดก่อนตัดสินใจ</h2>
+ <div class="dlg">
+  <div class="title">ทบทวนงาน (เหลือ 4)</div>
+  <div style="font-size:16px">เขียนบทความ</div>
+  <div class="meta" style="margin-top:4px">สร้างมา 42 วัน</div>
+  <div style="font-size:14px;color:var(--text2);margin:12px 0 0">ติดอะไรอยู่ (ไม่ใส่ก็ได้)</div>
+  <div class="chips">
+   <div class="chip">รอคนอื่น</div><div class="chip">ไม่รู้จะเริ่มยังไง</div><div class="chip on">งานใหญ่เกิน</div>
+   <div class="chip">ไม่มีเวลา</div><div class="chip">ไม่มีแรง</div><div class="chip">เป็นงานยาวอยู่แล้ว</div>
+  </div>
+  <div class="field">งานใหญ่เกิน</div>
+  <div style="font-size:14px;color:var(--text2);margin:14px 0 8px">ยังอยากทำไหม</div>
+  <div>
+   <span class="rb" style="background:#B9F26B24;color:var(--lime)">ทำเสาร์นี้</span><span class="rb" style="background:#A99CFF24;color:var(--accent)">ลงทุนอนาคต</span><span class="rb" style="background:#FFC26624;color:var(--amber)">พักไว้ก่อน</span><span class="rb" style="background:#CDD1DB24;color:var(--text2)">เก็บไว้แบบเดิม</span><span class="rb" style="background:#FF8A8024;color:var(--red)">ทิ้ง</span>
+  </div>
+  <div class="btns"><span class="g">บันทึกงานค้าง</span><span class="g">พอก่อน</span></div>
+ </div>
+ <div class="note">ถ้าจดไว้ เหตุผลจะถูกบันทึกก่อนการตัดสินใจที่กด</div>
+</div>
+
+<div class="col">
+ <h2>5. แจ้งเตือนทบทวนสัปดาห์ (อาทิตย์ 20:00)</h2>
+ <div class="notif">
+  <div class="app">Omni Task</div>
+  <b>สัปดาห์นี้เสร็จ 9 งาน</b>
+  <div>งานที่มีคนรอ: เสร็จ 2 ค้าง 1</div>
+  <div>ลงทุนอนาคต เสร็จ 1</div>
+  <div>เลยกำหนดค้างอยู่ 3</div>
+  <div class="hl">ค้างนาน 4 งาน แตะเพื่อจดว่าติดอะไร</div>
+ </div>
+ <div class="dlg" style="margin-top:14px">
+  <div class="title">ติดอะไรอยู่ (เหลือ 4)</div>
+  <div style="font-size:16px">เขียนบทความ</div>
+  <div class="meta" style="margin:4px 0 6px">เปิดมา 42 วัน</div>
+  <div class="chips">
+   <div class="chip">รอคนอื่น</div><div class="chip">ไม่รู้จะเริ่มยังไง</div><div class="chip">งานใหญ่เกิน</div>
+   <div class="chip">ไม่มีเวลา</div><div class="chip">ไม่มีแรง</div><div class="chip">เป็นงานยาวอยู่แล้ว</div>
+  </div>
+  <div class="field"><span class="ph">ติดอะไรอยู่ เขียนสั้นๆ ก็พอ</span></div>
+  <div class="btns"><span class="g">ดูบันทึก</span><span class="g">ข้าม</span><span class="p" style="opacity:.45">บันทึก</span></div>
+ </div>
+ <div class="note">แตะแจ้งเตือนแล้วถามทีละงาน (งานที่เปิดเกิน 21 วันและยังไม่ได้จดใน 21 วันล่าสุด)<br>ไม่ถามงานทำซ้ำ 🔁 และงาน #สักวัน</div>
+</div>
+
+<div class="col">
+ <h2>6. บันทึกงานค้าง: ทุกงานตามวันที่</h2>
+ <div class="dlg">
+  <div class="title">บันทึกงานค้าง</div>
+  <div class="day">13 ต.ค.</div>
+  <div class="ent"><div class="n">เขียนบทความ</div><div class="r">งานใหญ่เกิน</div></div>
+  <div class="ent"><div class="n">ส่งเอกสารเบิก</div><div class="r">รอคนอื่น: รอลายเซ็นหัวหน้า</div></div>
+  <div class="day">1 ต.ค.</div>
+  <div class="ent"><div class="n">ทำเว็บร้าน</div><div class="r">ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง</div></div>
+  <div class="day">2 ก.ย.</div>
+  <div class="ent"><div class="n">ทำเว็บร้าน</div><div class="r">รอคนอื่น: รอรูปสินค้าจากพี่เอ</div></div>
+  <div class="ent"><div class="n done">จองโรงแรมเชียงใหม่</div><div class="r">ไม่มีเวลา</div></div>
+  <div class="btns"><span class="g">ปิด</span></div>
+ </div>
+ <div class="note">วันใหม่อยู่บน แตะเพื่อเปิดงานนั้น งานที่เสร็จแล้วเป็นสีจาง</div>
+</div>
+
+<div class="col">
+ <h2>7. ใน Obsidian</h2>
+ <div class="card" style="padding:14px 16px;font-family:ui-monospace,monospace;font-size:12.5px;line-height:1.7;color:var(--text2)">
+  - [/] ทำเว็บร้าน #peddose ➕ 2026-08-01 📅 2026-10-01<br>
+  &nbsp;&nbsp;&nbsp;&nbsp;- ใช้ธีมเดิม<br>
+  &nbsp;&nbsp;&nbsp;&nbsp;- 🧱 2026-09-02 รอคนอื่น: รอรูปสินค้าจากพี่เอ<br>
+  &nbsp;&nbsp;&nbsp;&nbsp;- 🧱 2026-10-01 ได้รูปแล้ว แต่ยังไม่รู้จะจัดหน้ายังไง<br>
+  &nbsp;&nbsp;&nbsp;&nbsp;- [ ] เลือกธีม
+ </div>
+ <div class="note">บรรทัด 🧱 อยู่ใต้งาน ไม่ปนกับรายละเอียด ย้ายไป Archive พร้อมงาน<br>ปุ่ม "ถาม Claude" ส่งหมวด "ทำไมงานยังค้าง" ไปด้วย</div>
+</div>
+
+</div></body></html>
