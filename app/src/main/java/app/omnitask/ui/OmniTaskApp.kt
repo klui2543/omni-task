@@ -83,8 +83,8 @@ enum class Screen(private val th: String, private val en: String, val icon: Imag
     TASKS("งาน", "Tasks", Ic.tasks),
     PROJECTS("โปรเจกต์/ลิสต์", "Projects/Lists", Ic.folder),
     AI("ผู้ช่วย", "Assistant", Ic.spark),
-    /** The bottom bar's "More" page; the side rail has every destination of its own, so it leaves this one out. */
-    MORE("เพิ่มเติม", "More", Ic.grid),
+    /** The bottom bar's Settings tab; the side rail opens Settings from its menu, so it leaves this one out. */
+    MORE("ตั้งค่า", "Settings", Ic.gear),
     ;
 
     val label get() = tr(th, en)
@@ -166,7 +166,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     // opened task sits beside the page. Tablets and landscape (a wider shape) keep the rail on the left.
     val rail = wide && maxOf(width, config.screenHeightDp).toFloat() / minOf(width, config.screenHeightDp).coerceAtLeast(1) > SQUARE_RATIO
     val open: (app.omnitask.model.Task) -> Unit = { editingKey = it.key }
-    // On a phone the menu's items live in the "More" sheet on the bottom bar, where the thumb reaches; the rail layout keeps the menu at the top.
+    // On a phone the menu's items live in the Settings tab on the bottom bar, where the thumb reaches; the rail layout keeps the menu at the top.
     val menu: @Composable () -> Unit = {
         if (rail) AppMenu(
             urgentRule = state.urgentRule,
@@ -201,10 +201,19 @@ fun OmniTaskApp(vm: TaskViewModel) {
                         Screen.TASKS -> TasksScreen(state, vm, open)
                         Screen.PROJECTS -> ProjectsScreen(state, vm, open)
                         Screen.AI -> AssistantScreen(state, vm, open)
-                        Screen.MORE -> MoreScreen(
-                            urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
-                            onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
-                            onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
+                        // The Settings tab: the settings, with the assistant, notifications, urgency and the vault around them.
+                        Screen.MORE -> SettingsScreen(
+                            profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
+                            archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
+                            calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
+                            drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive, vm::putBackClash, vm::dismissClash),
+                            head = {
+                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    SettingsLinks(onAssistant = { screen = Screen.AI }, onNotify = { notifyOpen = true })
+                                    UrgentGroup(state.urgentRule, vm::setUrgentRule)
+                                }
+                            },
+                            tail = { VaultLinks(onReload = vm::reload, onVault = { pickVault.launch(state.vault) }) },
                         )
                     }
                     }
@@ -373,7 +382,7 @@ private val DOCK_HEIGHT = 64.dp
 
 /**
  * The bottom bar on a phone: flush with the screen's edge, so every button is in the thumb's reach and nothing floats over
- * the lists. Focus, Tasks, the add button in the middle, Projects, and More for everything else (assistant, settings).
+ * the lists. Focus, Tasks, the add button in the middle, Projects, and Settings for everything else (assistant included).
  */
 @Composable
 private fun DockNav(
@@ -396,7 +405,7 @@ private fun DockNav(
                 ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             }
             DockItem(Screen.PROJECTS.icon, tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS && !moreSelected, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
-            DockItem(Ic.grid, tr("เพิ่มเติม", "More"), moreSelected, onMore, Modifier.weight(1f))
+            DockItem(Screen.MORE.icon, Screen.MORE.label, moreSelected, onMore, Modifier.weight(1f))
         }
         Box(Modifier.navigationBarsPadding())
     }
