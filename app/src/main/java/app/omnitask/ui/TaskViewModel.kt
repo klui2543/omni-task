@@ -1381,23 +1381,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Assistant ----
 
-    /** Reads what the owner asked for: a look-ahead, a plan for a range, a ranking, or time for something new. */
+    /** Reads what the owner asked for ([Planner.askOf]): a look-ahead, a plan for a range, a ranking, or time for something new. */
     fun ask(text: String) {
-        val t = text.lowercase()
         val today = LocalDate.now()
         val range = Planner.rangeOf(text, today)
-        when {
-            listOf("วางแผน", "plan ").any { it in "$t " } && !t.startsWith("plan my day") ->
-                planRange(range ?: (today to today.plusDays(6)), text)
-            listOf("มีอะไร", "what's on", "whats on", "what do i have", "agenda").any { it in t } ->
-                showAgenda(range ?: (today to today.plusDays(6)), text)
-            listOf("จัดลำดับ", "ทำอะไรก่อน", "ควรทำอะไร", "prioritize", "priorities", "what first").any { it in t } -> rankAll(text)
-            Planner.explicitMinutes(text) != null -> {
+        when (Planner.askOf(text)) {
+            Planner.Ask.PLAN -> planRange(range ?: (today to today.plusDays(6)), text)
+            Planner.Ask.AGENDA -> showAgenda(range ?: (today to today.plusDays(6)), text)
+            Planner.Ask.RANK -> rankAll(text)
+            Planner.Ask.SLOTS -> {
                 val s = _state.value
                 val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
                 _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
             }
-            else -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
+            Planner.Ask.DURATION -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
         }
     }
 

@@ -121,6 +121,34 @@ object Planner {
         }
     }
 
+    /** What a sentence typed to the assistant asks for. */
+    enum class Ask { PLAN, AGENDA, RANK, SLOTS, DURATION }
+
+    private val RANK_WORDS = listOf("จัดลำดับ", "ทำอะไรก่อน", "ควรทำอะไร", "อะไรก่อน", "เลยกำหนด", "prioritize", "priorities", "what first", "overdue")
+    private val WHEN_WORDS = listOf("ตอนไหน", "เมื่อไหร่", "เมื่อไร", "ช่วงไหน", "วันไหนดี", "กี่โมงดี", "when ", "what time")
+    private val AGENDA_WORDS = listOf(
+        "มีอะไร", "อะไรบ้าง", "ทำอะไร", "งานอะไร", "มีงาน", "มีนัด", "นัดอะไร", "ว่างไหม", "ว่างมั้ย",
+        "what's on", "whats on", "what do i", "agenda", "anything",
+    )
+    private val QUESTION = Regex("""อะไร|ไหม|มั้ย|ไหน|กี่|ยังไง|อย่างไร|หรือเปล่า|รึเปล่า|[?？]|^(?:what|which|how)\b""")
+
+    /**
+     * Reads a sentence: a plan or a ranking when it says so, a look-ahead for a question about what there is ("พรุ่งนี้ทำ
+     * อะไร"), and a search for time only for something to do ("อยากไปวิ่ง ควรไปตอนไหน"). A question is never taken as
+     * new work to find time for.
+     */
+    fun askOf(text: String): Ask {
+        val t = text.lowercase().trim()
+        return when {
+            listOf("วางแผน", "plan ").any { it in "$t " } && !t.startsWith("plan my day") -> Ask.PLAN
+            RANK_WORDS.any { it in t } -> Ask.RANK
+            WHEN_WORDS.any { it in "$t " } -> if (explicitMinutes(text) != null) Ask.SLOTS else Ask.DURATION
+            AGENDA_WORDS.any { it in t } || QUESTION.containsMatchIn(t) -> Ask.AGENDA
+            explicitMinutes(text) != null -> Ask.SLOTS
+            else -> Ask.DURATION
+        }
+    }
+
     private val FILLER = listOf(
         "ควรไปตอนไหนดี", "ควรทำตอนไหนดี", "ตอนไหนดี", "ควรไปตอนไหน", "ควรทำตอนไหน", "ตอนไหน", "เมื่อไหร่ดี", "เมื่อไรดี",
         "สักครั้ง", "สักวัน", "สัปดาห์นี้", "สัปดาห์หน้า", "อาทิตย์หน้า", "สุดสัปดาห์", "วันนี้", "พรุ่งนี้", "หน่อย", "ครับ", "ค่ะ", "คะ",
