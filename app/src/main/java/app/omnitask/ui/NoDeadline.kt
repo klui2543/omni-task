@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.model.Focus
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
 import app.omnitask.model.tr
@@ -319,7 +320,9 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                         ).joinToString(", "),
                         Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
                     )
-                    StuckHistory(t, limit = 2)
+                    StuckLog.events(t, state.subtasksOf(t)).filter { it.step != StuckLog.Step.START }.takeLast(2).takeIf { it.isNotEmpty() }?.let {
+                        Box(Modifier.padding(top = 10.dp)) { StuckPath(it, state.today) }
+                    }
                     // Optional: written down with whichever choice comes next, before it.
                     Text(tr("ติดอะไรอยู่ (ไม่ใส่ก็ได้)", "What holds it up? (optional)"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text2, fontSize = TS.body)
                     StuckInput(why) { why = it }

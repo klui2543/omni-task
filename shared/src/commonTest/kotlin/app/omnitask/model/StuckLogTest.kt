@@ -102,4 +102,50 @@ class StuckLogTest {
         val late = app.omnitask.data.TaskLine.parse("- [ ] ส่งงาน ➕ 2026-10-10 📅 2026-10-12")!!
         assertTrue(StuckLog.matters(late, today))
     }
+
+    private val withSteps = listOf(
+        "- [/] ทำเว็บร้าน ➕ 2026-08-01",
+        "    - ค้าง 2026-09-02 รอรูปสินค้าจากพี่เอ",
+        "    - ค้าง 2026-10-01 ยังไม่รู้จะจัดหน้ายังไง",
+        "    - [x] ได้รูปสินค้า ✅ 2026-09-20",
+        "    - [ ] เลือกธีม",
+    )
+
+    private fun stepTasks() = VaultText.parseFile("f", "Omni note.md", withSteps.joinToString("\n"))
+
+    @Test
+    fun pathHasStartNotesAndFinishedSubtasksInOrder() {
+        val all = stepTasks()
+        val web = all.first { it.parent == null }
+        val subs = all.filter { it.parent == web.key }
+        assertEquals(
+            listOf(
+                StuckLog.Event(LocalDate.parse("2026-08-01"), StuckLog.Step.START, ""),
+                StuckLog.Event(LocalDate.parse("2026-09-02"), StuckLog.Step.NOTE, "รอรูปสินค้าจากพี่เอ"),
+                StuckLog.Event(LocalDate.parse("2026-09-20"), StuckLog.Step.DONE, "ได้รูปสินค้า"),
+                StuckLog.Event(LocalDate.parse("2026-10-01"), StuckLog.Step.NOTE, "ยังไม่รู้จะจัดหน้ายังไง"),
+            ),
+            StuckLog.events(web, subs),
+        )
+        assertEquals(LocalDate.parse("2026-10-01"), StuckLog.lastMove(web, subs))
+        assertEquals(listOf(web.title), StuckLog.byTask(all).map { it.first.title })
+    }
+
+    @Test
+    fun weeksRunBackFromTodayAndStopAtTheStart() {
+        val all = stepTasks()
+        val web = all.first { it.parent == null }
+        val subs = all.filter { it.parent == web.key }
+        // Today 2026-10-13, eight weeks oldest first: 08-19..08-25, 08-26..09-01, 09-02..09-08 (note), 09-09..09-15,
+        // 09-16..09-22 (subtask done), 09-23..09-29, 09-30..10-06 (note), 10-07..10-13.
+        assertEquals(
+            listOf(
+                StuckLog.Week.NONE, StuckLog.Week.NONE, StuckLog.Week.NOTE, StuckLog.Week.NONE,
+                StuckLog.Week.DONE, StuckLog.Week.NONE, StuckLog.Week.NOTE, StuckLog.Week.NONE,
+            ),
+            StuckLog.weeks(web, subs, today),
+        )
+        val fresh = app.omnitask.data.TaskLine.parse("- [ ] จองตั๋ว ➕ 2026-10-10")!!
+        assertEquals(listOf(StuckLog.Week.NONE), StuckLog.weeks(fresh, emptyList(), today))
+    }
 }

@@ -160,7 +160,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         DescriptionBlock(task, vm)
         // A late, old or already explained task shows why it is still open right here; others keep it folded below.
         val stuckUpFront = StuckLog.matters(task, today)
-        if (stuckUpFront) StuckBlock(task, onAdd = { notingStuck = true }, onLog = { stuckLog = true })
+        if (stuckUpFront) StuckBlock(task, state.subtasksOf(task), today, onAdd = { notingStuck = true }, onLog = { stuckLog = true })
 
         Segmented(
             Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
@@ -263,7 +263,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 fold = if (fold == "stuck") null else "stuck"
             }
             if (!stuckUpFront && fold == "stuck") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 8.dp)) {
-                StuckHistory(task)
+                StuckPath(StuckLog.events(task, state.subtasksOf(task)).filter { it.step != StuckLog.Step.START }, today)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         tr("+ จดว่าติดอะไร", "+ Note what holds it up"),
@@ -271,7 +271,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                         color = C.accentText, fontSize = TS.body,
                     )
                     Text(
-                        tr("ดูทุกงานตามวันที่", "All tasks by date"),
+                        tr("ดูทุกงาน", "All tasks"),
                         Modifier.padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).clickable { stuckLog = true }.padding(vertical = 8.dp),
                         color = C.text2, fontSize = TS.body,
                     )
@@ -340,7 +340,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
     picking?.let { field -> DateDialog(task, field, { vm.setDate(task, field, it) }) { picking = null } }
     if (repeating) RepeatDialog(task, { vm.setRecurrence(task, it) }) { repeating = false }
-    if (notingStuck) StuckDialog(task, { vm.noteStuck(task, it) }) { notingStuck = false }
+    if (notingStuck) StuckDialog(task, state.subtasksOf(task), today, { vm.noteStuck(task, it) }) { notingStuck = false }
     if (stuckLog) StuckTimeline(state, onOpen = { stuckLog = false; onOpen(it) }) { stuckLog = false }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }

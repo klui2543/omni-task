@@ -90,4 +90,53 @@ object StuckLog {
             .sortedByDescending { last(it) }
             .take(maxTasks)
             .map { t -> t.title + ": " + entries(t).takeLast(perTask).joinToString("; ") { "${it.day} ${it.reason}".trim() } }
+
+    // ---- The path a task has taken ----
+
+    enum class Step { START, NOTE, DONE }
+
+    /** One point on a task's path: when it was made, each note, each subtask finished. */
+    data class Event(val day: LocalDate, val step: Step, val text: String)
+
+    /**
+     * The task's path, oldest first: made (➕, or 🛫 when there is no ➕), every note, and every subtask ticked off
+     * ([subtasks] are the tasks right under it). Side by side they show a long process still moving or a task that is stuck.
+     */
+    fun events(task: Task, subtasks: List<Task>): List<Event> = buildList {
+        (task.created ?: task.start)?.let { add(Event(it, Step.START, "")) }
+        entries(task).forEach { add(Event(it.day, Step.NOTE, it.reason)) }
+        subtasks.forEach { s -> s.done?.takeIf { s.status == Status.DONE }?.let { add(Event(it, Step.DONE, s.title)) } }
+    }.sortedWith(compareBy<Event>({ it.day }, { it.step.ordinal }))
+
+    /** The last day something happened to the task (a note or a finished subtask), or null when nothing has. */
+    fun lastMove(task: Task, subtasks: List<Task>): LocalDate? = events(task, subtasks).lastOrNull { it.step != Step.START }?.day
+
+    /** What each of a task's weeks held, for the small bars: nothing, a note, or a finished subtask (which wins). */
+    enum class Week { NONE, NOTE, DONE }
+
+    /**
+     * The task's last [max] weeks, oldest first and the current week last, from the week it was made: a task made
+     * this week has one bar. Weeks run back from [today] in sevens.
+     */
+    fun weeks(task: Task, subtasks: List<Task>, today: LocalDate, max: Int = 8): List<Week> {
+        val begin = task.created ?: task.start ?: today
+        val count = (ChronoUnit.DAYS.between(begin, today) / 7 + 1).toInt().coerceIn(1, max)
+        val events = events(task, subtasks)
+        return (count - 1 downTo 0).map { back ->
+            val end = today.minusDays(7L * back)
+            val start = end.minusDays(6)
+            val inWeek = events.filter { it.day in start..end }
+            when {
+                inWeek.any { it.step == Step.DONE } -> Week.DONE
+                inWeek.any { it.step == Step.NOTE } -> Week.NOTE
+                else -> Week.NONE
+            }
+        }
+    }
+
+    /** Every task with notes, each with its path; the most recently explained first. */
+    fun byTask(tasks: List<Task>): List<Pair<Task, List<Event>>> =
+        tasks.filter { it.list == null && entries(it).isNotEmpty() }
+            .sortedByDescending { last(it) }
+            .map { t -> t to events(t, tasks.filter { it.parent == t.key }) }
 }
