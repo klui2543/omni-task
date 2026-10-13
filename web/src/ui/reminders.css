@@ -1,0 +1,9 @@
+/* Reminders that rang, over every page at the top, as a notification would come in: what and when, then the buttons
+   Android's notification has. Above the edit pane and dialogs, below the image viewer. */
+.reminders { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 24px)); z-index: 30; display: flex; flex-direction: column; gap: 8px; }
+.reminder { background: var(--card); border: 1px solid var(--accent-line); border-radius: 14px; padding: 10px 8px 4px 14px; box-shadow: 0 10px 30px rgb(20 20 40 / .16); display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+.reminder-text { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; padding-bottom: 6px; }
+.reminder-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.reminder-time { flex: none; color: var(--accent-text); font-size: 13px; font-weight: 500; }
+.reminder-actions { display: flex; flex-wrap: wrap; margin-left: auto; }
+.reminder-actions button.link { min-height: 40px; }

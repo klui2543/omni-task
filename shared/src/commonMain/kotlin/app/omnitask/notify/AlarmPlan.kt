@@ -60,19 +60,7 @@ object AlarmPlan {
     private const val EVENT_HORIZON_HOURS = 48L
 
     fun plan(tasks: List<Task>, events: List<CalendarEvent>, settings: NotifySettings, now: LocalDateTime): List<PlannedAlarm> = buildList {
-        if (settings.taskReminders) {
-            tasks.filter { it.isOpen }.forEach { t ->
-                val at = t.reminderAt ?: return@forEach
-                if (at.isAfter(now) && !at.isAfter(now.plusDays(TASK_HORIZON_DAYS))) {
-                    add(
-                        PlannedAlarm(
-                            AlarmKind.TASK, at, "task:${t.fileUri}:${t.raw}", t.title,
-                            reminderText(t), taskRaw = t.raw, fileUri = t.fileUri,
-                        ),
-                    )
-                }
-            }
-        }
+        if (settings.taskReminders) addAll(taskAlarms(tasks, now, now.plusDays(TASK_HORIZON_DAYS)))
         if (settings.calendarEvents) {
             events.filterNot { it.allDay }.forEach { e ->
                 val at = e.begin.minusMinutes(settings.calendarLeadMinutes.toLong())
@@ -91,6 +79,16 @@ object AlarmPlan {
             add(PlannedAlarm(AlarmKind.WEEKLY, at, "weekly"))
         }
         add(PlannedAlarm(AlarmKind.RESCAN, now.plusHours(RESCAN_HOURS), "rescan"))
+    }
+
+    /**
+     * The reminders of open tasks (⏰ or 🎯 with a time) that ring after [from] and no later than [to]. The phone sets
+     * the ones still to come; the web, which can only remind while it is open, also looks back for those it missed.
+     */
+    fun taskAlarms(tasks: List<Task>, from: LocalDateTime, to: LocalDateTime): List<PlannedAlarm> = tasks.filter { it.isOpen }.mapNotNull { t ->
+        val at = t.reminderAt ?: return@mapNotNull null
+        if (!at.isAfter(from) || at.isAfter(to)) return@mapNotNull null
+        PlannedAlarm(AlarmKind.TASK, at, "task:${t.fileUri}:${t.raw}", t.title, reminderText(t), taskRaw = t.raw, fileUri = t.fileUri)
     }
 
     private fun nextAt(now: LocalDateTime, time: LocalTime): LocalDateTime {

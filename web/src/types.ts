@@ -119,6 +119,8 @@ export interface FocusIn {
   countdown: string | null
   tonightBed: { evening: string; time: string } | null
   tonightWake?: { evening: string; time: string } | null
+  /** Tonight's wake time was set on the watch (from Android's settings file). */
+  wakeFromWatch?: boolean
   profile: string | null
   events: { id: number; title: string; begin: string; end: string; allDay: boolean; link?: string }[]
   branches?: string[]
@@ -153,7 +155,12 @@ export interface Pick {
 /** The Focus page as the shared logic builds it; see WebFocus.Out. */
 export interface FocusOut {
   ring: { done: number; total: number; overdue: number; events: number }
-  third: { kind: 'night' | 'free'; minutes: number; night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string; becauseAt?: string; wakePicked?: boolean } }
+  /** Until bed at night, the free time left in the daytime; [night] is the night the sleep card plans, there all day. */
+  third: {
+    kind: 'night' | 'free'
+    minutes: number
+    night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string; becauseAt?: string; wakePicked?: boolean; fromWatch?: boolean; tomorrow?: boolean }
+  }
   countdown?: { key: string; title: string; text: string; late: boolean }
   notices: string[]
   plan: { label: string; late: boolean; tasks: number; items: PlanItem[] }[]
@@ -170,6 +177,8 @@ export interface FocusOut {
   /** The usual wake time or tonight's pick. */
   wake: string
   softDate: string
+  /** Until noon after a night: the minutes of sleep it gave. */
+  lastNight?: number
 }
 
 /* ---------- Views ---------- */

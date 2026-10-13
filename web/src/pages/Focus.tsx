@@ -7,12 +7,12 @@ import { skippedToday, useFocusLocal } from '../focusState'
 import type { PageProps } from '../Home'
 import type { EditOp, FocusIn, FocusOut, PlanItem, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
-import { BedtimeDialog, CountdownDialog, FutureDialog, ReviewAction, ReviewDialog } from '../ui/FocusDialogs'
+import { CountdownDialog, FutureDialog, ReviewAction, ReviewDialog, SleepTimeDialog } from '../ui/FocusDialogs'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { PagedCard } from '../ui/PagedCard'
 import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
-import { QuickAdd } from './Tasks'
+import '../ui/focusSleep.css'
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} ชม.` : `${m} นาที`)
@@ -39,11 +39,10 @@ export function FocusPage(p: PageProps) {
   const [calendarNote, setCalendarNote] = useState('')
   const [minute, setMinute] = useState(() => localIso(new Date()))
   const [menu, setMenu] = useState(false)
-  const [dialog, setDialog] = useState<'review' | 'countdown' | 'future' | 'bed' | null>(null)
+  const [dialog, setDialog] = useState<'review' | 'countdown' | 'future' | 'bed' | 'wake' | null>(null)
   const [handled, setHandled] = useState(0)
   const [hidden, setHidden] = useState<string[]>([])
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
-  const [adding, setAdding] = useState(false)
   const [urgent, setUrgent] = useState(urgentRule.get)
   const connected = Auth.granted(CALENDAR_SCOPE)
 
@@ -77,7 +76,7 @@ export function FocusPage(p: PageProps) {
   const f: FocusOut | null = useMemo(
     () => p.snapshot?.focus({
       now: minute, skippedToday: skippedToday(local), dismissed: local.dismissed, reviewed: local.reviewed, futureCount: local.futureCount,
-      countdown: local.countdown, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, profile, events,
+      countdown: local.countdown, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, wakeFromWatch: !!local.wakeFromWatch, profile, events,
     }) ?? null,
     [p.snapshot, local, profile, events, minute],
   )
@@ -117,8 +116,17 @@ export function FocusPage(p: PageProps) {
   }
 
   const now = new Date()
+  // The night the sleep card plans is there all day; the summary counts down to bed only at night.
   const night = f?.third.night
+  const toBed = f?.third.kind === 'night' ? night : undefined
   const sleepColor = night ? (night.sleep < 300 ? 'red' : night.sleep < 420 ? 'amber' : 'lime') : ''
+  // Why the wake time is what it is: picked on the watch or here for tonight, or an hour before a morning event.
+  const why = !night ? null
+    : night.wakePicked ? (night.fromWatch ? 'ตั้งจากนาฬิกา' : 'ตั้งเองสำหรับคืนนี้')
+    : night.because ? `เผื่อ 1 ชม. ก่อน ${night.becauseAt}: ${night.because}` : null
+  // A time picked for tonight is for the evening the card plans; a wake time picked here is not the watch's.
+  const setWake = (time: string | null) =>
+    setLocal((x) => ({ ...x, tonightWake: time === null ? null : { evening: f!.evening, time }, wakeFromWatch: false }))
   const pct = f && f.ring.total > 0 ? Math.round((f.ring.done / f.ring.total) * 100) : 0
   const reviewTop = f?.review[0]
   const reviewTask = task(reviewTop?.key)
@@ -227,34 +235,47 @@ export function FocusPage(p: PageProps) {
                   </div>
                   <div class="stat"><div class={`stat-num${f.ring.overdue > 0 ? ' red' : ''}`}>{f.ring.overdue}</div><div class="muted small">เลยกำหนด</div></div>
                   <div class="stat"><div class="stat-num">{f.ring.events}</div><div class="muted small">นัดวันนี้</div></div>
-                  {night
-                    ? <div class="stat"><div class={`stat-num${night.toBed < 30 ? ' amber' : ''}`}>{hm(night.toBed)}</div><div class="muted small">ก่อนนอน</div></div>
+                  {toBed
+                    ? <div class="stat"><div class={`stat-num${toBed.toBed < 30 ? ' amber' : ''}`}>{hm(toBed.toBed)}</div><div class="muted small">ก่อนนอน</div></div>
                     : <div class="stat"><div class="stat-num lime">{hours(f.third.minutes)}</div><div class="muted small">ว่างเหลือ</div></div>}
                 </div>
-                {night ? (
-                  <button class="footrow" onClick={() => setDialog('bed')}>
-                    <span class="grow">
-                      <span class="foot-line">
-                        <span>นอน {night.bedAt} ตื่น {night.wakeAt}</span>
-                        <span class={`pill ${sleepColor}`}>ได้นอน {hm(night.sleep)}</span>
-                      </span>
-                      {night.wakePicked ? <span class="muted micro">ตั้งเวลาตื่นเองสำหรับคืนนี้</span>
-                        : night.because && <span class="muted micro">ตื่นก่อน {night.because} 1 ชม.</span>}
-                    </span>
-                    <span class="chev">›</span>
-                  </button>
-                ) : (
-                  <button class="footrow" onClick={() => setDialog('countdown')}>
-                    {f.countdown ? (
-                      <>
-                        <span class="muted small">นับถอยหลัง</span>
-                        <span class="grow strong ellipsis">{f.countdown.title}</span>
-                        <span class={f.countdown.late ? 'late' : 'lead'}>{f.countdown.text}</span>
-                      </>
-                    ) : <span class="grow muted">ตั้งนับถอยหลังถึงงานสำคัญ</span>}
-                    <span class="chev">›</span>
-                  </button>
+                {/* Tonight all day, as on Android: bed and wake to tap (the usual ones are in Settings), then the countdown. */}
+                {night && (
+                  <div class="sleep" aria-label="การนอนคืนนี้">
+                    {f.lastNight != null && <span class="muted micro sleep-last">เมื่อคืนได้นอน {hm(f.lastNight)}</span>}
+                    <div class="sleep-head">
+                      <span class="grow muted small">คืนนี้</span>
+                      <span class={`pill ${sleepColor}`}>ได้นอน {hm(night.sleep)}</span>
+                    </div>
+                    <div class="sleep-tiles">
+                      <button class="sleep-tile" aria-label={`นอน ${night.bedAt}`} onClick={() => setDialog('bed')}>
+                        <span class="muted micro">นอน</span>
+                        <span class="sleep-time">{night.bedAt}</span>
+                      </button>
+                      {/* In the daytime the wake time is tomorrow's; it says so, or it reads as this morning's. */}
+                      <button class="sleep-tile" aria-label={`ตื่น ${night.wakeAt}${night.tomorrow ? ' พรุ่งนี้' : ''}`} onClick={() => setDialog('wake')}>
+                        <span class="muted micro">ตื่น</span>
+                        <span><span class="sleep-time">{night.wakeAt}</span>{night.tomorrow && <span class="muted micro sleep-day">พรุ่งนี้</span>}</span>
+                      </button>
+                    </div>
+                    {why && (
+                      <div class="sleep-why">
+                        <span class="grow faint micro ellipsis">{why}</span>
+                        {night.wakePicked && <button class="link" onClick={() => setWake(null)}>ใช้เวลาปกติ</button>}
+                      </div>
+                    )}
+                  </div>
                 )}
+                <button class="footrow" onClick={() => setDialog('countdown')}>
+                  {f.countdown ? (
+                    <>
+                      <span class="muted small">นับถอยหลัง</span>
+                      <span class="grow strong ellipsis">{f.countdown.title}</span>
+                      <span class={f.countdown.late ? 'late' : 'lead'}>{f.countdown.text}</span>
+                    </>
+                  ) : <span class="grow muted">ตั้งนับถอยหลังถึงงานสำคัญ</span>}
+                  <span class="chev">›</span>
+                </button>
               </section>
 
               {f.notices.filter((n) => !hidden.includes(n)).map((n) => (
@@ -363,7 +384,6 @@ export function FocusPage(p: PageProps) {
           </div>
         )}
 
-        {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
         {dialog === 'review' && f && (
           <ReviewDialog
             left={f.review.length}
@@ -387,16 +407,10 @@ export function FocusPage(p: PageProps) {
           />
         )}
         {dialog === 'bed' && f && (
-          <BedtimeDialog
-            time={f.bedtime}
-            wake={f.third.night?.wakeAt ?? f.wake}
-            wakePicked={!!f.third.night?.wakePicked}
-            onSave={(time, wake) => setLocal((x) => ({
-              ...x, tonightBed: { evening: f.evening, time },
-              tonightWake: wake === undefined ? x.tonightWake : wake === null ? null : { evening: f.evening, time: wake },
-            }))}
-            onClose={() => setDialog(null)}
-          />
+          <SleepTimeDialog kind="bed" time={f.bedtime} onSave={(time) => setLocal((x) => ({ ...x, tonightBed: { evening: f.evening, time } }))} onClose={() => setDialog(null)} />
+        )}
+        {dialog === 'wake' && f && (
+          <SleepTimeDialog kind="wake" time={night?.wakeAt ?? f.wake} onSave={setWake} onClose={() => setDialog(null)} />
         )}
       </main>
       {current && (

@@ -47,6 +47,18 @@ class AlarmPlanTest {
     }
 
     @Test
+    fun taskAlarmsBetweenTwoMomentsAlsoLookBack() {
+        val tasks = listOf(
+            t("- [ ] เมื่อเช้า ⏰ 08:00 📅 2026-10-07"),
+            t("- [ ] เมื่อวาน ⏰ 08:00 📅 2026-10-06"),
+            t("- [x] เสร็จแล้ว ⏰ 09:00 📅 2026-10-07 ✅ 2026-10-07"),
+        )
+        val missed = AlarmPlan.taskAlarms(tasks, now.minusHours(12), now)
+        assertEquals(listOf("เมื่อเช้า"), missed.map { it.title })
+        assertEquals("task::- [ ] เมื่อเช้า ⏰ 08:00 📅 2026-10-07", missed.single().id)
+    }
+
+    @Test
     fun digestsRollToTomorrowAndWeeklyIsNextSunday() {
         val s = NotifySettings(digestTimes = listOf(LocalTime.of(6, 30), LocalTime.of(17, 0)))
         val plan = AlarmPlan.plan(emptyList(), emptyList(), s, now)

@@ -106,6 +106,27 @@ class WebFocusTest {
     }
 
     @Test
+    fun tonightIsPlannedAllDayAndLastNightIsToldUntilNoon() {
+        // In the daytime the summary still counts the free time, and tonight is planned beside it, waking tomorrow.
+        val day = focus()
+        assertTrue(day.contains("\"third\":{\"kind\":\"free\""), day)
+        assertTrue(day.contains("\"bedAt\":\"22:30\",\"wakeAt\":\"06:30\""), day)
+        assertTrue(day.contains("\"tomorrow\":true"), day)
+        assertTrue(day.contains("\"evening\":\"2026-10-08\""), day)
+        // Last night, 22:30 to 06:30, until noon only.
+        assertTrue(day.contains("\"lastNight\":480"), day)
+        assertFalse(focus(now = "2026-10-08T13:00").contains("lastNight"))
+        // Before the wake time it is still last night's: the bedtime picked for that evening counts.
+        val early = focus(""","tonightBed":{"evening":"2026-10-07","time":"23:30"}""", now = "2026-10-08T05:00")
+        assertTrue(early.contains("\"third\":{\"kind\":\"night\""), early)
+        assertTrue(early.contains("\"evening\":\"2026-10-07\""), early)
+        assertTrue(early.contains("\"tomorrow\":false"), early)
+        // A picked daytime wake time counts for tonight, and the watch is named when it came from there.
+        val watch = focus(""","tonightWake":{"evening":"2026-10-08","time":"05:45"},"wakeFromWatch":true""")
+        assertTrue(watch.contains("\"wakeAt\":\"05:45\"") && watch.contains("\"wakePicked\":true,\"fromWatch\":true"), watch)
+    }
+
+    @Test
     fun theProfileNoteSetsTheUsualSleepTimes() {
         val profile = "# โปรไฟล์\\n- ตื่น: 06:00\\n- นอน: 23:00\\n"
         val r = focus(""","profile":"$profile"""", now = "2026-10-08T20:00")

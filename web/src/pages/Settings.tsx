@@ -10,6 +10,8 @@ import { askOnDone, type PageProps } from '../Home'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { ARCHIVE_DAYS, archiveDays, sweepAndSay } from '../settingsDevice'
 import { FONTS, PALETTES, SCALES, THEMES, appearance, setAppearance } from '../settingsAppearance'
+import { notifyChoice } from '../settingsNotify'
+import { askPermission, check as checkReminders, permission, test as testReminder, type Permission } from '../reminders'
 
 /** A row of choices that works like a radio group, in Android's segmented look. */
 function Segmented<T extends string | number>(p: { label: string; options: [T, string][]; value: T; disabled?: T[]; onPick: (v: T) => void }) {
@@ -24,9 +26,9 @@ function Segmented<T extends string | number>(p: { label: string; options: [T, s
 
 /**
  * What Android's Settings and Notifications screens hold that makes sense on the web. Ticking asks, archive days,
- * what counts as urgent and the task kinds are shared with Android through omni-settings.json in the Omni folder
- * (settingsSync.ts); the look stays on this device; the sleep times are written to the profile note in the vault,
- * which the assistant and Focus read.
+ * what counts as urgent, the task kinds, the look and task reminders on or off are shared with Android through
+ * omni-settings.json in the Omni folder (settingsSync.ts); the sleep times are written to the profile note in the
+ * vault, which the assistant and Focus read.
  */
 export function SettingsPage(p: PageProps) {
   const [ask, setAsk] = useState(askOnDone.get)
@@ -96,7 +98,7 @@ export function SettingsPage(p: PageProps) {
               <input class="set-time" type="time" aria-label="เวลาตื่นประจำ" value={sleep.wake} disabled={profile === undefined}
                 onChange={(e) => saveTimes({ wake: e.currentTarget.value })} />
             </label>
-            <span class="set-note">เก็บในโปรไฟล์ หลังบ้าน/Omni/โปรไฟล์.md ผู้ช่วยกับหน้าโฟกัสอ่านจากที่เดียวกัน หลัง 6 โมงเย็น หน้าโฟกัสบอกเวลาก่อนนอนและชั่วโมงที่ได้นอน แตะที่บรรทัดนั้นเพื่อเปลี่ยนเฉพาะคืนนี้</span>
+            <span class="set-note">เก็บในโปรไฟล์ หลังบ้าน/Omni/โปรไฟล์.md ผู้ช่วยกับหน้าโฟกัสอ่านจากที่เดียวกัน หน้าโฟกัสแสดงการนอนคืนนี้ทั้งวัน แตะเวลานอนหรือเวลาตื่นเพื่อเปลี่ยนเฉพาะคืนนี้ หลัง 6 โมงเย็นนับเวลาก่อนนอนให้ด้วย</span>
           </section>
 
           <section class="set-card">
@@ -188,19 +190,60 @@ export function SettingsPage(p: PageProps) {
             </div>
           </section>
 
-          <section class="set-card" aria-label="การแจ้งเตือน">
-            <h2>การแจ้งเตือน</h2>
-            <div class="set-row">
-              <span class="grow">
-                <span>ตั้งในแอป Android</span>
-                <span class="set-note">เว็บตั้งปลุกหรือส่งการแจ้งเตือนตอนปิดหน้าเว็บไม่ได้ จึงไม่มีสวิตช์ให้ตั้งที่นี่ เตือนตามเวลาในงาน สรุปงานตามเวลาที่เลือก ทบทวนสัปดาห์ และเตือนนัดใน Google Calendar ตั้งในแอป Android</span>
-              </span>
-              <span class="set-android">ใช้ได้ในแอป Android</span>
-            </div>
-          </section>
+          <RemindersCard />
         </div>
       </div>
     </main>
+  )
+}
+
+const PERMISSION_NOTE: Record<Permission, string> = {
+  granted: 'อนุญาตแล้ว งานถึงเวลาจะเด้งเป็นการแจ้งเตือนของเครื่องด้วย',
+  default: 'ยังไม่ได้อนุญาต ตอนนี้เตือนเป็นแถบในหน้าเว็บอย่างเดียว',
+  denied: 'เบราว์เซอร์ปิดการแจ้งเตือนของเว็บนี้ไว้ เปิดได้ในการตั้งค่าของเบราว์เซอร์',
+  unsupported: 'เบราว์เซอร์นี้ส่งการแจ้งเตือนไม่ได้ เตือนเป็นแถบในหน้าเว็บแทน',
+}
+
+/**
+ * Task reminders on the web: the same reminders as Android's alarms (the switch is Android's own, through the settings
+ * file), shown while the page is open, as a banner and, once allowed, as the system's notification. The summaries,
+ * the weekly review and calendar reminders stay on the phone.
+ */
+function RemindersCard() {
+  const [on, setOn] = useState(notifyChoice.remindersOn)
+  const [allowed, setAllowed] = useState(permission)
+  const [tested, setTested] = useState(false)
+  const turn = (value: boolean) => {
+    notifyChoice.set({ ...notifyChoice.get(), task: value }, true)
+    setOn(value)
+    checkReminders()
+  }
+  return (
+    <section class="set-card" aria-label="การแจ้งเตือน">
+      <h2>การแจ้งเตือน</h2>
+      <label class="set-row">
+        <span class="grow">
+          <span>เตือนตามเวลาในงาน</span>
+          <span class="set-note">อ่านเวลาเตือน ⏰ และ 🎯 จากงาน กดเสร็จ เลื่อนไปอีก 1 ชั่วโมง หรือพรุ่งนี้ได้จากแถบเตือน ใช้สวิตช์เดียวกับแอป Android</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" aria-label="เตือนตามเวลาในงาน" checked={on} onChange={(e) => turn(e.currentTarget.checked)} />
+      </label>
+      <div class="set-row">
+        <span class="grow">
+          <span>การแจ้งเตือนของเครื่อง</span>
+          <span class="set-note">{PERMISSION_NOTE[allowed]}</span>
+        </span>
+        {allowed === 'default' && <button class="pillbtn" onClick={() => askPermission().then(setAllowed)}>อนุญาต</button>}
+      </div>
+      <div class="set-row">
+        <span class="grow">
+          <span>ทดสอบการแจ้งเตือน</span>
+          <span class="set-note">แสดงแถบเตือนตัวอย่างตอนนี้{allowed === 'granted' ? ' พร้อมการแจ้งเตือนของเครื่อง' : ''}</span>
+        </span>
+        <button class="pillbtn" onClick={() => { testReminder(); setTested(true) }}>{tested ? 'ส่งแล้ว' : 'ทดสอบ'}</button>
+      </div>
+      <span class="set-note">เว็บเตือนได้เฉพาะตอนที่เปิดอยู่ ถ้าปิดไว้ตอนถึงเวลา จะเตือนเมื่อกลับมาเปิด บน iPad การแจ้งเตือนของเครื่องใช้ได้เมื่อเพิ่มแอปไว้ที่หน้าจอโฮม (แชร์ แล้วเลือกเพิ่มไปยังหน้าจอโฮม) ไอคอนแอปจะบอกจำนวนงานเลยกำหนดและครบวันนี้ ส่วนสรุปงานตามเวลา ทบทวนสัปดาห์ และเตือนนัดใน Google Calendar ตั้งในแอป Android</span>
+    </section>
   )
 }
 

@@ -109,10 +109,11 @@ test('"follow the system" follows the system', async ({ page }) => {
 
 test('what only Android can do is said so, with no switches that do nothing', async ({ page }) => {
   await openSettings(page)
+  // Task reminders work on the web while it is open (see parityFocus.spec.ts); the rest is set on the phone.
   const notify = page.getByRole('region', { name: 'การแจ้งเตือน' })
-  await expect(notify).toContainText('ใช้ได้ในแอป Android')
-  await expect(notify).toContainText('เว็บตั้งปลุกหรือส่งการแจ้งเตือนตอนปิดหน้าเว็บไม่ได้')
-  await expect(notify.getByRole('switch')).toHaveCount(0)
+  await expect(notify).toContainText('เว็บเตือนได้เฉพาะตอนที่เปิดอยู่')
+  await expect(notify).toContainText('ตั้งในแอป Android')
+  await expect(notify.getByRole('switch')).toHaveCount(1)
   // English is shown but cannot be picked: the web is Thai only.
   await expect(page.getByRole('radio', { name: 'English' })).toBeDisabled()
   await expect(page.getByRole('radio', { name: 'ไทย' })).toHaveAttribute('aria-checked', 'true')

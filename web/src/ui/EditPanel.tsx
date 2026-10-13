@@ -234,7 +234,14 @@ function Description(p: PageProps & { task: Task; onSave: (text: string) => void
   const t = p.task
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(t.description)
-  useEffect(() => { setEditing(false); setText(t.description) }, [t.key])
+  // Another task shown in the panel starts unedited; on mount this must not run, or a tap made before it is lost.
+  const shownKey = useRef(t.key)
+  useEffect(() => {
+    if (shownKey.current === t.key) return
+    shownKey.current = t.key
+    setEditing(false)
+    setText(t.description)
+  }, [t.key])
   useEffect(() => { if (!editing) setText(t.description) }, [t.description])
   const long = text.length > 280 || text.split('\n').length > 6
   const move = () => {
