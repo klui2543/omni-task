@@ -44,6 +44,8 @@ object WebViews {
         val urgent: String = "THIS_WEEK",
         /** First day of the Gantt range; defaults to yesterday. */
         val ganttFirst: String? = null,
+        /** A project's own views: a dated subtask comes onto its calendar only when its parent is one of the project's tasks. */
+        val scoped: Boolean = false,
     )
 
     @Serializable
@@ -130,9 +132,15 @@ object WebViews {
         }
 
         // Calendar: a dated subtask belongs on the calendar although subtasks live inside their parent elsewhere.
+        // Inside a project only the subtasks of its own tasks (as Android's scoped views); while searching, only
+        // those that match the words themselves or sit under a task that does.
         val narrowedKeys = narrowed.map { it.key }.toSet()
+        val poolKeys = pool.map { it.key }.toSet()
+        val words = q.text.trim()
         val calendar = narrowed + all.filter { t ->
-            t.parent != null && t.key !in narrowedKeys && (t.due != null || t.scheduled != null) && (!q.hideDone || t.isOpen)
+            t.parent != null && t.key !in narrowedKeys && (t.due != null || t.scheduled != null) && (!q.hideDone || t.isOpen) &&
+                (!s.scoped || t.parent in poolKeys) &&
+                (words.isEmpty() || t.parent in poolKeys || t.title.contains(words, ignoreCase = true) || t.description.contains(words, ignoreCase = true))
         }
 
         // Gantt: dated tasks that are open, or were done within the range; a bar runs from start (or scheduled) to due.

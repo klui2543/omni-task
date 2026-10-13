@@ -180,6 +180,8 @@ export interface ViewsIn {
   urgent: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK'
   /** First day of the Gantt range. */
   ganttFirst: string
+  /** A project's own views: only the dated subtasks of its own tasks come onto its calendar. */
+  scoped?: boolean
 }
 
 /** Task keys by column, quadrant, calendar day and Gantt bar; see WebViews.Out. */

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { today } from '../core'
 import type { PageProps } from '../Home'
-import { BUCKETS, DEFAULT_QUERY, KINDS, ListQuery, PRIORITIES, SORTS, STATUSES, filterCount, labelOf, storedQuery } from '../query'
+import { BUCKETS, DEFAULT_QUERY, KINDS, ListQuery, PRIORITIES, SORTS, STATUSES, filterCount, labelOf, storedQuery, viewSearch } from '../query'
 import { URGENT_RULES, urgentRule } from '../settings'
 import type { Task, ViewsIn } from '../types'
 import { EditPanel } from '../ui/EditPanel'
@@ -19,6 +19,8 @@ import { LayoutBar, type Layout } from '../ui/LayoutBar'
 import { QuickAdd } from './Tasks'
 
 export { MODES, MODE_LABEL, type ViewMode }
+
+let keptGanttFirst: string | null = null
 
 /** A project's own views: the same four over only its tasks, with the way back to its overview (as on Android). */
 export interface ViewsScope {
@@ -47,8 +49,27 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
   const [adding, setAdding] = useState<null | { status?: Task['status'] }>(null)
   const [notice, setNotice] = useState('')
-  const [ganttFirst, setGanttFirst] = useState(() => addDays(today(), -1))
+  // The Gantt's first day, kept while the page is open, as Android keeps it when the view is left and opened again.
+  const [ganttFirst, setGanttFirstState] = useState(() => keptGanttFirst ?? addDays(today(), -1))
+  const setGanttFirst = (d: string) => { keptGanttFirst = d; setGanttFirstState(d) }
+  // Searching by title narrows every view, as on Android, where the search box is above them all.
+  const [text, setTextState] = useState(viewSearch.text)
+  const setText = (v: string) => { viewSearch.text = v; setTextState(v) }
+  const search = useRef<HTMLInputElement>(null)
   const day = today()
+
+  // "/" jumps to the search box, as on the task list.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      if (e.key === '/' && !typing && !adding && !overlay && !selected) {
+        e.preventDefault()
+        search.current?.focus()
+      }
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [adding, overlay, selected])
 
   useEffect(() => {
     if (!notice) return
@@ -57,8 +78,8 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
   }, [notice])
 
   const out = useMemo(
-    () => p.snapshot?.views({ today: day, query, hideDone, urgent, ganttFirst } satisfies ViewsIn) ?? null,
-    [p.snapshot, day, query, hideDone, urgent, ganttFirst],
+    () => p.snapshot?.views({ today: day, query: { ...query, text }, hideDone, urgent, ganttFirst, scoped: !!p.scope } satisfies ViewsIn) ?? null,
+    [p.snapshot, day, query, text, hideDone, urgent, ganttFirst, p.scope?.project],
   )
   const tags = useMemo(() => {
     const count = new Map<string, number>()
@@ -93,6 +114,14 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
   const sorts = query.sorts.length ? query.sorts : DEFAULT_QUERY.sorts
   const sortText = `${labelOf(SORTS, sorts[0].by)} ${sorts[0].ascending ? '↑' : '↓'}${sorts.length > 1 ? ` +${sorts.length - 1}` : ''}`
 
+  const searchBox = (
+    <label class="search">
+      <span class="faint">ค้นหา</span>
+      <input ref={search} aria-label="ค้นหาชื่องานในมุมมอง" placeholder="ค้นหาชื่องาน" value={text} onInput={(e) => setText(e.currentTarget.value)} />
+      {text && <button class="chip-x" aria-label="ล้างคำค้น" onClick={() => setText('')}>×</button>}
+    </label>
+  )
+
   const ctx: ViewCtx | null = out && {
     p, out, today: day, open, selectedKey: current?.key,
     task: (key) => p.snapshot?.find(key),
@@ -111,6 +140,7 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
             </div>
             <span class="grow" />
             <div class="head-tools">
+              {searchBox}
               <button class={`chip tool${filterCount(query) ? ' on' : ''}`} onClick={() => setOverlay('filter')}>
                 กรอง{filterCount(query) ? ` ${filterCount(query)}` : ''}
               </button>
@@ -119,7 +149,7 @@ export function ViewsPage(p: PageProps & { scope?: ViewsScope; layout?: Layout; 
           </header>
         ) : (
           <>
-            <header class="head vhead"><h1>งาน</h1></header>
+            <header class="head vhead"><h1>งาน</h1><span class="grow" /><div class="head-tools">{searchBox}</div></header>
             <LayoutBar layout={p.layout ?? mode} onLayout={p.onLayout ?? (() => {})} filter={{ count: filterCount(query), onOpen: () => setOverlay('filter') }}
               end={
                 mode === 'kanban' ? <button class="chip tool" aria-label="เรียงและจัดกลุ่ม" title={`เรียง: ${sortText}`} onClick={() => setOverlay('sort')}>เรียง ⇅</button>
