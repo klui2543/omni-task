@@ -13,8 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -409,7 +408,6 @@ private val ASK_HEIGHT = 67.dp
  * tabs step aside: the line rides up with it when it is the one typed in, and otherwise the whole bar goes, so it never
  * covers the field being typed in (the assistant's own, a search).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DockNav(
     selected: Screen,
@@ -423,7 +421,8 @@ private fun DockNav(
     var typingHere by remember { mutableStateOf(false) }
     // The line leaves with the assistant's page while focused, and would otherwise be thought typed in still.
     LaunchedEffect(showAsk) { if (!showAsk) typingHere = false }
-    val keyboard = WindowInsets.isImeVisible
+    // By the keyboard's height: isImeVisible reads true until the first insets arrive, which hid the bar at start.
+    val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     if (keyboard && !(showAsk && typingHere)) return
     val send = {
         if (question.isNotBlank()) {
