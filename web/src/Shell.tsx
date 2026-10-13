@@ -18,6 +18,10 @@ const BAR: [Page, string][] = [
   ['projects', 'โปรเจกต์'],
   ['settings', 'ตั้งค่า'],
 ]
+/** Ready questions that float up above the line while it is typed in, worded so the assistant reads them right. */
+const PRESETS = [
+  'วันนี้มีอะไรบ้าง', 'พรุ่งนี้มีอะไรบ้าง', 'จัดลำดับงานทั้งหมดให้หน่อย', 'สัปดาห์หน้ามีอะไรบ้าง', 'วางแผนสัปดาห์หน้าให้หน่อย', 'เดือนหน้ามีอะไรบ้าง',
+]
 const PAGES: Page[] = ['focus', 'tasks', 'projects', 'assistant', 'settings']
 
 const pageOf = (hash: string): Page => {
@@ -49,8 +53,8 @@ const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minut
 
 /**
  * A sidebar on wide screens (computer, iPad across) and a floating bar at the bottom on narrow ones
- * (iPad upright, phone), as on Android: a line to type a question for the assistant beside the add button (Send
- * once something is typed; left out on the assistant's own page), and under it the tabs as words.
+ * (iPad upright, phone), as on Android: a line to type a question for the assistant (Send once something is typed;
+ * left out on the assistant's own page), and under it the tabs as words around the add button in the middle.
  */
 export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
   const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่'
@@ -58,14 +62,18 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
     : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
     : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
   const [question, setQuestion] = useState('')
-  const ask = (e: Event) => {
-    e.preventDefault()
-    const q = question.trim()
-    if (!q) return p.onAdd()
+  const [typing, setTyping] = useState(false)
+  const send = (q: string) => {
     // The assistant asks it as soon as the tasks are there, as it does for a question sent from quick add.
     pendingQuestion.set(q)
     setQuestion('')
+    setTyping(false)
     p.onNavigate('assistant')
+  }
+  const ask = (e: Event) => {
+    e.preventDefault()
+    const q = question.trim()
+    if (q) send(q)
   }
   return (
     <div class="shell">
@@ -92,18 +100,23 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         {p.children}
       </div>
       <div class="dock">
+        {p.page !== 'assistant' && typing && (
+          <div class="as-chips dock-presets" role="toolbar" aria-label="คำถามสำเร็จรูป">
+            {PRESETS.map((q) => <button key={q} type="button" class="as-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => send(q)}>{q}</button>)}
+          </div>
+        )}
         {p.page !== 'assistant' && (
           <form class="dock-ask" onSubmit={ask}>
-            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} />
-            {question.trim()
-              ? <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>
-              : <button type="button" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>}
+            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
+            {question.trim() && <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>}
           </form>
         )}
         <nav class="bar" aria-label="เมนูหลัก">
-          {BAR.map(([page, label]) => (
-            <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>
-          ))}
+          {BAR.map(([page, label], i) => [
+            // Adding a task, in the middle of the tabs where it always was.
+            i === 2 && <button key="add" class="bar-add" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>,
+            <button key={page} aria-current={p.page === page ? 'page' : undefined} onClick={() => p.onNavigate(page)}>{label}</button>,
+          ])}
         </nav>
       </div>
     </div>
