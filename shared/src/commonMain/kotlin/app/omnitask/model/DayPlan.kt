@@ -33,7 +33,8 @@ object DayPlan {
 
     /**
      * With [includeDone] the tasks already ticked off today stay in the plan (the Focus timeline greys them
-     * instead of dropping them): those dated today, and those from earlier days ticked today.
+     * instead of dropping them): those dated today, and those from earlier days ticked today. Overdue work
+     * (a due date or a scheduled date already past) goes in [Part.LATE].
      */
     fun build(tasks: List<Task>, events: List<CalendarEvent>, today: LocalDate, includeDone: Boolean = false): List<Section> {
         val items = ArrayList<Pair<Part, Item>>()
@@ -48,7 +49,10 @@ object DayPlan {
                     val time = t.reminderAt?.takeIf { it.toLocalDate() == today }?.toLocalTime()
                     items += partOf(time) to Item.TaskItem(t, time)
                 }
-                doneToday && t.done == today && due != null && due < today -> items += Part.LATE to Item.TaskItem(t, null)
+                // Scheduled for a day already gone and not due yet: still to do, so it waits with the overdue work.
+                t.isOpen && t.scheduled.let { it != null && it < today } -> items += Part.LATE to Item.TaskItem(t, null)
+                doneToday && t.done == today && ((due != null && due < today) || t.scheduled.let { it != null && it < today }) ->
+                    items += Part.LATE to Item.TaskItem(t, null)
             }
         }
         events.filter { overlaps(it, today) }.forEach { e ->
