@@ -47,6 +47,21 @@ class WebCoreTest {
     }
 
     @Test
+    fun theListSaysWhomABlockedTaskWaitsOn() {
+        val note = "- [ ] ส่งรายงาน 🆔 rp\n- [ ] นัดอาจารย์ ⛔ rp\n- [x] เก่า 🆔 old ✅ 2026-10-01\n- [ ] ต่อจากเก่า ⛔ old\n"
+        val r = WebCore.list("f", "TaskForge.md", note, "2026-10-08", "{}")
+        assertTrue(r.contains("\"waiting\":{\"f#1\":\"ส่งรายงาน\"}"), r)
+    }
+
+    @Test
+    fun onlyLinksOnTheirOwnLineCanComeOff() {
+        val note = "- [ ] ประชุม [[วาระ]]\n    - [[บันทึกประชุม]]\n"
+        val r = WebCore.loadTasks("f", "TaskForge.md", note, "2026-10-08")
+        assertTrue(r.contains("\"linkNames\":[\"บันทึกประชุม\",\"วาระ\"]"), r)
+        assertTrue(r.contains("\"linkLines\":[\"บันทึกประชุม\"]"), r)
+    }
+
+    @Test
     fun loadsTasksAsJson() {
         val r = WebCore.loadTasks("f", "TaskForge.md", note, "2026-10-08")
         assertTrue(r.contains("\"title\":\"ส่งรายงาน\""), r)
