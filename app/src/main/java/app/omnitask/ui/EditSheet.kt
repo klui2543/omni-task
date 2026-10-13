@@ -158,6 +158,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         }
 
         DescriptionBlock(task, vm)
+        // A late, old or already explained task shows why it is still open right here; others keep it folded below.
+        val stuckUpFront = StuckLog.matters(task, today)
+        if (stuckUpFront) StuckBlock(task, onAdd = { notingStuck = true }, onLog = { stuckLog = true })
 
         Segmented(
             Status.entries.map { it to it.label }, task.status, { vm.setStatus(task, it) },
@@ -252,14 +255,14 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
             val stuck = StuckLog.entries(task)
-            FoldRow(
+            if (!stuckUpFront) FoldRow(
                 tr("ทำไมยังค้าง", "Why still open"),
                 stuck.lastOrNull()?.let { tr("${stuck.size} บันทึก, ล่าสุด ", "${stuck.size} notes, last ") + it.day.format(SHORT_DATE) } ?: tr("ยังไม่มีบันทึก", "No notes"),
                 fold == "stuck", first = true,
             ) {
                 fold = if (fold == "stuck") null else "stuck"
             }
-            if (fold == "stuck") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 8.dp)) {
+            if (!stuckUpFront && fold == "stuck") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 8.dp)) {
                 StuckHistory(task)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -275,7 +278,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 }
             }
 
-            FoldRow(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links") {
+            FoldRow(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = stuckUpFront) {
                 fold = if (fold == "links") null else "links"
             }
             if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {

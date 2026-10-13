@@ -89,4 +89,15 @@ class StuckLogTest {
             StuckLog.summary(tasks()),
         )
     }
+
+    @Test
+    fun mattersWhenLateOldOrExplained() {
+        val byTitle = tasks().associateBy { it.title }
+        assertTrue(StuckLog.matters(byTitle.getValue("ทำเว็บร้าน"), today))
+        assertTrue(StuckLog.matters(byTitle.getValue("เขียนบทความ"), today))
+        assertTrue(!StuckLog.matters(byTitle.getValue("จองตั๋ว"), today))
+        assertTrue(!StuckLog.matters(byTitle.getValue("ล้างรถ"), today))
+        val late = app.omnitask.data.TaskLine.parse("- [ ] ส่งงาน ➕ 2026-10-10 📅 2026-10-12")!!
+        assertTrue(StuckLog.matters(late, today))
+    }
 }

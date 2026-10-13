@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
@@ -24,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
@@ -82,7 +85,10 @@ fun StuckHistory(task: Task, limit: Int = Int.MAX_VALUE) {
     }
 }
 
-/** Writes one note for [task]: from the task sheet, whenever the owner wants to. */
+/**
+ * Everything written so far on why [task] is still open, and a new note under it: from the task sheet or a row on
+ * Focus. One pick and Save is enough.
+ */
 @Composable
 fun StuckDialog(task: Task, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
@@ -91,8 +97,13 @@ fun StuckDialog(task: Task, onSave: (String) -> Unit, onDismiss: () -> Unit) {
         containerColor = C.raised,
         title = { Text(tr("ทำไมยังค้างอยู่", "Why is it still open?")) },
         text = {
-            Column {
-                Text(task.title, Modifier.padding(bottom = 10.dp), color = C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(task.title, Modifier.padding(bottom = 6.dp), color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (StuckLog.entries(task).isNotEmpty()) {
+                    Text(tr("ที่จดไว้", "Noted so far"), Modifier.padding(top = 4.dp, bottom = 2.dp), color = C.muted, fontSize = TS.caption)
+                    StuckHistory(task)
+                    Box(Modifier.padding(top = 10.dp))
+                }
                 StuckInput(text) { text = it }
                 Text(
                     tr("บันทึกเป็นบรรทัด ${StuckLog.MARK} ใต้งานใน Obsidian พร้อมวันที่", "Saved as a dated ${StuckLog.MARK} line under the task in Obsidian"),
@@ -195,4 +206,59 @@ fun StuckTimeline(state: UiState, onOpen: (Task) -> Unit, onDismiss: () -> Unit)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
     )
+}
+
+/**
+ * On the task sheet, right under the details for a task that is late, old or already explained: every note so far
+ * and the button to add one, so opening a stuck task shows what holds it up.
+ */
+@Composable
+fun StuckBlock(task: Task, onAdd: () -> Unit, onLog: () -> Unit) {
+    Column(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken).padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("ทำไมยังค้าง", "Why still open"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
+            Text(
+                tr("ทุกงาน", "All tasks"),
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onLog).padding(horizontal = 6.dp, vertical = 2.dp),
+                color = C.text2, fontSize = TS.caption,
+            )
+        }
+        if (StuckLog.entries(task).isEmpty()) {
+            Text(tr("ยังไม่ได้จด", "Nothing noted yet"), Modifier.padding(top = 4.dp), color = C.faint, fontSize = TS.body)
+        } else {
+            StuckHistory(task)
+        }
+        Text(
+            tr("+ จดว่าติดอะไร", "+ Note what holds it up"),
+            Modifier.padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onAdd).padding(vertical = 6.dp),
+            color = C.accentText, fontSize = TS.body,
+        )
+    }
+}
+
+/**
+ * Under a late or long-open task on Focus: the latest reason, or the question when there is none. A tap opens
+ * [StuckDialog] with every note and room for a new one.
+ */
+@Composable
+fun StuckLine(task: Task, onExplain: () -> Unit) {
+    val entries = StuckLog.entries(task)
+    val last = entries.lastOrNull()
+    Row(
+        Modifier.padding(top = 3.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onExplain).padding(vertical = 3.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (last == null) {
+            Text(tr("ติดอะไรอยู่? แตะเพื่อจด", "What holds it up? Tap to note"), color = C.accentText, fontSize = TS.caption, maxLines = 1)
+        } else {
+            Text(
+                "${StuckLog.MARK} " + last.reason.ifEmpty { tr("(ไม่ได้เขียนเหตุผล)", "(no reason written)") },
+                Modifier.weight(1f, fill = false), color = C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                (if (entries.size > 1) tr("  ทั้งหมด ${entries.size}", "  all ${entries.size}") else "") + tr("  จดเพิ่ม", "  add"),
+                color = C.accentText, fontSize = TS.caption, maxLines = 1,
+            )
+        }
+    }
 }

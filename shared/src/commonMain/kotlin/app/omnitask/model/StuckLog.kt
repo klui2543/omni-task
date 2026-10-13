@@ -70,6 +70,17 @@ object StuckLog {
             .map { it.first }
 
     /**
+     * Whether the task's notes (or the question) belong up front where it is shown: it is open and late, has sat
+     * [ASK_AFTER_DAYS] or longer, or already has notes.
+     */
+    fun matters(task: Task, today: LocalDate): Boolean =
+        task.isOpen && task.list == null && (
+            entries(task).isNotEmpty() ||
+                task.due?.let { it < today } == true ||
+                (task.recurrence == null && (Focus.ageDays(task, today) ?: 0) >= ASK_AFTER_DAYS)
+            )
+
+    /**
      * For the picture handed to Claude (in Thai, as the rest of it): each open task's latest notes, the most
      * recently explained first, so Claude sees what holds the work up and whether it is a process or a struggle.
      */

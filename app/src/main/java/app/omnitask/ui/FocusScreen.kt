@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
 import app.omnitask.model.Countdown
+import app.omnitask.model.StuckLog
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -558,6 +559,7 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
     val late = t.isLate(today)
     // A task already ticked off stays on the timeline, greyed out.
     val done = t.status == Status.DONE
+    var explaining by remember(t.key) { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f).clickable { onOpen(t) }.padding(start = 6.dp, end = 10.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.Top,
@@ -589,8 +591,11 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                     if (rest.isNotEmpty()) Text((if (lateText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // Late or long-open: what holds it up, one tap from here to see every note and add one.
+            if (!done && StuckLog.matters(t, today)) StuckLine(t) { explaining = true }
         }
     }
+    if (explaining) StuckDialog(t, { vm.noteStuck(t, it) }) { explaining = false }
 }
 
 /**
