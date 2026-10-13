@@ -19,9 +19,32 @@ object Insight {
     /** A completion the app saw happen: when, and what kind of work it was. */
     data class Done(val at: LocalDateTime, val kind: Planner.Kind)
 
-    fun next(tasks: List<Task>, log: List<Done>, profile: Profile, today: LocalDate, declined: Set<String>): Ask? =
-        listOfNotNull(focusWindow(log, profile, today), exerciseTime(log, profile, today), bestDay(tasks, profile, today))
+    /** [events]: the behavior log ([Behavior]), for the questions about reminders put off. */
+    fun next(
+        tasks: List<Task>, log: List<Done>, profile: Profile, today: LocalDate, declined: Set<String>,
+        events: List<BehaviorEvent> = emptyList(),
+    ): Ask? =
+        (listOfNotNull(focusWindow(log, profile, today), exerciseTime(log, profile, today), bestDay(tasks, profile, today)) +
+            remindLater(events, profile, today))
             .firstOrNull { it.id !in declined }
+
+    /**
+     * A kind of work whose reminders keep being put off by an hour: asks to suggest reminders an hour later on new
+     * tasks of that kind. Tasks already in the vault keep their times.
+     */
+    private fun remindLater(events: List<BehaviorEvent>, profile: Profile, today: LocalDate): List<Ask> =
+        Learned.snoozedKinds(events, today).filterKeys { it !in profile.later }.entries.sortedByDescending { it.value }.map { (kind, n) ->
+            val th = Profile.KIND_NAMES.getValue(kind)
+            Ask(
+                "later:${kind.name}:60",
+                tr(
+                    "ดูเหมือนคุณเลื่อนเตือนงาน${th}ออกไป 1 ชม. บ่อย ($n ครั้ง) ให้แนะนำเวลาเตือนช้าลง 1 ชม. ตอนเพิ่มงานแบบนี้ไหม",
+                    "You often put off reminders for ${kind.label.lowercase()} work by an hour ($n times). Suggest reminders an hour later for new tasks like these?",
+                ),
+                "เตือนงาน${th}ช้าลง 1 ชม. ตอนเพิ่มงานใหม่",
+                tr("สังเกต 4 สัปดาห์", "Seen over 4 weeks"),
+            ) { it.copy(later = it.later + (kind to 60)) }
+        }
 
     private fun focusWindow(log: List<Done>, profile: Profile, today: LocalDate): Ask? {
         val deep = log.filter { it.kind == Planner.Kind.DEEP && it.at.toLocalDate() > today.minusDays(28) }

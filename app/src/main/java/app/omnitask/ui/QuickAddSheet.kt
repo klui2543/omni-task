@@ -188,6 +188,21 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 chips.forEach { Pill(it, C.accentSoft, C.accentText) }
             }
         }
+        // What tasks like this one usually came with before: tapping one adds its words to the sentence.
+        val hints = remember(draft, target) { if (target != null) emptyList() else vm.quickHints(draft) }
+        if (hints.isNotEmpty()) {
+            Text(tr("เคยใส่กับงานแบบนี้", "Usual for tasks like this"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+            FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                hints.forEach { h ->
+                    Text(
+                        "+ " + h.label,
+                        Modifier.clip(RoundedCornerShape(16.dp)).background(C.raised)
+                            .clickable { setText(text.trimEnd() + " " + h.words + " ") }.padding(horizontal = 12.dp, vertical = 7.dp),
+                        color = C.text2, fontSize = TS.body, maxLines = 1,
+                    )
+                }
+            }
+        }
         Text(
             tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
             Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,

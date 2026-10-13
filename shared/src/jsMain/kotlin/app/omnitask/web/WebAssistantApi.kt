@@ -41,4 +41,19 @@ object WebAssistantApi {
     fun sweep(live: String, archive: String, days: Int, today: String): String = WebAssistant.sweep(live, archive, days, today)
 
     fun scheduleTasks(text: String, items: String): String = WebAssistant.scheduleTasks(text, items)
+
+    // ---- The behavior log ([WebBehavior]) ----
+
+    fun behaviorEvent(ev: String, raw: String, at: String, extra: String?): String = WebBehavior.event(ev, raw, at, extra)
+
+    fun behaviorCreated(sentence: String, at: String): String = WebBehavior.created(sentence, at)
+
+    fun behaviorDeclined(ask: String, at: String): String = WebBehavior.declined(ask, at)
+
+    fun behaviorLegacy(entries: String): String = WebBehavior.legacy(entries)
+
+    fun behaviorHints(sentence: String, today: String, behavior: String?, profile: String?): String =
+        WebBehavior.hints(sentence, today, behavior, profile)
+
+    fun behaviorMerge(text: String?, lines: String, today: String): String = WebBehavior.merge(text, lines, today)
 }

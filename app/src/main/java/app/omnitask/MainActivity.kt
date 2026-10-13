@@ -12,7 +12,10 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import app.omnitask.data.BehaviorLog
+import app.omnitask.data.TaskLine
 import app.omnitask.model.Appearance
+import app.omnitask.model.Behavior
 import app.omnitask.model.Lang
 import app.omnitask.model.load
 import app.omnitask.model.Shared
@@ -20,6 +23,8 @@ import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme
 import app.omnitask.ui.QuickAddRequest
 import app.omnitask.ui.TaskViewModel
+import kotlinx.datetime.LocalDateTime
+import app.omnitask.time.*
 
 class MainActivity : ComponentActivity() {
 
@@ -57,6 +62,11 @@ class MainActivity : ComponentActivity() {
 
     /** Widgets open the app with an action: type a task, say it, or go straight to the assistant. */
     private fun handle(intent: Intent?) {
+        // Opened from a task reminder: noted in the behavior log, so the assistant learns which reminders work.
+        intent?.getStringExtra(EXTRA_REMINDED)?.let { raw ->
+            TaskLine.parse(raw)?.let { BehaviorLog.record(this, Behavior.of(Behavior.OPEN, it, LocalDateTime.now(), BehaviorLog.SRC)) }
+            intent?.removeExtra(EXTRA_REMINDED)
+        }
         if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
             val shared = Shared.read(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT))
             viewModel.requestQuickAdd(QuickAddRequest(text = shared.title, link = shared.link))
@@ -74,6 +84,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_ACTION = "app.omnitask.ACTION"
+        const val EXTRA_REMINDED = "app.omnitask.REMINDED"
         const val ACTION_ADD = "add"
         const val ACTION_VOICE = "voice"
         const val ACTION_ASSISTANT = "assistant"

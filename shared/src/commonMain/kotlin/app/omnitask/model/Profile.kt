@@ -20,6 +20,8 @@ data class Profile(
     val shiftWords: List<String> = listOf("เวร"),
     val nightWords: List<String> = listOf("ดึก"),
     val bestDay: DayOfWeek? = null,
+    /** Minutes to set reminders later on new tasks of a kind, learned from reminders the owner keeps putting off. */
+    val later: Map<Planner.Kind, Int> = emptyMap(),
     val remembered: List<String> = emptyList(),
     val updated: LocalDate? = null,
 ) {
@@ -39,6 +41,9 @@ data class Profile(
         appendLine("- คำที่หมายถึงเวร: ${shiftWords.joinToString(", ")}")
         appendLine("- คำที่หมายถึงเวรดึก: ${nightWords.joinToString(", ")}")
         appendLine("- วันที่ทำงานได้ดี: ${bestDay?.let { DAY_NAMES[it.isoDayNumber - 1] } ?: ""}")
+        if (later.isNotEmpty()) {
+            appendLine("- เตือนช้าลง: " + Planner.Kind.entries.filter { it in later }.joinToString(", ") { "${KIND_NAMES.getValue(it)} ${later.getValue(it)} นาที" })
+        }
         appendLine()
         appendLine("## จำไว้")
         remembered.forEach { appendLine("- $it") }
@@ -51,6 +56,12 @@ data class Profile(
         const val LEGACY_PATH = "Omni/โปรไฟล์.md"
         /** Day names as written in the profile note; always Thai, since the note is parsed back. */
         val DAY_NAMES = listOf("จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์", "อาทิตย์")
+
+        /** Kinds of work as written in the profile note; always Thai, since the note is parsed back. */
+        val KIND_NAMES = mapOf(
+            Planner.Kind.MOVE to "ใช้แรง", Planner.Kind.DEEP to "ใช้สมอง", Planner.Kind.QUICK to "งานสั้น",
+            Planner.Kind.ERRAND to "ธุระนอกบ้าน", Planner.Kind.GENERAL to "ทั่วไป",
+        )
 
         /** A day's full name for display, in the app's language. */
         fun dayName(day: DayOfWeek): String =
@@ -94,6 +105,11 @@ data class Profile(
                     "ออกกำลังกาย" -> time(value)?.let { p.copy(exercise = it) } ?: p
                     "คำที่หมายถึงเวร" -> p.copy(shiftWords = words(value).ifEmpty { p.shiftWords })
                     "คำที่หมายถึงเวรดึก" -> p.copy(nightWords = words(value).ifEmpty { p.nightWords })
+                    "เตือนช้าลง" -> p.copy(later = words(value).mapNotNull { part ->
+                        val kind = KIND_NAMES.entries.firstOrNull { part.startsWith(it.value) }?.key ?: return@mapNotNull null
+                        val minutes = Regex("""\d+""").find(part.removePrefix(KIND_NAMES.getValue(kind)))?.value?.toIntOrNull() ?: return@mapNotNull null
+                        kind to minutes
+                    }.toMap())
                     "วันที่ทำงานได้ดี" -> p.copy(bestDay = DAY_NAMES.indexOfFirst { value.startsWith(it) }.takeIf { it >= 0 }?.let { DayOfWeek(it + 1) })
                     else -> p
                 }

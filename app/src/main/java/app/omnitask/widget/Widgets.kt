@@ -44,8 +44,10 @@ import androidx.glance.color.ColorProvider
 import androidx.glance.unit.ColorProvider
 import app.omnitask.MainActivity
 import app.omnitask.R
+import app.omnitask.data.BehaviorLog
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultRepository
+import app.omnitask.model.Behavior
 import app.omnitask.model.Focus
 import app.omnitask.model.Quadrant
 import app.omnitask.model.Status
@@ -164,6 +166,7 @@ class TickAction : ActionCallback {
         withContext(Dispatchers.IO) {
             val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw } ?: return@withContext
             val repo = VaultRepository(context)
+            if (task.isOpen) BehaviorLog.record(context, Behavior.of(Behavior.DONE, task, LocalDateTime.now(), BehaviorLog.SRC))
             runCatching {
                 if (task.recurrence != null) repo.completeRecurring(task, LocalDate.now())
                 else repo.rewriteLine(task) { TaskLine.setDone(it, true, LocalDate.now()) }

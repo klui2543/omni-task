@@ -1,6 +1,8 @@
 package app.omnitask.notify
 
+import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Focus
+import app.omnitask.model.Learned
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import kotlinx.datetime.LocalDate
@@ -11,7 +13,8 @@ object Digest {
 
     data class Message(val title: String, val lines: List<String>)
 
-    fun daily(tasks: List<Task>, today: LocalDate, settings: NotifySettings): Message? {
+    /** [events]: the behavior log ([Behavior]), to point out work that keeps being moved or tends to slip. */
+    fun daily(tasks: List<Task>, today: LocalDate, settings: NotifySettings, events: List<BehaviorEvent> = emptyList()): Message? {
         val brief = Focus.build(tasks, today)
         val overdue = brief.must.filter { t -> t.due?.let { it < today } == true }
         val dueToday = brief.must - overdue.toSet()
@@ -24,6 +27,12 @@ object Digest {
                 add(tr("รอ ${who}$age: ${t.title}", "Waiting ${who}$age: ${t.title}").replace("  ", " ").replace(" :", ":"))
             }
             brief.future.firstOrNull()?.let { add(tr("ลงทุนอนาคต: ${it.title}", "Future: ${it.title}")) }
+            Learned.slipping(tasks, events, today).take(2).forEach {
+                add(tr("เลื่อนมาแล้ว ${it.moves} ครั้ง: ${it.task.title} (แตกงานย่อย หรือย้ายไป #อนาคต?)", "Moved ${it.moves} times: ${it.task.title} (split it, or move it to #future?)"))
+            }
+            Learned.atRisk(tasks, events, today).take(2).forEach {
+                add(tr("งานแบบนี้มักถูกเลื่อน ทำก่อนดีไหม: ${it.task.title}", "Work like this often slips, do it early: ${it.task.title}"))
+            }
         }
         if (lines.isEmpty()) return null
         val parts = buildList {
@@ -34,7 +43,7 @@ object Digest {
         return Message(parts.joinToString(", ").ifEmpty { tr("แผนวันนี้", "Today's plan") }, lines)
     }
 
-    fun weekly(tasks: List<Task>, today: LocalDate): Message {
+    fun weekly(tasks: List<Task>, today: LocalDate, events: List<BehaviorEvent> = emptyList()): Message {
         val weekAgo = today.minusDays(7)
         val done = tasks.filter { t -> t.done?.let { it > weekAgo } == true }
         val waitingDone = done.count { Focus.isWaiting(it) }
@@ -47,7 +56,9 @@ object Digest {
                 tr("งานที่มีคนรอ: เสร็จ $waitingDone ค้าง ${stillWaiting.size}", "Waiting: $waitingDone done, ${stillWaiting.size} open"),
                 tr("ลงทุนอนาคต เสร็จ $futureDone", "Future work: $futureDone done"),
                 tr("เลยกำหนดค้างอยู่ ${overdue.size}", "Still overdue: ${overdue.size}"),
-            ),
+            ) + Learned.slipping(tasks, events, today).take(3).map {
+                tr("เลื่อนบ่อย: ${it.task.title} (${it.moves} ครั้ง)", "Moved often: ${it.task.title} (${it.moves} times)")
+            },
         )
     }
 }
