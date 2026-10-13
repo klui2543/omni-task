@@ -2,7 +2,7 @@
 
 ## วิธีใช้
 
-1. เปิดแชทใหม่ใน ChatGPT แล้ว**ใช้แชทเดียวกันตลอดทั้ง 58 ภาพ**
+1. เปิดแชทใหม่ใน ChatGPT แล้ว**ใช้แชทเดียวกันตลอดทั้ง 67 ภาพ**
 2. ส่ง **prompt 0 (Style Bible)** ก่อนทุกอย่าง แล้วแก้จนพอใจลายเส้น
 3. สั่งทีละ prompt ตามลำดับ คัดลอกทั้งกล่องได้เลย ทุก prompt มีบรรทัดสไตล์อยู่ในตัวแล้ว
 4. ดาวน์โหลดแล้วตั้งชื่อไฟล์ตามหัวข้อ (เช่น `mascot_luna.png`)
@@ -104,79 +104,72 @@ Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel sha
 
 ---
 
-## 3. ตัวผู้เล่น (เผ่าละ 2 แบบ รวม 10 ภาพ)
+## 3. ตัวผู้เล่น: ระบบแต่งทรงผมและชุด (19 ภาพ)
 
-ทุกตัวถือ "กิ่งไม้ฝึกหัด" เพราะเป็นอาวุธเริ่มต้น และใช้เป็นภาพหลักของตัวละครผู้เล่น
+ตัวผู้เล่นประกอบจากชิ้นที่ซ้อนกัน: **ตัวพื้นฐาน + ทรงผม + ชุด + อาวุธ** ในเกมเลือกทรงผม 8 แบบ, สีผม 6 สี, สีผิว 4 สี และชุด 10 ชุดได้อิสระ
 
-### `hero_ignis_a.png`
+**วิธีที่ใช้ได้ผลกับ ChatGPT:** อย่าสั่งวาดชิ้นลอยๆ เพราะตำแหน่งจะไม่ตรงกัน ให้**อัปโหลดภาพตัวพื้นฐานกลับเข้าไปทุกครั้ง** แล้วสั่ง "แต่งให้ตัวนี้" Claude จะเทียบกับตัวพื้นฐานเพื่อตัดเอาเฉพาะผมหรือชุดออกมา แล้วจัดตำแหน่งให้พอดีเอง
+
+### 3.1 `hero_base.png` (ตัวพื้นฐาน ทำก่อน)
 ```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
+Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024.
 
-A young adventurer of the fire tribe, boy. Short spiky dark-brown hair, determined bright eyes, a brave smile. Simple traveler outfit: an orange-red (#E8603C) short jacket over a cream shirt, brown shorts, wrapped forearms, sturdy boots, a small ember-shaped pendant. Holds a simple wooden training branch like a sword with both hands, ready stance, a few tiny flame sparks around the feet.
+A PAPER-DOLL BASE BODY for character customization. A young chibi adventurer of neutral gender, standing straight, facing the viewer in a gentle 3/4 front view, arms held slightly away from the body with open relaxed hands (so clothes and a weapon can be added later), feet slightly apart. Light neutral skin (#FFE0C7). BALD smooth round head with no hair at all, no hat. Friendly determined face: big round eyes, small smile. Wears only a plain light-grey fitted undershirt and plain light-grey shorts, barefoot. No accessories, no weapon. Centered, the whole body fills about 80% of the canvas height.
 ```
+ภาพนี้คือแม่แบบของทุกชิ้นในข้อ 3 ถ้ายังไม่ชอบหน้าหรือท่า ให้แก้ตรงนี้จนพอใจก่อน
 
-### `hero_ignis_b.png`
+### 3.2 ทรงผม 8 แบบ
+
+**วิธีสั่ง:** อัปโหลด `hero_base.png` แล้วส่ง prompt ด้านล่าง เปลี่ยนเฉพาะ `<HAIR>` ตามตาราง
+
 ```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
-
-A young adventurer of the fire tribe, girl. High ponytail of auburn hair tied with an orange ribbon, determined bright eyes, a brave grin. Simple traveler outfit: an orange-red (#E8603C) tunic with a cream collar, a short brown skirt over leggings, sturdy boots, a small ember-shaped pendant. Holds a simple wooden training branch like a sword in her right hand, left fist raised, a few tiny flame sparks around her.
-```
-
-### `hero_luna_a.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
-
-A young adventurer of the moon tribe, boy. Neat short black hair with one silver strand, calm thoughtful eyes, a small confident smile. Outfit: a violet (#7C6CF0) hooded short cape with silver star trim over a white shirt, dark trousers, soft boots, a small crescent-moon brooch. Holds a simple wooden training branch upright like a magic staff, with a tiny glowing star floating at its tip.
-```
-
-### `hero_luna_b.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
-
-A young adventurer of the moon tribe, girl. Long straight dark-blue hair with a star hair clip, calm gentle eyes, a soft smile. Outfit: a violet (#7C6CF0) robe-style dress with silver star trim, a small satchel with a book, soft boots. Holds a simple wooden training branch like a wand, drawing a small glowing star in the air.
+Edit the uploaded base character. Add ONLY the hairstyle described below. Keep EVERYTHING else pixel-identical: same pose, same face, same body, same clothes, same size, same position on the canvas, same transparent background, same 1024x1024 canvas. Do not move, redraw or restyle the body.
+Draw the hair in NEUTRAL LIGHT GREY (#D8D8D8) with soft grey shading and the same dark-brown outline, so the game can tint it to any hair color. No hair accessories, no ribbons, no hat.
+Hairstyle: <HAIR>
 ```
 
-### `hero_zephyr_a.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
+| ไฟล์ | `<HAIR>` |
+|---|---|
+| `hair_1.png` | short spiky hair, energetic, a few spikes pointing up |
+| `hair_2.png` | short neat hair with a side part |
+| `hair_3.png` | messy windswept medium hair blowing to one side |
+| `hair_4.png` | long straight hair falling to the waist, with straight bangs |
+| `hair_5.png` | a high ponytail reaching the shoulders, short side bangs |
+| `hair_6.png` | twin tails on both sides of the head, each reaching the shoulders |
+| `hair_7.png` | a rounded bob cut at chin length |
+| `hair_8.png` | a single long braid over one shoulder, soft bangs |
 
-A young adventurer of the wind tribe, boy. Messy windswept light-brown hair, playful quick eyes, a cheeky grin. Outfit: a teal (#3FB8AF) sleeveless vest over a white shirt, a long teal scarf flying in the wind, light shorts, light running shoes. Holds a simple wooden training branch casually over one shoulder, leaning forward as if about to dash, small swirl lines of wind around the feet.
-```
+ทรงผมต้องเป็น**สีเทาอ่อน**เท่านั้น เพราะเกมจะลงสีผม 6 สีให้เอง ถ้า ChatGPT ลงสีผมมาเอง ใช้ prompt แก้ "ผมไม่เป็นสีเทา" ท้ายเอกสาร
 
-### `hero_zephyr_b.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
+### 3.3 ชุด 10 ชุด
 
-A young adventurer of the wind tribe, girl. Light blonde twin-tail hair tied with teal ribbons that flutter in the wind, lively eyes, a cheerful open smile. Outfit: a teal (#3FB8AF) short jacket over a white top, light shorts, striped knee socks, light running shoes. Holds a simple wooden training branch pointing forward, one leg lifted mid-step, small swirl lines of wind around her.
-```
+**วิธีสั่ง:** อัปโหลด `hero_base.png` (ตัวหัวโล้น ไม่ต้องมีผม) แล้วส่ง prompt ด้านล่าง เปลี่ยนเฉพาะ `<OUTFIT>`
 
-### `hero_aqua_a.png`
 ```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
-
-A young adventurer of the water tribe, boy. Wavy medium-length sea-blue hair, relaxed friendly eyes, an easygoing smile. Outfit: a blue (#3D8BFD) wrap-style coat over a white shirt, light trousers rolled up at the ankles, sandals, a small shell pendant. Holds a simple wooden training branch with a little ring of water swirling around it, two bubbles floating nearby.
-```
-
-### `hero_aqua_b.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
-
-A young adventurer of the water tribe, girl. Short bob light-aqua hair with a small fish-shaped hairpin, bright kind eyes, a happy smile. Outfit: a blue (#3D8BFD) sailor-style top with a white collar, a flowing light skirt, sandals, a small shell pendant. Holds a simple wooden training branch, a small stream of water spiraling from its tip, a few bubbles around her.
+Edit the uploaded base character. Dress it in ONLY the outfit described below, including matching shoes. Keep EVERYTHING else pixel-identical: same bald head, same face, same pose, same arm and leg positions, same size, same position on the canvas, same transparent background, same 1024x1024 canvas. The outfit must follow the body exactly and must not cover the face or the top of the head (hair is added separately). No hat, no hood up, no weapon, nothing held in the hands.
+Outfit: <OUTFIT>
 ```
 
-### `hero_sylva_a.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
+ชุด 5 ชุดแรกตรงกับชุดเกราะในร้านค้า ใส่ชุดเกราะไหนตัวละครก็เปลี่ยนชุดตามนั้น อีก 5 ชุดเป็นชุดประจำเผ่า ใช้เป็นชุดแฟชั่น
 
-A young adventurer of the wood tribe, boy. Short soft dark-green hair with a tiny leaf sprouting on top, warm patient eyes, a gentle smile. Outfit: a green (#5DAE4B) tunic with leaf-pattern trim, a brown belt with a small pouch of seeds, brown trousers, sturdy boots. Holds a simple wooden training branch that has two fresh leaves growing on it, standing calmly.
-```
+| ไฟล์ | ชุด | `<OUTFIT>` |
+|---|---|---|
+| `outfit_a-shirt.png` | เสื้อผ้าฝ้าย (ชุดเริ่มต้น) | a simple cream cotton tunic with short sleeves and a small patch, brown shorts, simple brown sandals |
+| `outfit_a-leather.png` | เกราะหนังกิลด์ | brown leather chest armor with stitched seams and two buckles over a cream shirt, a small gold sunrise emblem on the chest, brown trousers, leather boots |
+| `outfit_a-robe.png` | เสื้อคลุมจันทรา | a long violet (#7C6CF0) mage robe with silver star embroidery on the hems and a high collar, the hood DOWN on the back, soft violet shoes |
+| `outfit_a-mail.png` | เกราะโซ่อัคนี | a chainmail shirt with orange-red (#E8603C) trim and a small flame emblem, steel shoulder guards, dark trousers, armored boots |
+| `outfit_a-mist.png` | ผ้าคลุมหมอกจาง (ตำนาน) | a legendary flowing cloak made of soft grey-lavender mist with glowing silver edges over a dark fitted outfit, the hood DOWN, mist curling at the hem, soft dark boots |
+| `outfit_ignis.png` | ชุดเผ่าอัคนี | an orange-red (#E8603C) short jacket over a cream shirt, brown shorts, wrapped forearms, sturdy boots, a small ember pendant |
+| `outfit_luna.png` | ชุดเผ่าจันทรา | a violet (#7C6CF0) short cape with silver star trim over a white shirt, dark trousers, soft boots, a crescent-moon brooch |
+| `outfit_zephyr.png` | ชุดเผ่าวายุ | a teal (#3FB8AF) sleeveless vest over a white shirt, a long teal scarf flying to one side, light shorts, light running shoes |
+| `outfit_aqua.png` | ชุดเผ่าธารา | a blue (#3D8BFD) sailor-style top with a white collar, light flowing trousers rolled at the ankles, sandals, a small shell pendant |
+| `outfit_sylva.png` | ชุดเผ่าพฤกษา | a green (#5DAE4B) tunic with leaf-pattern trim, a brown belt with a small seed pouch, brown trousers, sturdy boots |
 
-### `hero_sylva_b.png`
-```
-Same Omni Quest style as the reference: chibi, dark-brown outlines, soft cel shading with one shadow tone and a warm rim light, transparent background, no text, 1024x1024, full body, centered.
+อาวุธในมือใช้ไอคอนอาวุธจากข้อ 6 ไม่ต้องวาดเพิ่ม Claude จะวางไว้ที่มือให้เอง
 
-A young adventurer of the wood tribe, girl. A long single braid of chestnut hair woven with small flowers, warm kind eyes, a soft smile. Outfit: a green (#5DAE4B) dress-tunic with leaf-pattern trim, a cream apron with a pocket, brown boots. Holds a simple wooden training branch with a small blooming flower at its tip, a few leaves drifting around her.
-```
+### ส่งให้ Claude
+
+ส่ง `hero_base.png` มาพร้อมทุกชิ้นในข้อ 3 เสมอ เพราะต้องใช้เทียบเพื่อแยกชิ้น ถ้าชิ้นไหนตำแหน่งตัวเลื่อนมากจนแยกไม่ได้ Claude จะบอกว่าชิ้นไหนต้องสั่งใหม่
 
 ---
 
@@ -393,6 +386,16 @@ Redo with a fully transparent background: no floor, no ground shadow, no scenery
 Redo without any letters, numbers or writing anywhere in the image. Any paper, sign or clock must be blank.
 ```
 
+**ผมไม่เป็นสีเทา (ข้อ 3.2):**
+```
+Redo the hair in neutral light grey (#D8D8D8) with grey shading only, no other hair color. Keep everything else identical to the uploaded base.
+```
+
+**ตัวเลื่อนหรือท่าเปลี่ยนตอนแต่งผมหรือชุด (ข้อ 3):**
+```
+Redo. The body moved or changed. Keep the base character exactly where it is in the uploaded image, same size, same pose, same face; only add the requested piece.
+```
+
 **ตัวโดนครอบตัด หรือไม่อยู่กลางภาพ:**
 ```
 Redo with the whole body visible, centered, filling about 80% of the canvas height, with empty space on every side.
@@ -400,13 +403,13 @@ Redo with the whole body visible, centered, filling about 80% of the canvas heig
 
 ---
 
-## สรุปไฟล์ที่ต้องได้ (58 ภาพ)
+## สรุปไฟล์ที่ต้องได้ (67 ภาพ)
 
 | หมวด | จำนวน | ไฟล์ |
 |---|---|---|
 | Mascot | 5 | `mascot_ignis`, `mascot_luna`, `mascot_zephyr`, `mascot_aqua`, `mascot_sylva` |
 | ตัวละครในเรื่อง | 4 | `npc_orrin`, `npc_leo`, `npc_celine`, `boss_king` |
-| ตัวผู้เล่น | 10 | `hero_<เผ่า>_a` และ `hero_<เผ่า>_b` ของ ignis, luna, zephyr, aqua, sylva |
+| ตัวผู้เล่น | 19 | `hero_base`, `hair_1` ถึง `hair_8`, `outfit_a-shirt`, `outfit_a-leather`, `outfit_a-robe`, `outfit_a-mail`, `outfit_a-mist`, `outfit_ignis`, `outfit_luna`, `outfit_zephyr`, `outfit_aqua`, `outfit_sylva` |
 | มอนสเตอร์ | 14 | `foe_mist_1` ถึง `3`, `foe_cave_1` ถึง `3`, `foe_tower_1` ถึง `3`, `foe_castle_1` ถึง `3`, `foe_crown_1`, `foe_crown_3` |
 | ฉากหลัง | 5 | `bg_mist`, `bg_cave`, `bg_tower`, `bg_castle`, `bg_crown` |
 | ไอคอน | 19 | `icon_<รหัสไอเทม>` ตามตารางข้อ 6 |
