@@ -22,6 +22,8 @@ object WatchAlarm {
     const val KEY_TONIGHT_WAKE = "sleep.tonight.wake"
     const val KEY_ALARM_SET = "sleep.alarm"
     const val KEY_WAKE_FROM_WATCH = "sleep.wake.watch"
+    /** The day and time the watch alarm is set for, whoever set it. */
+    const val KEY_ALARM_AT = "sleep.alarm.at"
 
     /**
      * Writes [at] (null cancels) and says whether a watch with Omni is in reach right now. Blocks, so call it

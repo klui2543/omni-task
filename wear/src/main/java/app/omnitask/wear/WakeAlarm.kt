@@ -62,36 +62,53 @@ object WakeAlarm {
     /** Where a time set on the watch goes, so the phone counts tonight's sleep from it. */
     const val TO_PHONE = "/wake/watch"
 
-    /** Sets the alarm from the watch itself, for the next [time] to come, and tells the phone. */
-    fun setOnWatch(context: Context, time: LocalTime): LocalDateTime {
-        val now = LocalDateTime.now()
-        var at = now.toLocalDate().atTime(time)
-        if (at <= now) at = at.plusDays(1)
+    /** The next [time] to come: today while it is still ahead, else tomorrow, as an alarm clock does. */
+    fun next(time: LocalTime, now: LocalDateTime = LocalDateTime.now()): LocalDateTime {
+        val at = now.toLocalDate().atTime(time)
+        return if (at > now) at else at.plusDays(1)
+    }
+
+    /** Sets the alarm from the watch itself, for [at] (a day and a time), and tells the phone. */
+    fun setOnWatch(context: Context, at: LocalDateTime) {
         set(context, at, sleep = 0)
         val request = PutDataMapRequest.create(TO_PHONE).apply {
             dataMap.putString("at", at.toString())
             dataMap.putLong("sent", System.currentTimeMillis())
         }.asPutDataRequest().setUrgent()
         Wearable.getDataClient(context).putDataItem(request)
-        return at
     }
 
-    /** Puts the saved time in the system alarm clock, or clears it. Also run after a reboot. */
+    /** Puts the saved time in the system alarm clock, or clears it. Also run after a reboot or an update. */
     fun schedule(context: Context) {
         val alarms = context.getSystemService(AlarmManager::class.java)
-        val ring = PendingIntent.getActivity(
-            context, 0, Intent(context, RingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val ring = ring(context, test = false)
         val at = at(context)
         if (at == null || at <= LocalDateTime.now()) {
             alarms.cancel(ring)
             return
         }
-        val show = PendingIntent.getActivity(context, 1, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val millis = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        alarms.setAlarmClock(AlarmManager.AlarmClockInfo(millis, show), ring)
+        alarms.setAlarmClock(AlarmManager.AlarmClockInfo(at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), show(context)), ring)
     }
+
+    /** Rings a minute from now without touching the real alarm, to check the watch really wakes. */
+    fun test(context: Context): LocalDateTime {
+        val at = LocalDateTime.now().plusMinutes(1).withNano(0)
+        context.getSystemService(AlarmManager::class.java).setAlarmClock(
+            AlarmManager.AlarmClockInfo(at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), show(context)),
+            ring(context, test = true),
+        )
+        return at
+    }
+
+    // The alarm clock wakes a receiver, which starts the ringing service; see RingService.
+    private fun ring(context: Context, test: Boolean) = PendingIntent.getBroadcast(
+        context, if (test) 2 else 0,
+        Intent(context, RingReceiver::class.java).putExtra(RingService.EXTRA_TEST, test),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun show(context: Context) =
+        PendingIntent.getActivity(context, 1, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

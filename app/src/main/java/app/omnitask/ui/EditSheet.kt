@@ -63,7 +63,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -164,19 +163,18 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         // Every property in one block of chips; a chip shows its value, or its name when empty.
         FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            PropChip(Ic.calendar, task.due?.let { dayText(it, today) }, tr("ครบกำหนด", "Due"), open == Prop.DUE, late = task.isLate(today)) { toggle(Prop.DUE) }
-            PropChip(Ic.hourglass, task.scheduled?.let { dayText(it, today) }, tr("นัดทำ", "Scheduled"), open == Prop.SCHEDULED) { toggle(Prop.SCHEDULED) }
+            PropChip(task.due?.let { dayText(it, today) }, tr("ครบกำหนด", "Due"), open == Prop.DUE, late = task.isLate(today)) { toggle(Prop.DUE) }
+            PropChip(task.scheduled?.let { dayText(it, today) }, tr("นัดทำ", "Scheduled"), open == Prop.SCHEDULED) { toggle(Prop.SCHEDULED) }
             PropChip(
-                Ic.bell,
                 task.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) },
                 tr("เตือน", "Remind"), open == Prop.REMIND,
             ) { toggle(Prop.REMIND) }
-            PropChip(Ic.repeat, task.recurrence?.let { Recurrence.describe(it) }, tr("วนซ้ำ", "Repeat"), open == Prop.REPEAT) { toggle(Prop.REPEAT) }
-            PropChip(Ic.flag, task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }
+            PropChip(task.recurrence?.let { Recurrence.describe(it) }, tr("วนซ้ำ", "Repeat"), open == Prop.REPEAT) { toggle(Prop.REPEAT) }
+            PropChip(task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }
             val custom = CustomKind.of(task, state.customKinds)
-            PropChip(Ic.target, custom?.label ?: TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
+            PropChip(custom?.label ?: TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
             val tags = task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) || custom?.tag.equals(it, ignoreCase = true) }
-            PropChip(Ic.hash, tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, "Tag", open == Prop.TAG) { toggle(Prop.TAG) }
+            PropChip(tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, "Tag", open == Prop.TAG) { toggle(Prop.TAG) }
         }
 
         // The open chip's choices, right under the chips.
@@ -250,7 +248,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FoldRow(Ic.link, tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = true) {
+            FoldRow(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = true) {
                 fold = if (fold == "links") null else "links"
             }
             if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {
@@ -277,7 +275,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 )
             }
 
-            FoldRow(Ic.image, tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) tr("ไม่มี", "None") else tr("${task.attachments.size} รูป", "${task.attachments.size}"), fold == "images") {
+            FoldRow(tr("รูปแนบ", "Images"), if (task.attachments.isEmpty()) tr("ไม่มี", "None") else tr("${task.attachments.size} รูป", "${task.attachments.size}"), fold == "images") {
                 fold = if (fold == "images") null else "images"
             }
             if (fold == "images") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 12.dp)) {
@@ -298,7 +296,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 Text(tr("บันทึกเป็น WebP แตะเพื่อดู กดค้างเพื่อลบ", "Saved as WebP. Tap to view, long-press to delete"), Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption)
             }
 
-            FoldRow(Ic.more, tr("รายละเอียดอื่น", "More details"), task.created?.let { tr("สร้าง ", "Created ") + it.format(SHORT_DATE) } ?: "", fold == "more") {
+            FoldRow(tr("รายละเอียดอื่น", "More details"), task.created?.let { tr("สร้าง ", "Created ") + it.format(SHORT_DATE) } ?: "", fold == "more") {
                 fold = if (fold == "more") null else "more"
             }
             if (fold == "more") Column(Modifier.padding(bottom = 4.dp)) {
@@ -364,8 +362,7 @@ private fun DescriptionBlock(task: Task, vm: TaskViewModel) {
             .clickable(enabled = !editing) { editing = true }.padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Ic.tasks, null, tint = C.muted, modifier = Modifier.size(14.dp))
-            Text(tr("รายละเอียด", "Details"), Modifier.padding(start = 6.dp).weight(1f), color = C.muted, fontSize = TS.caption)
+            Text(tr("รายละเอียด", "Details"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
             if (editing && long) {
                 Text(
                     tr("ย้ายไปโน้ตแยก", "Move to a note"),
@@ -471,9 +468,9 @@ private fun dayText(d: LocalDate, today: LocalDate) = when (d) {
     else -> d.format(SHORT_DATE)
 }
 
-/** A property as a chip: its icon and value when set, its name in a quieter colour when not. */
+/** A property as a chip: its name and value when set, just the name in a quieter colour when not. */
 @Composable
-private fun PropChip(icon: ImageVector, value: String?, name: String, open: Boolean, late: Boolean = false, tint: Color? = null, onClick: () -> Unit) {
+private fun PropChip(value: String?, name: String, open: Boolean, late: Boolean = false, tint: Color? = null, onClick: () -> Unit) {
     val set = value != null
     Row(
         Modifier.height(36.dp).clip(RoundedCornerShape(12.dp))
@@ -483,8 +480,8 @@ private fun PropChip(icon: ImageVector, value: String?, name: String, open: Bool
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, null, tint = when { late -> C.red; tint != null && set -> tint; set -> C.accentText; else -> C.faint }, modifier = Modifier.size(15.dp))
-        Text(value ?: name, color = if (late) C.red else if (set) C.text else C.muted, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (set) Text(name, color = C.muted, fontSize = TS.caption, maxLines = 1)
+        Text(value ?: name, color = when { late -> C.red; tint != null && set -> tint; set -> C.text; else -> C.muted }, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -506,14 +503,13 @@ private fun ChoiceRow(choices: List<Choice>) {
 }
 
 @Composable
-private fun FoldRow(icon: ImageVector, label: String, summary: String, open: Boolean, first: Boolean = false, onClick: () -> Unit) {
+private fun FoldRow(label: String, summary: String, open: Boolean, first: Boolean = false, onClick: () -> Unit) {
     if (!first) Divider()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(onClick = onClick).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = C.accentText, modifier = Modifier.size(16.dp))
-        Text(label, Modifier.padding(start = 14.dp).weight(1f), color = C.text, fontSize = TS.body, maxLines = 1)
+        Text(label, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 1)
         Text(summary, Modifier.padding(start = 8.dp).widthIn(max = 150.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(if (open) Ic.up else Ic.down, null, tint = C.faint, modifier = Modifier.padding(start = 6.dp).size(14.dp))
     }

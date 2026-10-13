@@ -103,10 +103,14 @@ fun SettingsScreen(
     archive: ArchiveSettings? = null,
     calendars: CalendarChoices? = null,
     drive: DriveSettings? = null,
-    onBack: () -> Unit,
+    head: (@Composable () -> Unit)? = null,
+    tail: (@Composable () -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    BackHandler(onBack = onBack)
+    // Without onBack it is the Settings tab of the bottom bar, inside the app's frame; with it, a page of its own.
+    val tab = onBack == null
+    BackHandler(enabled = !tab) { onBack?.invoke() }
     // Bumped after the permission prompt closes so the section re-reads whether access is granted.
     var permissionTick by remember { mutableIntStateOf(0) }
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -143,16 +147,20 @@ fun SettingsScreen(
     }
 
     LazyColumn(
-        Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding(),
-        contentPadding = PaddingValues(14.dp),
+        Modifier.fillMaxSize().background(C.bg).then(if (tab) Modifier else Modifier.statusBarsPadding().navigationBarsPadding()),
+        contentPadding = if (tab) PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance) else PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
-                Text(tr("ตั้งค่า", "Settings"), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = C.text)
+                if (onBack != null) SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
+                Text(
+                    tr("ตั้งค่า", "Settings"), Modifier.padding(start = if (tab) 4.dp else 12.dp),
+                    style = if (tab) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge, color = C.text,
+                )
             }
         }
+        head?.let { item { it() } }
         item {
             SettingsGroup(tr("ภาษา", "Language")) {
                 // Each language is named in itself, so it can be found whichever one is showing.
@@ -288,6 +296,7 @@ fun SettingsScreen(
                 SizePreview(Modifier.padding(top = 10.dp, bottom = 12.dp))
             }
         }
+        tail?.let { item { it() } }
     }
 }
 

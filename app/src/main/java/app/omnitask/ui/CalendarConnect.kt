@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,10 +34,9 @@ fun CalendarConnect(state: UiState, vm: TaskViewModel, modifier: Modifier = Modi
     Card(modifier, color = C.accentDeep, border = C.accentLine) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Ic.calendar, null, tint = C.accentText, modifier = Modifier.size(18.dp))
                 Text(
                     if (access) tr("ยังไม่พบ Google Calendar ในเครื่อง", "No Google Calendar on this phone") else tr("เชื่อมต่อ Google Calendar", "Connect Google Calendar"),
-                    Modifier.padding(start = 8.dp), color = C.accentText, style = MaterialTheme.typography.titleSmall,
+                    color = C.accentText, style = MaterialTheme.typography.titleSmall,
                 )
             }
             Text(

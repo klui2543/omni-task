@@ -92,6 +92,20 @@ class QueryAndPlanTest {
     }
 
     @Test
+    fun dayPlanKeepsWorkScheduledForADayGoneBy() {
+        val tasks = listOf(
+            t("- [ ] นัดไว้เมื่อวาน ⏳ 2026-10-06"),
+            t("- [ ] นัดไว้แล้วครบทีหลัง ⏳ 2026-10-05 📅 2026-10-10"),
+            t("- [ ] นัดไว้แล้วครบวันนี้ ⏳ 2026-10-05 📅 2026-10-07"),
+            t("- [ ] นัดพรุ่งนี้ ⏳ 2026-10-08"),
+        )
+        val plan = DayPlan.build(tasks, emptyList(), today)
+        assertEquals(listOf(DayPlan.Part.LATE, DayPlan.Part.ANYTIME), plan.map { it.part })
+        assertEquals(listOf("นัดไว้เมื่อวาน", "นัดไว้แล้วครบทีหลัง"), plan[0].items.map { (it as DayPlan.Item.TaskItem).task.title })
+        assertEquals(listOf("นัดไว้แล้วครบวันนี้"), plan[1].items.map { (it as DayPlan.Item.TaskItem).task.title })
+    }
+
+    @Test
     fun dayPlanKeepsDoneTasksAndTracksEventsAgainstTheClock() {
         val tasks = listOf(
             t("- [x] เสร็จแล้ว #remind-at-due ⏰ 07:00 📅 2026-10-07 ✅ 2026-10-07"),

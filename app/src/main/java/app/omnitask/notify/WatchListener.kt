@@ -25,14 +25,16 @@ class WatchListener : WearableListenerService() {
 
     companion object {
         fun save(context: Context, at: LocalDateTime) {
-            // The night belongs to the evening before a morning wake.
-            val evening = if (at.time < LocalTime.NOON) at.date.minusDays(1) else at.date
-            val value = "$evening ${"%02d:%02d".format(at.hour, at.minute)}"
-            context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).edit()
-                .putString(WatchAlarm.KEY_TONIGHT_WAKE, value)
-                .putString(WatchAlarm.KEY_ALARM_SET, value)
-                .putBoolean(WatchAlarm.KEY_WAKE_FROM_WATCH, true)
-                .apply()
+            val edit = context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).edit().putString(WatchAlarm.KEY_ALARM_AT, at.toString())
+            // A morning alarm is also that night's wake time, so the sleep card counts from it; the night belongs to
+            // the evening before. An alarm later in the day (a nap) leaves the night alone.
+            if (at.time < LocalTime.NOON) {
+                val value = "${at.date.minusDays(1)} ${"%02d:%02d".format(at.hour, at.minute)}"
+                edit.putString(WatchAlarm.KEY_TONIGHT_WAKE, value)
+                    .putString(WatchAlarm.KEY_ALARM_SET, value)
+                    .putBoolean(WatchAlarm.KEY_WAKE_FROM_WATCH, true)
+            }
+            edit.apply()
         }
     }
 }

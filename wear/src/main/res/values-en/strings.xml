@@ -10,4 +10,12 @@
     <string name="wake_up">Time to wake up</string>
     <string name="snooze">+5 min</string>
     <string name="stop">Stop</string>
+    <string name="test">Test ring in 1 min</string>
+    <string name="test_set">Test ring at %1$s</string>
+    <string name="alarm_on">Alarm %1$s</string>
+    <string name="today">today</string>
+    <string name="tomorrow">tomorrow</string>
+    <string name="rings_in">In %1$s</string>
+    <string name="passed">That time has passed</string>
+    <string name="hours_minutes">%1$d hr %2$d min</string>
 </resources>

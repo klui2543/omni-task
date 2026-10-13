@@ -51,10 +51,10 @@ class SmokeTest {
     fun everyScreenRenders() {
         val vm = vm()
         rule.setContent { OmniTheme { OmniTaskApp(vm) } }
-        // The assistant sits behind the bottom bar's "More" button; the task views are a switch inside the Tasks tab.
+        // The assistant sits in the bottom bar's Settings tab; the task views are a switch inside the Tasks tab.
         listOf("งาน", "Kanban", "Matrix", "Gantt", "ปฏิทิน", "โปรเจกต์", "ผู้ช่วย", "โฟกัส").forEach { label ->
             if (label == "ผู้ช่วย") {
-                rule.onAllNodesWithText("เพิ่มเติม")[0].performClick()
+                rule.onAllNodesWithText("ตั้งค่า")[0].performClick()
                 rule.waitForIdle()
             }
             rule.onAllNodesWithText(label).fetchSemanticsNodes().let { check(it.isNotEmpty()) { "no $label" } }

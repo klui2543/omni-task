@@ -237,7 +237,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 p.next?.let { Pill(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), C.raised, C.text2) }
                                 if (p.overdue > 0) Pill(tr("เลยกำหนด ${p.overdue}", "Overdue ${p.overdue}"), C.redSoft, C.red)
-                                if (p.blocked.isNotEmpty()) Pill(tr("ติดรองานอื่น ${p.blocked.size}", "Blocked ${p.blocked.size}"), C.amberSoft, C.amber, Ic.lock)
+                                if (p.blocked.isNotEmpty()) Pill(tr("ติดรองานอื่น ${p.blocked.size}", "Blocked ${p.blocked.size}"), C.amberSoft, C.amber)
                             }
                         }
                     }

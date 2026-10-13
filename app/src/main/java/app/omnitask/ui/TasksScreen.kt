@@ -281,7 +281,6 @@ fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(Ic.star, null, tint = C.accentText, modifier = Modifier.size(13.dp))
                         Text(name, color = C.accentText, fontSize = TS.body)
                     }
                 }
