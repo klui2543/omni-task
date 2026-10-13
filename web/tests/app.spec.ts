@@ -278,12 +278,6 @@ test('Settings (narrow) leads to the assistant; a question typed at the bottom g
   }
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
 })
-  await expect(page.getByRole('heading', { name: 'เพิ่มเติม', level: 1 })).toBeVisible()
-  await expect(page.getByRole('main').getByRole('button', { name: 'ผู้ช่วย' })).toBeVisible()
-  await expect(page.getByRole('main').getByRole('button', { name: 'ตั้งค่า' })).toBeVisible()
-  await page.getByRole('main').getByRole('button', { name: 'ตั้งค่า' }).click()
-  await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
-})
 
 test('a sync conflict copy beside the note is pointed out', async ({ page }) => {
   const { drive, file } = await setup(page)

@@ -94,7 +94,7 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
       <div class="dock">
         {p.page !== 'assistant' && (
           <form class="dock-ask" onSubmit={ask}>
-            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterKeyHint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} />
+            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} />
             {question.trim()
               ? <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>
               : <button type="button" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>}
