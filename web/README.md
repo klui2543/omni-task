@@ -132,6 +132,25 @@ and the tag that marks it, which never names a project). The edit panel's "ป�
 logic is `shared/.../web/WebKinds.kt`. The choices are kept on this device (localStorage `omni.kinds`, in Android's own
 tab-separated `name, emoji, tag` form) and travel with Android through `omni-settings.json`.
 
+## Why a task is still open (the stuck log)
+
+As on Android, the owner can write why a long-open task is still open, on a dated line under it
+(`    - ค้าง 2026-10-13 รอคนอื่น: รอรูปจากพี่เอ`), with quick picks (รอคนอื่น, ไม่มีเวลา...) or their own words. The lines
+are not part of the description and move to the archive with the task. The logic is the shared `StuckLog`, through
+`shared/.../web/WebStuck.kt`; a note is the edit op `stuck`, written with the same version check as every edit, and it
+counts as a review of the task.
+
+- Focus: a late or long-open task (21 days or more) has a bar a week beside it (grey for a note, a tall accent bar for a
+  finished subtask) and "ขยับล่าสุด N วันก่อน" on its line; either opens the task's path (made, every note, every
+  finished subtask) with the box to write in. The review deck asks "ติดอะไรอยู่" before each choice (optional) and writes
+  it first.
+- Edit panel: such a task shows "ความเป็นไป" (subtasks done and the path, "+ จด" on today's point) under the description;
+  other tasks have "ทำไมยังค้าง" folded at the bottom.
+- "บันทึกงานค้าง" (from the edit panel, the review deck and the weekly questions) shows every task with notes as its path, the most recently
+  explained first.
+- The weekly review on the Assistant page says how many tasks have sat 21 days or more with nothing written; tapping
+  that line asks about each, one at a time.
+
 ## Settings shared with Android
 
 `src/settingsSync.ts` reads and writes Android's settings file, `omni-settings.json` in the Omni folder, for the choices

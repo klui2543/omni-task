@@ -11,7 +11,8 @@ export type Chat =
   | { t: 'slots'; plan: PlanOut; page: number; picked: number; title: string; done?: string; toCalendar?: boolean }
   | { t: 'today'; items: Ranked[] }
   | { t: 'ranked'; items: Ranked[] }
-  | { t: 'review'; title: string; lines: string[] }
+  /** [stuckAt]: the line about long-open tasks nobody has explained, which opens the questions about each. */
+  | { t: 'review'; title: string; lines: string[]; stuckAt?: number }
   | { t: 'agenda'; title: string; summary: string; data: AgendaOut }
   | { t: 'range'; title: string; proposals: Proposal[]; accepted: number[]; toCalendar?: boolean }
 

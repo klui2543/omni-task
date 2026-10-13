@@ -12,6 +12,7 @@ import { EditPanel } from '../ui/EditPanel'
 import { CalendarWriteDialog, CustomTimeDialog, RangeDialog } from '../ui/assistant/AssistantDialogs'
 import { AgendaCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, ReviewCard, SlotsCard, dayShort } from '../ui/assistant/Cards'
 import { AskCard, Interview } from '../ui/assistant/Interview'
+import { StuckDeck } from '../ui/Stuck'
 import { byNote } from '../vault'
 
 const CALENDAR_OFF =
@@ -40,7 +41,7 @@ const thisMonth = (): [string, string] => {
   return [iso(d), iso(new Date(d.getFullYear(), d.getMonth() + 1, 0))]
 }
 
-type Dialog = { kind: 'custom'; index: number; allDay: boolean } | { kind: 'range' } | { kind: 'write'; index: number } | null
+type Dialog = { kind: 'custom'; index: number; allDay: boolean } | { kind: 'range' } | { kind: 'write'; index: number } | { kind: 'stuck' } | null
 
 export function AssistantPage(p: PageProps) {
   const [chat, setChat] = useChat()
@@ -184,7 +185,7 @@ export function AssistantPage(p: PageProps) {
   const reviewWeek = () => {
     if (!snap) return
     const r = A.weekly(snap, state())
-    push({ t: 'asked', text: 'ทบทวนสัปดาห์นี้' }, { t: 'review', title: r.title, lines: r.lines })
+    push({ t: 'asked', text: 'ทบทวนสัปดาห์นี้' }, { t: 'review', title: r.title, lines: r.lines, stuckAt: r.stuckAt })
   }
   const morning = () => {
     if (!snap) return
@@ -437,7 +438,7 @@ export function AssistantPage(p: PageProps) {
                   intro={c.items.length === 0 ? 'วันนี้ไม่มีงานเร่ง ลองหยิบงานลงทุนอนาคตสักงาน' : 'เรียงจากต้องทำก่อน ไปคนที่รอ แล้วค่อยงานเพื่ออนาคต'} />
               case 'ranked':
                 return <RankedCard key={i} hot={3} items={c.items} onOpen={openTask} intro="ลำดับที่ควรทำ เรียงจากเลยกำหนด ใกล้ครบ คนรอ แล้วค่อยความสำคัญ" />
-              case 'review': return <ReviewCard key={i} title={c.title} lines={c.lines} />
+              case 'review': return <ReviewCard key={i} title={c.title} lines={c.lines} stuckAt={c.stuckAt} onStuck={() => setDialog({ kind: 'stuck' })} />
               case 'agenda': return <AgendaCard key={i} title={c.title} summary={c.summary} data={c.data} today={t0} onOpen={openTask} />
               case 'range':
                 return <RangeCard key={i} title={c.title} proposals={c.proposals} accepted={c.accepted} busy={p.busy} toCalendar={!!c.toCalendar} onCalendar={(on) => setCalendar(i, 'range', on)} onAccept={(w) => acceptProposals(i, w)} onOpen={openTask} />
@@ -474,6 +475,11 @@ export function AssistantPage(p: PageProps) {
             setChat((c) => c.map((x, i) => (i === index && (x.t === 'slots' || x.t === 'range') ? { ...x, toCalendar: false } : x)))
             setDialog(null)
           }} />
+        )}
+        {/* The weekly review's line about long-open tasks: why each is still open, one at a time, as Android's StuckDeck. */}
+        {dialog?.kind === 'stuck' && snap && (
+          <StuckDeck view={snap.stuck()} info={(key) => snap.stuckTask(key)} busy={p.busy} onClose={() => setDialog(null)} onOpen={openTask}
+            onSave={(key, text) => { const t = snap.byKey.get(key); if (t) p.run(() => p.vault.change(p.fresh(t), { op: 'stuck', value: text })) }} />
         )}
         {dialog?.kind === 'range' && (
           <RangeDialog from={t0} onClose={() => setDialog(null)}
