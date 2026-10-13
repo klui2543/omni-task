@@ -3,6 +3,7 @@ package app.omnitask.notify
 import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Focus
 import app.omnitask.model.Learned
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import kotlinx.datetime.LocalDate
@@ -56,9 +57,15 @@ object Digest {
                 tr("งานที่มีคนรอ: เสร็จ $waitingDone ค้าง ${stillWaiting.size}", "Waiting: $waitingDone done, ${stillWaiting.size} open"),
                 tr("ลงทุนอนาคต เสร็จ $futureDone", "Future work: $futureDone done"),
                 tr("เลยกำหนดค้างอยู่ ${overdue.size}", "Still overdue: ${overdue.size}"),
-            ) + Learned.slipping(tasks, events, today).take(3).map {
+            ) + stuckLine(tasks, today) + Learned.slipping(tasks, events, today).take(3).map {
                 tr("เลื่อนบ่อย: ${it.task.title} (${it.moves} ครั้ง)", "Moved often: ${it.task.title} (${it.moves} times)")
             },
         )
+    }
+
+    /** Tasks open a long while with no word on why: the weekly review asks, and opening it goes to the questions. */
+    private fun stuckLine(tasks: List<Task>, today: LocalDate): List<String> {
+        val n = StuckLog.toAsk(tasks, today).size
+        return if (n == 0) emptyList() else listOf(tr("ค้างนาน $n งาน แตะเพื่อจดว่าติดอะไร", "$n tasks open a long time. Tap to note what holds them up"))
     }
 }

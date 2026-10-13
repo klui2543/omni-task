@@ -286,6 +286,12 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
     val queue = state.toReview
     val t = queue.firstOrNull()
     var handled by remember { mutableStateOf(0) }
+    var why by remember(t?.key) { mutableStateOf("") }
+    var showLog by remember { mutableStateOf(false) }
+    if (showLog) {
+        StuckTimeline(state, onOpen = { showLog = false; onDismiss(); onOpen(it) }) { showLog = false }
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
@@ -301,7 +307,7 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                     color = C.text2,
                 )
             } else {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(t.title, Modifier.clickable { onOpen(t) }, style = MaterialTheme.typography.titleMedium, color = C.text)
                     val age = Focus.ageDays(t, state.today)
                     val since = state.reviewed[t.title]
@@ -313,9 +319,13 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
                         ).joinToString(", "),
                         Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
                     )
+                    StuckHistory(t, limit = 2)
+                    // Optional: written down with whichever choice comes next, before it.
+                    Text(tr("ติดอะไรอยู่ (ไม่ใส่ก็ได้)", "What holds it up? (optional)"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text2, fontSize = TS.body)
+                    StuckInput(why) { why = it }
                     Text(tr("ยังอยากทำไหม", "Still want to do it?"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = TS.body)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        fun act(a: TaskViewModel.ReviewAction) { vm.review(t, a); handled++ }
+                        fun act(a: TaskViewModel.ReviewAction) { vm.noteStuck(t, why); vm.review(t, a); handled++ }
                         ReviewButton(tr("ทำเสาร์นี้", "Do this Saturday"), C.lime) { act(TaskViewModel.ReviewAction.THIS_WEEK) }
                         if (!Focus.isFutureWork(t)) ReviewButton(tr("ลงทุนอนาคต", "Future"), C.accent) { act(TaskViewModel.ReviewAction.FUTURE) }
                         if (!Focus.isSomeday(t)) ReviewButton(tr("พักไว้ก่อน", "Someday"), C.amber) { act(TaskViewModel.ReviewAction.SOMEDAY) }
@@ -327,6 +337,7 @@ fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDism
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(if (t == null) tr("ปิด", "Close") else tr("พอก่อน", "Stop for now"), color = C.text2) } },
+        dismissButton = { TextButton(onClick = { showLog = true }) { Text(tr("บันทึกงานค้าง", "Stuck log"), color = C.text2) } },
     )
 }
 

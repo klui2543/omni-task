@@ -81,7 +81,7 @@ data class Task(
     val firstStep: String?
         get() = notes.firstOrNull { it.startsWith(FIRST_STEP) }?.removePrefix(FIRST_STEP)?.trim()?.ifEmpty { null }
 
-    /** Notes the user wrote (the description), without the image embeds, note links and first step. */
+    /** Notes the user wrote (the description), without the image embeds, note links, first step and stuck notes. */
     val textNotes: List<String>
         get() = notes.filter { isPlainNote(it) }
 
@@ -95,7 +95,8 @@ data class Task(
         const val FIRST_STEP = "ก้าวแรก:"
 
         /** A note line that is part of the description, not one of the app's own lines. */
-        fun isPlainNote(note: String) = EMBED.find(note) == null && LINK_LINE.find(note) == null && !note.startsWith(FIRST_STEP)
+        fun isPlainNote(note: String) =
+            EMBED.find(note) == null && LINK_LINE.find(note) == null && !note.startsWith(FIRST_STEP) && !StuckLog.isNote(note)
     }
 
     /** When this task's reminder fires, or null when it has no time or no date to hang it on. */

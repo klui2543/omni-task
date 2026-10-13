@@ -169,7 +169,7 @@ object VaultText {
 
     /**
      * Replaces the description of the task at [index]: its plain note lines (not links, images, the first
-     * step or subtasks). Each line of [text] becomes a `- ` line, which Obsidian shows nested under the task.
+     * step, stuck notes or subtasks). Each line of [text] becomes a `- ` line, which Obsidian shows nested under the task.
      */
     fun describe(lines: MutableList<String>, index: Int, text: String) {
         val indent = lines[index].takeWhile { it == ' ' || it == '\t' } + "    "

@@ -87,6 +87,7 @@ import app.omnitask.model.Projects
 import app.omnitask.model.Recurrence
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
@@ -109,6 +110,8 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     var linking by remember { mutableStateOf(false) }
     var repeating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var notingStuck by remember { mutableStateOf(false) }
+    var stuckLog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.attachImage(task, uri)
@@ -248,7 +251,31 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
-            FoldRow(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links", first = true) {
+            val stuck = StuckLog.entries(task)
+            FoldRow(
+                tr("ทำไมยังค้าง", "Why still open"),
+                stuck.lastOrNull()?.let { tr("${stuck.size} บันทึก, ล่าสุด ", "${stuck.size} notes, last ") + it.day.format(SHORT_DATE) } ?: tr("ยังไม่มีบันทึก", "No notes"),
+                fold == "stuck", first = true,
+            ) {
+                fold = if (fold == "stuck") null else "stuck"
+            }
+            if (fold == "stuck") Column(Modifier.padding(start = 44.dp, end = 14.dp, bottom = 8.dp)) {
+                StuckHistory(task)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        tr("+ จดว่าติดอะไร", "+ Note what holds it up"),
+                        Modifier.padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).clickable { notingStuck = true }.padding(vertical = 8.dp),
+                        color = C.accentText, fontSize = TS.body,
+                    )
+                    Text(
+                        tr("ดูทุกงานตามวันที่", "All tasks by date"),
+                        Modifier.padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).clickable { stuckLog = true }.padding(vertical = 8.dp),
+                        color = C.text2, fontSize = TS.body,
+                    )
+                }
+            }
+
+            FoldRow(tr("โน้ตที่เกี่ยวข้อง", "Linked notes"), if (task.links.isEmpty()) tr("ไม่มี", "None") else tr("${task.links.size} โน้ต", "${task.links.size} notes"), fold == "links") {
                 fold = if (fold == "links") null else "links"
             }
             if (fold == "links") Column(Modifier.padding(start = 30.dp, end = 4.dp, bottom = 6.dp)) {
@@ -310,6 +337,8 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
     picking?.let { field -> DateDialog(task, field, { vm.setDate(task, field, it) }) { picking = null } }
     if (repeating) RepeatDialog(task, { vm.setRecurrence(task, it) }) { repeating = false }
+    if (notingStuck) StuckDialog(task, { vm.noteStuck(task, it) }) { notingStuck = false }
+    if (stuckLog) StuckTimeline(state, onOpen = { stuckLog = false; onOpen(it) }) { stuckLog = false }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }
     }

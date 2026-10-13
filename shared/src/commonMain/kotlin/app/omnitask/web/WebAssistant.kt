@@ -10,6 +10,7 @@ import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.DayPlan
 import app.omnitask.model.tr
@@ -349,6 +350,10 @@ object WebAssistant {
             }
             appendLine("[งานที่ยังไม่เสร็จทั้งหมด]")
             tasks.filter { it.isOpen }.take(60).forEach { appendLine(it.raw.trim()) }
+            StuckLog.summary(tasks).takeIf { it.isNotEmpty() }?.let { lines ->
+                appendLine("[ทำไมงานยังค้าง (บันทึกของเจ้าของ)]")
+                lines.forEach { appendLine("- $it") }
+            }
         }
     }
 
