@@ -182,7 +182,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val fullPage = remember { mutableIntStateOf(0) }
     // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
-    val dock = if (rail || fullPage.intValue > 0) 0.dp else DOCK_HEIGHT + 1.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val askShown = screen != Screen.AI
+    val dockHeight = DOCK_HEIGHT + 1.dp + if (askShown) ASK_HEIGHT else 0.dp
+    val dock = if (rail || fullPage.intValue > 0) 0.dp else dockHeight + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     val content: @Composable () -> Unit = {
         CompositionLocalProvider(LocalFullPage provides fullPage, LocalDockClearance provides dock) {
@@ -221,7 +223,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             }
         }
     }
-    // The assistant floats where the add button used to; adding a task is the middle of the bottom bar (the top of the side rail when wide).
+    // On a phone the assistant opens from the line on the bottom bar; on the side rail it floats at the bottom corner.
     // A page that fills the screen (the project mind map) hides it and the bottom bar ([FullPage]).
     val assistantButton: @Composable (Modifier) -> Unit = { m ->
         if (screen != Screen.AI && fullPage.intValue == 0) {
@@ -232,8 +234,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
             ) { Icon(Ic.spark, tr("ผู้ช่วย", "Assistant"), tint = C.accentText, modifier = Modifier.size(24.dp)) }
         }
     }
-    // Room above the bottom bar for what pops up over the lists: the floating assistant button sits there too.
-    val popupLift = (if (fullPage.intValue > 0) 0.dp else DOCK_HEIGHT) + if (screen != Screen.AI && fullPage.intValue == 0) 84.dp else 12.dp
+    // Room above the bottom bar for what pops up over the lists.
+    val popupLift = (if (fullPage.intValue > 0) 0.dp else dockHeight) + 12.dp
 
     // An opened task beside the page (wide screens), under the same close button as the sheet.
     val editPane: @Composable () -> Unit = {
@@ -248,7 +250,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     if (rail) {
         // Landscape or tablet: the nav becomes a rail on the left and an opened task sits on the right.
-        CompositionLocalProvider(LocalNavClearance provides 24.dp) {
+        // Room at the end of the lists for the assistant button floating at the bottom corner.
+        CompositionLocalProvider(LocalNavClearance provides 76.dp) {
             Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
                 NavRail(screen, onAdd = { adding = QuickAddRequest() }) { screen = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -263,15 +266,16 @@ fun OmniTaskApp(vm: TaskViewModel) {
             }
         }
     } else {
+        // The lists end clear of the bottom bar, which is taller while the assistant line shows.
+        CompositionLocalProvider(LocalNavClearance provides dockHeight + 16.dp) {
         Row(Modifier.fillMaxSize().background(C.bg).then(if (wide) Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)) else Modifier)) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 content()
                 if (fullPage.intValue == 0) DockNav(
-                    selected = screen, moreSelected = screen == Screen.MORE || screen == Screen.AI,
-                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onMore = { screen = Screen.MORE },
+                    selected = screen, showAsk = askShown,
+                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { screen = Screen.AI },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
-                assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = DOCK_HEIGHT + 16.dp))
                 SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift)) {
                     Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                 }
@@ -280,6 +284,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 }
             }
             editPane()
+        }
         }
     }
 
@@ -377,51 +382,62 @@ private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> U
     }
 }
 
-/** Height of the bottom bar without the system navigation inset. */
-private val DOCK_HEIGHT = 64.dp
+/** Height of the bottom bar's tabs, without the system navigation inset. */
+private val DOCK_HEIGHT = 52.dp
+
+/** Height of the line above the tabs that opens the assistant. */
+private val ASK_HEIGHT = 54.dp
 
 /**
- * The bottom bar on a phone: flush with the screen's edge, so every button is in the thumb's reach and nothing floats over
- * the lists. Focus, Tasks, the add button in the middle, Projects, and Settings for everything else (assistant included).
+ * The bottom bar on a phone, flush with the screen's edge so every button is in the thumb's reach. On top, a line that
+ * opens the assistant beside the add button (left out on the assistant's own page, which has its input there); under
+ * it the four tabs as words, the current one bold with a short line beneath.
  */
 @Composable
 private fun DockNav(
     selected: Screen,
-    moreSelected: Boolean,
+    showAsk: Boolean,
     onSelect: (Screen) -> Unit,
     onAdd: () -> Unit,
-    onMore: () -> Unit,
+    onAsk: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth().background(C.card)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.cardBorder))
-        Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
-            DockItem(Screen.FOCUS.icon, Screen.FOCUS.label, selected == Screen.FOCUS && !moreSelected, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
-            DockItem(Screen.TASKS.icon, Screen.TASKS.label, selected == Screen.TASKS && !moreSelected, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
-            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier.size(width = 60.dp, height = 42.dp).clip(RoundedCornerShape(16.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
+        if (showAsk) Row(
+            Modifier.fillMaxWidth().height(ASK_HEIGHT).padding(start = 12.dp, end = 12.dp, top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(C.bg)
+                    .border(1.dp, C.control, RoundedCornerShape(14.dp)).clickable(onClick = onAsk).padding(horizontal = 14.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) { Text(tr("ถามผู้ช่วย", "Ask the assistant"), color = C.faint, fontSize = TS.body, maxLines = 1) }
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp)) }
+        }
+        Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            listOf(Screen.FOCUS, Screen.TASKS, Screen.PROJECTS, Screen.MORE).forEach { s ->
+                DockItem(if (s == Screen.PROJECTS) tr("โปรเจกต์", "Projects") else s.label, s == selected, { onSelect(s) }, Modifier.weight(1f))
             }
-            DockItem(Screen.PROJECTS.icon, tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS && !moreSelected, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
-            DockItem(Screen.MORE.icon, Screen.MORE.label, moreSelected, onMore, Modifier.weight(1f))
         }
         Box(Modifier.navigationBarsPadding())
     }
 }
 
 @Composable
-private fun DockItem(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun DockItem(label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier) {
     Column(
         modifier.fillMaxHeight().clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // A short bar above the icon marks the current place; colour alone is not the only sign.
-        Box(Modifier.size(width = 26.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(if (on) C.accent else Color.Transparent))
-        Icon(icon, null, tint = if (on) C.accentText else C.muted, modifier = Modifier.padding(top = 5.dp).size(22.dp))
-        Text(label, fontSize = TS.micro, color = if (on) C.accentText else C.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, maxLines = 1, softWrap = false)
+        Text(label, fontSize = TS.body, color = if (on) C.text else C.faint, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, softWrap = false)
+        // A short line under the current tab; the weight of the word is not the only sign.
+        Box(Modifier.padding(top = 4.dp).size(width = 18.dp, height = 2.dp).clip(RoundedCornerShape(1.dp)).background(if (on) C.accent else Color.Transparent))
     }
 }
 
@@ -485,8 +501,8 @@ fun FullPage() {
 val NavClearance: Dp
     @Composable get() = LocalNavClearance.current
 
-/** Extra room at the end of a screen so the last card can scroll clear of the round add button. */
-val FabClearance = 76.dp
+/** Extra room at the end of a screen past the bottom bar, so the last card does not sit flush against it. */
+val FabClearance = 12.dp
 
 /** Bottom space the floating nav needs; on wide screens the nav sits at the side and only a margin is left. */
 val LocalNavClearance = staticCompositionLocalOf { 100.dp }
