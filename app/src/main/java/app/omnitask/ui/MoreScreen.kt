@@ -36,6 +36,7 @@ fun MoreScreen(
     urgentRule: UrgentRule,
     onUrgent: (UrgentRule) -> Unit,
     onScreen: (Screen) -> Unit,
+    onQuest: () -> Unit,
     onNotify: () -> Unit,
     onSettings: () -> Unit,
     onReload: () -> Unit,
@@ -50,6 +51,8 @@ fun MoreScreen(
         item {
             Card {
                 MoreRow(Ic.spark, Screen.AI.label) { onScreen(Screen.AI) }
+                Divider(start = 64.dp)
+                MoreRow(Ic.sword, "Omni Quest", onClick = onQuest)
             }
         }
         item {

@@ -130,6 +130,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
         // Items that draw nothing would still take a gap in the column, so they are only added when they show.
         if (calendarConnectShows(state)) item { CalendarConnect(state, vm) }
+        item { QuestStrip(state, vm) }
 
         item {
             Card {

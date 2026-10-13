@@ -118,6 +118,7 @@ object Ic {
     val share = icon("share", "M12 4v11", "M7 9l5-5 5 5", "M5 14v5h14v-5")
     val grid = icon("grid", "M5 5h4v4H5Z", "M15 5h4v4h-4Z", "M5 15h4v4H5Z", "M15 15h4v4h-4Z")
     val gear = icon("gear", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z", "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8")
+    val sword = icon("sword", "M19.5 4.5l-9 9", "M14.5 4.5h5v5", "M7 12l5 5", "M8.5 15.5l-4 4")
     val folderOpen = icon("folderOpen", "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v1", "M3.5 18.5l2.5-8h15l-2.5 8Z")
 }
 

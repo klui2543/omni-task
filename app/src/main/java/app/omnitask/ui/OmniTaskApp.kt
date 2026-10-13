@@ -105,6 +105,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var screen by rememberSaveable { mutableStateOf(Screen.FOCUS) }
     var notifyOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var questOpen by rememberSaveable { mutableStateOf(false) }
+    var idleOpen by rememberSaveable { mutableStateOf(false) }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
@@ -114,6 +116,20 @@ fun OmniTaskApp(vm: TaskViewModel) {
         state.quickAdd?.let { r ->
             if (r.assistant) screen = Screen.AI else adding = r
             vm.requestQuickAdd(null)
+        }
+    }
+
+    // A timer just started (from a task or the quest page): show its idle battle. The Focus strip asks for the quest page.
+    LaunchedEffect(state.idleRequested) {
+        if (state.idleRequested) {
+            idleOpen = true
+            vm.idleShown()
+        }
+    }
+    LaunchedEffect(state.questRequested) {
+        if (state.questRequested) {
+            questOpen = true
+            vm.requestQuest(false)
         }
     }
 
@@ -142,6 +158,16 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     if (notifyOpen) {
         NotifySettingsScreen(state.notify, vm::setNotify, vm::calendarChanged) { notifyOpen = false }
+        return
+    }
+
+    if (idleOpen) {
+        IdleScreen(state, vm) { idleOpen = false }
+        return
+    }
+
+    if (questOpen) {
+        QuestScreen(state, vm, onIdle = { idleOpen = true }) { questOpen = false }
         return
     }
 
@@ -202,7 +228,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                         Screen.PROJECTS -> ProjectsScreen(state, vm, open)
                         Screen.AI -> AssistantScreen(state, vm, open)
                         Screen.MORE -> MoreScreen(
-                            urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it },
+                            urgentRule = state.urgentRule, onUrgent = vm::setUrgentRule, onScreen = { screen = it }, onQuest = { questOpen = true },
                             onNotify = { notifyOpen = true }, onSettings = { settingsOpen = true },
                             onReload = vm::reload, onVault = { pickVault.launch(state.vault) },
                         )

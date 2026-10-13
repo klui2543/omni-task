@@ -26,9 +26,10 @@ object SettingsSync {
 
     /**
      * Device-specific or derived keys that must not travel: the folder grant, the scheduled alarm ids, the calendar ids
-     * (they differ per phone) and whether this phone reaches the Omni folder through Drive.
+     * (they differ per phone), whether this phone reaches the Omni folder through Drive, and the Omni Quest timer
+     * running on this phone (two phones ending the same timer would pay its battle twice).
      */
-    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
+    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON, app.omnitask.ui.QuestTimer.KEY)
 
     private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

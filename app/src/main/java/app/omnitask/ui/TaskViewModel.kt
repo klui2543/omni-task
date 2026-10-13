@@ -18,6 +18,11 @@ import app.omnitask.data.CalendarReader
 import app.omnitask.data.DriveLink
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.BehaviorLog
+import app.omnitask.data.QuestStore
+import app.omnitask.quest.Idle
+import app.omnitask.quest.QuestAction
+import app.omnitask.quest.QuestLog
+import app.omnitask.quest.QuestXp
 import app.omnitask.data.SettingsSync
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
@@ -166,6 +171,15 @@ data class UiState(
     val strictProjects: Set<String> = emptySet(),
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
+    /** Omni Quest: what was played (the log), the archive's finished tasks, how often each task was put off. */
+    val questLog: List<QuestAction> = emptyList(),
+    val questArchive: List<Task> = emptyList(),
+    val questMoves: Map<String, Int> = emptyMap(),
+    /** The task being timed now, whose idle battle runs meanwhile. */
+    val timer: QuestTimer? = null,
+    /** Set when the idle page should open (a timer just started), or the Omni Quest page. */
+    val idleRequested: Boolean = false,
+    val questRequested: Boolean = false,
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -303,6 +317,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         countdown = prefs.getString(KEY_COUNTDOWN, null),
+        timer = QuestTimer.load(prefs),
         foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
         branchStates = Branches.parse(prefs.getStringSet(KEY_BRANCHES, emptySet()).orEmpty()),
         foldedColumns = prefs.getStringSet(KEY_FOLDED_COLUMNS, emptySet()).orEmpty().toSet(),
@@ -425,6 +440,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             behavior = withContext(Dispatchers.IO) {
                 runCatching { BehaviorLog.sync(getApplication(), repo, vault) }.getOrElse { (behavior + BehaviorLog.waiting(getApplication())).distinctBy { e -> e.id } }
             }
+            loadQuest(vault)
             val swept = withContext(Dispatchers.IO) { runCatching { sweepIfDue(vault) }.getOrDefault(emptyList()) }
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
@@ -1718,6 +1734,65 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนชื่อไม่ได้: ", "Cannot rename: ") + e.message) } }
             reload()
         }
+    }
+
+    // ---- Omni Quest ----
+
+    /** The game's log (sent out first) and the archive's finished tasks, which the character grew from too. */
+    private fun loadQuest(vault: Uri) {
+        val app = getApplication<Application>()
+        _state.update { it.copy(questLog = QuestStore.cached(app), questMoves = QuestXp.moves(behaviorNow())) }
+        viewModelScope.launch {
+            val log = withContext(Dispatchers.IO) { runCatching { QuestStore.sync(app, repo, vault) }.getOrNull() }
+            val archive = withContext(Dispatchers.IO) { runCatching { QuestStore.archived(repo, vault) }.getOrNull() }
+            _state.update { s ->
+                s.copy(questLog = log ?: s.questLog, questArchive = archive ?: s.questArchive, questMoves = QuestXp.moves(behaviorNow()))
+            }
+        }
+    }
+
+    /** Keeps one thing done in the game ([QuestLog]) and sends it to the vault. */
+    fun questAct(act: String, a: String? = null, b: String? = null, n: Int? = null, gold: Int? = null, kills: Int? = null) {
+        val app = getApplication<Application>()
+        val action = QuestLog.action(act, LocalDateTime.now(), QuestStore.SRC, a, b, n, gold, kills)
+        QuestStore.record(app, action)
+        _state.update { it.copy(questLog = it.questLog + action) }
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val all = withContext(Dispatchers.IO) { runCatching { QuestStore.sync(app, repo, vault) }.getOrNull() }
+            if (all != null) _state.update { it.copy(questLog = all) }
+        }
+    }
+
+    /** Starts timing [task]; the idle battle runs until [stopTimer]. A timer already running is ended first. */
+    fun startTimer(task: Task) {
+        if (_state.value.timer != null) stopTimer(finish = false)
+        val t = QuestTimer(task.title, System.currentTimeMillis(), kotlin.random.Random.nextLong(1, Long.MAX_VALUE / 64))
+        t.save(prefs)
+        _state.update { it.copy(timer = t, idleRequested = true) }
+    }
+
+    fun idleShown() = _state.update { it.copy(idleRequested = false) }
+
+    fun requestIdle() = _state.update { it.copy(idleRequested = true) }
+
+    fun requestQuest(open: Boolean) = _state.update { it.copy(questRequested = open) }
+
+    /**
+     * Ends the timer: the session's battle is kept in the log (when it ran a minute or more), and with [finish]
+     * the task is ticked done as well.
+     */
+    fun stopTimer(finish: Boolean) {
+        val s = _state.value
+        val t = s.timer ?: return
+        QuestTimer.clear(prefs)
+        _state.update { it.copy(timer = null) }
+        val seconds = t.seconds(System.currentTimeMillis())
+        if (seconds >= Idle.MIN_SECONDS) {
+            val frame = Idle.frame(t.seed, s.fighter(timing = true), seconds)
+            questAct(QuestLog.IDLE, a = t.title, b = frame.drop, n = frame.seconds, gold = frame.gold, kills = frame.kills)
+        }
+        if (finish) s.tasks.firstOrNull { it.title == t.title && it.isOpen }?.let { toggleDone(it) }
     }
 
     /** Pins a task for the Focus countdown, or clears it. */
