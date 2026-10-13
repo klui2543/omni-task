@@ -141,17 +141,20 @@ test('Google Calendar: says what to switch on when the API is off', async ({ pag
 
 test('in the evening it shows the night, and tonight\'s bedtime can move', async ({ page }) => {
   await open(page, { now: at(20), granted: true, events: [{ title: 'เวรเช้า', begin: at(7, 0, 9), end: at(16, 0, 9) }] })
-  await expect(page.getByText('นอน 22:30 ตื่น 06:00')).toBeVisible()
-  await expect(page.getByText('ตื่นก่อน เวรเช้า 1 ชม.')).toBeVisible()
-  await page.getByRole('button', { name: /นอน 22:30/ }).click()
+  await expect(page.getByRole('button', { name: 'นอน 22:30' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ตื่น 06:00 พรุ่งนี้' })).toBeVisible()
+  await expect(page.getByText('เผื่อ 1 ชม. ก่อน 07:00: เวรเช้า')).toBeVisible()
+  await page.getByRole('button', { name: 'นอน 22:30' }).click()
   await page.getByLabel('เวลานอน', { exact: true }).fill('23:30')
   await page.getByRole('button', { name: 'บันทึก' }).click()
-  await expect(page.getByText('นอน 23:30 ตื่น 06:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'นอน 23:30' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ตื่น 06:00 พรุ่งนี้' })).toBeVisible()
 })
 
 test('the usual sleep times come from the profile note', async ({ page }) => {
   await open(page, { now: at(20), profile: '# โปรไฟล์\n- ตื่น: 06:00\n- นอน: 23:00\n' })
-  await expect(page.getByText('นอน 23:00 ตื่น 06:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'นอน 23:00' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ตื่น 06:00 พรุ่งนี้' })).toBeVisible()
 })
 
 test('a task on Focus opens the edit pane', async ({ page }) => {
