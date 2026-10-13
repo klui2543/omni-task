@@ -393,8 +393,11 @@ private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> U
 /** Height of the bottom bar's tabs, without the system navigation inset. */
 private val DOCK_HEIGHT = 52.dp
 
-/** Height of the line above the tabs that opens the assistant. */
-private val ASK_HEIGHT = 54.dp
+/**
+ * Height of the line above the tabs for the assistant: the field, with room above and below it and a hairline under
+ * it, so a tap meant for a tab does not land in the field (or the other way round).
+ */
+private val ASK_HEIGHT = 67.dp
 
 /**
  * The bottom bar on a phone, flush with the screen's edge so every button is in the thumb's reach. On top, a line to
@@ -421,7 +424,7 @@ private fun DockNav(
     Column(modifier.fillMaxWidth().background(C.card).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.cardBorder))
         if (showAsk) Row(
-            Modifier.fillMaxWidth().height(ASK_HEIGHT).padding(start = 12.dp, end = 12.dp, top = 10.dp),
+            Modifier.fillMaxWidth().height(ASK_HEIGHT - 1.dp).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -452,6 +455,7 @@ private fun DockNav(
                 else Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp))
             }
         }
+        if (showAsk) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(C.divider))
         Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf(Screen.FOCUS, Screen.TASKS, Screen.PROJECTS, Screen.MORE).forEach { s ->
                 DockItem(if (s == Screen.PROJECTS) tr("โปรเจกต์", "Projects") else s.label, s == selected, { onSelect(s) }, Modifier.weight(1f))
