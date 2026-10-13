@@ -209,6 +209,8 @@ export interface ProjectsIn {
   kindTags?: string[]
   /** List tags as last read, used only while the list notes are read again. */
   listTags?: string[]
+  /** The tags the owner made projects; missing until chosen once, when every first tag still names one. */
+  projectTags?: string[]
 }
 
 export type BranchState = 'ACTIVE' | 'TRYING' | 'CHOSEN' | 'PARKED'
@@ -286,6 +288,10 @@ export interface ProjectsOut {
   noteTasks: Task[]
   parked: string[]
   ignored: string[]
+  /** Tags that are not projects, which the owner can make one, most used first. */
+  others: { name: string; count: number }[]
+  /** When the owner never chose: the projects as every first tag named them, to keep as the choice. */
+  seed?: string[]
 }
 
 /** What Project Ygdrasil shows; see Ygdrasil.Filter in the shared code. */

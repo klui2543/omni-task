@@ -637,6 +637,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 .page.pj .head > .ghost, .page.pj .head > .primary { flex: none; height: 38px; min-height: 38px; padding: 0 14px; }
 .pj-h1-small { font-size: 22px !important; }
 .pj-h2 { margin: 8px 0 0; font-size: 15px; font-weight: 500; color: var(--text2); }
+.pj-others { display: flex; flex-direction: column; gap: 8px; }
+.pj-others .chip .muted { margin-left: 6px; }
 .pj-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 @media (min-width: 1000px) { .pj-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1380px) { .pj-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

@@ -10,7 +10,7 @@ import { PLAIN_FILTER, Ygdrasil } from '../ui/projects/Ygdrasil'
 import { ProjectHome } from '../ui/projects/ProjectHome'
 import { ProjectOverview } from '../ui/projects/ProjectOverview'
 import { MODES, MODE_LABEL, ViewsPage, type ViewMode } from './Views'
-import { listsSeeded, renamedProject, toggleIn, useProjectsLocal, useYgdrasilLocal } from '../ui/projects/projectState'
+import { listsSeeded, renamedProject, toggleIn, useProjectsLocal, useYgdrasilLocal, withProject } from '../ui/projects/projectState'
 import { QuickAdd } from './Tasks'
 
 type Dialog =
@@ -82,6 +82,12 @@ export function ProjectsPage(p: PageProps) {
     [world, p.snapshot, notes, shownState, yg],
   )
   useEffect(() => { if (out && notes) setIgnoredTags(out.ignored) }, [out])
+  // Never chosen: the projects every first tag named so far are kept as the choice (once the list notes are read,
+  // so their tags are not taken for projects), and from then on a tag is a project only when made one here.
+  useEffect(() => {
+    if (out?.seed && notes && !local.projectTags) setLocal((s) => (s.projectTags ? s : { ...s, projectTags: out.seed }))
+  }, [out])
+  const setProject = (tag: string, on: boolean) => setLocal((s) => withProject(s, tag, on, out?.seed ?? []))
 
   const noteTasks = useMemo(() => new Map((out?.noteTasks ?? []).map((t) => [t.key, t])), [out])
   const task = (key: string): Task | undefined => p.snapshot?.byKey.get(key) ?? noteTasks.get(key)
@@ -136,7 +142,8 @@ export function ProjectsPage(p: PageProps) {
     p.run(async () => {
       const res = await p.vault.renameTag(r.oldTag!, r.newTag!)
       if (res.ok) {
-        setLocal((s) => ({ ...s, branches: r.states }))
+        // A branch dropped on the trunk becomes a project of its own.
+        setLocal((s) => ({ ...(s.projectTags ? withProject(s, r.newTag!.split('/')[0], true, []) : s), branches: r.states }))
         say(to === '' ? `#${r.newTag} เป็นโปรเจกต์ของตัวเองแล้ว` : `ย้าย #${r.oldTag} ไปไว้ใต้ #${to} แล้ว (${res.changed ?? 0} บรรทัด)`)
       }
       return res
@@ -301,6 +308,10 @@ export function ProjectsPage(p: PageProps) {
         <span class="grow" />
         <div class="head-tools">
           <button class="chip tool" onClick={() => setDialog({ k: 'rename' })}>เปลี่ยนชื่อโปรเจกต์</button>
+          <button
+            class="chip tool" title={`#${project.name} กลับเป็นแท็กธรรมดา งานยังอยู่ครบ`}
+            onClick={() => { const name = project.name; setProject(name, false); home(); say(`#${name} เป็นแท็กธรรมดาแล้ว`) }}
+          >เลิกเป็นโปรเจกต์</button>
         </div>
       </header>
       <ProjectOverview
@@ -326,7 +337,8 @@ export function ProjectsPage(p: PageProps) {
     </>
   ) : (
     <ProjectHome
-      projects={out.projects} lists={out.lists} arranging={arranging} onArrange={setArranging}
+      projects={out.projects} lists={out.lists} others={out.others} arranging={arranging} onArrange={setArranging}
+      onMakeProject={(tag) => setProject(tag, true)}
       onOrder={(names) => setLocal((s) => ({ ...s, order: names }))}
       onStar={(n) => setLocal((s) => ({ ...s, starred: toggleIn(s.starred, n) }))}
       onOpen={(n) => { setOpenName(n); setMapping(false) }} onOpenList={(path) => { setOpenPath(path); setCategory(null) }}

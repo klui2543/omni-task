@@ -4,8 +4,9 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
 
 /**
- * Projects until the dotpm format is settled: each task's first tag (other than reminder and #รอ tags)
- * names its project. Dependencies come from the Tasks plugin's `🆔` and `⛔` fields.
+ * Projects until the dotpm format is settled: the owner makes a tag a project on the Projects page ([chosen]), and a
+ * task's first tag of one names its project; other tags stay plain tags. Dependencies come from the Tasks plugin's
+ * `🆔` and `⛔` fields.
  */
 object Projects {
 
@@ -23,12 +24,37 @@ object Projects {
     /** Tags that never name a project: lists, their categories, and the owner's own kinds. Set on each load. */
     @kotlin.concurrent.Volatile var ignoredTags: Set<String> = emptySet()
 
-    /** The task's project tag in full, branch included ("peddose/แอป/มือถือ"). */
-    fun tagOf(t: Task): String? =
-        t.tags.firstOrNull { !it.startsWith("remind-at-") && it != Focus.WAITING_TAG && !it.startsWith("${Focus.WAITING_TAG}/") && it !in ignoredTags }
+    /**
+     * The projects the owner made on the Projects page; any other tag is a plain tag. Null until the owner's settings
+     * hold a choice, when every task's first tag still names a project (see [seed]). Set on each load.
+     */
+    @kotlin.concurrent.Volatile var chosen: Set<String>? = null
 
-    /** The project a task belongs to: its first tag up to the first slash, so branches stay in their project. */
+    /** A tag that can name a project at all: not a reminder, a wait or a list, kind or category. */
+    private fun plain(tag: String) =
+        !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags
+
+    /** The task's project tag in full, branch included ("peddose/แอป/มือถือ"): its first tag of a chosen project. */
+    fun tagOf(t: Task): String? {
+        val made = chosen
+        return t.tags.firstOrNull { plain(it) && (made == null || it.substringBefore('/') in made) }
+    }
+
+    /** The project a task belongs to: its project tag up to the first slash, so branches stay in their project. */
     fun projectOf(t: Task): String? = tagOf(t)?.substringBefore('/')
+
+    /** The projects as every first tag named them before the owner chose: what [chosen] starts from. */
+    fun seed(tasks: List<Task>): Set<String> =
+        tasks.filter { it.status != Status.CANCELLED }.mapNotNull { t -> t.tags.firstOrNull(::plain)?.substringBefore('/') }.toSet()
+
+    /** Tags on [tasks] that are not projects and could be made one, with how many tasks carry each; most used first. */
+    fun others(tasks: List<Task>): List<Pair<String, Int>> {
+        val made = chosen ?: return emptyList()
+        return tasks.filter { it.status != Status.CANCELLED }
+            .flatMap { t -> t.tags.filter(::plain).map { it.substringBefore('/') }.filter { it.isNotEmpty() && it !in made }.distinct() }
+            .groupingBy { it }.eachCount().toList()
+            .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first.lowercase() })
+    }
 
     /** A task is blocked while any task it waits for (by id) is still open. */
     fun blocked(tasks: List<Task>): Set<Task> {

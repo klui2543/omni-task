@@ -104,6 +104,16 @@ try {
   if (Array.isArray(saved) && saved.length + kinds.length) api.projectIgnoreTags(JSON.stringify([...saved, ...kinds]))
 } catch { /* start without them */ }
 
+/**
+ * The tags the owner made projects on the Projects page, for every page that reads projects; undefined until chosen
+ * once, when every first tag still names one. Kept with the other Projects choices and applied at start.
+ */
+export const applyProjectTags = (tags: string[] | undefined) => api.projectChoose(tags ? JSON.stringify(tags) : undefined)
+try {
+  const saved = JSON.parse(localStorage.getItem('omni.projects') ?? '{}').projectTags
+  if (Array.isArray(saved)) applyProjectTags(saved)
+} catch { /* every first tag names a project */ }
+
 const edited = (json: string): ProjectEditResult => JSON.parse(json)
 
 /** Projects, branches and lists from the TaskForge note, the list notes and what this device chose. */

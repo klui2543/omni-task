@@ -83,6 +83,8 @@ object WebApi {
 
     fun projectIgnoreTags(tags: String) = WebProjects.ignoreTags(tags)
 
+    fun projectChoose(tags: String?) = WebProjects.chooseProjects(tags)
+
     fun projectRenameTag(text: String, old: String, new: String): String = WebProjects.renameTag(text, old, new)
 
     fun projectDropTag(text: String, tag: String): String = WebProjects.dropTag(text, tag)

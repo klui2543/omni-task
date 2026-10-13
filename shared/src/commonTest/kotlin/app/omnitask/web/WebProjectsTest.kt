@@ -57,6 +57,23 @@ class WebProjectsTest {
     }
 
     @Test
+    fun onlyTheChosenTagsAreProjects() {
+        // Never chosen: every first tag still names a project, and the page hands them back as the choice to keep.
+        val before = build()
+        assertEquals(listOf("Siriraj", "peddose", "watchlist", "บ้าน"), before.seed)
+        assertTrue(before.others.isEmpty())
+        try {
+            val r = build("""{"projectTags":["peddose"]}""")
+            assertEquals(listOf("peddose"), r.projects.map { it.name })
+            assertNull(r.seed)
+            assertEquals(listOf("Siriraj", "watchlist", "บ้าน"), r.others.map { it.name })
+            assertEquals(1, r.others.first().count)
+        } finally {
+            WebProjects.chooseProjects(null)
+        }
+    }
+
+    @Test
     fun cardsCountDoneOverdueAndBlocked() {
         val p = build().projects.first { it.name == "peddose" }
         assertEquals(6, p.total)

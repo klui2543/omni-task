@@ -42,6 +42,9 @@ function Card(p: {
 export function ProjectHome(p: {
   projects: ProjectOut[]
   lists: ListOut[]
+  /** Tags that are not projects; tapping one makes it a project. */
+  others: { name: string; count: number }[]
+  onMakeProject: (tag: string) => void
   arranging: boolean
   onArrange: (on: boolean) => void
   onOrder: (names: string[]) => void
@@ -69,7 +72,9 @@ export function ProjectHome(p: {
         <button class="ghost narrow-only" onClick={() => { location.hash = '/settings' }}>ตั้งค่า</button>
       </header>
 
-      {p.projects.length === 0 && <section class="group empty">ยังไม่มีงานที่ติด Tag</section>}
+      {p.projects.length === 0 && (
+        <section class="group empty">{p.others.length ? 'ยังไม่มีโปรเจกต์ แตะแท็กด้านล่างเพื่อทำเป็นโปรเจกต์' : 'ยังไม่มีงานที่ติด Tag'}</section>
+      )}
       {p.projects.length > 0 && !p.arranging && (
         <button class="yg-entry" onClick={p.onYgdrasil}>
           <span class="grow stack">
@@ -85,6 +90,20 @@ export function ProjectHome(p: {
             onOpen={() => p.onOpen(project.name)} onStar={() => p.onStar(project.name)} />
         ))}
       </div>
+
+      {!p.arranging && p.others.length > 0 && (
+        <section class="pj-others">
+          <h2 class="pj-h2">แท็กอื่น</h2>
+          <span class="small muted">แตะเพื่อทำเป็นโปรเจกต์</span>
+          <div class="chips">
+            {p.others.map((t) => (
+              <button key={t.name} class="chip" aria-label={`ทำ #${t.name} เป็นโปรเจกต์`} onClick={() => p.onMakeProject(t.name)}>
+                #{t.name} <span class="muted">{t.count}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {!p.arranging && (
         <>

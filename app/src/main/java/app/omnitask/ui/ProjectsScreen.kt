@@ -61,7 +61,9 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val rank = state.projectOrder.withIndex().associate { it.value to it.index }
     // Parked branches still belong to their project, so the project (and the way back to it) never disappears.
     val projectTasks = state.tasks + state.parked
-    val built = remember(state.tasks, state.parked, state.today) { Projects.build(projectTasks, state.today) }
+    val built = remember(state.tasks, state.parked, state.today, state.projectTags) { Projects.build(projectTasks, state.today) }
+    // Tags that are not projects; the owner makes one a project here.
+    val others = remember(state.tasks, state.parked, state.projectTags) { Projects.others(projectTasks) }
     val projects = built.sortedWith(compareBy({ it.name !in state.starred }, { rank[it.name] ?: Int.MAX_VALUE }))
     var arranging by rememberSaveable { mutableStateOf(false) }
     var openName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -186,7 +188,17 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         if (openList != null) {
             listDetail(openList, state, vm, listCategory, { listCategory = it }, onOpen) { pickingIcon = true }
         } else if (open == null) {
-            if (projects.isEmpty()) item { Card { Text(tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet"), Modifier.padding(16.dp), color = C.muted) } }
+            if (projects.isEmpty()) {
+                item {
+                    Card {
+                        Text(
+                            if (others.isEmpty()) tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet")
+                            else tr("ยังไม่มีโปรเจกต์ แตะแท็กด้านล่างเพื่อทำเป็นโปรเจกต์", "No projects yet. Tap a tag below to make it one."),
+                            Modifier.padding(16.dp), color = C.muted,
+                        )
+                    }
+                }
+            }
             if (projects.isNotEmpty() && !arranging) item(key = "ygdrasil entry") { YgdrasilEntry { world = true } }
             shown.forEachIndexed { i, p ->
                 item(key = p.name) {
@@ -239,6 +251,23 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                 if (p.overdue > 0) Pill(tr("เลยกำหนด ${p.overdue}", "Overdue ${p.overdue}"), C.redSoft, C.red)
                                 if (p.blocked.isNotEmpty()) Pill(tr("ติดรองานอื่น ${p.blocked.size}", "Blocked ${p.blocked.size}"), C.amberSoft, C.amber)
                             }
+                        }
+                    }
+                }
+            }
+            if (!arranging && others.isNotEmpty()) {
+                item(key = "other tags") {
+                    Card {
+                        SectionHead(tr("แท็กอื่น", "Other tags"), C.text2, "${others.size}")
+                        Text(
+                            tr("แตะเพื่อทำเป็นโปรเจกต์", "Tap one to make it a project"),
+                            Modifier.padding(horizontal = 16.dp), color = C.muted, fontSize = TS.caption,
+                        )
+                        FlowRow(
+                            Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            others.forEach { (tag, n) -> Chip("#$tag  $n", false, { vm.setProject(tag, true) }) }
                         }
                     }
                 }
@@ -313,6 +342,20 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                             TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) })
                         }
                         Box(Modifier.height(4.dp))
+                    }
+                }
+            }
+            item(key = "not a project") {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(16.dp))
+                        .clickable { vm.setProject(open.name, false); openName = null }.padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Column {
+                        Text(tr("เลิกเป็นโปรเจกต์", "Stop being a project"), color = C.text, fontSize = TS.body)
+                        Text(
+                            tr("#${open.name} กลับเป็นแท็กธรรมดา งานยังอยู่ครบ", "#${open.name} goes back to a plain tag; its tasks stay as they are"),
+                            color = C.muted, fontSize = TS.caption,
+                        )
                     }
                 }
             }
