@@ -116,8 +116,12 @@ header says `omni-list: true`, found only directly in that folder). Every text c
 a branch, adding to a list, pulling tasks into a list, "do in order" with 🆔 and ⛔, a new list note) is made by
 `shared/.../web/WebProjects.kt`, the same code paths Android uses, and written with the same version check.
 
-What the owner chooses on this page (the order of projects, the starred ones, the state of each branch, each
-project's task order, "do in order") is kept on this device (localStorage `omni.projects`) and travels with Android
+A tag is a project only when the owner made it one on this page: the "แท็กอื่น" chips under the project cards make
+one, and "เลิกเป็นโปรเจกต์" in a project's header turns it back into a plain tag (the task lines never change). The
+first time, the projects every first tag named before are kept as the choice, so none disappears.
+
+What the owner chooses on this page (which tags are projects, the order of projects, the starred ones, the state of
+each branch, each project's task order, "do in order") is kept on this device (localStorage `omni.projects`) and travels with Android
 through `omni-settings.json`; see "Settings shared with Android" below.
 
 ## Task kinds
@@ -131,7 +135,7 @@ tab-separated `name, emoji, tag` form) and travel with Android through `omni-set
 ## Settings shared with Android
 
 `src/settingsSync.ts` reads and writes Android's settings file, `omni-settings.json` in the Omni folder, for the choices
-both apps have: the Projects page (order, stars, branch states, task order, "do in order"), the task kinds, what
+both apps have: the Projects page (which tags are projects, order, stars, branch states, task order, "do in order"), the task kinds, what
 counts as urgent, the archive days and whether ticking done asks. The file is read when the page opens and on every
 reload; it wins when its `savedAt` is newer than this device's last sync, as on Android. A change here is written
 1.5 seconds later (quick changes become one write), with every key Android wrote left as it was and `savedAt` later

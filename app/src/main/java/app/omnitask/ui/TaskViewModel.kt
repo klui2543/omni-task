@@ -144,6 +144,8 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** The tags the owner made projects (see [Projects.chosen]); null until chosen once. */
+    val projectTags: Set<String>? = null,
     /** Branch states by (project, path), and the tasks hidden because their branch is parked. */
     val branchStates: Map<Pair<String, String>, Branches.State> = emptyMap(),
     val parked: List<Task> = emptyList(),
@@ -307,6 +309,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         hiddenCalendars = CalendarReader.hiddenIds(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        // The project logic reads the choice too, so it is applied wherever the settings are.
+        projectTags = prefs.getStringSet(KEY_PROJECT_TAGS, null)?.toSet().also { Projects.chosen = it },
         countdown = prefs.getString(KEY_COUNTDOWN, null),
         foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
         branchStates = Branches.parse(prefs.getStringSet(KEY_BRANCHES, emptySet()).orEmpty()),
@@ -449,6 +453,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
+            // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
+            if (_state.value.projectTags == null) {
+                result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
+            }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -1113,6 +1121,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(starred = next) }
     }
 
+    /** Makes [tag] a project, or (off) a plain tag again; the task lines stay as they are. */
+    fun setProject(tag: String, on: Boolean) {
+        val s = _state.value
+        val now = s.projectTags ?: Projects.seed(s.tasks + s.parked)
+        saveProjectTags(if (on) now + tag else now - tag)
+    }
+
+    private fun saveProjectTags(tags: Set<String>) {
+        prefs.edit().putStringSet(KEY_PROJECT_TAGS, tags).apply()
+        Projects.chosen = tags
+        _state.update { it.copy(projectTags = tags) }
+    }
+
     /**
      * A project's open tasks in the owner's order: tasks never placed come after, by date. The first is
      * the one to do next.
@@ -1663,7 +1684,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
-            result.onSuccess { saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag)) }
+            result.onSuccess {
+                saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag))
+                // A branch dropped on the trunk becomes a project of its own.
+                _state.value.projectTags?.let { tags -> saveProjectTags(tags + newTag.substringBefore('/')) }
+            }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
             reload()
         }
@@ -1720,6 +1745,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) name else k }
                 val strict = s.strictProjects.map { if (it == old) name else it }.toSet()
                 val branches = s.branchStates.mapKeys { (k, _) -> if (k.first == old) name to k.second else k }
+                s.projectTags?.let { saveProjectTags(it - old + name) }
                 prefs.edit()
                     .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
                     .putStringSet(KEY_STARRED, starred)
@@ -1893,6 +1919,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+        const val KEY_PROJECT_TAGS = "projectTags"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_COUNTDOWN = "focus.countdown"

@@ -47,7 +47,13 @@ object WebProjects {
         val kindTags: List<String> = emptyList(),
         /** List tags remembered from the last time the list notes were read, while they are read again. */
         val listTags: List<String> = emptyList(),
+        /** The tags the owner made projects; missing until chosen once, when every first tag still names one. */
+        val projectTags: List<String>? = null,
     )
+
+    /** A tag that is not a project, with how many tasks carry it, offered to be made one. */
+    @Serializable
+    data class TagOut(val name: String, val count: Int)
 
     @Serializable
     data class NextOut(val key: String, val title: String)
@@ -132,6 +138,10 @@ object WebProjects {
         val parked: List<String>,
         /** Tags that are lists or their categories, which never name a project. */
         val ignored: List<String>,
+        /** Tags that are not projects, which the owner can make one. */
+        val others: List<TagOut> = emptyList(),
+        /** When the owner never chose: the projects as every first tag named them, to keep as the choice. */
+        val seed: List<String>? = null,
     )
 
     /**
@@ -156,6 +166,7 @@ object WebProjects {
         // Lists, their categories: tags that are not projects. Set before any project is read.
         val ignored = lists.flatMap { listOf(it.tag) + it.categories }.toSet()
         Projects.ignoredTags = ignored + st.kindTags + st.listTags
+        Projects.chosen = st.projectTags?.toSet()
 
         val states = Branches.parse(st.branches.toSet())
         val everything = WebNotes.tasks(fileKey, path, text)
@@ -233,8 +244,15 @@ object WebProjects {
                 noteTasks = noteTasks.map { WebCore.dto(it, day) },
                 parked = parked.map { it.key },
                 ignored = ignored.toList(),
+                others = Projects.others(projectTasks).map { (name, n) -> TagOut(name, n) },
+                seed = if (st.projectTags == null) Projects.seed(projectTasks).sorted() else null,
             ),
         )
+    }
+
+    /** The projects the owner chose, for the pages that read projects without building this one; null when never chosen. */
+    fun chooseProjects(tagsJson: String?) {
+        Projects.chosen = tagsJson?.let { json.decodeFromString<List<String>>(it).toSet() }
     }
 
     // ---- Edits: each takes a note's text and answers with the whole new text, or why nothing changed ----

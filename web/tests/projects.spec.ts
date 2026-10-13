@@ -82,6 +82,26 @@ test('starring and arranging stay on this device and write nothing to the vault'
   await expect(page.locator('.pj-name').first()).toHaveText('บ้าน')
 })
 
+test('a tag is a project only once made one here, and can go back to a plain tag', async ({ page }) => {
+  const { drive } = await start(page)
+  const before = writes(drive)
+  const names = () => page.locator('.pj-name').allTextContents()
+  // The projects every first tag named before are kept as the choice.
+  await expect.poll(async () => (await stored(page)).projectTags?.sort()).toEqual(['Siriraj', 'peddose', 'บ้าน'])
+
+  await page.locator('.pj-card', { hasText: 'บ้าน' }).getByRole('button', { name: /บ้าน/ }).first().click()
+  await page.getByRole('button', { name: 'เลิกเป็นโปรเจกต์' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'โปรเจกต์/ลิสต์' })).toBeVisible()
+  expect(await names()).toEqual(['peddose', 'Siriraj'])
+  await expect(page.getByRole('button', { name: 'ทำ #บ้าน เป็นโปรเจกต์' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'ทำ #บ้าน เป็นโปรเจกต์' }).click()
+  await expect(page.locator('.pj-name')).toHaveCount(3)
+  await expect(page.getByRole('button', { name: 'ทำ #บ้าน เป็นโปรเจกต์' })).toHaveCount(0)
+  // Only the choice changes; the task lines stay as they are.
+  expect(writes(drive)).toBe(before)
+})
+
 test('arranging also works by dragging a handle', async ({ page }) => {
   await start(page)
   await page.getByRole('button', { name: 'จัดลำดับ' }).click()

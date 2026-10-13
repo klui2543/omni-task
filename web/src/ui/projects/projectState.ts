@@ -1,6 +1,7 @@
 import { useRef, useState } from 'preact/hooks'
 import type { ProjectsIn, YgFilter } from '../../types'
 import { settingsBus } from '../../settingsBus'
+import { applyProjectTags } from '../../core'
 
 // What the owner chose on the Projects page: the order of projects, the starred ones, the state of each branch, each
 // project's task order and "do in order". Kept on this device and shared with Android through its settings file
@@ -31,6 +32,7 @@ export function useProjectsLocal(): [ProjectsIn, (change: (s: ProjectsIn) => Pro
       latest.current = next
       setState(next)
       try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* just not kept */ }
+      applyProjectTags(next.projectTags)
       settingsBus.changed()
     },
   ]
@@ -49,7 +51,14 @@ export const renamedProject = (s: ProjectsIn, old: string, name: string): Projec
   starred: s.starred.map((n) => (n === old ? name : n)),
   taskOrder: Object.fromEntries(Object.entries(s.taskOrder).map(([k, v]) => [k === old ? name : k, v])),
   strict: s.strict.map((n) => (n === old ? name : n)),
+  projectTags: s.projectTags?.map((n) => (n === old ? name : n)),
 })
+
+/** [tag] made a project, or (off) a plain tag again; [seed] is the choice to start from when none was made yet. */
+export const withProject = (s: ProjectsIn, tag: string, on: boolean, seed: string[]): ProjectsIn => {
+  const now = (s.projectTags ?? seed).filter((n) => n !== tag)
+  return { ...s, projectTags: on ? [...now, tag] : now }
+}
 
 export const toggleIn = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
