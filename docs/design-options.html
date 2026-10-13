@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Omni Task design options</title>
+<style>
+:root{--pg:#0a0b0f;--pc:#14161d;--pl:#262a36;--pt:#f1f2f6;--pm:#a3a9b8;--pf:#7a8091;--pa:#b9c8ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--pt);font-family:"Noto Sans Thai","Sarabun",system-ui,sans-serif;line-height:1.5;padding:24px 16px 80px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:26px;font-weight:600;margin:0 0 4px}
+h2{font-size:20px;font-weight:600;margin:56px 0 4px;padding-top:8px;border-top:1px solid var(--pl)}
+h3{font-size:15px;font-weight:600;margin:0 0 2px}
+p.lead{color:var(--pm);margin:0 0 16px;font-size:14px;max-width:70ch}
+.small{font-size:12.5px;color:var(--pm)}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+nav a{color:var(--pa);text-decoration:none;border:1px solid var(--pl);border-radius:99px;padding:4px 12px;font-size:13px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.box{background:var(--pc);border:1px solid var(--pl);border-radius:16px;padding:14px}
+.tag{display:inline-block;font-size:11.5px;border-radius:99px;padding:1px 9px;background:#ffffff14;color:var(--pm);margin-left:6px}
+code,pre{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+pre{white-space:pre-wrap;background:#0d0f14;border:1px solid var(--pl);border-radius:10px;padding:10px;color:#cfd3df;margin:8px 0 0}
+
+/* icons */
+.ico-row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-top:10px}
+.ico-row figure{margin:0;text-align:center;font-size:11px;color:var(--pf)}
+.ico-row svg{display:block;margin:0 auto 4px}
+
+/* palettes */
+.sw{display:flex;gap:4px;margin:8px 0}
+.sw i{flex:1;height:26px;border-radius:7px;border:1px solid #ffffff1f}
+.mini{border-radius:14px;padding:12px;background:var(--bg);color:var(--tx);border:1px solid var(--bd)}
+.mini .c{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:6px 10px;margin-top:6px}
+.row{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13.5px}
+.row + .row{border-top:1px solid var(--bd)}
+.rg{width:20px;height:20px;border-radius:50%;border:2px solid var(--fa);flex:none}
+.row .m{display:block;font-size:11.5px;color:var(--mu)}
+.chip{font-size:11px;border-radius:99px;padding:1px 8px;background:var(--acs);color:var(--ac)}
+.btn{display:inline-block;margin-top:8px;border-radius:99px;padding:5px 14px;font-size:13px;background:var(--ac);color:var(--on);font-weight:500}
+
+.t-midnight{--bg:#0d0f14;--card:#151821;--bd:#222736;--rs:#1f2330;--tx:#f3f4f8;--mu:#aeb3c2;--fa:#858b9d;--ac:#a99cff;--acs:#2a2550;--on:#0d0f14;--gr:#b9f26b;--rd:#ff8a80;--am:#ffc266;--bl:#7fb2ff}
+.t-graphite{--bg:#0e0e10;--card:#161618;--bd:#26262a;--rs:#1e1e22;--tx:#ececee;--mu:#8e8e96;--fa:#7a7a83;--ac:#9db4d3;--acs:#1d2330;--on:#0e1118;--gr:#7fae93;--rd:#d9726c;--am:#c4a56a;--bl:#8fa6c4}
+.t-forest{--bg:#0c1210;--card:#131b17;--bd:#213028;--rs:#1b2621;--tx:#eef3ef;--mu:#9fb0a6;--fa:#7f9086;--ac:#8fd6a0;--acs:#1c3026;--on:#0b1410;--gr:#b7e07a;--rd:#ee8573;--am:#e6c36a;--bl:#7fb5d6}
+.t-dawn{--bg:#f6f1e9;--card:#fffdf8;--bd:#e6dccb;--rs:#efe7d9;--tx:#2a241c;--mu:#6f6455;--fa:#7a6e5e;--ac:#b4532a;--acs:#f6e3d6;--on:#fffdf8;--gr:#5b7f3c;--rd:#b8433a;--am:#a8761a;--bl:#4a6c8c}
+.t-sea{--bg:#07131b;--card:#0d1f2b;--bd:#183547;--rs:#14293a;--tx:#e9f4f8;--mu:#8fb0c0;--fa:#7597a8;--ac:#5fd3e0;--acs:#0f3340;--on:#06161c;--gr:#9be3a0;--rd:#ff8f86;--am:#f2c066;--bl:#7fb2ff}
+.t-ember{--bg:#120d0b;--card:#1c1512;--bd:#30241f;--rs:#271d18;--tx:#f6ede6;--mu:#b3a095;--fa:#9a877c;--ac:#ff9a62;--acs:#3a2218;--on:#1a0e08;--gr:#c9d977;--rd:#ff7a6b;--am:#f0c36b;--bl:#8fb3e0}
+
+/* phones */
+.phones{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.phone-col{width:316px}
+.phone-col h3{text-align:center;margin-bottom:8px}
+.phone-col .cap{font-size:12.5px;color:var(--pm);text-align:center;margin-top:8px}
+.phone{position:relative;width:316px;height:640px;border-radius:34px;border:7px solid #000;background:var(--bg);color:var(--tx);overflow:hidden;font-size:13px}
+.phone .sb{display:flex;justify-content:space-between;padding:8px 20px 0;font-size:11px;color:var(--mu)}
+.phone .in{padding:8px 14px}
+.phone .nav{position:absolute;left:14px;right:14px;bottom:12px;height:50px;border-radius:25px;background:var(--card);border:1px solid var(--bd);display:flex;justify-content:space-around;align-items:center;color:var(--fa)}
+.phone .nav svg{width:22px;height:22px}
+.phone .nav .on{color:var(--ac)}
+.fab{position:absolute;right:16px;bottom:74px;width:50px;height:50px;border-radius:16px;background:var(--ac);color:var(--on);display:grid;place-items:center}
+.lbl{font-size:11px;letter-spacing:.04em;color:var(--mu);margin:12px 0 2px}
+.pt{display:flex;gap:10px;align-items:center;padding:9px 0}
+.pt .rg{width:20px;height:20px}
+.pt .tt{flex:1;min-width:0;font-size:14px}
+.pt .tt small{display:block;font-size:11.5px;color:var(--mu)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.card2{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:12px}
+.bubble{background:var(--rs);border-radius:14px 14px 14px 4px;padding:8px 10px;font-size:12px;color:var(--tx);flex:1}
+.tile{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:10px;display:flex;flex-direction:column;gap:2px;position:relative;overflow:hidden}
+.tile b{font-size:22px;font-weight:600}
+.tile span{font-size:11.5px;color:var(--mu)}
+.tile svg.ch{position:absolute;right:2px;bottom:0;opacity:.95}
+.ev{border-left:3px solid var(--ac);background:var(--acs);border-radius:4px 12px 12px 4px;padding:6px 10px;margin:4px 0;font-size:13px}
+.ev small{display:block;font-size:11px;color:var(--mu)}
+.tl{display:flex;gap:8px}
+.tl .h{width:34px;font-size:10.5px;color:var(--fa);text-align:right;padding-top:2px}
+.tl .ln{flex:1;border-top:1px solid var(--bd);min-height:46px;padding-top:2px}
+.now{position:relative;border-top:2px solid var(--rd);margin:0 0 0 42px}
+.now:before{content:"";position:absolute;left:-5px;top:-6px;width:9px;height:9px;border-radius:50%;background:var(--rd)}
+
+/* characters */
+.cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.cc{background:var(--cbg,#14161d);border:1px solid var(--pl);border-radius:16px;text-align:center;padding:10px 6px 8px}
+.cc svg{width:110px;height:110px}
+.cc b{display:block;font-size:13.5px;font-weight:600}
+.cc small{display:block;font-size:11.5px;color:var(--pm);line-height:1.35}
+.cc.l{--cbg:#f4efe6;color:#2a241c;border-color:#e0d6c4}
+.cc.l small{color:#6f6455}
+.style-head{display:flex;align-items:baseline;gap:8px;margin:26px 0 8px}
+
+/* character svg styles */
+.ch{--ol:#1a1424;overflow:visible}
+.ch.s1{--f1:var(--c1);--f2:var(--c2);--f3:var(--c3);--k1:none;--k2:none;--k3:none;--sw:0;--ink:#171320;--d1:inline;--d2:none;--d3:none}
+.ch.s2{--f1:none;--f2:none;--f3:none;--k1:var(--c1);--k2:var(--c2);--k3:var(--c3);--sw:3;--ink:var(--c1);--d1:none;--d2:inline;--d3:none}
+.ch.s3{--f1:var(--c1);--f2:var(--c2);--f3:var(--c3);--k1:var(--ol);--k2:var(--ol);--k3:var(--ol);--sw:2.4;--ink:#171320;--d1:none;--d2:none;--d3:inline}
+.p1{fill:var(--f1);stroke:var(--k1);stroke-width:var(--sw);stroke-linejoin:round;stroke-linecap:round}
+.p2{fill:var(--f2);stroke:var(--k2);stroke-width:var(--sw);stroke-linejoin:round;stroke-linecap:round}
+.p3{fill:var(--f3);stroke:var(--k3);stroke-width:var(--sw);stroke-linejoin:round;stroke-linecap:round}
+.ln{fill:none;stroke:var(--c3);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+.ln2{fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.gl{fill:none;stroke:var(--c3);stroke-width:3}
+.e1{fill:var(--ink);display:var(--d1)}
+.e2{fill:none;stroke:var(--ink);stroke-width:2.6;stroke-linecap:round;display:var(--d2)}
+.e3{display:var(--d3)}
+.e3 .w{fill:#fff}
+.e3 .pu{fill:var(--ink)}
+.bl{fill:#ff8fa3;opacity:.55;display:var(--d3)}
+.mo{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round}
+.shine{fill:#fff;opacity:.28;display:var(--d3)}
+.scene .gnd{fill:#ffffff10}
+</style></head><body><div class="wrap">
+
+<svg width="0" height="0" style="position:absolute"><defs id="defs"></defs>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 7h11M8 12h11M8 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 10h16M8.5 3.5v3M15.5 3.5v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-tree" viewBox="0 0 24 24"><path d="M12 21v-8M12 13l-5-4M12 13l5-5M12 16l-3-2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="7" cy="8" r="2" fill="currentColor"/><circle cx="17" cy="7" r="2" fill="currentColor"/><circle cx="12" cy="5" r="2" fill="currentColor"/></symbol>
+<symbol id="i-quest" viewBox="0 0 24 24"><path d="M12 3l2.2 5.2L20 9l-4.2 3.9L17 18.5 12 15.6 7 18.5l1.2-5.6L4 9l5.8-.8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+</svg>
+
+<h1>Omni Task: งาน Art and design หลายแบบให้เลือก</h1>
+<p class="lead">ทุกอย่างในหน้านี้เป็นแบบร่างให้ดูและเลือก ยังไม่ได้แตะโค้ดแอป ตัวละครอิงจาก <code>rpg-design.md</code> ข้อ 3, 9, 10, 14 และตารางตัวละครใน <code>rpg-story.md</code> (Mascot 5 ตัว, ลีโอ, เซลีน, มาสเตอร์ออร์ริน, ราชาผัดวัน, ผู้เล่น) บอกเลขแบบที่ชอบ เช่น "ไอคอน B, สี 3, หน้าจอ C, ตัวละครสไตล์ 3" แล้วค่อยลงมือทำจริง</p>
+<nav><a href="#icon">1 ไอคอนและโลโก้</a><a href="#palette">2 ธีมและสี</a><a href="#screen">3 หน้าจอ</a><a href="#cast">4 ตัวละคร</a><a href="#empty">5 Empty state</a><a href="#guide">6 Style guide</a></nav>
+
+<!-- 1 ICON -->
+<h2 id="icon">1. ไอคอนและโลโก้ (4 แบบ)</h2>
+<p class="lead">ไอคอนปัจจุบันเป็นวงแหวนความคืบหน้ากับเครื่องหมายถูกบนพื้นดำ ทั้ง 4 แบบอยู่ในโซนปลอดภัย 66/108 ของ adaptive icon แสดงเป็นวงกลม สี่เหลี่ยมมน และขนาดเล็ก 48 กับ 24 px</p>
+<div class="grid" id="icons"></div>
+
+<!-- 2 PALETTE -->
+<h2 id="palette">2. ธีมและสีระบบ (4 แบบใหม่ เทียบกับของเดิม 2 แบบ)</h2>
+<p class="lead">ทุกชุดครบ bg, card, เส้น, text, muted, accent และสีงานด่วน/สำคัญ ชุด 1 ถึง 4 ใช้กับ <code>Palette</code> ใน Theme.kt ได้ตรงๆ ตรวจ contrast บนสี card แล้ว (text / muted / faint / accent): Forest 15.6 / 7.7 / 5.2 / 10.3, Dawn 15.1 / 5.7 / 4.9 / 4.9, Deep Sea 15.0 / 7.3 / 5.4 / 9.5, Ember 15.6 / 7.2 / 5.3 / 8.6 ผ่าน 4.5:1 ทุกค่า</p>
+<div class="grid" id="pals"></div>
+<div class="box" style="margin-top:14px">
+<h3>ไอเดียเสริม: accent ตามเผ่า (เมื่อเปิดเกม Omni Quest)</h3>
+<p class="small" style="margin:2px 0 8px">ใช้ธีมเดียว แต่ accent เปลี่ยนตามเผ่าของผู้เล่น UI จึงเปลี่ยนบรรยากาศโดยไม่ต้องทำหลายธีม</p>
+<div class="sw" id="tribesw"></div>
+</div>
+
+<!-- 3 SCREEN -->
+<h2 id="screen">3. หน้าจอวันนี้ (4 เลย์เอาต์)</h2>
+<p class="lead">หน้าเดียวกัน ข้อมูลเดียวกัน เลย์เอาต์และสีต่างกัน แต่ละแบบจับคู่กับธีมที่เหมาะ แต่สลับธีมได้อิสระ</p>
+<div class="phones" id="phones"></div>
+
+<!-- 4 CAST -->
+<h2 id="cast">4. ตัวละครทั้งหมด (3 สไตล์ x 10 ตัว)</h2>
+<p class="lead">ข้อ 14 กำหนดให้ภาพจริงของ Mascot, NPC และภาพเนื้อเรื่องมาจาก AI วาด และให้ใช้ภาพแทนชั่วคราวระหว่างพัฒนา ชุดนี้ทำสองหน้าที่: เป็นภาพแทนชั่วคราวที่ใช้ได้เลย และเป็นต้นแบบรูปทรงกับสีให้ style guide (ข้อ 6) สีประจำเผ่า: อัคนี <b style="color:#ff8a5b">ส้มไฟ</b>, จันทรา <b style="color:#8c93ff">ม่วงน้ำเงินดาว</b>, วายุ <b style="color:#67d6b5">เขียวมิ้นต์</b>, ธารา <b style="color:#5cc8ff">ฟ้าน้ำ</b>, พฤกษา <b style="color:#8bd17c">เขียวใบไม้</b></p>
+<div id="cast-out"></div>
+
+<!-- 5 EMPTY -->
+<h2 id="empty">5. ภาพประกอบและ Empty state (3 สไตล์ x 3 หน้า)</h2>
+<p class="lead">ใช้ Mascot แทนภาพว่างๆ ข้อความเป็นน้ำเสียงเดียวกับเกม ไม่ตำหนิ ไม่ใช้ขีดยาวหรือจุดกลาง</p>
+<div id="empty-out"></div>
+
+<!-- 6 GUIDE -->
+<h2 id="guide">6. Style guide สำหรับให้ AI วาดภาพจริง</h2>
+<p class="lead">ข้อ 14 ต้องมี prompt แม่แบบ สีประจำเผ่า และภาพอ้างอิงต่อตัวละคร ตัวอย่างนี้ผูกกับสไตล์ที่เลือกในข้อ 4 เก็บภาพที่ผ่านแล้วเป็นภาพอ้างอิงของตัวละครนั้น และเก็บใบอนุญาตใน <code>licenses/</code> ห้ามใช้ภาพ ชื่อ หรือเพลงของ Ragnarok</p>
+<div class="grid" id="guides"></div>
+
+</div>
+<script>
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const NS='http://www.w3.org/2000/svg';
+
+/* ---------- characters ---------- */
+function eyes(x,y,sp,o={}){
+  const L=x-sp,R=x+sp,r=o.big||5;
+  if(o.sleepy) return `<path class="e2" style="display:inline" d="M${L-5} ${y}Q${L} ${y+4} ${L+5} ${y}M${R-5} ${y}Q${R} ${y+4} ${R+5} ${y}"/>`;
+  return `<circle class="e1" cx="${L}" cy="${y}" r="2.7"/><circle class="e1" cx="${R}" cy="${y}" r="2.7"/>`+
+   `<path class="e2" d="M${L-3.5} ${y+1.5}Q${L} ${y-3.5} ${L+3.5} ${y+1.5}M${R-3.5} ${y+1.5}Q${R} ${y-3.5} ${R+3.5} ${y+1.5}"/>`+
+   `<g class="e3"><circle cx="${L}" cy="${y}" r="${r}" class="pu"/><circle cx="${R}" cy="${y}" r="${r}" class="pu"/><circle cx="${L+1.8}" cy="${y-1.8}" r="1.8" class="w"/><circle cx="${R+1.8}" cy="${y-1.8}" r="1.8" class="w"/></g>`+
+   `<ellipse class="bl" cx="${L-5}" cy="${y+8}" rx="4.5" ry="3"/><ellipse class="bl" cx="${R+5}" cy="${y+8}" rx="4.5" ry="3"/>`;
+}
+function mouth(x,y,w=4){return `<path class="mo" d="M${x-w} ${y}Q${x} ${y+w+1} ${x+w} ${y}"/>`}
+function face(x,y,sp,o={}){return eyes(x,y,sp,o)+(o.noMouth?'':mouth(x,y+8))}
+
+const C={ /* id: [name, role, c1,c2,c3, svg] */
+homura:['โฮมุระ','Mascot อัคนี ลูกมังกรไฟ','#ff8a5b','#ffd9a0','#ffc83d',
+ `<path class="p3" d="M76 76Q92 78 92 62Q90 52 82 56"/><path class="p2" d="M82 50Q92 40 90 30Q80 38 82 50Z"/>
+  <path class="p3" d="M30 30L34 12L44 26Z"/><path class="p3" d="M70 30L66 12L56 26Z"/>
+  <path class="p3" d="M20 56Q6 50 8 66Q18 70 24 66Z"/><path class="p3" d="M80 56Q94 50 92 66Q82 70 76 66Z"/>
+  <circle class="p1" cx="50" cy="56" r="32"/><ellipse class="p2" cx="50" cy="68" rx="19" ry="16"/>
+  <ellipse class="p1" cx="34" cy="90" rx="9" ry="5"/><ellipse class="p1" cx="66" cy="90" rx="9" ry="5"/>
+  <ellipse class="shine" cx="36" cy="40" rx="9" ry="5" transform="rotate(-30 36 40)"/>${face(50,52,12)}`],
+mimi:['มิมิ','Mascot จันทรา นกฮูกดาว','#8c93ff','#e1e4ff','#ffd166',
+ `<path class="p1" d="M24 30L30 10L44 24Z"/><path class="p1" d="M76 30L70 10L56 24Z"/>
+  <ellipse class="p1" cx="50" cy="58" rx="31" ry="34"/><ellipse class="p2" cx="50" cy="72" rx="19" ry="18"/>
+  <path class="p3" d="M44 56L50 66L56 56Z"/>
+  <path class="p3" d="M50 4L52 10L58 12L52 14L50 20L48 14L42 12L48 10Z" transform="translate(0 -2)"/>
+  <circle class="gl" cx="37" cy="48" r="12"/><circle class="gl" cx="63" cy="48" r="12"/><path class="gl" d="M49 48H51"/>
+  ${eyes(50,48,13,{big:4.4})}<ellipse class="p1" cx="30" cy="96" rx="9" ry="3.6"/><ellipse class="p1" cx="70" cy="96" rx="9" ry="3.6"/>`],
+fung:['ฟุ้ง','Mascot วายุ จิ้งจอกหางเมฆ','#67d6b5','#eafff7','#bdf3e2',
+ `<g class="p2"><circle cx="78" cy="68" r="12"/><circle cx="90" cy="58" r="10"/><circle cx="88" cy="76" r="9"/><circle cx="70" cy="80" r="9"/></g>
+  <path class="p1" d="M24 40L26 12L44 28Z"/><path class="p1" d="M76 40L74 12L56 28Z"/>
+  <path class="p2" d="M29 33L30 20L38 28Z"/><path class="p2" d="M71 33L70 20L62 28Z"/>
+  <ellipse class="p1" cx="50" cy="60" rx="30" ry="28"/><ellipse class="p2" cx="50" cy="70" rx="18" ry="12"/>
+  <ellipse class="p3" cx="50" cy="63" rx="3.4" ry="2.4" style="fill:var(--ink);stroke:none"/>
+  ${face(50,52,12,{noMouth:true})}<path class="mo" d="M50 66Q46 72 42 70M50 66Q54 72 58 70"/>
+  <ellipse class="p1" cx="38" cy="92" rx="8" ry="4"/><ellipse class="p1" cx="58" cy="92" rx="8" ry="4"/>`],
+puifong:['ปุยฟอง','Mascot ธารา วาฬน้อยลอยฟ้า','#5cc8ff','#dff5ff','#aee6ff',
+ `<g class="p2" style="opacity:.9"><ellipse cx="28" cy="88" rx="14" ry="6"/><ellipse cx="50" cy="92" rx="16" ry="6"/><ellipse cx="72" cy="88" rx="14" ry="6"/></g>
+  <path class="p3" d="M44 22Q44 12 40 8M50 22Q50 10 50 4M56 22Q56 12 60 8" style="fill:none;stroke-width:3.4"/>
+  <path class="p1" d="M78 56Q92 56 96 38Q86 40 84 50Q92 60 96 72Q84 70 78 62Z"/>
+  <ellipse class="p1" cx="46" cy="58" rx="36" ry="28"/><path class="p2" d="M16 66Q46 90 78 66Q70 78 46 80Q24 78 16 66Z"/>
+  <ellipse class="p1" cx="46" cy="76" rx="9" ry="4" transform="rotate(20 46 76)" style="opacity:.0"/>
+  <ellipse class="shine" cx="30" cy="44" rx="10" ry="5" transform="rotate(-25 30 44)"/>${face(36,54,10)}`],
+tonkla:['ต้นกล้า','Mascot พฤกษา กวางน้อยเขากิ่งไม้','#8bd17c','#f6ead0','#b98a58',
+ `<path class="ln" d="M36 34L28 14M28 14L20 10M28 14L30 4M64 34L72 14M72 14L80 10M72 14L70 4"/>
+  <circle class="p2" cx="20" cy="10" r="4.6" style="fill:var(--f1);stroke:var(--k1)"/><circle class="p2" cx="30" cy="4" r="4.2" style="fill:var(--f1);stroke:var(--k1)"/>
+  <circle class="p2" cx="80" cy="10" r="4.6" style="fill:var(--f1);stroke:var(--k1)"/><circle class="p2" cx="70" cy="4" r="4.2" style="fill:var(--f1);stroke:var(--k1)"/>
+  <ellipse class="p1" cx="22" cy="42" rx="9" ry="6" transform="rotate(-30 22 42)"/><ellipse class="p1" cx="78" cy="42" rx="9" ry="6" transform="rotate(30 78 42)"/>
+  <circle class="p1" cx="50" cy="58" r="30"/><ellipse class="p2" cx="50" cy="71" rx="14" ry="10"/>
+  <circle class="p2" cx="40" cy="38" r="2.6"/><circle class="p2" cx="50" cy="35" r="2.6"/><circle class="p2" cx="60" cy="38" r="2.6"/>
+  <ellipse cx="50" cy="66" rx="3.4" ry="2.4" style="fill:var(--ink)"/>${face(50,54,12,{noMouth:true})}<path class="mo" d="M50 68V71M46 73Q50 76 54 73"/>`],
+leo:['ลีโอ','NPC อัคนี นักดาบ ร่าเริง ชอบแข่ง','#f6d2ae','#ef5b45','#ff9a3d',
+ `<path class="p3" d="M33 94L36 66Q50 58 64 66L67 94Z"/><path class="p2" d="M40 70L50 78L60 70" style="fill:none"/>
+  <path class="ln" d="M82 92V48M76 60H88" style="stroke:var(--c3)"/>
+  <circle class="p1" cx="50" cy="42" r="23"/>
+  <path class="p2" d="M26 42L28 16L39 28L46 8L54 26L65 12L68 28L76 18L74 42Q62 26 50 28Q38 26 26 42Z"/>
+  ${face(50,46,9)}`],
+seline:['เซลีน','NPC จันทรา จอมเวท พูดน้อย ช่างจด','#f6d2ae','#d3d9ee','#6b74d6',
+ `<ellipse class="p2" cx="50" cy="48" rx="29" ry="32"/>
+  <path class="p3" d="M32 96L36 68Q50 60 64 68L68 96Z"/><rect class="p2" x="18" y="68" width="14" height="18" rx="2" transform="rotate(-8 18 68)" style="fill:var(--f2)"/>
+  <path class="ln" d="M82 92V30" style="stroke:var(--c3)"/><path class="p2" d="M82 18L85 25L92 26L87 31L88 38L82 34L76 38L77 31L72 26L79 25Z" style="fill:var(--f2)"/>
+  <circle class="p1" cx="50" cy="44" r="22"/>
+  <path class="p2" d="M28 44Q30 22 50 22Q70 22 72 44Q62 32 50 34Q38 32 28 44Z"/>
+  <path class="p3" d="M66 26a5 5 0 1 0 1 8a4 4 0 1 1 -1 -8Z"/>
+  ${face(50,46,9,{noMouth:true})}<path class="mo" d="M46 55H54"/>`],
+orrin:['มาสเตอร์ออร์ริน','NPC หัวหน้ากิลด์ ขาเจ็บ ใจดี','#f2c9a3','#f4f1ea','#c58a3a',
+ `<path class="p3" d="M30 96L34 66Q50 58 66 66L70 96Z"/>
+  <path class="p2" d="M44 82a6 6 0 0 1 12 0" style="fill:none"/><path class="p1" d="M50 72V84" style="opacity:0"/>
+  <path class="ln" d="M82 94V54Q82 46 74 48" style="stroke:var(--c3)"/>
+  <circle class="p1" cx="50" cy="42" r="22"/>
+  <path class="p2" d="M27 42Q24 22 40 20Q50 14 60 20Q76 22 73 42Q70 30 62 26Q50 22 38 26Q30 30 27 42Z"/>
+  <path class="p2" d="M30 52Q32 82 50 80Q68 82 70 52Q60 62 50 56Q40 62 30 52Z"/>
+  <path class="p2" d="M36 36Q42 32 46 37M54 37Q58 32 64 36" style="fill:none;stroke:var(--ink);stroke-width:3;stroke-linecap:round"/>
+  ${eyes(50,43,9)}`],
+raja:['ราชาผัดวัน','ศัตรูหลัก หมอกรวมตัว อ่อนโยน หว่านล้อม','#bfb2e0','#e7e0f6','#ffd166',
+ `<path class="p1" d="M22 80Q12 60 26 46Q22 28 46 26Q66 20 74 38Q92 44 82 66Q92 86 74 84Q64 94 52 86Q40 94 30 86Q16 92 22 80Z"/>
+  <path class="p2" d="M30 74Q38 64 50 70Q62 64 70 74Q58 82 50 78Q42 82 30 74Z" style="opacity:.75"/>
+  <path class="p3" d="M32 28L36 8L44 20L50 4L56 20L64 8L68 28Z"/><circle cx="50" cy="8" r="3" style="fill:var(--c2)"/>
+  ${eyes(50,50,12,{sleepy:true})}<path class="mo" d="M44 60Q50 65 56 60"/>
+  <text x="76" y="22" font-size="11" fill="#bfb2e0" opacity=".8">z</text><text x="84" y="12" font-size="8" fill="#bfb2e0" opacity=".6">z</text>`],
+player:['ผู้เล่น','นักผจญภัยมือใหม่ (paper-doll เริ่มต้น)','#f1c9a5','#7b5a45','#a99cff',
+ `<path class="p3" d="M34 94L37 66Q50 58 63 66L66 94Z"/><path class="p2" d="M38 64Q50 72 62 64L60 72Q50 78 40 72Z" style="fill:#b9f26b;stroke:var(--k2)"/>
+  <rect class="p2" x="64" y="68" width="16" height="22" rx="5" style="fill:var(--f3)"/>
+  <circle class="p1" cx="50" cy="42" r="22"/>
+  <path class="p2" d="M27 44Q24 18 50 17Q76 18 73 44Q68 30 56 28Q48 34 36 32Q30 36 27 44Z"/>
+  ${face(50,46,9)}`]
+};
+const ORDER=['homura','mimi','fung','puifong','tonkla','leo','seline','orrin','raja','player'];
+const LIGHT=new Set(['raja']);
+const defs=$('#defs');
+function chr(id,style,size){
+  const c=C[id];
+  return `<svg class="ch s${style}" viewBox="-6 -6 112 112" width="${size}" height="${size}" style="--c1:${c[2]};--c2:${c[3]};--c3:${c[4]}"><use href="#c-${id}"/></svg>`;
+}
+ORDER.forEach(id=>{const s=document.createElementNS(NS,'symbol');s.id='c-'+id;s.setAttribute('viewBox','0 0 100 100');s.innerHTML=C[id][5];defs.appendChild(s)});
+
+const STYLES=[
+ ['A','แบนมินิมอล','สีเรียบ ไม่มีเส้นขอบ ตาจุด เข้ากับ UI แอปที่สุด ทำเป็นไอคอนเล็กได้ดี'],
+ ['B','ลายเส้นเดียว','เส้นสีเดียวต่อชิ้น ไม่ถมสี เงียบ เหมาะกับธีม Graphite และภาพแทนชั่วคราวที่ไม่แย่งสายตา'],
+ ['C','นุ่มฟู chibi','ขอบเข้ม ตากลมมีประกาย แก้มชมพู ใกล้ภาพ AI และ asset pack chibi ในข้อ 14 มากที่สุด']
+];
+let castHtml='';
+STYLES.forEach((st,i)=>{
+ castHtml+=`<div class="style-head"><h3>สไตล์ ${st[0]}: ${st[1]}</h3><span class="small">${st[2]}</span></div><div class="cast">`+
+  ORDER.map(id=>`<div class="cc"><div class="scene">${chr(id,i+1,110)}</div><b>${C[id][0]}</b><small>${C[id][1]}</small></div>`).join('')+`</div>`;
+});
+$('#cast-out').innerHTML=castHtml;
+
+/* ---------- empty states ---------- */
+const EMPTY=[
+ ['ไม่มีงานวันนี้','puifong','วันนี้ว่างทั้งวัน พักได้เลยนะ ถ้าอยากเริ่มอะไรสักอย่าง แตะปุ่มข้างล่าง','เพิ่มงาน'],
+ ['เสร็จหมดแล้ว','homura','วันนี้เธอเคลียร์หมดเลย แสงอรุณเต็มกิ่งแล้ว!','ดูสรุปวันนี้'],
+ ['ต้นไม้ยังว่าง','tonkla','ยังไม่มีโปรเจกต์บนต้นไม้ สร้างโลกแรกด้วยกันไหม','สร้างโปรเจกต์']
+];
+$('#empty-out').innerHTML=STYLES.map((st,i)=>`<div class="style-head"><h3>สไตล์ ${st[0]}: ${st[1]}</h3></div><div class="grid">`+
+ EMPTY.map(e=>`<div class="box t-graphite" style="background:var(--bg);text-align:center;padding:22px 16px;color:var(--tx)"><div class="scene">${chr(e[1],i+1,128)}</div><h3 style="margin-top:6px">${e[0]}</h3><p class="small" style="margin:4px 0 0;color:var(--mu)">${e[2]}</p><span class="btn">${e[3]}</span></div>`).join('')+`</div>`).join('');
+
+/* ---------- icons ---------- */
+const ring=(p,c1,c2,w=7)=>`<circle cx="54" cy="54" r="24" fill="none" stroke="${c2}" stroke-width="${w}"/><path d="M54 30a24 24 0 1 1 -24 24" fill="none" stroke="${c1}" stroke-width="${w}" stroke-linecap="round"/>`;
+const ICONS=[
+ {n:'A. วงแหวนเดิม ปรับให้คม',d:'ใช้โครงเดิมที่คุ้นตา เติมกิ่งเล็กที่ปลายเครื่องหมายถูกเป็นเงาของ Ygdrasil',bg:'#0D0F14',
+  fg:`${ring(0,'#B9F26B','#2A2550')}<path d="M43.5 54.5l7 7 14-15" fill="none" stroke="#A99CFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M64.5 46.5l7-8M64.5 46.5l-1-9" stroke="#B9F26B" stroke-width="3.4" stroke-linecap="round"/>`,
+  bg2:['#0D0F14','#a99cff'],lite:['#f4efe6','#3D4F6E']},
+ {n:'B. ต้นไม้ในวงแหวน',d:'ต้นยกดราซิลย่อ: ลำต้นกับสามกิ่งอยู่กลางวง วงแหวนคือความคืบหน้า ตรงกับชื่อโปรเจกต์',bg:'#0C1210',
+  fg:`${ring(0,'#8FD6A0','#1C3026',6)}<path d="M54 70V50M54 56L45 47M54 52L63 43M54 61L48 56" fill="none" stroke="#EEF3EF" stroke-width="4.2" stroke-linecap="round"/><circle cx="44" cy="45" r="4" fill="#B7E07A"/><circle cx="64.5" cy="41.5" r="4" fill="#B7E07A"/><circle cx="54" cy="44" r="4.4" fill="#8FD6A0"/>`,
+  bg2:['#0C1210','#8fd6a0'],lite:['#f6f1e9','#2f6b45']},
+ {n:'C. ตัว Y จากเครื่องหมายถูก',d:'เครื่องหมายถูกที่ยืดก้านลงมาเป็นตัว Y เรียบ เด่นเมื่อย่อเล็ก เหมาะเป็นโลโก้ปลั๊กอิน Obsidian ด้วย',bg:'#151821',
+  fg:`<path d="M32 36L52 58L78 28M52 58V84" fill="none" stroke="#A99CFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="36" r="4.6" fill="#B9F26B"/>`,
+  bg2:['#151821','#a99cff'],lite:['#ffffff','#3D4F6E']},
+ {n:'D. ต้นกล้างอกจากเครื่องหมายถูก',d:'งานที่เสร็จคือต้นกล้า: เครื่องหมายถูกปลายแตกใบ สื่อ "แสงอรุณ" ฟื้นกิ่งไม้ ใกล้เกม Omni Quest ที่สุด',bg:'#14110c',
+  fg:`<path d="M30 60L45 74L66 46" fill="none" stroke="#FFC266" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="M66 46C66 34 76 28 86 30C86 40 78 48 66 46Z" fill="#B9F26B"/><path d="M66 46C60 38 52 36 46 38C48 46 56 50 66 46Z" fill="#8FD6A0"/>`,
+  bg2:['#14110c','#ffc266'],lite:['#fbf3e4','#b4532a']}
+];
+$('#icons').innerHTML=ICONS.map(ic=>{
+ const sq=(r,sz,bg=ic.bg,fg=ic.fg)=>`<svg width="${sz}" height="${sz}" viewBox="0 0 108 108"><clipPath id="m${sz}${r}${ic.n[0]}"><rect width="108" height="108" rx="${r}"/></clipPath><g clip-path="url(#m${sz}${r}${ic.n[0]})"><rect width="108" height="108" fill="${bg}"/>${fg}</g></svg>`;
+ const light=ic.fg.replace(/#(B9F26B|8FD6A0|FFC266|A99CFF|EEF3EF)/gi,m=>ic.lite[1]).replace(/#(2A2550|1C3026)/gi,'#d9dde6');
+ return `<div class="box"><h3>${ic.n}</h3><p class="small" style="margin:2px 0 0">${ic.d}</p>
+ <div class="ico-row"><figure>${sq(54,96)}วงกลม</figure><figure>${sq(26,96)}สี่เหลี่ยมมน</figure><figure>${sq(26,96,ic.lite[0],light)}พื้นสว่าง</figure><figure>${sq(26,48)}48</figure><figure>${sq(26,24)}24</figure></div></div>`}).join('');
+
+/* ---------- palettes ---------- */
+const PALS=[
+ ['t-forest','1. Ygg Forest (มืด)','เขียวใบไม้บนพื้นดำเขียว ผูกกับต้นยกดราซิลและเผ่าพฤกษา อ่านง่าย สบายตาตอนกลางคืน'],
+ ['t-dawn','2. Dawn Paper (สว่าง)','กระดาษอุ่นกับส้มอิฐ ให้ความรู้สึกสมุดโน้ต ตัดกับธีมเทาของเดิม เหมาะอ่านกลางแจ้ง'],
+ ['t-sea','3. Deep Sea (มืด)','น้ำเงินเข้มกับฟ้าอมเขียว เย็น นิ่ง เหมาะคนทำงานดึกและเผ่าธารา'],
+ ['t-ember','4. Ember (มืด)','น้ำตาลดำอุ่นกับส้มถ่านไฟ ให้พลังตอนเช้า เหมาะเผ่าอัคนี'],
+ ['t-midnight','เดิม: Midnight','ม่วงกับเขียวมะนาว (ในแอปตอนนี้)'],
+ ['t-graphite','เดิม: Graphite','เทาสงบ สีเฉพาะงานเลยกำหนดหรือด่วน (ในแอปตอนนี้)']
+];
+$('#pals').innerHTML=PALS.map(p=>`<div class="box"><h3>${p[1]}</h3><p class="small" style="margin:2px 0 0">${p[2]}</p>
+ <div class="sw ${p[0]}">${['--bg','--card','--bd','--rs','--tx','--mu','--ac','--gr','--rd','--am','--bl'].map(v=>`<i style="background:var(${v})" title="${v}"></i>`).join('')}</div>
+ <div class="mini ${p[0]}">
+  <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16px;font-weight:600">วันนี้</b><span class="chip">3/8</span></div>
+  <div class="c"><div class="row"><span class="rg" style="border-color:var(--rd)"></span><span>ส่งรายงานพี่มิ้น<span class="m" style="color:var(--rd)">เลยกำหนด 2 วัน</span></span></div>
+  <div class="row"><span class="rg" style="border-color:var(--am)"></span><span>ซื้อของเข้าบ้าน<span class="m">17:30 #บ้าน</span></span></div>
+  <div class="row"><span class="rg" style="border-color:var(--gr);background:var(--gr)"></span><span style="text-decoration:line-through;color:var(--mu)">ออกกำลัง 30 นาที</span></div></div>
+  <span class="btn">เพิ่มงาน</span> <span class="chip" style="color:var(--bl)">ประชุม 10:00</span></div></div>`).join('');
+$('#tribesw').innerHTML=[['อัคนี','#ff8a5b'],['จันทรา','#8c93ff'],['วายุ','#67d6b5'],['ธารา','#5cc8ff'],['พฤกษา','#8bd17c']].map(t=>`<i style="background:${t[1]};height:34px;display:grid;place-items:center;font-size:12px;color:#10131a;font-weight:600">${t[0]}</i>`).join('');
+
+/* ---------- phones ---------- */
+const nav=(on)=>`<div class="nav">${[['i-list','งาน'],['i-cal','ปฏิทิน'],['i-tree','ต้นไม้'],['i-quest','เควสต์']].map((x,i)=>`<svg class="${i===on?'on':''}"><use href="#${x[0]}"/></svg>`).join('')}</div>`;
+const sb=`<div class="sb"><span>9:41</span><span>5G 86%</span></div>`;
+const pt=(t,m,c,done,dot)=>`<div class="pt"><span class="rg" style="border-color:${c};${done?`background:${c}`:''}"></span><div class="tt" style="${done?'text-decoration:line-through;color:var(--mu)':''}">${t}${m?`<small>${m}</small>`:''}</div>${dot?`<span class="dot" style="background:${dot}"></span>`:''}</div>`;
+const ph=(cls,title,cap,body)=>`<div class="phone-col"><h3>${title}</h3><div class="phone ${cls}">${body}</div><div class="cap">${cap}</div></div>`;
+
+const A=ph('t-graphite','A. รายการสงบ (Graphite)','แถบความคืบหน้าบางๆ วงสีเทาเหมือนกันหมด สีเฉพาะที่เลยกำหนด เหมือนโหมดสงบที่มีอยู่ ปรับให้ช่องไฟโปร่งขึ้น',
+ `${sb}<div class="in"><div style="font-size:26px;font-weight:600;margin-top:4px">วันนี้</div><div style="color:var(--mu);font-size:12.5px">วันอังคารที่ 13 ต.ค. เสร็จแล้ว 3 จาก 8</div>
+ <div style="height:3px;background:var(--rs);border-radius:9px;margin:8px 0 2px"><div style="width:38%;height:3px;background:var(--ac);border-radius:9px"></div></div>
+ <div class="lbl">เลยกำหนด</div>${pt('ส่งรายงานให้พี่มิ้น','เลยมา 2 วัน','var(--fa)',0,'var(--rd)')}
+ <div class="lbl">วันนี้</div>${pt('ประชุมทีม','10:00 ถึง 11:00','var(--fa)')}${pt('ซื้อของเข้าบ้าน','17:30','var(--fa)',0,'var(--am)')}${pt('อ่านหนังสือ 20 หน้า','#readinglist','var(--fa)')}${pt('ออกกำลัง 30 นาที','','var(--fa)',1)}
+ <div class="card2" style="margin-top:10px;display:flex;gap:8px;align-items:center;padding:9px 12px"><svg width="18" height="18" style="color:var(--ac)"><use href="#i-moon"/></svg><span style="flex:1;font-size:12.5px">คืนนี้ นอน 22:30 ตื่น 06:30</span><span class="chip">8 ชม.</span></div></div>
+ <div class="fab"><svg width="24" height="24"><use href="#i-plus"/></svg></div>${nav(0)}`);
+
+const B=ph('t-forest','B. วงแหวนกับ Mascot (Ygg Forest)','การ์ดหัวหน้าจอมีวงความคืบหน้ากับ Mascot ที่พูดคำแนะนำประจำวัน (ข้อ 9) การ์ด "ต่อไป" มีปุ่มเริ่มจับเวลา',
+ `${sb}<div class="in"><div class="card2" style="display:flex;gap:12px;align-items:center"><div style="position:relative;width:78px;height:78px;flex:none"><svg width="78" height="78" viewBox="0 0 78 78"><circle cx="39" cy="39" r="32" fill="none" stroke="var(--acs)" stroke-width="8"/><circle cx="39" cy="39" r="32" fill="none" stroke="var(--ac)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${2*Math.PI*32}" stroke-dashoffset="${2*Math.PI*32*0.62}" transform="rotate(-90 39 39)"/></svg><div style="position:absolute;inset:0;display:grid;place-items:center;font-size:18px;font-weight:600">3/8</div></div>
+ <div><div style="font-size:12px;color:var(--mu)">วันอังคารที่ 13 ต.ค.</div><div style="font-size:16px;font-weight:600">เหลืออีก 5 งาน</div><div style="font-size:12px;color:var(--rd)">เลยกำหนด 1</div></div></div>
+ <div style="display:flex;gap:8px;align-items:flex-end;margin:10px 0 2px">${chr('mimi',1,58)}<div class="bubble">ฮู้ว พรุ่งนี้แปดโมงถึงสิบเอ็ดโมงยังว่างอยู่ จองช่วงนั้นให้งานยากสักอันดีไหม</div></div>
+ <div class="card2" style="margin-top:8px;border-color:var(--ac)"><div style="font-size:11px;color:var(--ac)">ต่อไป</div><div style="font-size:15px;font-weight:600;margin:2px 0">ส่งรายงานให้พี่มิ้น</div><div style="font-size:12px;color:var(--rd)">เลยกำหนด 2 วัน</div><span class="btn" style="margin-top:6px">เริ่มทำ 25 นาที</span></div>
+ ${pt('ประชุมทีม','10:00','var(--fa)')}${pt('ซื้อของเข้าบ้าน','17:30','var(--am)')}</div>${nav(0)}`);
+
+const q=(id,n,l,qc)=>`<div class="tile" style="border-color:${qc}55"><span>${l}</span><b>${n}</b>${chr(id,1,54)}</div>`;
+const Cc=ph('t-dawn','C. กระดานสี่ช่อง (Dawn Paper)','จัดตามสี่ช่อง ด่วน/สำคัญ (Quadrant) แต่ละช่องมีตัวละครประจำ งานถัดไปอยู่ข้างล่างพร้อมการ์ดนอน',
+ `${sb}<div class="in"><div style="font-size:22px;font-weight:600">สวัสดี วันนี้มี 8 งาน</div><div style="font-size:12px;color:var(--mu);margin-bottom:10px">วันอังคารที่ 13 ต.ค.</div>
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${q('homura',2,'ด่วนและสำคัญ','var(--rd)')}${q('mimi',3,'สำคัญไม่ด่วน','var(--ac)')}${q('fung',2,'ด่วนไม่สำคัญ','var(--am)')}${q('tonkla',1,'ไม่ด่วนไม่สำคัญ','var(--gr)')}</div>
+ <div class="lbl">งานถัดไป</div>${pt('ส่งรายงานให้พี่มิ้น','เลยมา 2 วัน','var(--rd)',0)}${pt('ประชุมทีม','10:00','var(--bl)')}
+ <div class="card2" style="display:flex;gap:10px;align-items:center;margin-top:6px">${chr('puifong',1,40)}<div style="font-size:12.5px;flex:1"><b>คืนนี้นอน 22:30</b><br><span style="color:var(--mu)">ปุยฟอง: อย่าลืมพักนะ</span></div></div></div>${nav(0)}`);
+
+const D=ph('t-sea','D. เส้นเวลา (Deep Sea)','แกนเวลาเห็นนัดกับช่วงว่างพร้อมกัน เส้น "ตอนนี้" แดง งานไม่มีเวลาอยู่ด้านบน เหมาะวันที่นัดแน่น',
+ `${sb}<div class="in" style="padding-bottom:0"><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:22px;font-weight:600">วันนี้</div><div style="font-size:12px;color:var(--mu)">อังคาร 13 ต.ค.</div></div><span class="chip" style="font-size:12px;padding:3px 10px">3/8 เสร็จ</span></div>
+ <div class="lbl">ยังไม่มีเวลา</div>${pt('ส่งรายงานให้พี่มิ้น','เลยมา 2 วัน','var(--rd)')}
+ <div class="tl"><div class="h">09:00</div><div class="ln"></div></div><div class="now"><span style="position:absolute;left:-42px;top:-8px;font-size:10.5px;color:var(--rd)">09:41</span></div>
+ <div class="tl"><div class="h">10:00</div><div class="ln"><div class="ev">ประชุมทีม<small>10:00 ถึง 11:00 ห้อง 3</small></div></div></div>
+ <div class="tl"><div class="h">12:00</div><div class="ln">${pt('กินข้าวกลางวัน','','var(--fa)',1)}</div></div>
+ <div class="tl"><div class="h">14:00</div><div class="ln"><div class="ev" style="border-color:var(--gr);background:#9be3a01a">โฟกัส: เขียนสคริปต์<small>14:00 ถึง 16:00 จองไว้</small></div></div></div>
+ <div class="tl"><div class="h">17:30</div><div class="ln">${pt('ซื้อของเข้าบ้าน','','var(--am)')}</div></div></div>${nav(1)}`);
+$('#phones').innerHTML=A+B+Cc+D;
+
+/* ---------- guides ---------- */
+const tribes='fire #ff8a5b, star #8c93ff, wind #67d6b5, water #5cc8ff, wood #8bd17c';
+const G=[
+ ['สไตล์ A แบนมินิมอล','flat vector mascot, [character], solid colors, no outlines, simple geometric shapes, dot eyes, tribe color [hex], soft off-white belly, transparent background, centered, 1:1'],
+ ['สไตล์ B ลายเส้นเดียว','monoline illustration of [character], single 3px rounded stroke in tribe color [hex], no fill, minimal detail, closed happy eyes, transparent background, centered, 1:1'],
+ ['สไตล์ C นุ่มฟู chibi','chibi mascot, [character], 2.5px dark outline #1a1424, soft cel shading, big glossy eyes with highlight, pink blush, rounded body, tribe color [hex] with lighter belly, transparent background, 3/4 front view, 1:1']
+];
+$('#guides').innerHTML=G.map(g=>`<div class="box"><h3>${g[0]}</h3><pre>${g[1]}
+
+สีประจำเผ่า: ${tribes}
+ใส่ภาพอ้างอิงของตัวละครเดิมทุกครั้ง
+ห้ามใส่: ชื่อหรือรูปตัวละครจากเกมอื่น ตัวหนังสือ ลายน้ำ</pre></div>`).join('')+
+`<div class="box"><h3>ข้อกำหนดร่วมทุกสไตล์</h3><pre>1. หนึ่งตัวละครต่อหนึ่งภาพ พื้นโปร่ง ขนาดต้นฉบับ 1024 px
+2. ท่า: ยืนปกติ, ดีใจ, หลับ/พัก (ใช้ใน empty state และบทพูด)
+3. ผู้เล่นใช้ชิ้นส่วน paper-doll แยก ไม่ใช้ AI วาดทั้งตัว
+4. บันทึกที่มา prompt และใบอนุญาตใน licenses/
+5. ข้อความในภาพ UI ใช้ฟอนต์ของแอป ไม่ให้ AI เขียนตัวหนังสือ</pre></div>`;
+
+/* ---------- contrast check printed to console for the build log ---------- */
+</script></body></html>
