@@ -122,4 +122,14 @@ object WebApi {
     fun kindsToggleHidden(state: String, kind: String): String = WebKinds.toggleHidden(state, kind)
 
     fun kindsPicker(state: String, raw: String): String = WebKinds.picker(state, raw)
+
+    // ---- Stuck log ----
+
+    fun stuckReasons(): String = WebStuck.reasons()
+
+    fun stuckView(fileKey: String, path: String, text: String, today: String, branches: String): String =
+        WebStuck.view(fileKey, path, text, today, branches)
+
+    fun stuckTask(fileKey: String, path: String, text: String, key: String, today: String, branches: String): String =
+        WebStuck.task(fileKey, path, text, key, today, branches)
 }
