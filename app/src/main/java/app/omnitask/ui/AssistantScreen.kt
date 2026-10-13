@@ -74,6 +74,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.Task
+import app.omnitask.model.StuckLog
 import app.omnitask.model.tr
 import kotlinx.datetime.DayOfWeek
 import java.time.Instant
@@ -842,5 +843,9 @@ private fun snapshot(state: UiState, habits: List<String>): String {
         }
         appendLine("[งานที่ยังไม่เสร็จทั้งหมด]")
         state.tasks.filter { it.isOpen }.take(60).forEach { appendLine(it.raw.trim()) }
+        StuckLog.summary(state.tasks).takeIf { it.isNotEmpty() }?.let { lines ->
+            appendLine("[ทำไมงานยังค้าง (บันทึกของเจ้าของ)]")
+            lines.forEach { appendLine("- $it") }
+        }
     }
 }
