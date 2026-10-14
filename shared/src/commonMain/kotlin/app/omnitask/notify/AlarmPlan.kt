@@ -33,7 +33,19 @@ data class CalendarEvent(
     val begin: LocalDateTime,
     val end: LocalDateTime,
     val allDay: Boolean = false,
-)
+    /** The phone calendar it is in, so Focus can say which one; 0 where that is not known (the web). */
+    val calendarId: Long = 0,
+) {
+    companion object {
+        /**
+         * One of each event. The same event can sit in two calendars on the phone (an account synced twice, or another
+         * app's copy of a Google calendar) and comes back once from each; Google Calendar shows it once, so Omni does too.
+         * Copies match on title and time; the one with the lowest id is kept, so every read keeps the same one.
+         */
+        fun distinct(events: List<CalendarEvent>): List<CalendarEvent> =
+            events.groupBy { listOf(it.title.trim(), it.begin, it.end, it.allDay) }.values.map { copies -> copies.minBy { it.id } }
+    }
+}
 
 enum class AlarmKind { TASK, EVENT, DIGEST, WEEKLY, RESCAN, TEST }
 

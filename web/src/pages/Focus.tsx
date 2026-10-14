@@ -3,7 +3,7 @@ import { Auth, CALENDAR_SCOPE } from '../auth'
 import { CalendarError, localIso } from '../calendar'
 import { today } from '../core'
 import { customKindTags, kindsStore } from '../kinds'
-import { skippedToday, useFocusLocal } from '../focusState'
+import { countdownPins, skippedToday, useFocusLocal } from '../focusState'
 import type { PageProps } from '../Home'
 import type { EditOp, FocusIn, FocusOut, PlanItem, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
@@ -25,6 +25,13 @@ const greeting = (d: Date) => (d.getHours() < 12 ? 'สวัสดีตอน�
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
 
+/** Today and the year after it. */
+function aheadRange() {
+  const from = new Date(); from.setHours(0, 0, 0, 0)
+  const to = new Date(from); to.setDate(to.getDate() + 366)
+  return { from, to }
+}
+
 /** Yesterday to the end of tomorrow. */
 function focusRange() {
   const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - 1)
@@ -37,6 +44,8 @@ export function FocusPage(p: PageProps) {
   // What was read when the page was last open is shown at once; the page reads again behind it.
   const [profile, setProfile] = useState<string | null>(() => p.vault.peekProfile() ?? null)
   const [events, setEvents] = useState<FocusIn['events']>(() => { const r = focusRange(); return p.peekCalendar(r.from, r.to) ?? [] })
+  // The year ahead, for the countdown picker's calendar tab and the pinned events beyond the days above.
+  const [ahead, setAhead] = useState<FocusIn['events']>(() => { const r = aheadRange(); return p.peekCalendar(r.from, r.to) ?? [] })
   const [calendarNote, setCalendarNote] = useState('')
   const [minute, setMinute] = useState(() => localIso(new Date()))
   const [menu, setMenu] = useState(false)
@@ -76,12 +85,21 @@ export function FocusPage(p: PageProps) {
     )
   }, [connected, p.snapshot])
 
+  // Read once the picker opens, or straight away when an event is pinned.
+  const pins = countdownPins(local)
+  const wantsAhead = dialog === 'countdown' || pins.some((k) => k.startsWith('event:'))
+  useEffect(() => {
+    if (!connected || !p.snapshot || !wantsAhead) return
+    const { from, to } = aheadRange()
+    p.readCalendar(from, to).then(setAhead, () => {})
+  }, [connected, p.snapshot, wantsAhead])
+
   const f: FocusOut | null = useMemo(
     () => p.snapshot?.focus({
       now: minute, skippedToday: skippedToday(local), dismissed: local.dismissed, reviewed: local.reviewed, futureCount: local.futureCount,
-      countdown: local.countdown, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, wakeFromWatch: !!local.wakeFromWatch, profile, events,
+      countdowns: pins, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, wakeFromWatch: !!local.wakeFromWatch, profile, events, pickEvents: ahead,
     }) ?? null,
-    [p.snapshot, local, profile, events, minute],
+    [p.snapshot, local, profile, events, ahead, minute],
   )
 
   const byKey = p.snapshot?.byKey
@@ -253,7 +271,7 @@ export function FocusPage(p: PageProps) {
                   <div class="donut" role="img" aria-label={`เสร็จแล้ว ${f.ring.done} จาก ${f.ring.total}`} style={{ '--pct': `${pct}%` }}>
                     <div class="donut-in"><span class="donut-num">{f.ring.done}/{f.ring.total}</span><span class="muted micro">เสร็จแล้ว</span></div>
                   </div>
-                  <div class="stat"><div class={`stat-num${f.ring.overdue > 0 ? ' red' : ''}`}>{f.ring.overdue}</div><div class="muted small">เลยกำหนด</div></div>
+                  <div class="stat"><div class={`stat-num${f.ring.overdue > 0 ? ' red' : ''}`}>{f.ring.overdue}</div><div class="muted small">ค้างอยู่</div></div>
                   <div class="stat"><div class="stat-num">{f.ring.events}</div><div class="muted small">นัดวันนี้</div></div>
                   {toBed
                     ? <div class="stat"><div class={`stat-num${toBed.toBed < 30 ? ' amber' : ''}`}>{hm(toBed.toBed)}</div><div class="muted small">ก่อนนอน</div></div>
@@ -286,16 +304,24 @@ export function FocusPage(p: PageProps) {
                     )}
                   </div>
                 )}
-                <button class="footrow" onClick={() => setDialog('countdown')}>
-                  {f.countdown ? (
-                    <>
-                      <span class="muted small">นับถอยหลัง</span>
-                      <span class="grow strong ellipsis">{f.countdown.title}</span>
-                      <span class={f.countdown.late ? 'late' : 'lead'}>{f.countdown.text}</span>
-                    </>
-                  ) : <span class="grow muted">ตั้งนับถอยหลังถึงงานสำคัญ</span>}
-                  <span class="chev">›</span>
-                </button>
+                {/* The pinned countdowns, soonest first: a ring for a task, the timeline's bar for an event. */}
+                {f.countdowns.length > 0 ? (
+                  <button class="footrow cd-block" onClick={() => setDialog('countdown')}>
+                    <span class="cd-head"><span class="grow muted small">นับถอยหลัง</span><span class="small lead-accent">แก้ไข</span><span class="chev">›</span></span>
+                    {f.countdowns.map((c) => (
+                      <span key={c.pin} class="cd-row">
+                        <span class={`cd-mark${c.event ? ' event' : ''}`} />
+                        <span class="grow ellipsis">{c.title}</span>
+                        <span class={c.late ? 'late strong' : 'lead-accent strong'}>{c.text}</span>
+                      </span>
+                    ))}
+                  </button>
+                ) : (
+                  <button class="footrow" onClick={() => setDialog('countdown')}>
+                    <span class="grow muted">ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ</span>
+                    <span class="chev">›</span>
+                  </button>
+                )}
               </section>
 
               {f.notices.filter((n) => !hidden.includes(n)).map((n) => (
@@ -424,7 +450,14 @@ export function FocusPage(p: PageProps) {
           return <StuckDialog task={info} onSave={(text) => change(t, { op: 'stuck', value: text })} onClose={() => setExplaining(null)} />
         })()}
         {dialog === 'countdown' && f && (
-          <CountdownDialog choices={f.countdownChoices} current={local.countdown} onPick={(title) => setLocal((x) => ({ ...x, countdown: title }))} onClose={() => setDialog(null)} />
+          <CountdownDialog
+            tasks={f.countdownTasks}
+            events={f.countdownEvents}
+            calendar={connected}
+            onToggle={(c) => setLocal((x) => ({ ...x, countdown: null, countdowns: c.on ? countdownPins(x).filter((k) => k !== c.pin) : [...countdownPins(x), c.pin] }))}
+            onClear={() => setLocal((x) => ({ ...x, countdown: null, countdowns: [] }))}
+            onClose={() => setDialog(null)}
+          />
         )}
         {dialog === 'future' && f && (
           <FutureDialog

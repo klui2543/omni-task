@@ -57,7 +57,10 @@ object WebFocus {
         /** Review dates by task title. */
         val reviewed: Map<String, String> = emptyMap(),
         val futureCount: Int = 1,
+        /** The single countdown kept before there could be several: a task title. Read when [countdowns] is empty. */
         val countdown: String? = null,
+        /** The pinned countdowns, as [Countdown.Pin.key]s. */
+        val countdowns: List<String> = emptyList(),
         val tonightBed: BedIn? = null,
         /** Tonight's wake time when it is not the usual one (a morning event no longer moves it). */
         val tonightWake: BedIn? = null,
@@ -66,6 +69,8 @@ object WebFocus {
         /** The text of the profile note (`Omni/โปรไฟล์.md`), when the vault has one. */
         val profile: String? = null,
         val events: List<EventIn> = emptyList(),
+        /** The events of the year ahead, read when the countdown picker's calendar tab opens. */
+        val pickEvents: List<EventIn> = emptyList(),
         /** Branch states as Android saves them; tasks in a parked branch are left out. */
         val branches: List<String> = emptyList(),
     )
@@ -125,8 +130,13 @@ object WebFocus {
     @Serializable
     data class Third(val kind: String, val minutes: Long, val night: Night? = null)
 
+    /** A pinned countdown: [pin] is its key, [key] the task's when it is one, [event] when it is a calendar event. */
     @Serializable
-    data class CountdownOut(val key: String, val title: String, val text: String, val late: Boolean)
+    data class CountdownOut(val pin: String, val key: String? = null, val title: String, val text: String, val late: Boolean, val event: Boolean)
+
+    /** A row of the countdown picker; see [Countdown.Choice]. */
+    @Serializable
+    data class ChoiceOut(val pin: String, val title: String, val sub: String, val text: String, val late: Boolean, val on: Boolean, val group: String)
 
     @Serializable
     data class SuggestionOut(val id: String, val key: String, val kind: String, val title: String, val text: String)
@@ -144,7 +154,7 @@ object WebFocus {
     data class Out(
         val ring: Ring,
         val third: Third,
-        val countdown: CountdownOut?,
+        val countdowns: List<CountdownOut>,
         val notices: List<String>,
         val plan: List<Section>,
         val suggestions: List<SuggestionOut>,
@@ -154,7 +164,9 @@ object WebFocus {
         val futureChosen: List<Pick>,
         val futureCandidates: List<Pick>,
         val review: List<ReviewOut>,
-        val countdownChoices: List<Pick>,
+        /** The countdown picker's two tabs: tasks, and calendar events. */
+        val countdownTasks: List<ChoiceOut>,
+        val countdownEvents: List<ChoiceOut>,
         /** The usual bedtime or tonight's pick, as `HH:mm`, and the evening it counts for. */
         val bedtime: String,
         val evening: String,
@@ -175,7 +187,7 @@ object WebFocus {
         val today = now.date
         val tasks = WebCore.withoutParked(WebNotes.tasks(fileKey, path, text, today), s.branches)
         val profile = Profile.parse(s.profile)
-        val events = s.events.map { CalendarEvent(it.id, it.title, LocalDateTime.parse(it.begin), LocalDateTime.parse(it.end), it.allDay) }
+        val events = s.events.map { event(it) }
         val todayEvents = events.filter { it.begin.date <= today && it.end.date >= today && it.end > today.atTime(0, 0) }
         val reviewed = s.reviewed.mapNotNull { (k, v) -> runCatching { LocalDate.parse(v) }.getOrNull()?.let { k to it } }.toMap()
 
@@ -188,7 +200,8 @@ object WebFocus {
         // Done today counts anything ticked today that belonged to today (or was overdue), as on Android.
         val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
         val doneToday = tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
-        val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
+        // Read off the plan, so the numbers match the overdue card and the timeline, as on Android.
+        val overdue = DayPlan.lateCount(plan)
 
         // The night the sleep card plans, all day long: last night until its wake time, then tonight's (as Android's
         // Focus screen). Bed and wake are the ones picked for that evening, or the usual ones from the profile.
@@ -224,17 +237,17 @@ object WebFocus {
             Third("free", DayPlan.freeMinutesLeft(events, now, profile.wake, profile.sleep), nightOut)
         }
 
-        val countdownTask = s.countdown?.let { title -> tasks.filter { it.title == title }.maxByOrNull { if (it.isOpen) 1 else 0 } }
-        val countdown = countdownTask?.let {
-            val late = it.due?.let { d -> d < today } == true
-            CountdownOut(it.key, it.title, Countdown.text(it, now) ?: tr("ไม่มีวันครบกำหนด", "no date"), late)
-        }
+        val pins = Countdown.parseAll(s.countdowns.ifEmpty { listOfNotNull(s.countdown) })
+        // Pinned events further ahead than the page reads are found among the picker's year, once it was opened.
+        val known = CalendarEvent.distinct(events + s.pickEvents.map { event(it) })
+        val countdowns = Countdown.shown(pins, tasks, known, now).map { CountdownOut(it.pin.key, it.taskKey, it.title, it.text, it.late, it.isEvent) }
+        fun choice(c: Countdown.Choice) = ChoiceOut(c.pin.key, c.title, c.sub, c.text, c.late, c.on, c.group)
 
         return json.encodeToString(
             Out(
-                ring = Ring(doneToday, openToday + doneToday, overdue, todayEvents.count { !it.allDay }),
+                ring = Ring(doneToday, openToday + doneToday, overdue, DayPlan.eventCount(plan)),
                 third = third,
-                countdown = countdown,
+                countdowns = countdowns,
                 notices = brief.warnings,
                 plan = planOut(plan, today, now, blocked, progress, s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }, tasks),
                 suggestions = brief.suggestions.map { SuggestionOut(it.id, it.task.key, it.kind.name, it.task.title, it.text) },
@@ -247,8 +260,8 @@ object WebFocus {
                 review = Focus.toReview(tasks, today, reviewed).map {
                     ReviewOut(it.key, TaskKind.of(it).name, Focus.ageDays(it, today), reviewed[it.title]?.toString())
                 },
-                countdownChoices = tasks.filter { it.isOpen && Countdown.target(it) != null }.sortedBy { Countdown.target(it) }
-                    .map { Pick(it.key, it.title, Countdown.text(it, now) ?: "") },
+                countdownTasks = Countdown.taskChoices(pins, tasks, now).map { choice(it) },
+                countdownEvents = Countdown.eventChoices(pins, known, now, keepIds = false).map { choice(it) },
                 bedtime = hm(bedtime),
                 evening = eve.toString(),
                 wake = hm(pickedWake ?: profile.wake),
@@ -257,6 +270,8 @@ object WebFocus {
             ),
         )
     }
+
+    private fun event(e: EventIn) = CalendarEvent(e.id, e.title, LocalDateTime.parse(e.begin), LocalDateTime.parse(e.end), e.allDay)
 
     private fun pick(t: Task) = Pick(
         t.key, t.title,

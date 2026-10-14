@@ -223,7 +223,6 @@ fun SettingsScreen(
             item {
                 SettingsGroup(tr("ปฏิทินที่แสดง", "Calendars shown")) {
                     val granted = permissionTick >= 0 && app.omnitask.data.CalendarReader.hasPermission(context)
-                    val visible = calendars.calendars.filter { it.visible }
                     if (!granted) {
                         Text(
                             tr("อนุญาตให้อ่านปฏิทินในเครื่องก่อน แล้วเลือกได้ว่าจะแสดงปฏิทินไหน", "Allow reading the calendars on this phone, then choose which ones to show"),
@@ -235,20 +234,7 @@ fun SettingsScreen(
                             Modifier.padding(top = 8.dp, bottom = 12.dp),
                         )
                     } else {
-                        if (visible.isEmpty()) {
-                            Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
-                        }
-                        visible.forEach { cal ->
-                            val on = !app.omnitask.data.CalendarReader.isHidden(cal.id, calendars.hidden)
-                            Row(Modifier.fillMaxWidth().clickable { calendars.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(cal.name.ifBlank { cal.account }, color = C.text, fontSize = TS.body)
-                                    if (cal.account.isNotBlank() && cal.account != cal.name) Text(cal.account, color = C.muted, fontSize = TS.caption)
-                                }
-                                Box(Modifier.width(12.dp))
-                                OnOff(on)
-                            }
-                        }
+                        CalendarRows(calendars)
                         Text(
                             tr(
                                 "เลือกได้เฉพาะปฏิทินที่เปิดแสดงไว้ในแอปปฏิทินของเครื่อง ปฏิทินที่ปิดตรงนี้จะไม่โผล่ในปฏิทินเดือน แกนต์ ไทม์ไลน์ วิดเจ็ต การแจ้งเตือน และผู้ช่วย",

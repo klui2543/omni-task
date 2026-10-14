@@ -16,7 +16,10 @@ export interface FocusLocal {
   /** Review date by task title. */
   reviewed: Record<string, string>
   futureCount: number
+  /** The single countdown (a task title) kept before there could be several; read until [countdowns] is saved. */
   countdown: string | null
+  /** The pinned countdowns, as their pin keys. */
+  countdowns?: string[]
   /** Tonight's bedtime when it is not the usual one. */
   tonightBed: { evening: string; time: string } | null
   /** Tonight's wake time when it is not the usual one (a morning event no longer moves it). */
@@ -69,6 +72,9 @@ export function useFocusLocal(): [FocusLocal, (change: (s: FocusLocal) => FocusL
     },
   ]
 }
+
+/** The pinned countdowns, the single one of before included. */
+export const countdownPins = (s: FocusLocal) => s.countdowns ?? (s.countdown ? [s.countdown] : [])
 
 /** The titles skipped for today only. */
 export const skippedToday = (s: FocusLocal) => s.skipped.filter((e) => e.startsWith(today() + '|')).map((e) => e.slice(11))

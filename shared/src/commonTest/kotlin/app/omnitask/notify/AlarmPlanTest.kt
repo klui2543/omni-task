@@ -81,6 +81,25 @@ class AlarmPlanTest {
     }
 
     @Test
+    fun anEventInTwoCalendarsIsKeptOnce() {
+        val at = LocalDateTime.parse("2026-10-07T13:00")
+        val events = listOf(
+            CalendarEvent(9, "ประชุมทีม", at, at.plusHours(1)),
+            CalendarEvent(4, "ประชุมทีม ", at, at.plusHours(1)),
+            // Same title at another time, or another title at the same time: different events.
+            CalendarEvent(6, "ประชุมทีม", at.plusDays(1), at.plusDays(1).plusHours(1)),
+            CalendarEvent(2, "อีกนัด", at, at.plusHours(1)),
+            CalendarEvent(8, "ประชุมทีม", at, at.plusHours(1), allDay = true),
+        )
+        // The lowest id is kept, whichever copy came first, and the order stays as read.
+        assertEquals(listOf(4L, 6L, 2L, 8L), CalendarEvent.distinct(events).map { it.id })
+        assertEquals(listOf(4L, 6L, 2L, 8L), CalendarEvent.distinct(events.reversed()).map { it.id }.reversed())
+        // Each event once, so the reminder is set once.
+        val alarms = AlarmPlan.plan(emptyList(), CalendarEvent.distinct(events), NotifySettings(), now).filter { it.kind == AlarmKind.EVENT && it.at.date == at.date }
+        assertEquals(2, alarms.size)
+    }
+
+    @Test
     fun dailyDigestListsWhatIsSwitchedOn() {
         val today = LocalDate.parse("2026-10-07")
         val tasks = listOf(

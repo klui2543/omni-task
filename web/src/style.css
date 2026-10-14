@@ -467,6 +467,17 @@ button.fcard { display: flex; align-items: center; gap: 12px; padding: 10px 14px
 .dot-ring { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--control); flex: none; display: grid; place-items: center; }
 .dot-ring.on { border-color: var(--lime); }
 .dot-ring.on::after { content: ""; width: 5px; height: 9px; margin-top: -2px; border-right: 2px solid var(--lime); border-bottom: 2px solid var(--lime); transform: rotate(45deg); }
+/* The countdown picker ticks with a square, as Android does; the Focus card lists the pinned countdowns. */
+.dot-ring.square { border-radius: 5px; }
+.dtitle .cd-title { display: block; }
+.dtitle .small { display: block; }
+.cd-count { margin-left: 6px; font-size: 11.5px; padding: 0 6px; border-radius: 9px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.cd-block { flex-direction: column; align-items: stretch; gap: 6px; }
+.cd-head, .cd-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cd-row { font-size: 14px; }
+.cd-mark { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--faint); }
+.cd-mark.event { width: 3px; height: 14px; margin: 0 4.5px; border: 0; border-radius: 1px; background: var(--faint); }
+.lead-accent { color: var(--accent-text); }
 .review-task { display: flex; flex-direction: column; gap: 6px; }
 .review-title { border: 0; background: transparent; padding: 0; text-align: left; font-size: 20px; font-weight: 500; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 8px; }

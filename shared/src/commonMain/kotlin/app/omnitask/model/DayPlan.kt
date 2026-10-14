@@ -64,6 +64,13 @@ object DayPlan {
         }.filter { it.items.isNotEmpty() }
     }
 
+    /** Open tasks in the overdue card of [plan]: the Focus card's overdue number, so the two always agree. */
+    fun lateCount(plan: List<Section>): Int =
+        plan.filter { it.part == Part.LATE }.sumOf { s -> s.items.count { it is Item.TaskItem && it.task.isOpen } }
+
+    /** Events on [plan]'s day, all-day ones included: the Focus card's events number, as many as the timeline shows. */
+    fun eventCount(plan: List<Section>): Int = plan.sumOf { s -> s.items.count { it is Item.EventItem } }
+
     /** The time line of an event on [today]'s page: its hours, or All day (with which day of a long one). */
     fun range(e: CalendarEvent, timed: Boolean, today: LocalDate, hm: (LocalTime) -> String): String {
         if (timed) return tr("${hm(e.begin.toLocalTime())} ถึง ${hm(e.end.toLocalTime())}", "${hm(e.begin.toLocalTime())} to ${hm(e.end.toLocalTime())}")

@@ -97,19 +97,35 @@ test('dropping in the review cancels the task and keeps its line', async ({ page
   await expect.poll(() => file.text).toContain('- [-] ทำเว็บคำนวณยา')
 })
 
-test('the countdown can be set to any task with a date and cleared', async ({ page }) => {
-  await open(page)
-  await page.getByRole('button', { name: 'ตั้งนับถอยหลังถึงงานสำคัญ' }).click()
-  const dialog = page.getByRole('dialog', { name: 'นับถอยหลังถึงงานไหน' })
+test('countdowns: tasks from one tab, calendar events from the other, any number, kept and cleared', async ({ page }) => {
+  await open(page, { granted: true, events: [{ title: 'ประชุมวิชาการ', begin: at(0, 0, 20), end: at(0, 0, 21), allDay: true }] })
+  await page.getByRole('button', { name: 'ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ' }).click()
+  const dialog = page.getByRole('dialog')
   await dialog.getByLabel('ค้นหางาน').fill('paper')
-  await dialog.getByRole('button', { name: /เขียน paper/ }).click()
-  await expect(page.getByRole('button', { name: /นับถอยหลัง เขียน paper อีก 2 วัน/ })).toBeVisible()
+  await dialog.getByRole('checkbox', { name: /เขียน paper/ }).click()
+  await expect(dialog.getByRole('checkbox', { name: /เขียน paper/ })).toHaveAttribute('aria-checked', 'true')
+  await dialog.getByLabel('ค้นหางาน').fill('')
+  // The calendar has its own tab, so tasks and events do not mix.
+  await dialog.getByRole('tab', { name: 'ปฏิทิน' }).click()
+  await expect(dialog.getByRole('checkbox', { name: /เขียน paper/ })).toHaveCount(0)
+  await dialog.getByRole('checkbox', { name: /ประชุมวิชาการ/ }).click()
+  await expect(dialog).toContainText('เลือกแล้ว 2')
+  await dialog.getByRole('button', { name: 'เสร็จ' }).click()
+
+  // Soonest first: the paper in 2 days, then the meeting in 12.
+  const rows = page.locator('.cd-row')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0)).toContainText('เขียน paper')
+  await expect(rows.nth(0)).toContainText('อีก 2 วัน')
+  await expect(rows.nth(1)).toContainText('ประชุมวิชาการ')
+  await expect(rows.nth(1)).toContainText('อีก 12 วัน')
 
   await page.reload()
-  await expect(page.getByRole('button', { name: /นับถอยหลัง เขียน paper อีก 2 วัน/ })).toBeVisible()
-  await page.getByRole('button', { name: /นับถอยหลัง เขียน paper/ }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'เลิกนับ' }).click()
-  await expect(page.getByRole('button', { name: 'ตั้งนับถอยหลังถึงงานสำคัญ' })).toBeVisible()
+  await expect(page.locator('.cd-row')).toHaveCount(2)
+  await page.locator('.cd-block').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'ล้างทั้งหมด' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'เสร็จ' }).click()
+  await expect(page.getByRole('button', { name: 'ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ' })).toBeVisible()
 })
 
 test('Google Calendar: asks first, then the events join the plan and take free time', async ({ page }) => {
