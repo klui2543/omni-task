@@ -25,6 +25,7 @@ import app.omnitask.data.VaultRepository
 import app.omnitask.data.VaultText
 import app.omnitask.drive.OmniDrive
 import app.omnitask.drive.sameName
+import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Behavior
@@ -155,8 +156,12 @@ data class UiState(
     /** Folded task groups ("groupBy:label") and folded Kanban columns (status names). */
     val foldedGroups: Set<String> = emptySet(),
     val foldedColumns: Set<String> = emptySet(),
-    /** The task the Focus screen counts down to (by title), any task, not only today's. */
-    val countdown: String? = null,
+    /** What the Focus screen counts down to: any tasks and calendar events, not only today's. */
+    val countdowns: List<Countdown.Pin> = emptyList(),
+    /** The pinned events as the calendar holds them now, read over the year ahead, so a moved one is followed. */
+    val pinnedEvents: List<CalendarEvent> = emptyList(),
+    /** The year ahead in the calendars shown, read when the countdown picker opens its calendar tab. */
+    val aheadEvents: List<CalendarEvent> = emptyList(),
     /** Tonight's bedtime when it differs from the usual one: the evening's date and the time. */
     val tonightBed: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
     val tonightWake: Pair<LocalDate, kotlinx.datetime.LocalTime>? = null,
@@ -311,7 +316,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         // The project logic reads the choice too, so it is applied wherever the settings are.
         projectTags = prefs.getStringSet(KEY_PROJECT_TAGS, null)?.toSet().also { Projects.chosen = it },
-        countdown = prefs.getString(KEY_COUNTDOWN, null),
+        countdowns = Countdown.parseAll(prefs.getStringSet(KEY_COUNTDOWNS, null)?.toList() ?: listOfNotNull(prefs.getString(KEY_COUNTDOWN, null))),
         foldedGroups = prefs.getStringSet(KEY_FOLDED_GROUPS, emptySet()).orEmpty().toSet(),
         branchStates = Branches.parse(prefs.getStringSet(KEY_BRANCHES, emptySet()).orEmpty()),
         foldedColumns = prefs.getStringSet(KEY_FOLDED_COLUMNS, emptySet()).orEmpty().toSet(),
@@ -372,6 +377,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         CalendarEvent.distinct(now + other)
     }.getOrDefault(emptyList())
 
+    /** The pinned countdown events over the year ahead, by their ids on this phone. */
+    private fun loadPinned(app: Application, pins: List<Countdown.Pin>): List<CalendarEvent> = runCatching {
+        val ids = pins.filterIsInstance<Countdown.EventPin>().map { it.id }.filter { it != 0L }.toSet()
+        if (ids.isEmpty()) return@runCatching emptyList<CalendarEvent>()
+        val today = LocalDate.now()
+        CalendarReader.events(app, today.minusDays(1).atStartOfDay(), today.plusDays(400).atStartOfDay(), ids)
+    }.getOrDefault(emptyList())
+
     /** Re-reads only the calendar (not the vault) once a sync settles, then redraws the widgets so they follow too. */
     private fun refreshEvents() {
         eventsJob?.cancel()
@@ -379,7 +392,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             delay(1500)
             val app = getApplication<Application>()
             val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
-            _state.update { it.copy(events = events, calendars = calendars) }
+            val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
+            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned) }
             runCatching { OmniWidgets.refresh(app) }
         }
     }
@@ -451,6 +465,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 loadEvents(app)
             }
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
+            val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
             // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
@@ -461,6 +476,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 it.copy(
                     events = events,
+                    pinnedEvents = pinned,
                     calendarAccess = CalendarReader.hasPermission(app),
                     calendars = calendars,
                     loading = false,
@@ -1765,10 +1781,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Pins a task for the Focus countdown, or clears it. */
-    fun setCountdown(task: Task?) {
-        prefs.edit().apply { if (task == null) remove(KEY_COUNTDOWN) else putString(KEY_COUNTDOWN, task.title) }.apply()
-        _state.update { it.copy(countdown = task?.title) }
+    /** Saves what the Focus screen counts down to; the single countdown kept before goes. */
+    fun setCountdowns(pins: List<Countdown.Pin>) {
+        prefs.edit().putStringSet(KEY_COUNTDOWNS, pins.map { it.key }.toSet()).remove(KEY_COUNTDOWN).apply()
+        _state.update { it.copy(countdowns = pins) }
+        viewModelScope.launch {
+            val pinned = withContext(Dispatchers.IO) { loadPinned(getApplication(), pins) }
+            _state.update { it.copy(pinnedEvents = pinned) }
+        }
+    }
+
+    /** Reads the year ahead for the countdown picker's calendar tab. */
+    fun loadAhead() {
+        viewModelScope.launch {
+            val today = LocalDate.now()
+            val ahead = withContext(Dispatchers.IO) {
+                runCatching { CalendarReader.events(getApplication(), today.atStartOfDay(), today.plusDays(366).atStartOfDay()) }.getOrDefault(emptyList())
+            }
+            _state.update { it.copy(aheadEvents = ahead) }
+        }
     }
 
     /** Tonight's bedtime; the usual one comes back tomorrow. [evening] is the date the night starts on. */
@@ -1922,7 +1953,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_TAGS = "projectTags"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
+        /** The single countdown (a task title) kept before there could be several; read once, then removed. */
         const val KEY_COUNTDOWN = "focus.countdown"
+        const val KEY_COUNTDOWNS = "focus.countdowns"
         const val KEY_FOLDED_GROUPS = "foldedGroups"
         const val KEY_BRANCHES = "branchStates"
         const val KEY_FOLDED_COLUMNS = "foldedColumns"

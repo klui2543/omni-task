@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import type { Kind, Pick } from '../types'
+import type { CountdownChoice, Kind, Pick } from '../types'
 import { KIND_LABEL } from '../focusState'
 
 /** The shell every Focus dialog shares: centred on wide screens, a sheet from the bottom on narrow ones. */
@@ -14,9 +14,9 @@ export function Sheet(p: { title: string; onClose: () => void; children: preact.
   )
 }
 
-const Search = (p: { value: string; onInput: (v: string) => void }) => (
+const Search = (p: { value: string; onInput: (v: string) => void; label?: string }) => (
   <label class="dsearch">
-    <input aria-label="ค้นหางาน" placeholder="ค้นหางาน" autofocus value={p.value} onInput={(e) => p.onInput(e.currentTarget.value)} />
+    <input aria-label={p.label ?? 'ค้นหางาน'} placeholder={p.label ?? 'ค้นหางาน'} autofocus value={p.value} onInput={(e) => p.onInput(e.currentTarget.value)} />
   </label>
 )
 
@@ -65,25 +65,51 @@ export function ReviewDialog(p: {
   )
 }
 
-/** Any open task with a date can be the countdown, today's or months away. */
-export function CountdownDialog(p: { choices: Pick[]; current: string | null; onPick: (title: string | null) => void; onClose: () => void }) {
+/**
+ * What Focus counts down to: a tab for tasks and one for calendar events, so the two do not mix, any number ticked in
+ * either. A tick saves at once; the ticked ones lead their tab.
+ */
+export function CountdownDialog(p: {
+  tasks: CountdownChoice[]
+  events: CountdownChoice[]
+  calendar: boolean
+  onToggle: (c: CountdownChoice) => void
+  onClear: () => void
+  onClose: () => void
+}) {
   const [text, setText] = useState('')
-  const shown = p.choices.filter((c) => !text.trim() || c.title.toLowerCase().includes(text.trim().toLowerCase()))
+  const [tab, setTab] = useState<'tasks' | 'events'>('tasks')
+  const tasksOn = p.tasks.filter((c) => c.on).length
+  const eventsOn = p.events.filter((c) => c.on).length
+  const q = text.trim().toLowerCase()
+  const list = (tab === 'events' ? p.events : p.tasks).filter((c) => !q || c.title.toLowerCase().includes(q))
+  const empty = tab === 'tasks' ? 'ไม่พบงานที่มีวัน' : p.calendar ? 'ไม่พบนัดในปีข้างหน้า' : 'ยังไม่ได้เชื่อมต่อ Google Calendar'
   return (
-    <Sheet title="นับถอยหลังถึงงานไหน" onClose={p.onClose}>
-      <Search value={text} onInput={setText} />
+    <Sheet title={tasksOn + eventsOn > 0 ? `นับถอยหลัง (เลือกแล้ว ${tasksOn + eventsOn})` : 'นับถอยหลัง'} onClose={p.onClose}>
+      <div class="segmented small-seg" role="tablist">
+        <button role="tab" aria-checked={tab === 'tasks'} onClick={() => setTab('tasks')}>งาน{tasksOn > 0 && <span class="cd-count">{tasksOn}</span>}</button>
+        <button role="tab" aria-checked={tab === 'events'} onClick={() => setTab('events')}>ปฏิทิน{eventsOn > 0 && <span class="cd-count">{eventsOn}</span>}</button>
+      </div>
+      <Search value={text} onInput={setText} label={tab === 'events' ? 'ค้นหานัด' : 'ค้นหางาน'} />
       <div class="dlist">
-        {shown.length === 0 && <p class="muted pad">ไม่พบงานที่มีวันครบกำหนด</p>}
-        {shown.map((c) => (
-          <button key={c.key} class="drow" onClick={() => { p.onPick(c.title); p.onClose() }}>
-            <span class={`dtitle${c.title === p.current ? ' on' : ''}`}>{c.title}</span>
-            <span class="muted small">{c.sub}</span>
-          </button>
-        ))}
+        {list.length === 0 && <p class="muted pad">{empty}</p>}
+        {list.map((c, i) => {
+          const prev = list[i - 1]
+          // The ticked ones under "chosen", then the rest under their group (a month, for events).
+          const head = c.on ? (prev ? null : 'เลือกไว้') : !prev || prev.on || prev.group !== c.group ? c.group : null
+          return [
+            head && <span key={`h${i}`} class="muted small dhead">{head}</span>,
+            <button key={c.pin} class="drow" role="checkbox" aria-checked={c.on} onClick={() => p.onToggle(c)}>
+              <span class={`dot-ring square${c.on ? ' on' : ''}`} />
+              <span class="dtitle"><span class="ellipsis cd-title">{c.title}</span>{c.sub && <span class="muted small">{c.sub}</span>}</span>
+              <span class={`small${c.late ? ' late' : ' muted'}`}>{c.text}</span>
+            </button>,
+          ]
+        })}
       </div>
       <div class="dialog-actions">
-        {p.current && <button class="ghost danger" onClick={() => { p.onPick(null); p.onClose() }}>เลิกนับ</button>}
-        <button class="ghost" onClick={p.onClose}>ปิด</button>
+        {tasksOn + eventsOn > 0 && <button class="ghost danger" onClick={p.onClear}>ล้างทั้งหมด</button>}
+        <button class="primary" onClick={p.onClose}>เสร็จ</button>
       </div>
     </Sheet>
   )

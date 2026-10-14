@@ -118,7 +118,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     val free = DayPlan.freeMinutesLeft(events, now, state.profile.wake, state.profile.sleep)
     val blocked = Projects.blocked(state.tasks)
     val context = LocalContext.current
-    val countdown = state.countdown?.let { title -> state.allTasks.filter { it.title == title }.maxByOrNull { if (it.isOpen) 1 else 0 } }
+    val countdowns = Countdown.shown(state.countdowns, state.allTasks, CalendarEvent.distinct(state.events + state.pinnedEvents + state.aheadEvents), now)
     var pickingCountdown by remember { mutableStateOf(false) }
     if (pickingCountdown) CountdownPicker(state, vm) { pickingCountdown = false }
     var hidden by remember { mutableStateOf(emptySet<String>()) }
@@ -251,16 +251,29 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
                 }
                 run {
-                    // The pinned countdown: any task, counted to its date (and time on the day).
-                    FooterRow(onClick = { pickingCountdown = true }) {
-                        if (countdown == null) {
-                            Text(tr("ตั้งนับถอยหลังถึงงานสำคัญ", "Count down to an important task"), color = C.faint, fontSize = TS.caption)
-                        } else {
-                            Text(countdown.title, Modifier.weight(1f, fill = false), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                "  " + (Countdown.text(countdown, now) ?: tr("ไม่มีวันครบกำหนด", "no date")),
-                                color = if (countdown.due?.let { it < today } == true) C.red else C.accentText, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1,
-                            )
+                    // The pinned countdowns, soonest first: a ring for a task, the timeline's bar for an event. Any of
+                    // them opens the picker.
+                    if (countdowns.isEmpty()) {
+                        FooterRow(onClick = { pickingCountdown = true }) {
+                            Text(tr("ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ", "Count down to an important task or event"), color = C.faint, fontSize = TS.caption)
+                        }
+                    } else {
+                        Column(Modifier.fillMaxWidth().clickable { pickingCountdown = true }.padding(start = 14.dp, end = 12.dp, top = 8.dp, bottom = 10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(tr("นับถอยหลัง", "Countdowns"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
+                                Text(tr("แก้ไข", "Edit"), color = C.accentText, fontSize = TS.caption)
+                                Icon(Ic.next, null, tint = C.faint, modifier = Modifier.padding(start = 6.dp).size(12.dp))
+                            }
+                            countdowns.forEach { c ->
+                                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CountdownMark(c.isEvent)
+                                    Text(c.title, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        c.text, Modifier.padding(start = 8.dp), color = if (c.late) C.red else C.accentText,
+                                        fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -682,53 +695,134 @@ private fun Notice(text: String, onClose: () -> Unit) {
     }
 }
 
-/** Any open task with a date can be the countdown, today's or months away. */
+/** A task's ring or an event's bar, as on the timeline, so the countdowns read apart. */
+@Composable
+private fun CountdownMark(event: Boolean) {
+    Box(Modifier.width(12.dp).height(14.dp), contentAlignment = Alignment.Center) {
+        if (event) Box(Modifier.width(3.dp).height(13.dp).clip(RoundedCornerShape(1.dp)).background(C.teal))
+        else Box(Modifier.size(12.dp).clip(CircleShape).border(1.5.dp, C.faint, CircleShape))
+    }
+}
+
+/**
+ * What Focus counts down to: a tab for tasks and one for calendar events, so the two do not mix, any number ticked in
+ * either. A tick saves at once; the ticked ones lead their tab.
+ */
 @Composable
 private fun CountdownPicker(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
+    var eventsTab by remember { mutableStateOf(false) }
+    // The calendar tab offers the year ahead, more than the screens keep.
+    LaunchedEffect(Unit) { vm.loadAhead() }
     val now = LocalDateTime.now()
-    val candidates = state.allTasks.filter { it.isOpen && Countdown.target(it) != null }
-        .filter { text.isBlank() || it.title.contains(text.trim(), ignoreCase = true) }
-        .sortedBy { Countdown.target(it) }
+    val pins = state.countdowns
+    val taskChoices = Countdown.taskChoices(pins, state.allTasks, now)
+    val eventChoices = Countdown.eventChoices(pins, CalendarEvent.distinct(state.events + state.pinnedEvents + state.aheadEvents), now)
+    val tasksOn = taskChoices.count { it.on }
+    val eventsOn = eventChoices.count { it.on }
+    val q = text.trim()
+    val list = (if (eventsTab) eventChoices else taskChoices).filter { q.isEmpty() || it.title.contains(q, ignoreCase = true) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text(tr("นับถอยหลังถึงงานไหน", "Count down to which task")) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("นับถอยหลัง", "Countdowns"), Modifier.weight(1f))
+                if (tasksOn + eventsOn > 0) Text(tr("เลือกแล้ว ${tasksOn + eventsOn}", "${tasksOn + eventsOn} chosen"), color = C.muted, fontSize = TS.caption)
+            }
+        },
         text = {
             Column {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.sunken).padding(3.dp)) {
+                    PickerTab(tr("งาน", "Tasks"), tasksOn, !eventsTab, Modifier.weight(1f)) { eventsTab = false }
+                    PickerTab(tr("ปฏิทิน", "Calendar"), eventsOn, eventsTab, Modifier.weight(1f)) { eventsTab = true }
+                }
                 androidx.compose.foundation.text.BasicTextField(
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(C.accent),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.sunken).padding(12.dp),
+                    modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.sunken).padding(12.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (text.isEmpty()) Text(tr("ค้นหางาน", "Search tasks"), color = C.faint, fontSize = TS.body)
+                            if (text.isEmpty()) Text(if (eventsTab) tr("ค้นหานัด", "Search events") else tr("ค้นหางาน", "Search tasks"), color = C.faint, fontSize = TS.body)
                             inner()
                         }
                     },
                 )
-                androidx.compose.foundation.lazy.LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 360.dp)) {
-                    items(candidates.size) { i ->
-                        val t = candidates[i]
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { vm.setCountdown(t); onDismiss() }.padding(vertical = 9.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(t.title, Modifier.weight(1f), color = if (t.title == state.countdown) C.accentText else C.text, fontSize = TS.body, maxLines = 2)
-                            Text(Countdown.text(t, now) ?: "", Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption)
+                LazyColumn(Modifier.padding(top = 4.dp).heightIn(max = 360.dp)) {
+                    if (list.isEmpty()) item {
+                        Text(
+                            when {
+                                !eventsTab -> tr("ไม่พบงานที่มีวัน", "No tasks with a date")
+                                state.calendarAccess != true -> tr("ยังอ่านปฏิทินในเครื่องไม่ได้", "The phone's calendars cannot be read yet")
+                                else -> tr("ไม่พบนัดในปีข้างหน้า", "No events in the year ahead")
+                            },
+                            Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body,
+                        )
+                    }
+                    list.forEachIndexed { i, c ->
+                        val prev = list.getOrNull(i - 1)
+                        // The ticked ones under "chosen", then the rest under their group (a month, for events).
+                        val head = when {
+                            c.on -> if (prev == null) tr("เลือกไว้", "Chosen") else null
+                            prev == null || prev.on || prev.group != c.group -> c.group
+                            else -> null
                         }
+                        if (head != null) item {
+                            Column {
+                                if (prev?.on == true) Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                                Text(head, Modifier.padding(top = 8.dp, bottom = 2.dp, start = 2.dp), color = C.faint, fontSize = TS.micro, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        item { ChoiceRow(c) { vm.setCountdowns(Countdown.toggle(pins, c, now)) } }
                     }
                 }
             }
         },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(tr("เสร็จ", "Done"), color = C.accentText) } },
         dismissButton = {
-            if (state.countdown != null) androidx.compose.material3.TextButton(onClick = { vm.setCountdown(null); onDismiss() }) { Text(tr("เลิกนับ", "Clear"), color = C.red) }
+            if (pins.isNotEmpty()) androidx.compose.material3.TextButton(onClick = { vm.setCountdowns(emptyList()) }) { Text(tr("ล้างทั้งหมด", "Clear all"), color = C.red) }
         },
     )
+}
+
+/** One half of the picker's switch, with how many are ticked in it. */
+@Composable
+private fun PickerTab(label: String, count: Int, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.clip(RoundedCornerShape(8.dp)).background(if (on) C.control else Color.Transparent).clickable(onClick = onClick).padding(vertical = 7.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = if (on) C.text else C.muted, fontSize = TS.body, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+        if (count > 0) {
+            Text(
+                "$count", Modifier.padding(start = 5.dp).clip(RoundedCornerShape(9.dp)).background(C.accent.copy(alpha = 0.18f)).padding(horizontal = 6.dp),
+                color = C.accentText, fontSize = TS.micro,
+            )
+        }
+    }
+}
+
+/** A row of the picker: a tick, the title with its date under it, and how far off it is. */
+@Composable
+private fun ChoiceRow(c: Countdown.Choice, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val box = RoundedCornerShape(5.dp)
+        Box(
+            Modifier.size(20.dp).clip(box).then(if (c.on) Modifier.background(C.accent) else Modifier.border(2.dp, C.faint, box)),
+            contentAlignment = Alignment.Center,
+        ) { if (c.on) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(14.dp)) }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(c.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (c.sub.isNotEmpty()) Text(c.sub, color = C.muted, fontSize = TS.caption, maxLines = 1)
+        }
+        Text(c.text, Modifier.padding(start = 8.dp), color = if (c.late) C.red else C.muted, fontSize = TS.caption, maxLines = 1)
+    }
 }
 
 private fun greeting(): String {

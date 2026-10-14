@@ -112,11 +112,16 @@ export interface FocusIn {
   dismissed: string[]
   reviewed: Record<string, string>
   futureCount: number
-  countdown: string | null
+  /** The single countdown (a task title) kept before there could be several. */
+  countdown?: string | null
+  /** The pinned countdowns, as their pin keys (see Countdown.Pin). */
+  countdowns: string[]
   tonightBed: { evening: string; time: string } | null
   tonightWake?: { evening: string; time: string } | null
   profile: string | null
   events: { id: number; title: string; begin: string; end: string; allDay: boolean; link?: string }[]
+  /** The year ahead, read when the countdown picker opens. */
+  pickEvents?: FocusIn['events']
   branches?: string[]
 }
 
@@ -146,11 +151,23 @@ export interface Pick {
   sub: string
 }
 
+/** A row of the countdown picker: ticking saves [pin], or takes it away when [on]; [group] heads its rows. */
+export interface CountdownChoice {
+  pin: string
+  title: string
+  sub: string
+  text: string
+  late: boolean
+  on: boolean
+  group: string
+}
+
 /** The Focus page as the shared logic builds it; see WebFocus.Out. */
 export interface FocusOut {
   ring: { done: number; total: number; overdue: number; events: number }
   third: { kind: 'night' | 'free'; minutes: number; night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string; becauseAt?: string; wakePicked?: boolean } }
-  countdown?: { key: string; title: string; text: string; late: boolean }
+  /** The pinned countdowns, soonest first; [key] is the task's when it is one. */
+  countdowns: { pin: string; key?: string; title: string; text: string; late: boolean; event: boolean }[]
   notices: string[]
   plan: { label: string; late: boolean; tasks: number; items: PlanItem[] }[]
   suggestions: { id: string; key: string; kind: 'RAISE_PRIORITY' | 'SOFT_DATE' | 'MARK_FUTURE'; title: string; text: string }[]
@@ -160,7 +177,9 @@ export interface FocusOut {
   futureChosen: Pick[]
   futureCandidates: Pick[]
   review: { key: string; kind: Kind; age?: number; last?: string }[]
-  countdownChoices: Pick[]
+  /** The countdown picker's two tabs. */
+  countdownTasks: CountdownChoice[]
+  countdownEvents: CountdownChoice[]
   bedtime: string
   evening: string
   /** The usual wake time or tonight's pick. */

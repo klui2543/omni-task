@@ -52,11 +52,23 @@ class WebFocusTest {
     }
 
     @Test
+    fun countdownsTakeEventsFromTheYearAheadWithoutIds() {
+        val ev = ""","pickEvents":[{"id":3,"title":"ประชุมวิชาการ","begin":"2026-10-20T00:00","end":"2026-10-21T00:00","allDay":true}]"""
+        val r = focus(ev + ""","countdowns":["event:0|2026-10-20T00:00|2026-10-21T00:00|1|ประชุมวิชาการ","task:ส่งรายงาน"]""")
+        assertTrue(r.contains("\"countdowns\":[{\"pin\":\"task:ส่งรายงาน\""), r)
+        assertTrue(r.contains("{\"pin\":\"event:0|2026-10-20T00:00|2026-10-21T00:00|1|ประชุมวิชาการ\",\"title\":\"ประชุมวิชาการ\",\"text\":\"อีก 12 วัน\",\"late\":false,\"event\":true}"), r)
+        assertTrue(r.contains("\"countdownEvents\":[{\"pin\":\"event:0|2026-10-20T00:00|2026-10-21T00:00|1|ประชุมวิชาการ\",\"title\":\"ประชุมวิชาการ\",\"sub\":\"อ. 20 ต.ค. ทั้งวัน\",\"text\":\"อีก 12 วัน\",\"late\":false,\"on\":true,\"group\":\"\"}]"), r)
+        val none = focus(ev)
+        assertTrue(none.contains("\"countdowns\":[]"), none)
+        assertTrue(none.contains("\"on\":false,\"group\":\"ตุลาคม\""), none)
+    }
+
+    @Test
     fun skippedFutureWorkRotatesAndTheCountdownCountsDown() {
         val skipped = focus(""","skippedToday":["อ่าน Deep Work"]""")
         assertTrue(skipped.contains("\"future\":[]"), skipped)
         val r = focus(""","countdown":"ส่งรายงาน"""")
-        assertTrue(r.contains("\"countdown\":{\"key\":\"f#0\",\"title\":\"ส่งรายงาน\",\"text\":\"เลยมา 1 วัน\",\"late\":true}"), r)
+        assertTrue(r.contains("\"countdowns\":[{\"pin\":\"task:ส่งรายงาน\",\"key\":\"f#0\",\"title\":\"ส่งรายงาน\",\"text\":\"เลยมา 1 วัน\",\"late\":true,\"event\":false}]"), r)
     }
 
     @Test

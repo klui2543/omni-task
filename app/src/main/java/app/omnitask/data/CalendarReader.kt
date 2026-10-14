@@ -132,8 +132,11 @@ object CalendarReader {
         return runCatching { context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)?.let { ContentUris.parseId(it) } }.getOrNull()
     }
 
-    /** Events overlapping [from, to). All-day events come back starting at midnight with [CalendarEvent.allDay] set. */
-    fun events(context: Context, from: LocalDateTime, to: LocalDateTime): List<CalendarEvent> {
+    /**
+     * Events overlapping [from, to). All-day events come back starting at midnight with [CalendarEvent.allDay] set.
+     * With [ids], only those events (the countdown's pinned ones).
+     */
+    fun events(context: Context, from: LocalDateTime, to: LocalDateTime, ids: Collection<Long>? = null): List<CalendarEvent> {
         if (!hasPermission(context)) return emptyList()
         val zone = ZoneId.systemDefault()
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
@@ -152,7 +155,8 @@ object CalendarReader {
         val out = ArrayList<CalendarEvent>()
         runCatching {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
-            context.contentResolver.query(uri, cols, CalendarContract.Instances.VISIBLE + " = 1", null, CalendarContract.Instances.BEGIN)?.use { c ->
+            val only = ids?.let { " AND " + CalendarContract.Instances.EVENT_ID + " IN (" + it.joinToString(",") + ")" } ?: ""
+            context.contentResolver.query(uri, cols, CalendarContract.Instances.VISIBLE + " = 1" + only, null, CalendarContract.Instances.BEGIN)?.use { c ->
                 while (c.moveToNext()) {
                     if (isHidden(c.getLong(5), hidden)) continue
                     val allDay = c.getInt(4) == 1
