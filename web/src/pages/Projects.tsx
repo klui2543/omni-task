@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { keptListTags, setIgnoredTags } from '../core'
 import type { PageProps } from '../Home'
 import type { BranchOp, BranchOut, BranchState, ListNote, ProjectEditResult, ProjectOut, Task } from '../types'
@@ -11,6 +11,7 @@ import { ProjectHome } from '../ui/projects/ProjectHome'
 import { ProjectOverview } from '../ui/projects/ProjectOverview'
 import { MODES, MODE_LABEL, ViewsPage, type ViewMode } from './Views'
 import { listsSeeded, renamedProject, toggleIn, useProjectsLocal, useYgdrasilLocal, withProject } from '../ui/projects/projectState'
+import { HOME, useProjectRoute } from '../ui/projects/route'
 import { QuickAdd } from './Tasks'
 
 type Dialog =
@@ -29,11 +30,14 @@ type Dialog =
 export function ProjectsPage(p: PageProps) {
   const [local, setLocal] = useProjectsLocal()
   const [notes, setNotes] = useState<ListNote[] | null>(() => p.vault.peekLists() ?? null)
-  const [openName, setOpenName] = useState<string | null>(null)
-  const [openPath, setOpenPath] = useState<string | null>(null)
-  const [mapping, setMapping] = useState(false)
+  // The open project or list, its mind map or one of its own views, and Ygdrasil: kept in the address (route.ts).
+  const nav = useProjectRoute()
+  const { route } = nav
+  const openName = route.project ?? null
+  const openPath = route.list ?? null
+  const mapping = !!route.map
   // Inside a project: its overview (null) or one of its own views.
-  const [projectView, setProjectView] = useState<ViewMode | null>(null)
+  const projectView: ViewMode | null = route.view ?? null
   const [arranging, setArranging] = useState(false)
   const [category, setCategory] = useState<string | null>(null)
   const [dialog, setDialog] = useState<Dialog | null>(null)
@@ -41,10 +45,8 @@ export function ProjectsPage(p: PageProps) {
   const [notice, setNotice] = useState('')
   const [adding, setAdding] = useState(false)
   const [mapSelect, setMapSelect] = useState<string | undefined>()
-  // Project Ygdrasil: every project in one tree.
-  const [world, setWorld] = useState(false)
-  // A project opened from Ygdrasil: its back button goes back to the tree, not to the project cards.
-  const [fromWorld, setFromWorld] = useState(false)
+  // Project Ygdrasil: every project in one tree; a project opened from it goes back to the tree, not to the cards.
+  const world = route.world && !route.project
   const [yg, setYg] = useYgdrasilLocal(PLAIN_FILTER)
 
   // The list notes are read again whenever the task note is (every action reloads it).
@@ -93,10 +95,13 @@ export function ProjectsPage(p: PageProps) {
   const task = (key: string): Task | undefined => p.snapshot?.byKey.get(key) ?? noteTasks.get(key)
   const project = out?.projects.find((x) => x.name === openName)
   const list = out?.lists.find((x) => x.path === openPath)
+  const seen = useRef<string | null>(null)
   // A project or list that is gone (renamed away, note deleted) sends the page back to the main screen.
   useEffect(() => {
     // (Not while an action is still running: a rename shows the new name a moment before the note is read again.)
-    if (out && !p.busy && ((openName && !project) || (openPath && notes && !list))) { setOpenName(null); setOpenPath(null); setMapping(false); setCategory(null) }
+    // Only one that was seen goes: a linked address waits for the whole vault to be read.
+    if (out && !p.busy && ((openName && !project && seen.current === openName) || (openPath && notes && !list && seen.current === openPath))) { nav.replace(HOME); setCategory(null) }
+    if (project || list) seen.current = openName ?? openPath
   }, [out, p.busy])
 
   const everything = [...(p.snapshot?.tasks ?? []), ...noteTasks.values()]
@@ -109,12 +114,8 @@ export function ProjectsPage(p: PageProps) {
   const openTask = (t: Task) => setSelected({ key: t.key, title: t.title })
   const say = (text: string) => setNotice(text)
 
-  const home = () => { setProjectView(null); setOpenName(null); setOpenPath(null); setMapping(false); setCategory(null); setSelected(null); setWorld(false); setFromWorld(false) }
-  const back = () => {
-    if (fromWorld) { setFromWorld(false); home(); setWorld(true); return }
-    if (mapping) setMapping(false)
-    else home()
-  }
+  // "‹ กลับ" steps out as the browser's back does (Android's BackHandler order, see route.ts).
+  const back = () => { setSelected(null); nav.back() }
 
   // ---- Ygdrasil: adding from the whole tree, and the way into one project's mind map ----
   const ygAddTask = (tag: string, name: string) =>
@@ -149,7 +150,7 @@ export function ProjectsPage(p: PageProps) {
       return res
     })
   }
-  const ygOpenProject = (name: string) => { setWorld(false); setFromWorld(true); setOpenName(name); setMapSelect(''); setMapping(true) }
+  const ygOpenProject = (name: string) => { setMapSelect(undefined); nav.go({ world: true, project: name, map: true }) }
   const noteOf = (l: { path: string }) => notes?.find((n) => n.path === l.path)
 
   // ---- Branch states: decided by the shared code, kept on this device ----
@@ -201,7 +202,8 @@ export function ProjectsPage(p: PageProps) {
       if (res.ok) {
         const moved = p.snapshot!.branchChange(local.branches, { op: 'moveProject', project: old, value: name })
         setLocal((s) => ({ ...renamedProject(s, old, name), branches: moved.states }))
-        setOpenName(name)
+        seen.current = name
+        nav.replace({ ...route, project: name })
         say(`เปลี่ยนชื่อเป็น #${name} แล้ว (${res.changed ?? 0} บรรทัด)`)
       }
       return res
@@ -244,7 +246,9 @@ export function ProjectsPage(p: PageProps) {
     setDialog(null)
     if (!note || !list) return
     const name = list.name
-    home()
+    setSelected(null)
+    setCategory(null)
+    nav.replace(HOME)
     p.run(async () => {
       const res = await p.vault.deleteList(note, list.tag)
       if (res.ok) say(`ลบ ${name} แล้ว`)
@@ -286,7 +290,7 @@ export function ProjectsPage(p: PageProps) {
     <Ygdrasil
       out={tree} task={task} busy={p.busy} filter={yg.filter} folded={yg.folded}
       onFilter={(filter) => setYg({ filter })} onFolded={(folded) => setYg({ folded })}
-      onBack={home} onTick={p.tick} onOpen={openTask}
+      onBack={back} onTick={p.tick} onOpen={openTask}
       onAddTask={ygAddTask} onAddBranch={ygAddBranch} onOpenProject={ygOpenProject} onMove={ygMove} onGraft={ygGraft}
     />
   ) : project && mapping ? (
@@ -303,20 +307,20 @@ export function ProjectsPage(p: PageProps) {
         <h1>{project.name}</h1>
         <div class="seg big" role="tablist" aria-label="มุมมองของโปรเจกต์">
           <button role="tab" aria-selected>ภาพรวม</button>
-          {MODES.map((m) => <button key={m} role="tab" aria-selected={false} onClick={() => setProjectView(m)}>{MODE_LABEL[m]}</button>)}
+          {MODES.map((m) => <button key={m} role="tab" aria-selected={false} onClick={() => nav.go({ ...route, view: m })}>{MODE_LABEL[m]}</button>)}
         </div>
         <span class="grow" />
         <div class="head-tools">
           <button class="chip tool" onClick={() => setDialog({ k: 'rename' })}>เปลี่ยนชื่อโปรเจกต์</button>
           <button
             class="chip tool" title={`#${project.name} กลับเป็นแท็กธรรมดา งานยังอยู่ครบ`}
-            onClick={() => { const name = project.name; setProject(name, false); home(); say(`#${name} เป็นแท็กธรรมดาแล้ว`) }}
+            onClick={() => { const name = project.name; setProject(name, false); setSelected(null); setCategory(null); nav.replace(HOME); say(`#${name} เป็นแท็กธรรมดาแล้ว`) }}
           >เลิกเป็นโปรเจกต์</button>
         </div>
       </header>
       <ProjectOverview
         project={project} task={task} selected={current?.key} busy={p.busy}
-        onTick={p.tick} onOpen={openTask} onMap={() => { setMapSelect(''); setMapping(true) }}
+        onTick={p.tick} onOpen={openTask} onMap={() => { setMapSelect(undefined); nav.go({ ...route, map: true }) }}
         onStrict={(on) => setStrict(project, on)} onOrder={(ordered) => reorder(project, ordered)}
       />
     </>
@@ -341,8 +345,8 @@ export function ProjectsPage(p: PageProps) {
       onMakeProject={(tag) => setProject(tag, true)}
       onOrder={(names) => setLocal((s) => ({ ...s, order: names }))}
       onStar={(n) => setLocal((s) => ({ ...s, starred: toggleIn(s.starred, n) }))}
-      onOpen={(n) => { setOpenName(n); setMapping(false) }} onOpenList={(path) => { setOpenPath(path); setCategory(null) }}
-      onCreateList={() => setDialog({ k: 'create' })} onYgdrasil={() => setWorld(true)}
+      onOpen={(n) => nav.go({ world: false, project: n })} onOpenList={(path) => { setCategory(null); nav.go({ world: false, list: path }) }}
+      onCreateList={() => setDialog({ k: 'create' })} onYgdrasil={() => nav.go({ world: true })}
     />
   )
 
@@ -351,7 +355,8 @@ export function ProjectsPage(p: PageProps) {
     return (
       <ViewsPage
         {...p}
-        scope={{ project: project.name, mode: projectView, setMode: setProjectView, onOverview: () => setProjectView(null) }}
+        // A switch between views changes this step; back (or "ภาพรวม") returns to the overview.
+        scope={{ project: project.name, mode: projectView, setMode: (m) => nav.replace({ ...route, view: m }), onOverview: back }}
       />
     )
   }

@@ -27,6 +27,8 @@ export interface AssistState {
   insightId?: string
   futureCount?: number
   skippedToday?: string[]
+  /** What the morning summary holds, as Android's notification settings say. */
+  notify?: { overdue: boolean; dueToday: boolean; waiting: boolean }
 }
 
 export interface ProfileOut {
@@ -142,8 +144,13 @@ export const agenda = (s: Snapshot, st: AssistState, from: string, to: string): 
 export const planRange = (s: Snapshot, st: AssistState, from: string, to: string): Proposal[] =>
   run(api.planRange(key(s), s.path, text(s), JSON.stringify(st), from, to))
 
-export const weekly = (s: Snapshot, st: AssistState): { title: string; lines: string[] } =>
+/** The weekly review; [stuckAt] is the line about long-open tasks nobody has explained, or -1. */
+export const weekly = (s: Snapshot, st: AssistState): { title: string; lines: string[]; stuckAt: number } =>
   run(api.weekly(key(s), s.path, text(s), JSON.stringify(st)))
+
+/** Android's morning summary (Digest.daily): its title and lines, or null when there is nothing to say. */
+export const daily = (s: Snapshot, st: AssistState): { title: string; lines: string[] } | null =>
+  run(api.daily(key(s), s.path, text(s), JSON.stringify(st)))
 
 /** The picture of the day Android hands to the Claude app. */
 export const snapshotText = (s: Snapshot, st: AssistState): string => api.snapshot(key(s), s.path, text(s), JSON.stringify(st))

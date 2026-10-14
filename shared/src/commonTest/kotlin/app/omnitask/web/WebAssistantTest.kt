@@ -194,6 +194,24 @@ class WebAssistantTest {
     }
 
     @Test
+    fun theMorningSummaryIsAndroidsDigestWithWorkThatKeepsBeingMoved() {
+        val raw = "- [ ] ทบทวนเคส 🔺 ➕ 2026-10-01 📅 2026-10-08"
+        val moves = (1..3).joinToString("\n") { d ->
+            WebBehavior.event("move", raw, "2026-10-0${d}T08:00:00", """{"field":"DUE","to":"2026-10-1$d"}""")
+        }
+        val r = WebAssistant.daily("f", "TaskForge.md", note, state(""","behavior":${moves.jsonString()}"""))
+        assertTrue(r.contains("\"title\":\"วันนี้ 1, คนรอ 1\""), r)
+        assertTrue(r.contains("วันนี้: ทบทวนเคส"), r)
+        assertTrue(r.contains("รอ พี่เอ 12 วัน: ตอบอีเมลทุน"), r)
+        assertTrue(r.contains("เลื่อนมาแล้ว 3 ครั้ง: ทบทวนเคส"), r)
+        // The notification settings leave parts out, as on the phone.
+        val quiet = WebAssistant.daily("f", "TaskForge.md", note, state(""","notify":{"dueToday":false,"waiting":false}"""))
+        assertFalse(quiet.contains("วันนี้: ทบทวนเคส"), quiet)
+        assertTrue(quiet.contains("ลงทุนอนาคต: อ่าน Deep Work"), quiet)
+        assertEquals("null", WebAssistant.daily("f", "TaskForge.md", "- [ ] งานเฉยๆ", state()))
+    }
+
+    @Test
     fun theSnapshotForClaudeIsAndroidsText() {
         val s = state(""","profile":${profileText.jsonString()},"events":[{"id":1,"title":"ประชุมทีม","begin":"2026-10-08T10:00","end":"2026-10-08T11:00"}]""")
         val r = WebAssistant.snapshot("f", "TaskForge.md", note, s)

@@ -166,3 +166,18 @@ export const applyKindTags = (kinds: string[]) => {
   try { saved = JSON.parse(localStorage.getItem(TAGS_KEY) ?? '[]') } catch { /* none */ }
   api.projectIgnoreTags(JSON.stringify([...(Array.isArray(saved) ? saved : []), ...kinds]))
 }
+
+/* ---------- Stuck log ---------- */
+
+import type { StuckTask, StuckView } from './types'
+
+/** The quick picks for why a task is still open, in Android's order. */
+export const stuckReasons: string[] = JSON.parse(api.stuckReasons())
+
+/** The tasks the weekly review asks about and the log of every note, from the shared StuckLog. */
+export const stuckView = (fileKey: string, path: string, text: string, branches: string[]): StuckView =>
+  JSON.parse(api.stuckView(fileKey, path, text, today(), JSON.stringify(branches)))
+
+/** One task's path, bars and how it last moved; null when it is not among the tasks. */
+export const stuckTask = (fileKey: string, path: string, text: string, key: string, branches: string[]): StuckTask | null =>
+  JSON.parse(api.stuckTask(fileKey, path, text, key, today(), JSON.stringify(branches)))

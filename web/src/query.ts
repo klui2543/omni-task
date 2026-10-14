@@ -76,4 +76,10 @@ export const savedFilters = {
   },
 }
 
+/**
+ * The words searched for in the views, kept while the page is open (leaving the views and coming back keeps them,
+ * as Android keeps them in its query); the list's own search box is apart.
+ */
+export const viewSearch = { text: '' }
+
 export const toggleIn = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])

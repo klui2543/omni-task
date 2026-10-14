@@ -12,6 +12,7 @@ import app.omnitask.model.TaskKind
 import app.omnitask.model.TaskQuery
 import app.omnitask.model.Recurrence
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.bucket
 import app.omnitask.model.Projects
@@ -73,6 +74,8 @@ object WebCore {
         val dependsOn: List<String> = emptyList(),
         /** The list note the task is an item of (Bucket list...), by name. */
         val list: String? = null,
+        /** The linked notes on a line of their own under the task: only these can be taken off in the edit panel. */
+        val linkLines: List<String> = emptyList(),
     )
 
     @Serializable
@@ -98,7 +101,7 @@ object WebCore {
         start = t.start?.toString(), reminderOn = t.reminderOn?.name,
         linkNames = t.links, attachmentNames = t.attachments,
         note = t.filePath.ifEmpty { null }, todayCopy = t.todayCopy,
-        id = t.id, dependsOn = t.dependsOn, list = t.list,
+        id = t.id, dependsOn = t.dependsOn, list = t.list, linkLines = t.linkLines,
     )
 
     /** The tasks a query reads: those of the notes, and the list notes' items when a list is chosen; parked work left out. */
@@ -156,8 +159,9 @@ object WebCore {
     @Serializable
     data class ProgressDto(val done: Int, val total: Int)
 
+    /** [waiting]: the blocked tasks by key, each with the title of the open task it waits on, for the "รอ ..." label. */
     @Serializable
-    data class ListDto(val groups: List<GroupDto>, val progress: Map<String, ProgressDto>)
+    data class ListDto(val groups: List<GroupDto>, val progress: Map<String, ProgressDto>, val waiting: Map<String, String> = emptyMap())
 
     /** The task list as Android shows it: [TaskQuery] run over the note, plus each parent's subtask progress. */
     fun list(fileKey: String, path: String, text: String, today: String, query: String): String {
@@ -168,7 +172,9 @@ object WebCore {
         val groups = query.run(tasks, day).map { g -> GroupDto(g.label, g.tone.name, g.tasks.map { it.key }) }
         val progress = tasks.filter { it.parent != null && it.status != Status.CANCELLED }.groupBy { it.parent!! }
             .mapValues { (_, kids) -> ProgressDto(kids.count { it.status == Status.DONE }, kids.size) }
-        return json.encodeToString(ListDto(groups, progress))
+        // As Android's task rows: a task still waiting on open work (⛔) says on whom, and its title is greyed.
+        val waiting = Projects.blocked(tasks).mapNotNull { t -> Projects.waitingOn(t, tasks)?.let { t.key to it } }.toMap()
+        return json.encodeToString(ListDto(groups, progress, waiting))
     }
 
     private fun ok(text: String) = json.encodeToString(EditResult(true, text))
@@ -298,6 +304,11 @@ object WebCore {
                 VaultText.edit(text, task) { lines, i -> VaultText.addSubLine(lines, i, "![[$name]]") }
             }
             "unimage" -> VaultText.edit(text, task) { lines, i -> VaultText.removeSubLine(lines, i, "![[${op.value!!}") }
+            // Why the task is still open, dated today, on a line under it (see StuckLog), as Android's noteStuck writes it.
+            "stuck" -> {
+                val reason = value ?: return fail("empty")
+                VaultText.edit(text, task) { lines, i -> VaultText.addSubLine(lines, i, StuckLog.line(day, reason)) }
+            }
             // The description went to its own note (value: its name): the lines go, a link to it takes their place.
             "moveDescription" -> {
                 val name = value ?: return fail("empty")

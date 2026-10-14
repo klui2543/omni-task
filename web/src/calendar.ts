@@ -54,7 +54,8 @@ export async function listCalendars(drive: Drive): Promise<CalendarInfo[]> {
     const all: { id: string; selected?: boolean; summary?: string; summaryOverride?: string; primary?: boolean }[] =
       (await drive.json(`${API}/users/me/calendarList?minAccessRole=reader&maxResults=50`)).items ?? []
     const cals = all.filter((c) => c.selected !== false).map((c) => ({ id: c.id, name: c.summaryOverride ?? c.summary ?? c.id, primary: !!c.primary }))
-    calendarLists.set(drive, { at: Date.now(), cals })
+    // None found is not kept: the owner may be switching one on right now ("ลองอีกครั้ง" on the Views page).
+    if (cals.length > 0) calendarLists.set(drive, { at: Date.now(), cals })
     return cals
   } catch (e) {
     throw asCalendarError(e)

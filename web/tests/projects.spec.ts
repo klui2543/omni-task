@@ -131,7 +131,8 @@ test('the overview orders open work, says why a task waits and ticking writes th
   await expect(rows.nth(1)).toContainText('รอ ส่งรายงานความก้าวหน้า')
   await expect(rows.nth(1)).toContainText('ล็อก')
   await expect(page.locator('.pj-section', { hasText: 'เสร็จแล้ว' })).toContainText('สรุป requirement')
-  await expect(page.locator('.pj-section', { hasText: 'เสร็จแล้ว' })).toContainText('3 ต.ค.')
+  // A done task is a full task row, as on Android: its tags show, not the day it was done.
+  await expect(page.locator('.pj-section', { hasText: 'เสร็จแล้ว' }).locator('.trow.done')).toContainText('#peddose/research')
 
   // Ticking the first task unlocks the one waiting for it.
   await page.getByRole('checkbox', { name: 'ติ๊กเสร็จ ส่งรายงานความก้าวหน้า' }).click()
@@ -455,9 +456,17 @@ test('a project has its own Kanban, Matrix, Gantt and calendar over just its tas
 })
 
 test('a parked branch is left out of Focus, the task list and the views, but stays in its project', async ({ page }) => {
-  await start(page)
+  const { drive } = await start(page)
   await page.locator('.pj-card', { hasText: 'peddose' }).click()
   await page.getByRole('button', { name: /Mind map/ }).click()
+  // A reload while the settings file is being written would find the file newer than this device's last sync and
+  // take it back in, so the write the first visit makes is let finish first.
+  await page.waitForTimeout(2_000)
+  await expect.poll(async () => {
+    const text = drive.textOf('omni-settings.json')
+    const synced = await page.evaluate(() => Number(localStorage.getItem('omni.settingsSyncedAt') ?? 0))
+    return !text || JSON.parse(text).savedAt === synced
+  }).toBe(true)
   // Park the "แอป" branch from the mind map.
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem('omni.projects') ?? '{}')
@@ -466,7 +475,7 @@ test('a parked branch is left out of Focus, the task list and the views, but sta
   })
   await page.reload()
   await page.evaluate(() => { location.hash = '/tasks' })
-  await expect(page.getByText('ส่งรายงานความก้าวหน้า')).toBeVisible()
+  await expect(page.getByText('ส่งรายงานความก้าวหน้า', { exact: true })).toBeVisible()
   await expect(page.getByText('ทำหน้าคำนวณ')).toHaveCount(0)
   await expect(page.getByText('ทำหน้าเว็บ', { exact: true })).toHaveCount(0)
   await page.evaluate(() => { location.hash = '/views' })

@@ -16,6 +16,9 @@ export const STATE_COLOR: Record<BranchState, string> = { ACTIVE: 'var(--accent)
 export const STATE_LABEL: Record<BranchState, string> = { ACTIVE: 'กำลังทำ', TRYING: 'กำลังลอง', CHOSEN: 'เลือกแล้ว', PARKED: 'พับเก็บ' }
 const STATES: BranchState[] = ['ACTIVE', 'TRYING', 'CHOSEN', 'PARKED']
 
+/** The branch chosen on each project's map, kept while the page is open, so leaving the map and coming back keeps it (Android's rememberSaveable). */
+const chosen = new Map<string, string>()
+
 type Item =
   | { kind: 'branch'; node: BranchOut; x: number; y: number }
   | { kind: 'task'; task: Task; owner: BranchOut; x: number; y: number }
@@ -86,7 +89,8 @@ export function MindMap(p: {
   select?: string
 }) {
   const nodes = useMemo(() => new Map(p.project.branches.map((b) => [b.path, b])), [p.project])
-  const [selPath, setSelPath] = useState('')
+  const [selPath, setSel] = useState(() => chosen.get(p.project.name) ?? '')
+  const setSelPath = (path: string) => { chosen.set(p.project.name, path); setSel(path) }
   useEffect(() => { if (p.select !== undefined) setSelPath(p.select) }, [p.select])
   const sel = nodes.get(selPath) ?? nodes.get('')!
   const tasksOf = (b: BranchOut) =>

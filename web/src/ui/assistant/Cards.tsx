@@ -123,11 +123,14 @@ export function RankedCard(p: { intro: string; items: Ranked[]; hot: number; onO
   )
 }
 
-export function ReviewCard(p: { title: string; lines: string[] }) {
+/** A summary card; the line at [stuckAt] (long-open tasks nobody has explained) is a button that asks about each. */
+export function ReviewCard(p: { title: string; lines: string[]; stuckAt?: number; onStuck?: () => void }) {
   return (
     <section class="as-card">
       <span class="medium">{p.title}</span>
-      {p.lines.map((l) => <span key={l} class="muted">{l}</span>)}
+      {p.lines.map((l, i) => (i === p.stuckAt && p.onStuck
+        ? <button key={l} class="link-plain accent-text as-stuck" onClick={p.onStuck}>{l} ›</button>
+        : <span key={l} class="muted">{l}</span>))}
     </section>
   )
 }

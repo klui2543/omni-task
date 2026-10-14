@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { pendingQuestion } from './assistantState'
+import './parity.css'
 
 export type Page = 'focus' | 'tasks' | 'projects' | 'assistant' | 'settings'
 
@@ -52,19 +53,14 @@ export type Sync = { state: 'ok' | 'busy' | 'off' | 'offline'; at: Date | null; 
 const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 /**
- * A sidebar on wide screens (computer, iPad across) and a floating bar at the bottom on narrow ones
- * (iPad upright, phone), as on Android: a line to type a question for the assistant (Send once something is typed;
- * left out on the assistant's own page), and under it the tabs as words around the add button in the middle.
+ * The line to type a question for the assistant, with Send once something is typed and the ready questions floating
+ * up above it while it is typed in ([below] it in the side bar, so the line does not move under a tap). The assistant
+ * asks it as soon as the tasks are there, as it does for a question sent from quick add.
  */
-export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
-  const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่'
-    : p.sync.state === 'busy' ? 'กำลังซิงก์...'
-    : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
-    : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
+function AskLine(p: { class: string; below?: boolean; onNavigate: (p: Page) => void }) {
   const [question, setQuestion] = useState('')
   const [typing, setTyping] = useState(false)
   const send = (q: string) => {
-    // The assistant asks it as soon as the tasks are there, as it does for a question sent from quick add.
     pendingQuestion.set(q)
     setQuestion('')
     setTyping(false)
@@ -75,12 +71,46 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
     const q = question.trim()
     if (q) send(q)
   }
+  const presets = typing && (
+    <div class={`as-chips ${p.below ? 'side-presets' : 'dock-presets'}`} role="toolbar" aria-label="คำถามสำเร็จรูป">
+      {PRESETS.map((q) => <button key={q} type="button" class="as-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => send(q)}>{q}</button>)}
+    </div>
+  )
+  return (
+    <>
+      {!p.below && presets}
+      <form class={p.class} onSubmit={ask}>
+        <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
+        {question.trim() && <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>}
+      </form>
+      {p.below && presets}
+    </>
+  )
+}
+
+/**
+ * A sidebar on wide screens (computer, iPad across) and a floating bar at the bottom on narrow ones
+ * (iPad upright, phone), as on Android: a line to type a question for the assistant (left out on the assistant's own
+ * page), and under it the tabs as words around the add button in the middle. The side bar has the add button at its
+ * top, as Android's side rail does, and the line to the assistant under it, so both are on every page at every width.
+ * A thin bar runs along the top while the vault is read or written.
+ */
+export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
+  const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่'
+    : p.sync.state === 'busy' ? 'กำลังซิงก์...'
+    : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
+    : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
   return (
     <div class="shell">
+      {p.sync.state === 'busy' && <div class="top-progress" role="progressbar" aria-label="กำลังซิงก์" />}
       <nav class="side" aria-label="เมนูหลัก">
         <div class="brand">
           <div class="brand-name">Omni Task</div>
           <div class="brand-sub"><span class={`dot ${p.sync.state}`} />เชื่อม Google Drive</div>
+        </div>
+        <div class="side-add">
+          <button class="primary" onClick={p.onAdd}>+ เพิ่มงาน</button>
+          {p.page !== 'assistant' && <AskLine class="side-ask" below onNavigate={p.onNavigate} />}
         </div>
         <div class="side-items">
           {TABS.map(([page, label]) => (
@@ -100,17 +130,7 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         {p.children}
       </div>
       <div class="dock">
-        {p.page !== 'assistant' && typing && (
-          <div class="as-chips dock-presets" role="toolbar" aria-label="คำถามสำเร็จรูป">
-            {PRESETS.map((q) => <button key={q} type="button" class="as-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => send(q)}>{q}</button>)}
-          </div>
-        )}
-        {p.page !== 'assistant' && (
-          <form class="dock-ask" onSubmit={ask}>
-            <input aria-label="ถามผู้ช่วย" placeholder="ถามผู้ช่วย" enterkeyhint="send" value={question} onInput={(e) => setQuestion((e.target as HTMLInputElement).value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
-            {question.trim() && <button type="submit" aria-label="ส่งถึงผู้ช่วย">→</button>}
-          </form>
-        )}
+        {p.page !== 'assistant' && <AskLine class="dock-ask" onNavigate={p.onNavigate} />}
         <nav class="bar" aria-label="เมนูหลัก">
           {BAR.map(([page, label], i) => [
             // Adding a task, in the middle of the tabs where it always was.

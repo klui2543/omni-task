@@ -34,3 +34,15 @@ self.addEventListener('fetch', (event) => {
     }
   })())
 })
+
+// A task reminder tapped (src/reminders.ts shows them while the app is open): the app comes to the front and is told
+// which task line it was, for the behavior log, as Android notes the app opened from a reminder.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const raw = event.notification.data?.raw
+  event.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const client = open[0] ? await open[0].focus().catch(() => open[0]) : await self.clients.openWindow(self.registration.scope)
+    if (client && raw) client.postMessage({ type: 'omni-reminder-open', raw })
+  })())
+})

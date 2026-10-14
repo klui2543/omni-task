@@ -88,10 +88,10 @@ export class Auth {
   static consumeRedirect(): string | null {
     if (!location.hash.includes('state=')) return null
     const p = new URLSearchParams(location.hash.slice(1))
-    // Back to the page the owner left (the hash is the page, as #/assistant), not the first one.
+    // Back to the page the owner left (the hash is the page, as #/assistant, or a screen in it), not the first one.
     const back = store.get(sessionStorage, RETURN_KEY) ?? ''
     store.set(sessionStorage, RETURN_KEY, null)
-    history.replaceState(null, '', location.pathname + location.search + (/^#\/\w+$/.test(back) ? back : ''))
+    history.replaceState(null, '', location.pathname + location.search + (/^#\/[\w%./!~*'()-]+$/.test(back) ? back : ''))
     const expected = store.get(sessionStorage, STATE_KEY)
     store.set(sessionStorage, STATE_KEY, null)
     if (!expected || p.get('state') !== expected) return 'state_mismatch'
