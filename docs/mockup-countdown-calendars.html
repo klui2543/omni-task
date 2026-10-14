@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Countdown and calendars</title>
+<style>
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_semibold.ttf);font-weight:600}
+:root{--bg:#0e0e10;--card:#161618;--border:#26262a;--raised:#1e1e22;--sunken:#121214;--line:#212125;--control:#34343a;
+--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;
+--lime:#7fae93;--limeSoft:#1a2620;--red:#d9726c;--amber:#c4a56a;--teal:#7d8794}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,"Noto Sans Thai",sans-serif;padding:20px 16px 40px}
+.grid{display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.col{width:380px}
+h2{font-size:15px;color:var(--text);font-weight:600;margin:0 0 4px}
+.what{font-size:12.5px;color:var(--muted);margin:0 0 10px;line-height:1.55}
+.note{font-size:12.5px;color:var(--faint);margin-top:10px;line-height:1.6}
+.note b{color:var(--text2);font-weight:500}
+.phone{background:var(--bg);border-radius:22px;padding:12px 12px 14px;border:1px solid #1b1b1f}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.stats{display:flex;align-items:center;padding:14px}
+.ringw{width:64px;height:64px;border-radius:50%;border:6px solid var(--control);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
+.ringw b{font-size:15px;font-weight:600}.ringw span{font-size:10px;color:var(--muted)}
+.stat{flex:1;border-left:1px solid var(--line);padding-left:10px;margin-left:10px}
+.stat b{display:block;font-size:21px;font-weight:600;line-height:1.2;white-space:nowrap}.stat span{font-size:12px;color:var(--muted);white-space:nowrap}
+.hl{height:1px;background:var(--line);margin:0 14px}
+.sleep{padding:10px 14px 12px;font-size:12px;color:var(--muted)}
+.tiles{display:flex;gap:8px;margin-top:8px}
+.tile{flex:1;background:var(--raised);border-radius:12px;padding:8px 12px}
+.tile small{display:block;font-size:10.5px;color:var(--muted)}.tile b{font-size:16px;font-weight:500;color:var(--text)}
+.pill{float:right;background:#7fae9324;color:var(--lime);border-radius:20px;padding:1px 9px;font-weight:500}
+.foot{display:flex;align-items:center;padding:8px 12px 10px 14px;font-size:12px;color:var(--faint)}
+.foot .g{flex:1}.chev{color:var(--faint);font-size:13px;margin-left:6px}
+.cdhead{display:flex;align-items:center;padding:10px 12px 2px 14px;font-size:12px;color:var(--muted)}
+.cdhead .g{flex:1}.cdhead a{color:var(--accentText)}
+.cd{display:flex;align-items:center;gap:10px;padding:5px 14px;font-size:13px}
+.cd .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.cd .d{color:var(--accentText);font-weight:500;white-space:nowrap}
+.cd .d.late{color:var(--red)}
+.mk{flex:none;width:12px;height:12px;border-radius:50%;border:1.5px solid var(--faint)}
+.mk.cal{border:none;border-radius:1px;width:3px;height:13px;background:var(--teal);margin:0 4.5px}
+.cd:last-child{padding-bottom:12px}
+.sec{display:flex;align-items:center;padding:10px 12px 4px 10px;font-size:12px;font-weight:600;color:var(--muted)}
+.sec i{flex:1;height:1px;background:var(--line);margin:0 10px}.sec span{font-weight:400}
+.sec.red{color:var(--red)}
+.ev{display:flex;align-items:center;margin:2px 10px;min-height:36px;padding:4px 10px 4px 0}
+.ev .bar{width:3px;align-self:stretch;background:var(--teal)}
+.ev b{flex:1;font-weight:400;font-size:15px;padding-left:10px}.ev span{font-size:12px;color:var(--muted)}
+.ev.tap{outline:1.5px dashed #9db4d380;outline-offset:2px;border-radius:4px}
+.task{display:flex;align-items:flex-start;gap:8px;padding:4px 10px 4px 12px}
+.task .c{width:22px;height:22px;border-radius:50%;border:2px solid var(--faint);flex:none;margin-top:5px}
+.task b{display:block;font-weight:400;font-size:15px}.task span{font-size:12px;color:var(--muted)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-left:6px;vertical-align:middle}
+.dim{position:relative}
+.dim:after{content:"";position:absolute;inset:0;background:#000a;border-radius:22px}
+.dlg{position:absolute;left:18px;right:18px;top:var(--top,60px);z-index:2;background:var(--raised);border-radius:24px;padding:20px 20px 12px;box-shadow:0 12px 40px #000c}
+.dlg h3{margin:0 0 4px;font-size:19px;font-weight:500;display:flex;align-items:baseline}
+.dlg h3 small{margin-left:auto;font-size:12px;color:var(--muted);font-weight:400}
+.cap{font-size:12px;color:var(--text2);margin-bottom:2px}
+.row{display:flex;align-items:center;padding:11px 0;gap:12px}
+.row .g{flex:1;min-width:0}.row b{display:block;font-weight:400;font-size:14.5px}.row small{display:block;font-size:12px;color:var(--muted)}
+.row b.mark{color:var(--accentText)}
+.sw{width:44px;height:26px;border-radius:13px;background:var(--control);padding:3px;flex:none}
+.sw i{display:block;width:20px;height:20px;border-radius:50%;background:var(--muted)}
+.sw.on{background:var(--accent)}.sw.on i{background:var(--onAccent);margin-left:18px}
+.btns{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
+.btn{padding:9px 12px;font-size:14px;color:var(--accentText);font-weight:500}
+.btn.red{color:var(--red);margin-right:auto}
+.tabs{display:flex;background:var(--sunken);border-radius:10px;padding:3px;margin:10px 0 8px}
+.tab{flex:1;text-align:center;padding:7px 0;border-radius:8px;font-size:13.5px;color:var(--muted)}
+.tab.on{background:var(--control);color:var(--text);font-weight:500}
+.tab em{font-style:normal;font-size:11.5px;margin-left:5px;background:#9db4d32e;color:var(--accentText);border-radius:9px;padding:0 6px}
+.search{background:var(--sunken);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--faint);margin-bottom:4px}
+.ck{width:20px;height:20px;border-radius:5px;border:2px solid var(--faint);flex:none}
+.ck.on{background:var(--accent);border-color:var(--accent);position:relative}
+.ck.on:after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid var(--onAccent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.pick{display:flex;align-items:center;gap:12px;padding:9px 2px}
+.pick .g{flex:1;min-width:0}.pick b{display:block;font-weight:400;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pick small{display:block;font-size:12px;color:var(--muted)}
+.pick .d{font-size:12.5px;color:var(--muted);white-space:nowrap}.pick .d.late{color:var(--red)}
+.grp{font-size:11.5px;color:var(--faint);padding:8px 2px 2px;font-weight:500}
+.hr{height:1px;background:var(--line);margin:4px 0}
+.list{max-height:none}
+.ask{background:var(--sunken);border:1px solid var(--border);border-radius:16px;padding:16px 14px;color:var(--faint);font-size:14px;margin-top:10px}
+</style></head><body>
+<div class="grid">
+
+<!-- 1. Focus -->
+<div class="col">
+<h2>1. หน้าโฟกัส</h2>
+<p class="what">ตัวเลขนับตามการ์ดข้างล่าง นัดซ้ำเหลืออันเดียว และนับถอยหลังได้หลายรายการ ทั้งงานและนัด</p>
+<div class="phone">
+ <div class="card">
+  <div class="stats">
+   <div class="ringw"><b>0/2</b><span>เสร็จแล้ว</span></div>
+   <div class="stat"><b style="color:var(--red)">1</b><span>ค้างอยู่</span></div>
+   <div class="stat"><b>1</b><span>นัดวันนี้</span></div>
+   <div class="stat"><b style="color:var(--lime)">14 ชม.</b><span>ว่างเหลือ</span></div>
+  </div>
+  <div class="hl"></div>
+  <div class="sleep">
+   <div>เมื่อคืนได้นอน 8:30 ชม.</div>
+   <div style="margin-top:8px">คืนนี้ <span class="pill">ได้นอน 8:30 ชม.</span></div>
+   <div class="tiles"><div class="tile"><small>นอน</small><b>22:30</b></div><div class="tile"><small>ตื่น</small><b>07:00</b> <small style="display:inline">พรุ่งนี้</small></div></div>
+   <div class="tile" style="margin-top:8px;font-size:13px;color:var(--text)">ตั้งปลุกที่นาฬิกา</div>
+  </div>
+  <div class="hl"></div>
+  <div class="cdhead"><span class="g">นับถอยหลัง</span><a>แก้ไข</a><span class="chev">›</span></div>
+  <div class="cd"><span class="mk"></span><span class="t">ส่งรายงานเวร</span><span class="d">พรุ่งนี้</span></div>
+  <div class="cd"><span class="mk cal"></span><span class="t">ประชุมวิชาการประจำปี</span><span class="d">อีก 6 วัน</span></div>
+  <div class="cd"><span class="mk"></span><span class="t">สอบ BCP</span><span class="d">อีก 12 วัน</span></div>
+ </div>
+ <div class="card">
+  <div class="sec">วันนี้<i></i></div>
+  <div class="ev"><span class="bar"></span><b>ตารางเวรออก</b><span>ทั้งวัน</span></div>
+  <div class="sec">ไม่ระบุเวลา<i></i><span>1</span></div>
+  <div class="task"><span class="c"></span><div><b>ปรับระบบใหม่เป็นระบบ "ป้าย"<span class="dot"></span></b><span>Siriraj</span></div></div>
+  <div style="height:6px"></div>
+  <div class="hl"></div>
+  <div class="foot"><span class="g">ปฏิทินที่แสดง 6 จาก 7</span><span class="chev">›</span></div>
+ </div>
+ <div class="card">
+  <div class="sec red">ค้างอยู่<i></i><span>1</span></div>
+  <div class="task" style="padding-bottom:12px"><span class="c"></span><div><b>How to ดูหุ้นแบบรอบด้านและลึก</b><span>อนาคต</span></div></div>
+ </div>
+</div>
+<div class="note">
+<b>ตัวเลข:</b> "ค้างอยู่" นับเท่าการ์ดค้างอยู่ "นัดวันนี้" นับนัดทั้งวันด้วย<br>
+<b>นับถอยหลัง:</b> เรียงอันที่ใกล้สุดก่อน วงกลมคืองาน เส้นตั้งคือนัด แตะตรงไหนก็เปิดหน้าเลือก ถ้ายังไม่ได้ตั้งจะเหลือบรรทัดเดียว "ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ"<br>
+<b>ปฏิทิน:</b> แตะนัด หรือบรรทัด "ปฏิทินที่แสดง" เพื่อเปิดปิดปฏิทิน
+</div>
+</div>
+
+<!-- 2. Calendars dialog -->
+<div class="col">
+<h2>2. แตะนัด "ตารางเวรออก"</h2>
+<p class="what">เปิดรายการปฏิทินเหมือนในตั้งค่า บอกว่านัดที่แตะมาจากปฏิทินไหน กดสวิตช์แล้วหน้าโฟกัสเปลี่ยนตามทันที</p>
+<div class="phone dim" style="height:860px;position:relative">
+ <div class="card" style="opacity:.9">
+  <div class="sec">วันนี้<i></i></div>
+  <div class="ev tap"><span class="bar"></span><b>ตารางเวรออก</b><span>ทั้งวัน</span></div>
+ </div>
+ <div class="dlg" style="--top:70px">
+  <h3>ปฏิทินที่แสดง</h3>
+  <div class="cap">ตารางเวรออก</div>
+  <div class="row"><div class="g"><b class="mark">norapol.uttho@gmail.com</b><small>นัดที่แตะมาจากปฏิทินนี้</small></div><span class="sw on"><i></i></span></div>
+  <div class="row"><div class="g"><b>เวรรพ. Rx</b><small>norapol.uttho@gmail.com</small></div><span class="sw on"><i></i></span></div>
+  <div class="row"><div class="g"><b>เวรเภสัชกร (ณรพล)</b><small>norapol.uttho@gmail.com</small></div><span class="sw on"><i></i></span></div>
+  <div class="row"><div class="g"><b>SiRxShift</b><small>norapol.uttho@gmail.com</small></div><span class="sw on"><i></i></span></div>
+  <div class="row"><div class="g"><b>Job</b><small>norapol.uttho@gmail.com</small></div><span class="sw on"><i></i></span></div>
+  <div class="row"><div class="g"><b>Family</b><small>norapol.uttho@gmail.com</small></div><span class="sw on"><i></i></span></div>
+  <div class="row"><div class="g"><b>rukyimyy@gmail.com</b><small>norapol.uttho@gmail.com</small></div><span class="sw"><i></i></span></div>
+  <div class="note" style="margin-top:4px;font-size:12px;color:var(--muted)">ปฏิทินที่ปิดจะไม่โผล่ในโฟกัส ปฏิทินเดือน แกนต์ วิดเจ็ต การแจ้งเตือน และผู้ช่วย ปรับได้อีกที่ ตั้งค่า</div>
+  <div class="btns"><span class="btn">ปิด</span></div>
+ </div>
+</div>
+<div class="note">ชื่อในรายการเป็นปฏิทินที่ซิงก์ลงเครื่อง ตัวอย่างนี้ใช้ชื่อปฏิทินจริงใน Google ของคุณ ในเครื่องจริงอาจมีไม่ครบ เช่น rukyimyy ถ้ายังไม่ได้เปิดซิงก์ไว้ในแอป Google Calendar</div>
+</div>
+
+<!-- 3. Countdown picker: tasks -->
+<div class="col">
+<h2>3. นับถอยหลัง: แท็บงาน</h2>
+<p class="what">กด "แก้ไข" แล้วได้หน้าต่างนี้ แยกเป็นงานกับปฏิทิน ติ๊กได้หลายรายการ ตัวเลขบนแท็บคือที่เลือกไว้ในแท็บนั้น</p>
+<div class="phone dim" style="height:720px;position:relative">
+ <div class="dlg" style="--top:24px">
+  <h3>นับถอยหลัง<small>เลือกแล้ว 3</small></h3>
+  <div class="tabs"><div class="tab on">งาน<em>2</em></div><div class="tab">ปฏิทิน<em>1</em></div></div>
+  <div class="search">ค้นหางาน</div>
+  <div class="grp">เลือกไว้</div>
+  <div class="pick"><span class="ck on"></span><div class="g"><b>ส่งรายงานเวร</b><small>ครบ พฤ. 15 ต.ค.</small></div><span class="d">พรุ่งนี้</span></div>
+  <div class="pick"><span class="ck on"></span><div class="g"><b>สอบ BCP</b><small>ครบ จ. 26 ต.ค.</small></div><span class="d">อีก 12 วัน</span></div>
+  <div class="hr"></div>
+  <div class="grp">งานที่มีวัน</div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>How to ดูหุ้นแบบรอบด้านและลึก</b><small>นัดทำ จ. 12 ต.ค.</small></div><span class="d late">เลยมา 2 วัน</span></div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>ปรับระบบใหม่เป็นระบบ "ป้าย"</b><small>นัดทำ พ. 14 ต.ค.</small></div><span class="d">วันนี้</span></div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>ต่อทะเบียนรถ</b><small>ครบ อ. 3 พ.ย.</small></div><span class="d">อีก 20 วัน</span></div>
+  <div class="btns"><span class="btn red">ล้างทั้งหมด</span><span class="btn">เสร็จ</span></div>
+ </div>
+</div>
+<div class="note">ติ๊กแล้วขึ้นบนหน้าโฟกัสทันที ไม่ต้องกดบันทึก "ล้างทั้งหมด" เอาออกทั้งงานและนัด<br>งานที่ติ๊กเสร็จแล้วจะหลุดจากนับถอยหลังเอง ส่วนงานที่เลยกำหนดยังอยู่ และขึ้นเป็นสีแดง</div>
+</div>
+
+<!-- 4. Countdown picker: calendar -->
+<div class="col">
+<h2>4. นับถอยหลัง: แท็บปฏิทิน</h2>
+<p class="what">นัดจากปฏิทินที่เปิดแสดงไว้ ล่วงหน้า 1 ปี แบ่งตามเดือน ค้นหาได้เพราะเวรมีเยอะ</p>
+<div class="phone dim" style="height:720px;position:relative">
+ <div class="dlg" style="--top:24px">
+  <h3>นับถอยหลัง<small>เลือกแล้ว 3</small></h3>
+  <div class="tabs"><div class="tab">งาน<em>2</em></div><div class="tab on">ปฏิทิน<em>1</em></div></div>
+  <div class="search">ค้นหานัด</div>
+  <div class="grp">เลือกไว้</div>
+  <div class="pick"><span class="ck on"></span><div class="g"><b>ประชุมวิชาการประจำปี</b><small>อ. 20 ต.ค. ทั้งวัน</small></div><span class="d">อีก 6 วัน</span></div>
+  <div class="hr"></div>
+  <div class="grp">ตุลาคม</div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>ทำเล็บ 18.00</b><small>พ. 14 ต.ค. 18:00</small></div><span class="d">อีก 10 ชม. 5 นาที</span></div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>เวร O11</b><small>พฤ. 15 ต.ค. 08:00</small></div><span class="d">พรุ่งนี้</span></div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>เวร O11</b><small>ศ. 16 ต.ค. 08:00</small></div><span class="d">อีก 2 วัน</span></div>
+  <div class="grp">พฤศจิกายน</div>
+  <div class="pick"><span class="ck"></span><div class="g"><b>งานแต่งพี่บี</b><small>ส. 21 พ.ย. ทั้งวัน</small></div><span class="d">อีก 38 วัน</span></div>
+  <div class="btns"><span class="btn red">ล้างทั้งหมด</span><span class="btn">เสร็จ</span></div>
+ </div>
+</div>
+<div class="note">นัดที่จบไปแล้วหลุดจากนับถอยหลังเอง ถ้าย้ายนัดในปฏิทิน นับถอยหลังจะตามวันใหม่<br>ในหน้าโฟกัส นัดใช้เส้นตั้งแบบในไทม์ไลน์ งานใช้วงกลม จะได้ไม่ปนกัน</div>
+</div>
+
+</div>
+</body></html>
