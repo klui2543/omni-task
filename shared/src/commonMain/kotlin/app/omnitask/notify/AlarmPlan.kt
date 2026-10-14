@@ -33,6 +33,8 @@ data class CalendarEvent(
     val begin: LocalDateTime,
     val end: LocalDateTime,
     val allDay: Boolean = false,
+    /** The phone calendar it is in, so Focus can say which one; 0 where that is not known (the web). */
+    val calendarId: Long = 0,
 ) {
     companion object {
         /**

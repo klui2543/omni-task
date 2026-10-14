@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
@@ -46,6 +47,7 @@ import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
+import app.omnitask.notify.CalendarEvent
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +71,12 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     var reviewing by remember { mutableStateOf(false) }
     if (picking) FuturePicker(state, vm) { picking = false }
     if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
+    // The calendar choice, opened from an event (its calendar pointed out) or from the line under the day.
+    var calendarsOpen by remember { mutableStateOf(false) }
+    var calendarsFrom by remember { mutableStateOf<CalendarEvent?>(null) }
+    if (calendarsOpen) {
+        CalendarsDialog(CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged), calendarsFrom) { calendarsOpen = false }
+    }
     val today = state.today
     val brief = state.brief
     val events = state.todayEvents
@@ -298,7 +306,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                         when (item) {
                             is DayPlan.Item.TaskItem -> TimelineTask(item, state, vm, onOpen, item.task in blocked)
-                            is DayPlan.Item.EventItem -> TimelineEvent(item, now)
+                            is DayPlan.Item.EventItem -> TimelineEvent(item, now) { calendarsFrom = item.event; calendarsOpen = true }
                         }
                     }
                     if (!nowShown && section.part == DayPlan.Part.EVENING) {
@@ -307,7 +315,17 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     }
                 }
                 if (!nowShown && daySections.isNotEmpty()) NowLine(nowTime)
-                Box(Modifier.height(12.dp))
+                // Which calendars the day shows, one tap from changing it.
+                val phoneCalendars = state.calendars.filter { it.visible }
+                if (state.calendarAccess == true && phoneCalendars.isNotEmpty()) {
+                    Box(Modifier.padding(top = 6.dp).fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+                    FooterRow(onClick = { calendarsFrom = null; calendarsOpen = true }) {
+                        val on = phoneCalendars.count { !CalendarReader.isHidden(it.id, state.hiddenCalendars) }
+                        Text(tr("ปฏิทินที่แสดง $on จาก ${phoneCalendars.size}", "Calendars shown: $on of ${phoneCalendars.size}"), color = C.faint, fontSize = TS.caption)
+                    }
+                } else {
+                    Box(Modifier.height(12.dp))
+                }
             }
         }
 
@@ -608,10 +626,11 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
 
 /**
  * A calendar event on the timeline against the clock: greyed once it has ended, and while it runs the red now line
- * crosses the card at how far into the event it is, with the part already gone tinted darker.
+ * crosses the card at how far into the event it is, with the part already gone tinted darker. Tapping it opens the
+ * calendar choice with its calendar pointed out.
  */
 @Composable
-private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
+private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onClick: () -> Unit) {
     val e = item.event
     val phase = DayPlan.phase(e, now)
     val past = phase == DayPlan.Phase.PAST
@@ -626,6 +645,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime) {
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(
             Modifier.weight(1f).heightIn(min = if (running) 0.dp else 36.dp).height(IntrinsicSize.Min).clip(if (C.calm) RectangleShape else RoundedCornerShape(8.dp)).background(bg)
+                .clickable(onClick = onClick)
                 .drawBehind {
                     if (running) {
                         val y = size.height * fraction

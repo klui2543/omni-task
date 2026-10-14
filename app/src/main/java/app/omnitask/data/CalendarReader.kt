@@ -162,7 +162,7 @@ object CalendarReader {
                     } else {
                         LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), zone)
                     }
-                    out += CalendarEvent(c.getLong(0), c.getString(1) ?: tr("(ไม่มีชื่อ)", "(No title)"), at(c.getLong(2)), at(c.getLong(3)), allDay)
+                    out += CalendarEvent(c.getLong(0), c.getString(1) ?: tr("(ไม่มีชื่อ)", "(No title)"), at(c.getLong(2)), at(c.getLong(3)), allDay, c.getLong(5))
                 }
             }
         }
