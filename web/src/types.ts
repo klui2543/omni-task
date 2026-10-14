@@ -38,6 +38,8 @@ export interface Task {
   dependsOn?: string[]
   /** The list note the task is an item of, by name (only list items read for the filter have one). */
   list?: string | null
+  /** The linked notes on a line of their own under the task (the ones the edit panel can take off). */
+  linkLines?: string[]
 }
 
 /** The list's filters, grouping and sorting, as the shared TaskQuery takes them. */
@@ -68,6 +70,8 @@ export interface TaskList {
   groups: Group[]
   /** Done and total subtasks per parent key. */
   progress: Record<string, { done: number; total: number }>
+  /** Blocked tasks by key, each with the title of the open task it waits on. */
+  waiting?: Record<string, string>
 }
 
 /** What the shared Kotlin logic answers to an edit: the whole new note text, or why nothing changed. */
@@ -102,6 +106,8 @@ export type EditOp =
   /** The direct subtasks in a new order: their lines as a JSON list. */
   | { op: 'order'; value: string }
   | { op: 'quadrant'; value: Quadrant; field: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK' }
+  /** Why the task is still open: a dated line under it (Android's stuck log). */
+  | { op: 'stuck'; value: string }
 
 export type Kind = 'NORMAL' | 'WAITING' | 'FUTURE' | 'SOMEDAY'
 
@@ -118,6 +124,8 @@ export interface FocusIn {
   countdowns: string[]
   tonightBed: { evening: string; time: string } | null
   tonightWake?: { evening: string; time: string } | null
+  /** Tonight's wake time was set on the watch (from Android's settings file). */
+  wakeFromWatch?: boolean
   profile: string | null
   events: { id: number; title: string; begin: string; end: string; allDay: boolean; link?: string }[]
   /** The year ahead, read when the countdown picker opens. */
@@ -143,6 +151,9 @@ export interface PlanItem {
   phase?: 'past' | 'active' | 'upcoming'
   /** For an active event: how far into it the clock is, 0 to 1. */
   progress?: number
+  /** For a task late or open a long while: [extra] starts with when it last moved, and [weeks] has a bar a week. */
+  stuck?: boolean
+  weeks?: StuckWeek[]
 }
 
 export interface Pick {
@@ -165,7 +176,12 @@ export interface CountdownChoice {
 /** The Focus page as the shared logic builds it; see WebFocus.Out. */
 export interface FocusOut {
   ring: { done: number; total: number; overdue: number; events: number }
-  third: { kind: 'night' | 'free'; minutes: number; night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string; becauseAt?: string; wakePicked?: boolean } }
+  /** Until bed at night, the free time left in the daytime; [night] is the night the sleep card plans, there all day. */
+  third: {
+    kind: 'night' | 'free'
+    minutes: number
+    night?: { bedAt: string; wakeAt: string; toBed: number; sleep: number; because?: string; becauseAt?: string; wakePicked?: boolean; fromWatch?: boolean; tomorrow?: boolean }
+  }
   /** The pinned countdowns, soonest first; [key] is the task's when it is one. */
   countdowns: { pin: string; key?: string; title: string; text: string; late: boolean; event: boolean }[]
   notices: string[]
@@ -185,6 +201,8 @@ export interface FocusOut {
   /** The usual wake time or tonight's pick. */
   wake: string
   softDate: string
+  /** Until noon after a night: the minutes of sleep it gave. */
+  lastNight?: number
 }
 
 /* ---------- Views ---------- */
@@ -199,6 +217,8 @@ export interface ViewsIn {
   urgent: 'TWO_DAYS' | 'THREE_DAYS' | 'THIS_WEEK'
   /** First day of the Gantt range. */
   ganttFirst: string
+  /** A project's own views: only the dated subtasks of its own tasks come onto its calendar. */
+  scoped?: boolean
 }
 
 /** Task keys by column, quadrant, calendar day and Gantt bar; see WebViews.Out. */
@@ -439,4 +459,39 @@ export interface QuickPreview {
   /** The "#word" being typed, without the #. */
   token?: string | null
   picks: QuickPick[]
+}
+
+/* ---------- Stuck log (WebStuck) ---------- */
+
+/** What one of a task's weeks held: nothing, a note, or a finished subtask. */
+export type StuckWeek = 'NONE' | 'NOTE' | 'DONE'
+
+/** One point on a task's path: made, a note, a subtask finished; [text] is what is shown beside the dot. */
+export interface StuckEvent {
+  day: string
+  step: 'START' | 'NOTE' | 'DONE'
+  text: string
+}
+
+export interface StuckTask {
+  key: string
+  title: string
+  /** Late, open 21 days or more, or already explained: the path goes up front. */
+  matters: boolean
+  notes: number
+  last: string | null
+  events: StuckEvent[]
+  /** When it last moved, or that nothing is noted yet. */
+  status: string
+  weeks: StuckWeek[]
+  done: number
+  total: number
+  age: number | null
+}
+
+export interface StuckView {
+  /** Open a long while with nothing written, the one waiting longest first. */
+  toAsk: { key: string; title: string; age: number | null }[]
+  /** Every task with notes, its path without the start, the most recently explained first. */
+  log: { key: string; title: string; open: boolean; age: number | null; events: StuckEvent[] }[]
 }

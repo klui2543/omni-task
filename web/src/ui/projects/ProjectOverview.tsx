@@ -1,5 +1,5 @@
 import type { OrderOut, ProjectOut, Task } from '../../types'
-import { Check } from '../TaskRow'
+import { Check, TaskRow } from '../TaskRow'
 import { shortDate } from './bits'
 import { useSortable } from './Sortable'
 
@@ -100,13 +100,10 @@ export function ProjectOverview(p: {
         {finished.length > 0 && (
           <section class="group pj-section">
             <div class="pj-section-head"><span class="strong grow">เสร็จแล้ว</span><span class="count">{finished.length}</span></div>
+            {/* Full task rows, as on Android: priority, details, dates, reminder, repeat, tags and counts. */}
             <ul class="plain">
               {finished.map((t) => (
-                <li key={t.key} class={`pj-order done${p.selected === t.key ? ' selected' : ''}`}>
-                  <Check task={t} disabled={p.busy} onToggle={() => p.onTick(t)} />
-                  <button class="pj-order-body" onClick={() => p.onOpen(t)}><span class="ttitle">{t.title}</span></button>
-                  {t.done && <span class="pill lime">{shortDate(t.done)}</span>}
-                </li>
+                <TaskRow key={t.key} task={t} busy={p.busy} selected={p.selected === t.key} onToggle={() => p.onTick(t)} onOpen={() => p.onOpen(t)} />
               ))}
             </ul>
           </section>

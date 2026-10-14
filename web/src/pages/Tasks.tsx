@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { quickPreview, today } from '../core'
-import { onBehavior, quickHints } from '../behavior'
-import { pendingQuestion } from '../assistantState'
+import { today } from '../core'
 import type { PageProps } from '../Home'
 import { BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, SORTS, STATUSES, filterCount, labelOf, storedQuery } from '../query'
-import type { Group, ListNote, QuickList, QuickPick, Task } from '../types'
+import type { Group, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
 import { FilterPanel, SortDialog } from '../ui/ListTools'
 import { LayoutBar, useLayout, type Layout } from '../ui/LayoutBar'
@@ -13,23 +11,31 @@ import { PageHead } from '../ui/PageHead'
 import { TaskRow } from '../ui/TaskRow'
 import { useStored } from '../ui/views/hooks'
 
-const DRAFT_KEY = 'omni.draft'
-const FOLD_KEY = 'omni.folded'
-const read = (store: () => Storage, k: string) => {
+// Quick add moved to ui/QuickAdd.tsx (the side bar, the bottom bar and a Kanban column open it); the pages that
+// import it from here still find it.
+export { QuickAdd } from '../ui/QuickAdd'
+
+/** Folded groups as "grouping:label", as Android remembers them per grouping. */
+const FOLD_KEY = 'omni.foldedGroups'
+/** Before, a fold was remembered by its label alone; those count as folds of the grouping in use. */
+const OLD_FOLD_KEY = 'omni.folded'
+const read = (k: string) => {
   try {
-    return store().getItem(k) ?? ''
+    return localStorage.getItem(k)
   } catch {
-    return ''
+    return null
   }
 }
-const write = (store: () => Storage, k: string, v: string) => {
+// Kept even when empty, so the old key is not read again once every group is open.
+const write = (k: string, v: string) => {
   try {
-    if (v) store().setItem(k, v)
-    else store().removeItem(k)
+    localStorage.setItem(k, v)
   } catch {
     /* just not kept */
   }
 }
+const lines = (v: string | null) => (v ?? '').split('\n').filter(Boolean)
+const storedFolds = (groupBy: string) => (read(FOLD_KEY) !== null ? lines(read(FOLD_KEY)) : lines(read(OLD_FOLD_KEY)).map((l) => `${groupBy}:${l}`))
 
 const TONE: Record<Group['tone'], string> = { ALERT: 'alert', ACCENT: 'accent', PLAIN: '', MUTED: 'muted' }
 
@@ -41,12 +47,11 @@ export function TasksPage(p: PageProps) {
 
 function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void }) {
   const [text, setText] = useState('')
-  // Folded groups are remembered on this device, as Android remembers them.
-  const [folded, setFolded] = useState<string[]>(() => read(() => localStorage, FOLD_KEY).split('\n').filter(Boolean))
-  const [adding, setAdding] = useState(false)
   const [hide, setHide] = useStored('omni.hideDone', 'yes', ['yes', 'no'] as const)
   const [showDone, setShowDone] = useState(false)
   const [query, setQueryState] = useState<ListQuery>(storedQuery.get)
+  // Folded groups are remembered on this device for each grouping, as Android remembers them.
+  const [folded, setFolded] = useState<string[]>(() => storedFolds(query.groupBy))
   const setQuery = (q: ListQuery) => { setQueryState(q); storedQuery.set(q) }
   const [overlay, setOverlay] = useState<'filter' | 'sort' | null>(null)
   // The open task, by key and title: a key is its line, so the title confirms it is still the same task.
@@ -57,14 +62,15 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
-      if (e.key === '/' && !typing && !adding && !overlay) {
+      // Not while a sheet is open over the page (quick add belongs to the shell now).
+      if (e.key === '/' && !typing && !overlay && !document.querySelector('[aria-modal=true]')) {
         e.preventDefault()
         search.current?.focus()
       }
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
-  }, [adding, overlay])
+  }, [overlay])
 
   const list = useMemo(() => p.snapshot?.list({ ...query, text }), [p.snapshot, query, text])
   const shown = list ? new Set(list.groups.flatMap((g) => g.keys)).size : 0
@@ -101,11 +107,13 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
   ]
   const sorts = query.sorts.length ? query.sorts : DEFAULT_QUERY.sorts
   const sortText = `${labelOf(SORTS, sorts[0].by)} ${sorts[0].ascending ? '↑' : '↓'}${sorts.length > 1 ? ` +${sorts.length - 1}` : ''}`
-  const fold = (label: string) => {
-    const next = folded.includes(label) ? folded.filter((f) => f !== label) : [...folded, label]
+  const fold = (key: string) => {
+    const next = folded.includes(key) ? folded.filter((f) => f !== key) : [...folded, key]
     setFolded(next)
-    write(() => localStorage, FOLD_KEY, next.join('\n'))
+    write(FOLD_KEY, next.join('\n'))
   }
+  // The search text counts as a filter (and "clear all" clears it too), as on Android.
+  const filters = filterCount(query) + (text.trim() ? 1 : 0)
 
   return (
     <div class={`split${current ? ' with-pane' : ''}`}>
@@ -116,10 +124,9 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
             <input ref={search} aria-label="ค้นหาชื่องาน" placeholder="ค้นหาชื่องาน" value={text} onInput={(e) => setText(e.currentTarget.value)} />
             <span class="kbd wide-only">/</span>
           </label>
-          <button class="primary wide-only" onClick={() => setAdding(true)}>+ เพิ่มงาน</button>
       </PageHead>
 
-      <LayoutBar layout={p.layout} onLayout={p.onLayout} filter={{ count: filterCount(query), onOpen: () => setOverlay('filter') }}
+      <LayoutBar layout={p.layout} onLayout={p.onLayout} filter={{ count: filters, onOpen: () => setOverlay('filter') }}
         end={<button class="chip tool" aria-label="เรียงและจัดกลุ่ม" title={`กลุ่ม: ${labelOf(GROUPS, query.groupBy)}, เรียง: ${sortText}`} onClick={() => setOverlay('sort')}>เรียง ⇅</button>} />
       {active.length > 0 && (
         <div class="chips">
@@ -137,14 +144,15 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
       ) : (
         <div class="groups">
           {list!.groups.length === 0 && (
-            <section class="group empty">{text ? 'ไม่มีงานตรงกับคำค้น' : filterCount(query) ? 'ไม่มีงานตรงกับตัวกรอง' : 'ไม่มีงานค้าง'}</section>
+            <section class="group empty">{text ? 'ไม่มีงานตรงกับคำค้น' : filters ? 'ไม่มีงานตรงกับตัวกรอง' : 'ไม่มีงานค้าง'}</section>
           )}
           {list!.groups.map((g) => {
-            const open = !folded.includes(g.label)
+            const key = `${query.groupBy}:${g.label}`
+            const open = !folded.includes(key)
             return (
               <section key={g.label} class="group">
                 <h2>
-                  <button class="group-head" aria-expanded={open} onClick={() => fold(g.label)}>
+                  <button class="group-head" aria-expanded={open} onClick={() => fold(key)}>
                     <span class={`caret${open ? ' open' : ''}`}>›</span>
                     <span class={`group-label ${TONE[g.tone]}`}>{g.label}</span>
                     <span class="count">{g.keys.length}</span>
@@ -155,7 +163,7 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
                     {g.keys.map((k) => {
                       const t = p.snapshot!.find(k)!
                       return (
-                        <TaskRow key={k} task={t} progress={list!.progress[k]} busy={p.busy} selected={current?.key === k}
+                        <TaskRow key={k} task={t} progress={list!.progress[k]} waitingOn={list!.waiting?.[k]} busy={p.busy} selected={current?.key === k}
                           onToggle={() => p.tick(t)} onOpen={() => openTask(t)} />
                       )
                     })}
@@ -185,10 +193,10 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
         </div>
       )}
 
-      {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
       {overlay === 'filter' && (
         // Android's one filter sheet has the "hide done" switch here too, though only the views honour it; the choice is shared with Views.
         <FilterPanel query={query} tags={tags} notes={filterNotes} lists={filterLists} shown={shown} onChange={setQuery} onClose={() => setOverlay(null)}
+          onClearText={() => setText('')}
           hideDone={{ on: hide === 'yes', set: (on) => setHide(on ? 'yes' : 'no') }} />
       )}
       {overlay === 'sort' && <SortDialog query={query} onChange={setQuery} onClose={() => setOverlay(null)} />}
@@ -201,204 +209,6 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
         </aside>
       </>
     )}
-    </div>
-  )
-}
-
-/** The browser's speech recognition, where it has one (Chrome, Edge, Safari); null elsewhere. */
-const Recognition = (): (new () => any) | null =>
-  typeof window === 'undefined' ? null : ((window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null)
-
-const shortDay = (iso: string) => {
-  const t = today()
-  const d = new Date(iso + 'T00:00')
-  const tomorrow = new Date(t + 'T00:00')
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  return iso === t ? 'วันนี้' : iso === tomorrow.toLocaleDateString('en-CA') ? 'พรุ่งนี้' : d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
-}
-
-/**
- * A sentence in, a TaskForge line out, as Android's quick-add sheet: dates, times, tags and priority are read from the
- * words and shown before saving; "#" picks a list note (and a category) or a tag; the sentence can be spoken, or
- * handed to the assistant to find a time for it.
- */
-export function QuickAdd(p: PageProps & { onClose: () => void }) {
-  // The draft survives the trip to Google when the sign-in runs out while typing.
-  const [sentence, setSentenceState] = useState(() => read(() => sessionStorage, DRAFT_KEY))
-  const latest = useRef(sentence)
-  const setSentence = (v: string) => { latest.current = v; setSentenceState(v); write(() => sessionStorage, DRAFT_KEY, v) }
-  const [target, setTarget] = useState<{ list: QuickList; category: string | null } | null>(null)
-  const [lists, setLists] = useState<ListNote[]>(() => p.vault.peekLists() ?? [])
-  const [listening, setListening] = useState(false)
-  const [voiceNote, setVoiceNote] = useState('')
-  const input = useRef<HTMLInputElement>(null)
-  const heard = useRef<any>(null)
-  useEffect(() => input.current?.focus(), [])
-  useEffect(() => { p.vault.lists().then(setLists, () => undefined) }, [p.vault])
-  useEffect(() => () => heard.current?.abort?.(), [])
-
-  // The tags already in use, most used first: the first few to tap, all of them for "#".
-  const allTags = useMemo(() => {
-    const count = new Map<string, number>()
-    p.snapshot?.tasks.forEach((t) => t.tags.forEach((g) => { if (!g.startsWith('remind-at-')) count.set(g, (count.get(g) ?? 0) + 1) }))
-    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g)
-  }, [p.snapshot])
-  const tags = allTags.slice(0, 8)
-  const used = (g: string) => sentence.split(/\s+/).includes('#' + g)
-  const read_ = useMemo(() => quickPreview(sentence, lists, allTags), [sentence, lists, allTags])
-  const picking = read_.token != null && read_.picks.length > 0
-  // What tasks like this one usually came with before (behavior.ts): a tap adds its words to the sentence.
-  const [logRev, setLogRev] = useState(0)
-  useEffect(() => onBehavior(() => setLogRev((n) => n + 1)), [])
-  const hints = useMemo(() => (target || picking ? [] : quickHints(sentence, p.vault.peekProfile() ?? null)), [sentence, target, picking, logRev])
-
-  const pick = (k: QuickPick) => {
-    const before = sentence.slice(0, sentence.length - (read_.token!.length + 1)).trimEnd()
-    if (k.list) {
-      setTarget({ list: k.list, category: k.category ?? null })
-      setSentence(before ? before + ' ' : '')
-    } else {
-      setSentence(`${before ? before + ' ' : ''}#${k.tag} `)
-    }
-    input.current?.focus()
-  }
-
-  const listen = () => {
-    const R = Recognition()
-    if (!R) return
-    if (listening) { heard.current?.stop(); return }
-    const r = new R()
-    heard.current = r
-    r.lang = 'th-TH'
-    r.interimResults = false
-    r.maxAlternatives = 1
-    r.onresult = (e: any) => {
-      const words = e.results?.[0]?.[0]?.transcript ?? ''
-      if (words) setSentence(`${latest.current.trim()} ${words}`.trim())
-    }
-    r.onerror = (e: any) => setVoiceNote(
-      e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'เบราว์เซอร์ยังไม่อนุญาตให้ใช้ไมค์'
-        : e.error === 'no-speech' ? 'ไม่ได้ยินเสียง ลองอีกครั้ง' : 'ฟังไม่ได้ ลองอีกครั้ง',
-    )
-    r.onend = () => { setListening(false); input.current?.focus() }
-    setVoiceNote('')
-    setListening(true)
-    try { r.start() } catch { setListening(false) }
-  }
-
-  const askAssistant = () => {
-    const text = sentence.trim()
-    if (!text) return
-    pendingQuestion.set(text)
-    setSentence('')
-    p.onClose()
-    p.onNavigate('assistant')
-  }
-
-  const submit = (e: Event) => {
-    e.preventDefault()
-    const s = sentence
-    if (!s.trim() || !read_.title.trim()) return
-    const t = target
-    const note = t && lists.find((n) => n.path === t.list.path)
-    if (t && !note) return
-    p.run(async () => {
-      const res = t ? await p.vault.addListItem(note!, read_.title, t.category) : await p.vault.add(s)
-      if (res.ok) {
-        setSentence('')
-        p.onClose()
-      }
-      return res
-    })
-  }
-
-  // What the sentence was read as, so a wrong guess is seen before saving; a list item has no date.
-  const chips = target ? [] : [
-    ...(read_.due ? [shortDay(read_.due)] : []),
-    ...(read_.time ? [`เตือน ${read_.time}`] : []),
-    ...read_.tags.map((g) => '#' + g),
-    ...(read_.priorityLabel ? [read_.priorityLabel] : []),
-  ]
-  const canListen = Recognition() !== null
-
-  return (
-    <div class="scrim sheet-scrim" onClick={p.onClose} onKeyDown={(e) => e.key === 'Escape' && p.onClose()}>
-      <form class="dialog quick" role="dialog" aria-modal="true" aria-label="เพิ่มงาน" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2>เพิ่มงาน</h2>
-        <input
-          ref={input}
-          class="quick-input"
-          aria-label="งานใหม่"
-          placeholder="เช่น ส่งรายงาน พรุ่งนี้ 9:00 #รอ/พี่เอ"
-          value={sentence}
-          onInput={(e) => setSentence(e.currentTarget.value)}
-        />
-        {picking ? (
-          <div class="chips quick-picks" role="group" aria-label="เลือกลิสต์หรือ Tag">
-            {read_.picks.map((k) => (
-              <button type="button" key={k.list ? `${k.list.path}|${k.category ?? ''}` : k.tag!} class={`chip${k.list ? ' list-pick' : ''}`} onClick={() => pick(k)}>
-                {k.list ? `${k.list.emoji} ${k.list.name}${k.category ? ` / ${k.category}` : ''}` : `#${k.tag}`}
-              </button>
-            ))}
-          </div>
-        ) : !target && tags.length > 0 && (
-          <div class="chips">
-            {tags.map((g) => (
-              <button
-                type="button"
-                key={g}
-                class={`chip${used(g) ? ' on' : ''}`}
-                onClick={() => { if (!used(g)) setSentence(`${sentence.trimEnd()} #${g} `.trimStart()); input.current?.focus() }}
-              >#{g}</button>
-            ))}
-          </div>
-        )}
-        {target && (
-          <>
-            <span class="chip on saved quick-target">
-              <span class="chip-main">เพิ่มลงใน {target.list.emoji} {target.list.name}{target.category ? ` / ${target.category}` : ''}</span>
-              <button type="button" class="chip-x" aria-label="ไม่ใส่ลงลิสต์" onClick={() => setTarget(null)}>×</button>
-            </span>
-            {!target.category && target.list.categories.length > 0 && (
-              <div class="chips" role="group" aria-label="หมวด">
-                {target.list.categories.map((c) => (
-                  <button type="button" key={c} class="chip" onClick={() => setTarget({ ...target, category: c })}>{c}</button>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-        {hints.length > 0 && (
-          <div class="chips quick-hints" role="group" aria-label="เคยใส่กับงานแบบนี้">
-            <span class="muted small">เคยใส่กับงานแบบนี้</span>
-            {hints.map((h) => (
-              <button type="button" key={h.words} class="chip" onClick={() => { setSentence(`${sentence.trimEnd()} ${h.words} `); input.current?.focus() }}>
-                + {h.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {chips.length > 0 && (
-          <div class="chips quick-read" aria-label="อ่านได้ว่า">
-            {chips.map((c) => <span key={c} class="pill accent">{c}</span>)}
-          </div>
-        )}
-        <span class="faint small">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือกลิสต์</span>
-        {voiceNote && <span class="error small">{voiceNote}</span>}
-        <div class="dialog-actions quick-actions">
-          {canListen && (
-            <button type="button" class={`round-btn${listening ? ' on' : ''}`} aria-label={listening ? 'หยุดฟัง' : 'พูด'} aria-pressed={listening} onClick={listen}>
-              <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z" /></svg>
-            </button>
-          )}
-          <button type="button" class="round-btn accent" aria-label="ถามผู้ช่วยว่าควรทำตอนไหน" title="ถามผู้ช่วยว่าควรทำตอนไหน" disabled={!sentence.trim()} onClick={askAssistant}>
-            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2Zm6 12l.9 2.6 2.6.9-2.6.9L18 21l-.9-2.6-2.6-.9 2.6-.9L18 14Z" /></svg>
-          </button>
-          <span class="grow" />
-          <button type="button" class="ghost" onClick={p.onClose}>ยกเลิก</button>
-          <button class="primary" disabled={p.busy || !read_.title.trim()}>{target ? 'เพิ่มลงลิสต์' : 'เพิ่ม'}</button>
-        </div>
-      </form>
     </div>
   )
 }

@@ -18,7 +18,7 @@ test('the new layout: Omni note.md, its archive and conflict copies sit together
   expect(archive.text).toContain('# Omni note Archive')
   expect(drive.nodes.some((n) => n.name === 'TaskForge Archive.md')).toBe(false)
 
-  await page.getByRole('button', { name: 'ส่งรายงาน' }).click()
+  await page.getByRole('button', { name: 'ส่งรายงาน', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' })).toContainText('Omni note.md บรรทัด')
 })
 
@@ -29,7 +29,8 @@ test('before the move: TaskForge.md and the Omni folder at the vault root still 
   expect(file.name).toBe('TaskForge.md')
   await expect(page.getByText('ทบทวนเคส')).toBeVisible()
   // The profile at the old place is read.
-  await expect(page.getByText('นอน 23:00 ตื่น 06:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'นอน 23:00' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ตื่น 06:00 พรุ่งนี้' })).toBeVisible()
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ทบทวนเคส/ }).click()
   await expect.poll(() => file.text).toContain('- [x] ทบทวนเคส')
   await page.getByRole('button', { name: 'เก็บเข้าคลัง' }).click()
@@ -66,5 +67,5 @@ test('a profile in the new Omni folder wins over the old one', async ({ page }) 
   drive.add('Omni note.md', omni.id, '- [ ] งานในที่ใหม่ 📅 2026-10-08\n')
   drive.add('โปรไฟล์.md', omni.id, '# โปรไฟล์\n- นอน: 22:00\n')
   await page.reload()
-  await expect(page.getByText('นอน 22:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'นอน 22:00' })).toBeVisible()
 })

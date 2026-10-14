@@ -94,18 +94,23 @@ test('a big image asks whether to keep it reduced or full', async ({ page }) => 
   expect(saved.bytes!.length).toBeGreaterThan(0)
 })
 
-test('the description moves to its own note, linked in its place', async ({ page }) => {
+test('a long description moves to its own note, linked in its place', async ({ page }) => {
   const { drive, file, panel } = await start(page, 'เขียน paper')
+  await panel.getByRole('button', { name: 'อ่านงานเก่าก่อน' }).click()
   await expect(panel.getByRole('textbox', { name: 'รายละเอียด' })).toHaveValue('อ่านงานเก่าก่อน')
-  await panel.getByRole('button', { name: 'ย้ายรายละเอียดไปเป็นโน้ต' }).click()
+  // Moving to a note is offered only for a long description, as on Android.
+  await expect(panel.getByRole('button', { name: 'ย้ายไปโน้ตแยก' })).toHaveCount(0)
+  const long = ['อ่านงานเก่าก่อน', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก'].join('\n')
+  await panel.getByRole('textbox', { name: 'รายละเอียด' }).fill(long)
+  await panel.getByRole('button', { name: 'ย้ายไปโน้ตแยก' }).click()
   await expect.poll(() => file.text).toContain('- [ ] เขียน paper 📅 2026-10-10\n    - [[เขียน paper]]\n    - [ ] บทนำ')
   expect(file.text).not.toContain('อ่านงานเก่าก่อน')
   const note = drive.nodes.find((n) => n.name === 'เขียน paper.md')!
-  expect(note.text).toBe('# เขียน paper\n\nอ่านงานเก่าก่อน\n')
+  expect(note.text).toBe(`# เขียน paper\n\n${long}\n`)
   const folders = (id: string | null): string[] => { const n = drive.nodes.find((x) => x.id === id); return n ? [...folders(n.parent), n.name] : [] }
   expect(folders(note.parent).join('/')).toBe('ObsidianVault/📁 Folder/หลังบ้าน/Omni/Notes')
   await expect(page.getByRole('alert')).toContainText('ย้ายรายละเอียดไปที่ 📁 Folder/หลังบ้าน/Omni/Notes/เขียน paper.md แล้ว')
-  await expect(panel.getByRole('textbox', { name: 'รายละเอียด' })).toHaveValue('')
+  await expect(panel.getByRole('button', { name: 'แตะเพื่อเขียนรายละเอียด' })).toBeVisible()
 })
 
 test('subtasks are dragged into a new order, or moved with the arrow keys', async ({ page }) => {
@@ -124,13 +129,17 @@ test('subtasks are dragged into a new order, or moved with the arrow keys', asyn
   await expect.poll(() => file.text).toContain('    - [ ] บทนำ\n    - [ ] ผลลัพธ์\n    - [ ] วิธีการ\n')
 })
 
-test('a task goes to the archive from its panel, and undo brings it back', async ({ page }) => {
+test('a finished task goes to the archive from its panel, and undo brings it back', async ({ page }) => {
   const { drive, file, panel } = await start(page, 'นัดอาจารย์')
   await panel.getByRole('button', { name: /^รายละเอียดอื่น/ }).click()
   await expect(panel.locator('.fold-row', { hasText: 'ต้องรอ' })).toContainText('ส่งรายงาน')
+  // Only a finished task is offered the archive, as on Android.
+  await expect(panel.getByRole('button', { name: 'เก็บเข้าคลัง' })).toHaveCount(0)
+  await panel.getByRole('radio', { name: 'เสร็จ' }).click()
+  await expect.poll(() => file.text).toContain('- [x] นัดอาจารย์ ⛔ rp ✅ 2026-10-08')
   await panel.getByRole('button', { name: 'เก็บเข้าคลัง' }).click()
   await expect.poll(() => file.text).not.toContain('นัดอาจารย์')
-  await expect.poll(() => drive.textOf('Omni note Archive.md')).toContain('- [ ] นัดอาจารย์ ⛔ rp')
+  await expect.poll(() => drive.textOf('Omni note Archive.md')).toContain('- [x] นัดอาจารย์ ⛔ rp ✅ 2026-10-08')
   await page.getByRole('button', { name: 'เลิกทำ' }).click()
-  await expect.poll(() => file.text).toContain('- [ ] นัดอาจารย์ ⛔ rp')
+  await expect.poll(() => file.text).toContain('- [x] นัดอาจารย์ ⛔ rp ✅ 2026-10-08')
 })

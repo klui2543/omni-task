@@ -30,6 +30,12 @@ function useDated(p: ViewCtx): Dated[] {
 }
 const tasksOn = (all: Dated[], d: string) => all.filter(({ t }) => t.due === d || t.scheduled === d)
 
+/**
+ * The month shown with its chosen day, and the timeline's day, kept while the page is open: leaving the calendar
+ * and coming back finds them as they were (Android's rememberSaveable).
+ */
+const kept: { month?: string; day?: string; anchor?: string } = {}
+
 /** The calendar: a month grid, or a timeline of 7, 3 or 1 days, each with Google Calendar events beside the tasks. */
 export function CalendarViews(p: ViewCtx & { onConnect: () => void }) {
   const [span, setSpan] = useStored('omni.calSpan', 'month', SPANS)
@@ -44,8 +50,10 @@ export function CalendarViews(p: ViewCtx & { onConnect: () => void }) {
 }
 
 function Month(p: ViewCtx & { onConnect: () => void }) {
-  const [shown, setShown] = useState(firstOfMonth(p.today))
-  const [sel, setSel] = useState(p.today)
+  const [shown, setShownState] = useState(kept.month ?? firstOfMonth(p.today))
+  const [sel, setSelState] = useState(kept.day ?? p.today)
+  const setShown = (m: string) => { kept.month = m; setShownState(m) }
+  const setSel = (d: string) => { kept.day = d; setSelState(d) }
   const firstCell = mondayOf(shown)
   const feed = useCalendarFeed(p.p, firstCell, addDays(firstCell, 42))
   const all = useDated(p)
@@ -61,7 +69,7 @@ function Month(p: ViewCtx & { onConnect: () => void }) {
 
   return (
     <>
-      <CalendarConnect connected={feed.connected} note={feed.note} onConnect={p.onConnect} />
+      <CalendarConnect {...feed} onConnect={p.onConnect} />
       <div class="mwrap">
         <section class="mcard" aria-label="ปฏิทินเดือน">
           <div class="mtop">
@@ -175,7 +183,8 @@ const PRIORITY_ORDER: Task['priority'][] = ['HIGHEST', 'HIGH', 'MEDIUM', 'NONE',
  */
 function Timeline(p: ViewCtx & { onConnect: () => void; days: number }) {
   const { days } = p
-  const [anchor, setAnchor] = useState(p.today)
+  const [anchor, setAnchorState] = useState(kept.anchor ?? p.today)
+  const setAnchor = (d: string) => { kept.anchor = d; setAnchorState(d) }
   const [unfolded, setUnfolded] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const grid = useRef<HTMLDivElement>(null)
@@ -224,7 +233,7 @@ function Timeline(p: ViewCtx & { onConnect: () => void; days: number }) {
 
   return (
     <>
-      <CalendarConnect connected={feed.connected} note={feed.note} onConnect={p.onConnect} />
+      <CalendarConnect {...feed} onConnect={p.onConnect} />
       <div class="gtools">
         <span class="grange">{label}</span>
         <span class="grow" />

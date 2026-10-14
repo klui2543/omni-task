@@ -16,6 +16,7 @@ import app.omnitask.model.DayPlan
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import app.omnitask.notify.Digest
+import app.omnitask.notify.NotifySettings
 import app.omnitask.time.atStartOfDay
 import app.omnitask.time.minusDays
 import app.omnitask.time.plusDays
@@ -55,7 +56,12 @@ object WebAssistant {
         val insightId: String? = null,
         val futureCount: Int = 1,
         val skippedToday: List<String> = emptyList(),
+        /** What the morning summary holds, as Android's notification settings say (its `notify.*` keys). */
+        val notify: NotifyIn = NotifyIn(),
     )
+
+    @Serializable
+    data class NotifyIn(val overdue: Boolean = true, val dueToday: Boolean = true, val waiting: Boolean = true)
 
     private fun parse(stateJson: String) = json.decodeFromString<StateIn>(stateJson)
 
@@ -309,14 +315,29 @@ object WebAssistant {
         return json.encodeToString(proposals.map { Proposal(it.task.key, it.task.title, it.task.raw, it.task.lineIndex, it.slot.day.toString(), hm(it.slot.start), it.minutes) })
     }
 
+    /** [stuckAt]: the line about long-open tasks nobody has explained (a tap there asks about each), or -1. */
     @Serializable
-    data class ReviewOut(val title: String, val lines: List<String>)
+    data class ReviewOut(val title: String, val lines: List<String>, val stuckAt: Int = -1)
 
     /** The last seven days in three lines, and the work that keeps being moved. */
     fun weekly(fileKey: String, path: String, text: String, stateJson: String): String {
         val s = parse(stateJson)
         val today = LocalDateTime.parse(s.now).date
-        val m = Digest.weekly(WebNotes.tasks(fileKey, path, text, today), today, Behavior.parse(s.behavior))
+        val tasks = WebNotes.tasks(fileKey, path, text, today)
+        val m = Digest.weekly(tasks, today, Behavior.parse(s.behavior))
+        val stuck = Digest.stuckLine(tasks, today).firstOrNull()
+        return json.encodeToString(ReviewOut(m.title, m.lines, stuck?.let { m.lines.indexOf(it) } ?: -1))
+    }
+
+    /**
+     * The morning summary Android sends at the summary time ([Digest.daily]): what is overdue and due today, who waits,
+     * the future pick, work moved again and again, and kinds of work that tend to slip. `null` when it has nothing to say.
+     */
+    fun daily(fileKey: String, path: String, text: String, stateJson: String): String {
+        val s = parse(stateJson)
+        val today = LocalDateTime.parse(s.now).date
+        val settings = NotifySettings(digestOverdue = s.notify.overdue, digestDueToday = s.notify.dueToday, digestWaiting = s.notify.waiting)
+        val m = Digest.daily(WebNotes.tasks(fileKey, path, text, today), today, settings, Behavior.parse(s.behavior)) ?: return "null"
         return json.encodeToString(ReviewOut(m.title, m.lines))
     }
 

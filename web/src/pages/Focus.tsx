@@ -7,12 +7,13 @@ import { countdownPins, skippedToday, useFocusLocal } from '../focusState'
 import type { PageProps } from '../Home'
 import type { EditOp, FocusIn, FocusOut, PlanItem, Task } from '../types'
 import { EditPanel } from '../ui/EditPanel'
-import { BedtimeDialog, CountdownDialog, FutureDialog, ReviewAction, ReviewDialog } from '../ui/FocusDialogs'
+import { CountdownDialog, FutureDialog, ReviewAction, ReviewDialog, SleepTimeDialog } from '../ui/FocusDialogs'
 import { URGENT_RULES, urgentRule } from '../settings'
 import { PagedCard } from '../ui/PagedCard'
+import { StuckDialog, WeekBars } from '../ui/Stuck'
 import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
-import { QuickAdd } from './Tasks'
+import '../ui/focusSleep.css'
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} ชม.` : `${m} นาที`)
@@ -48,11 +49,12 @@ export function FocusPage(p: PageProps) {
   const [calendarNote, setCalendarNote] = useState('')
   const [minute, setMinute] = useState(() => localIso(new Date()))
   const [menu, setMenu] = useState(false)
-  const [dialog, setDialog] = useState<'review' | 'countdown' | 'future' | 'bed' | null>(null)
+  const [dialog, setDialog] = useState<'review' | 'countdown' | 'future' | 'bed' | 'wake' | null>(null)
   const [handled, setHandled] = useState(0)
   const [hidden, setHidden] = useState<string[]>([])
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
-  const [adding, setAdding] = useState(false)
+  // The late or long-open task whose path is open, to write why it is still open.
+  const [explaining, setExplaining] = useState<string | null>(null)
   const [urgent, setUrgent] = useState(urgentRule.get)
   const connected = Auth.granted(CALENDAR_SCOPE)
 
@@ -95,7 +97,7 @@ export function FocusPage(p: PageProps) {
   const f: FocusOut | null = useMemo(
     () => p.snapshot?.focus({
       now: minute, skippedToday: skippedToday(local), dismissed: local.dismissed, reviewed: local.reviewed, futureCount: local.futureCount,
-      countdowns: pins, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, profile, events, pickEvents: ahead,
+      countdowns: pins, tonightBed: local.tonightBed, tonightWake: local.tonightWake ?? null, wakeFromWatch: !!local.wakeFromWatch, profile, events, pickEvents: ahead,
     }) ?? null,
     [p.snapshot, local, profile, events, ahead, minute],
   )
@@ -125,8 +127,10 @@ export function FocusPage(p: PageProps) {
     else if (s.kind === 'SOFT_DATE') change(t, { op: 'date', field: 'SCHEDULED', value: f!.softDate })
     else setKind(t, 'FUTURE')
   }
-  const review = (t: Task, a: ReviewAction) => {
+  const review = (t: Task, a: ReviewAction, why: string) => {
     setHandled((n) => n + 1)
+    // What holds it up is written first, so the choice is made on the line that has it (and the note counts as a look).
+    if (why.trim()) change(t, { op: 'stuck', value: why })
     if (a === 'KEEP') markReviewed(t)
     else if (a === 'FUTURE') setKind(t, 'FUTURE')
     else if (a === 'SOMEDAY') setKind(t, 'SOMEDAY')
@@ -135,8 +139,17 @@ export function FocusPage(p: PageProps) {
   }
 
   const now = new Date()
+  // The night the sleep card plans is there all day; the summary counts down to bed only at night.
   const night = f?.third.night
+  const toBed = f?.third.kind === 'night' ? night : undefined
   const sleepColor = night ? (night.sleep < 300 ? 'red' : night.sleep < 420 ? 'amber' : 'lime') : ''
+  // Why the wake time is what it is: picked on the watch or here for tonight, or an hour before a morning event.
+  const why = !night ? null
+    : night.wakePicked ? (night.fromWatch ? 'ตั้งจากนาฬิกา' : 'ตั้งเองสำหรับคืนนี้')
+    : night.because ? `เผื่อ 1 ชม. ก่อน ${night.becauseAt}: ${night.because}` : null
+  // A time picked for tonight is for the evening the card plans; a wake time picked here is not the watch's.
+  const setWake = (time: string | null) =>
+    setLocal((x) => ({ ...x, tonightWake: time === null ? null : { evening: f!.evening, time }, wakeFromWatch: false }))
   const pct = f && f.ring.total > 0 ? Math.round((f.ring.done / f.ring.total) * 100) : 0
   const reviewTop = f?.review[0]
   const reviewTask = task(reviewTop?.key)
@@ -164,20 +177,35 @@ export function FocusPage(p: PageProps) {
     const t = task(it.key)
     if (!t) return null
     const meta = !it.done && (it.time || it.lead || it.extra)
+    const lead = meta && (
+      <>
+        {it.time && <span class="ptm">{it.time}</span>}
+        {it.time && (it.lead || it.extra) ? ', ' : ''}
+        {it.lead && <span class="late">{it.lead}</span>}
+        {it.lead && it.extra ? ', ' : ''}
+        {it.extra}
+      </>
+    )
+    const title = <span class="tline"><span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
+    // Late or long-open: a bar a week beside it and "moved N days ago" on its line, both one tap from writing why.
+    if (it.stuck && !it.done) {
+      return (
+        <div key={it.key} class="prow">
+          <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
+          <div class="pstack">
+            <button class="pbody" onClick={() => openTask(t)}>{title}</button>
+            <button class="plead stuck-line" aria-label={`ติดอะไร: ${t.title}`} onClick={() => setExplaining(t.key)}>{lead}</button>
+          </div>
+          <button class="stuck-bars" aria-label={`ความเป็นไปของ ${t.title}`} onClick={() => setExplaining(t.key)}><WeekBars weeks={it.weeks ?? []} /></button>
+        </div>
+      )
+    }
     return (
       <div key={it.key} class={`prow${it.done ? ' done' : ''}`}>
         <Check task={t} disabled={p.busy} onToggle={() => p.tick(t)} />
         <button class="pbody" onClick={() => openTask(t)}>
-          <span class="tline"><span class={`ttitle${it.blocked ? ' blocked' : ''}`}>{t.title}</span><PriorityDot task={t} /></span>
-          {meta && (
-            <span class="plead">
-              {it.time && <span class="ptm">{it.time}</span>}
-              {it.time && (it.lead || it.extra) ? ', ' : ''}
-              {it.lead && <span class="late">{it.lead}</span>}
-              {it.lead && it.extra ? ', ' : ''}
-              {it.extra}
-            </span>
-          )}
+          {title}
+          {meta && <span class="plead">{lead}</span>}
         </button>
       </div>
     )
@@ -245,22 +273,36 @@ export function FocusPage(p: PageProps) {
                   </div>
                   <div class="stat"><div class={`stat-num${f.ring.overdue > 0 ? ' red' : ''}`}>{f.ring.overdue}</div><div class="muted small">ค้างอยู่</div></div>
                   <div class="stat"><div class="stat-num">{f.ring.events}</div><div class="muted small">นัดวันนี้</div></div>
-                  {night
-                    ? <div class="stat"><div class={`stat-num${night.toBed < 30 ? ' amber' : ''}`}>{hm(night.toBed)}</div><div class="muted small">ก่อนนอน</div></div>
+                  {toBed
+                    ? <div class="stat"><div class={`stat-num${toBed.toBed < 30 ? ' amber' : ''}`}>{hm(toBed.toBed)}</div><div class="muted small">ก่อนนอน</div></div>
                     : <div class="stat"><div class="stat-num lime">{hours(f.third.minutes)}</div><div class="muted small">ว่างเหลือ</div></div>}
                 </div>
+                {/* Tonight all day, as on Android: bed and wake to tap (the usual ones are in Settings), then the countdown. */}
                 {night && (
-                  <button class="footrow" onClick={() => setDialog('bed')}>
-                    <span class="grow">
-                      <span class="foot-line">
-                        <span>นอน {night.bedAt} ตื่น {night.wakeAt}</span>
-                        <span class={`pill ${sleepColor}`}>ได้นอน {hm(night.sleep)}</span>
-                      </span>
-                      {night.wakePicked ? <span class="muted micro">ตั้งเวลาตื่นเองสำหรับคืนนี้</span>
-                        : night.because && <span class="muted micro">ตื่นก่อน {night.because} 1 ชม.</span>}
-                    </span>
-                    <span class="chev">›</span>
-                  </button>
+                  <div class="sleep" aria-label="การนอนคืนนี้">
+                    {f.lastNight != null && <span class="muted micro sleep-last">เมื่อคืนได้นอน {hm(f.lastNight)}</span>}
+                    <div class="sleep-head">
+                      <span class="grow muted small">คืนนี้</span>
+                      <span class={`pill ${sleepColor}`}>ได้นอน {hm(night.sleep)}</span>
+                    </div>
+                    <div class="sleep-tiles">
+                      <button class="sleep-tile" aria-label={`นอน ${night.bedAt}`} onClick={() => setDialog('bed')}>
+                        <span class="muted micro">นอน</span>
+                        <span class="sleep-time">{night.bedAt}</span>
+                      </button>
+                      {/* In the daytime the wake time is tomorrow's; it says so, or it reads as this morning's. */}
+                      <button class="sleep-tile" aria-label={`ตื่น ${night.wakeAt}${night.tomorrow ? ' พรุ่งนี้' : ''}`} onClick={() => setDialog('wake')}>
+                        <span class="muted micro">ตื่น</span>
+                        <span><span class="sleep-time">{night.wakeAt}</span>{night.tomorrow && <span class="muted micro sleep-day">พรุ่งนี้</span>}</span>
+                      </button>
+                    </div>
+                    {why && (
+                      <div class="sleep-why">
+                        <span class="grow faint micro ellipsis">{why}</span>
+                        {night.wakePicked && <button class="link" onClick={() => setWake(null)}>ใช้เวลาปกติ</button>}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {/* The pinned countdowns, soonest first: a ring for a task, the timeline's bar for an event. */}
                 {f.countdowns.length > 0 ? (
@@ -388,17 +430,25 @@ export function FocusPage(p: PageProps) {
           </div>
         )}
 
-        {adding && <QuickAdd {...p} onClose={() => setAdding(false)} />}
         {dialog === 'review' && f && (
           <ReviewDialog
             left={f.review.length}
             handled={handled}
-            task={reviewTop && reviewTask ? { title: reviewTask.title, kind: reviewTop.kind, age: reviewTop.age, last: reviewTop.last } : null}
-            onAct={(a) => reviewTask && review(reviewTask, a)}
+            task={reviewTop && reviewTask ? { key: reviewTask.key, title: reviewTask.title, kind: reviewTop.kind, age: reviewTop.age, last: reviewTop.last } : null}
+            path={reviewTask ? (p.snapshot?.stuckTask(reviewTask.key)?.events ?? []).filter((e) => e.step !== 'START').slice(-2) : []}
+            log={() => p.snapshot!.stuck()}
+            onAct={(a, why) => reviewTask && review(reviewTask, a, why)}
             onOpen={() => reviewTask && openTask(reviewTask)}
+            onOpenKey={(key) => { const t = task(key); if (t) openTask(t) }}
             onClose={() => setDialog(null)}
           />
         )}
+        {explaining && (() => {
+          const t = task(explaining)
+          const info = p.snapshot?.stuckTask(explaining)
+          if (!t || !info) return null
+          return <StuckDialog task={info} onSave={(text) => change(t, { op: 'stuck', value: text })} onClose={() => setExplaining(null)} />
+        })()}
         {dialog === 'countdown' && f && (
           <CountdownDialog
             tasks={f.countdownTasks}
@@ -419,16 +469,10 @@ export function FocusPage(p: PageProps) {
           />
         )}
         {dialog === 'bed' && f && (
-          <BedtimeDialog
-            time={f.bedtime}
-            wake={f.third.night?.wakeAt ?? f.wake}
-            wakePicked={!!f.third.night?.wakePicked}
-            onSave={(time, wake) => setLocal((x) => ({
-              ...x, tonightBed: { evening: f.evening, time },
-              tonightWake: wake === undefined ? x.tonightWake : wake === null ? null : { evening: f.evening, time: wake },
-            }))}
-            onClose={() => setDialog(null)}
-          />
+          <SleepTimeDialog kind="bed" time={f.bedtime} onSave={(time) => setLocal((x) => ({ ...x, tonightBed: { evening: f.evening, time } }))} onClose={() => setDialog(null)} />
+        )}
+        {dialog === 'wake' && f && (
+          <SleepTimeDialog kind="wake" time={night?.wakeAt ?? f.wake} onSave={setWake} onClose={() => setDialog(null)} />
         )}
       </main>
       {current && (

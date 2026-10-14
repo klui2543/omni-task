@@ -5,6 +5,7 @@
 import { WebAssistantApi } from './kotlin/OmniTask-shared.mjs'
 import { omniDirPath, today } from './core'
 import { Drive, DriveError, type Versioned } from './drive'
+import { recurHistory } from './recurHistory'
 import type { Task } from './types'
 
 const api = WebAssistantApi.getInstance()
@@ -68,12 +69,22 @@ const keep = (line: string) => {
 
 /** What the owner just did, for the log. */
 export const learn = {
-  done: (t: Task) => keep(api.behaviorEvent('done', t.raw, stamp(), null)),
+  done: (t: Task) => {
+    keep(api.behaviorEvent('done', t.raw, stamp(), null))
+    // A repeating line moves on in place, so its completions are kept apart, as Android's RecurHistory.
+    if (t.recurrence) recurHistory.add(t.title, today())
+  },
   created: (sentence: string) => keep(api.behaviorCreated(sentence, stamp())),
   /** One of [t]'s dates set to [to] (null: cleared); nothing when the day stays. */
   moved: (t: Task, field: 'DUE' | 'SCHEDULED' | 'START', to: string | null) =>
     keep(api.behaviorEvent('move', t.raw, stamp(), JSON.stringify({ field, to }))),
   declined: (ask: string) => keep(api.behaviorDeclined(ask, stamp())),
+  /** The reminder of the task line [raw] put off by [minutes] ("อีก 1 ชั่วโมง", "พรุ่งนี้"), as Android's notification buttons. */
+  snoozed: (raw: string, minutes: number) => keep(api.behaviorEvent('snooze', raw, stamp(), JSON.stringify({ min: minutes }))),
+  /** The reminder of [raw] closed without doing anything, as a notification swiped away. */
+  dismissed: (raw: string) => keep(api.behaviorEvent('dismiss', raw, stamp(), null)),
+  /** The app opened from the reminder of [raw]. */
+  opened: (raw: string) => keep(api.behaviorEvent('open', raw, stamp(), null)),
 }
 
 /** What tasks like the quick-add [sentence] usually came with: chips whose words are added to the sentence. */

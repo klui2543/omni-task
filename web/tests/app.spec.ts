@@ -270,18 +270,16 @@ test('Settings (narrow) leads to the assistant; a question typed at the bottom g
     // The assistant is the page itself: no line to ask it over the page.
     await expect(ask).toHaveCount(0)
     // Tapping the line brings up ready questions; one asks the assistant straight away.
-    await page.locator('.dock .bar').getByRole('button', { name: 'งาน', exact: true }).click()
+    await page.evaluate(() => { location.hash = '/tasks' })
     await ask.click()
     await page.getByRole('toolbar', { name: 'คำถามสำเร็จรูป' }).getByRole('button', { name: 'พรุ่งนี้มีอะไรบ้าง' }).click()
     await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
     await expect(page.getByText('พรุ่งนี้มีอะไรบ้าง').first()).toBeVisible()
-    // An old address of More opens Settings, where the assistant is too.
-    await page.evaluate(() => { location.hash = '/more' })
-    await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
-    await page.getByRole('main').getByRole('button', { name: 'ผู้ช่วย' }).click()
-  } else {
-    await goTo(page, 'ผู้ช่วย')
   }
+  // An old address of More opens Settings, where the assistant is too (on a narrow screen; the side bar has it on a wide one).
+  await page.evaluate(() => { location.hash = '/more' })
+  await expect(page.getByRole('heading', { name: 'ตั้งค่า', level: 1 })).toBeVisible()
+  await goTo(page, 'ผู้ช่วย')
   await expect(page.getByRole('heading', { name: 'ผู้ช่วย', level: 1 })).toBeVisible()
 })
 
@@ -321,7 +319,9 @@ test('the edit panel changes dates, priority, repeat, tags and the description',
   await panel.getByRole('button', { name: 'เพิ่ม', exact: true }).click()
   await expect.poll(() => file.text).toContain('- [ ] ส่งรายงาน #งาน #ด่วน 🔺')
 
-  await panel.getByLabel('รายละเอียด').fill('ส่งอาจารย์ก่อนเที่ยง')
+  await panel.getByRole('button', { name: 'แตะเพื่อเขียนรายละเอียด' }).click()
+  await panel.getByRole('textbox', { name: 'รายละเอียด' }).fill('ส่งอาจารย์ก่อนเที่ยง')
+  await panel.getByRole('button', { name: 'บันทึก', exact: true }).click()
   await panel.getByRole('radio', { name: 'กำลังทำ' }).click()
   await expect.poll(() => file.text).toContain('- [/] ส่งรายงาน')
   expect(file.text).toContain('📅 2026-10-07\n    - ส่งอาจารย์ก่อนเที่ยง\n')
@@ -354,7 +354,8 @@ test('a finished task can be deleted, and repeating or project tasks are not ask
   await signInAndPick(page)
 
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ ส่งรายงาน/ }).click()
-  await expect(page.getByText('เก็บเข้าคลัง หรือลบออกจากโน้ตเลยไหม')).toHaveCount(0)
+  await expect.poll(() => file.text).toContain('- [x] ส่งรายงาน')
+  await expect(page.getByText('เสร็จแล้ว: ส่งรายงาน')).toHaveCount(0)
 
   await page.getByRole('checkbox', { name: /ติ๊กเสร็จ อ่านหนังสือ/ }).click()
   await page.getByRole('button', { name: 'ลบ', exact: true }).click()

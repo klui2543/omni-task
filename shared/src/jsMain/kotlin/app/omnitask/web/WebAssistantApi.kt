@@ -32,6 +32,8 @@ object WebAssistantApi {
 
     fun weekly(fileKey: String, path: String, text: String, state: String): String = WebAssistant.weekly(fileKey, path, text, state)
 
+    fun daily(fileKey: String, path: String, text: String, state: String): String = WebAssistant.daily(fileKey, path, text, state)
+
     fun snapshot(fileKey: String, path: String, text: String, state: String): String = WebAssistant.snapshot(fileKey, path, text, state)
 
     fun slotLine(title: String, day: String, start: String?, today: String): String = WebAssistant.slotLine(title, day, start, today)

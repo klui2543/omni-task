@@ -1,13 +1,13 @@
 import {
   addTask, focus, archiveAppend, dropTag, loadListItems, archiveFilePath, legacyArchiveFilePath, legacyOmniDirPath, legacyProfileFilePath, legacyTaskFilePath, omniDirPath, profileFilePath, archiveRemove, cutTask, editTask, isConflictCopy, listTasks, loadTasks,
-  restoreBlock, taskFilePath, toggle, addTaskInStatus, views,
+  restoreBlock, taskFilePath, toggle, addTaskInStatus, views, stuckTask, stuckView,
 } from './core'
 import { Drive, DriveError, DriveFile, FOLDER, Offline, sameName, type Versioned } from './drive'
 import { clashes, offlineStore } from './offline'
 import { merge3, writeChecked } from './safeWrite'
 import { branchStates } from './ui/projects/projectState'
 import { config } from './config'
-import type { EditOp, EditResult, FocusIn, FocusOut, Query, Task, TaskList, ViewsIn, ViewsOut } from './types'
+import type { EditOp, EditResult, FocusIn, FocusOut, Query, StuckTask, StuckView, Task, TaskList, ViewsIn, ViewsOut } from './types'
 import {
   addListItem, addTagged, branchChange, chainTasks, createListNote, includeInList, listStarters, projects, renameTag, updateListNote, ygdrasil,
 } from './core'
@@ -888,6 +888,20 @@ export class Snapshot {
     const key = { state, filter, folded, kinds: customKindTags(), notes: notes.map((n) => [n.id, n.path, n.text.length, hash(n.text)]) }
     return this.memoed('ygdrasil', key, () =>
       ygdrasil(s.key, s.path, s.text, notes.map((n) => ({ key: n.id, path: n.path, text: n.text })), state, filter, folded))
+  }
+
+  /** The stuck log: the quick picks, the tasks to ask about and every task with notes. */
+  stuck(): StuckView {
+    const s = this.source()
+    const branches = branchStates()
+    return this.memoed('stuck', branches, () => stuckView(s.key, s.path, s.text, branches))
+  }
+
+  /** One task's stuck path and bars, by key. */
+  stuckTask(key: string): StuckTask | null {
+    const s = this.source()
+    const branches = branchStates()
+    return this.memoed('stuckTask', { key, branches }, () => stuckTask(s.key, s.path, s.text, key, branches))
   }
 
   /** What the shared code does to the branch states of a project, from the tasks as they stand. */

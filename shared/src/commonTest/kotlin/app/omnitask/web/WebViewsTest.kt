@@ -91,6 +91,36 @@ class WebViewsTest {
     }
 
     @Test
+    fun aProjectsCalendarTakesOnlyTheSubtasksOfItsOwnTasks() {
+        val two = listOf(
+            "- [ ] สไลด์ #peddose",
+            "    - [ ] ซ้อม ⏳ 2026-10-10",
+            "- [ ] เว็บ #omni",
+            "    - [ ] ทดสอบ 📅 2026-10-12",
+        ).joinToString("\n")
+        val scoped = WebViews.build("f", "TaskForge.md", two, """{"today":"2026-10-08","query":{"tags":["peddose"]},"scoped":true}""")
+        // The project's own task (the page leaves out the undated) and the subtask under it, not #omni's.
+        assertTrue(scoped.contains("\"calendar\":[{\"key\":\"f#0\"},{\"key\":\"f#1\"}]"), "only the subtask under #peddose: $scoped")
+        // On the Tasks tab every dated subtask still comes, as on Android.
+        val all = WebViews.build("f", "TaskForge.md", two, """{"today":"2026-10-08","query":{"tags":["peddose"]}}""")
+        assertTrue(all.contains("{\"key\":\"f#3\"}"), all)
+    }
+
+    @Test
+    fun searchNarrowsEveryViewByTitle() {
+        val r = views(""","query":{"text":"สไลด์"},"ganttFirst":"2026-10-06"""")
+        assertTrue(r.contains("{\"status\":\"TODO\",\"keys\":[]}"), r)
+        assertTrue(r.contains("{\"status\":\"IN_PROGRESS\",\"keys\":[\"f#3\"]}"), r)
+        assertTrue(r.contains("\"keys\":[\"f#3\"]}"), r)
+        // The calendar keeps the found task and its dated subtask, nothing else.
+        assertTrue(r.contains("\"calendar\":[{\"key\":\"f#3\"},{\"key\":\"f#4\"}]"), r)
+        assertFalse(r.contains("{\"key\":\"f#1\""), r)
+        // A subtask found by its own title comes without its parent.
+        val sub = views(""","query":{"text":"ซ้อม"}""")
+        assertTrue(sub.contains("\"calendar\":[{\"key\":\"f#4\"}]"), sub)
+    }
+
+    @Test
     fun ganttGroupsByProjectWithBarsFromStartToDue() {
         val r = views()
         // The project first, tasks without one last under their own caption.

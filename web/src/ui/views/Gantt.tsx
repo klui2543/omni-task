@@ -59,7 +59,8 @@ function besideOf(placed: Placed[], rowW: number): Beside {
 
 type Look = { tint: string; kind: 'task' | 'late' | 'done' | 'event' }
 
-function Lane(p: { title: string; bars: Bar[]; look: Look; dayW: number; rowW: number }) {
+/** One row of bars sharing a title; a tap anywhere on it opens it ([onClick]), as on Android, a bar its own. */
+function Lane(p: { title: string; bars: Bar[]; look: Look; dayW: number; rowW: number; onClick?: () => void }) {
   const inset = p.dayW < 20 ? 1 : 2
   const placed: Placed[] = [...p.bars].sort((a, b) => a.from - b.from).map((bar) => ({
     bar, x: p.dayW * bar.from + inset, w: Math.max(p.dayW * (bar.to - bar.from + 1) - inset * 2, 2),
@@ -71,8 +72,10 @@ function Lane(p: { title: string; bars: Bar[]; look: Look; dayW: number; rowW: n
       <span class="gsub">{sub}</span>
     </span>
   )
+  // A bar or the title beside it opens what it stands for, without the lane opening it again.
+  const own = (act?: () => void) => act && ((e: MouseEvent) => { e.stopPropagation(); act() })
   return (
-    <div class="glane">
+    <div class={`glane${p.onClick ? ' tappable' : ''}`} onClick={p.onClick}>
       {placed.map(({ bar, x, w }, i) => {
         const inside = w >= INSIDE_MIN
         const body = inside ? text(bar.sub) : null
@@ -81,14 +84,14 @@ function Lane(p: { title: string; bars: Bar[]; look: Look; dayW: number; rowW: n
         // A bar too short for its title is named by the title beside it (or, when there is none, by a label).
         const name = inside ? {} : beside ? { 'aria-hidden': true, tabIndex: -1 } : { 'aria-label': `${p.title} ${bar.sub}` }
         return bar.onClick
-          ? <button key={i} class={cls} style={style} onClick={bar.onClick} {...name}>{body}</button>
+          ? <button key={i} class={cls} style={style} onClick={own(bar.onClick)} {...name}>{body}</button>
           : <div key={i} class={cls} style={style} {...name}>{body}</div>
       })}
       {beside && (
         <button
           class={`gbeside ${p.look.kind}${beside.covers ? ' covers' : ''}`}
           style={{ left: `${beside.x}px`, width: `${Math.max(beside.w, 0)}px`, justifyContent: beside.alignEnd ? 'flex-end' : 'flex-start' }}
-          onClick={beside.at.bar.onClick}
+          onClick={own(beside.at.bar.onClick)}
           disabled={!beside.at.bar.onClick}
         >
           {text(beside.at.bar.sub, beside.alignEnd)}
@@ -154,8 +157,7 @@ export function Gantt(p: ViewCtx & { first: string; setFirst: (first: string) =>
 
   return (
     <div class="gwrap">
-      {!feed.connected && <CalendarConnect connected={false} note="" onConnect={p.onConnect} />}
-      {feed.note && <CalendarConnect connected note={feed.note} onConnect={p.onConnect} />}
+      <CalendarConnect {...feed} onConnect={p.onConnect} />
       <div class="gtools">
         <span class="grange">{rangeText(first, last, p.today)}</span>
         <div class="seg" role="group" aria-label="จำนวนวัน">
@@ -198,22 +200,27 @@ export function Gantt(p: ViewCtx & { first: string; setFirst: (first: string) =>
             {todayAt >= 0 && todayAt < days && <span class="gtoday" style={{ left: `${(todayAt + 0.5) * dayW}px` }} />}
 
             {eventRows.length > 0 && <div class="gcaption teal">Google Calendar</div>}
-            {eventRows.map(([title, list]) => (
-              <Lane
-                key={title}
-                title={title || 'ไม่มีชื่อ'}
-                look={{ tint: 'var(--teal)', kind: 'event' }}
-                dayW={dayW}
-                rowW={rowW}
-                bars={list.map((e) => ({
-                  from: Math.max(daysBetween(first, evBeginDay(e)), 0),
-                  to: Math.min(daysBetween(first, evLastDay(e)), days - 1),
-                  sub: eventSub(e, p.today),
-                  dim: evLastDay(e) < p.today,
-                  onClick: e.link ? () => window.open(e.link, '_blank', 'noopener,noreferrer') : undefined,
-                }))}
-              />
-            ))}
+            {eventRows.map(([title, list]) => {
+              // The lane opens the next of its events (or the first, when all are past), as on Android.
+              const next = list.find((e) => evLastDay(e) >= p.today) ?? list[0]
+              return (
+                <Lane
+                  key={title}
+                  title={title || 'ไม่มีชื่อ'}
+                  look={{ tint: 'var(--teal)', kind: 'event' }}
+                  dayW={dayW}
+                  rowW={rowW}
+                  onClick={next.link ? () => window.open(next.link, '_blank', 'noopener,noreferrer') : undefined}
+                  bars={list.map((e) => ({
+                    from: Math.max(daysBetween(first, evBeginDay(e)), 0),
+                    to: Math.min(daysBetween(first, evLastDay(e)), days - 1),
+                    sub: eventSub(e, p.today),
+                    dim: evLastDay(e) < p.today,
+                    onClick: e.link ? () => window.open(e.link, '_blank', 'noopener,noreferrer') : undefined,
+                  }))}
+                />
+              )
+            })}
 
             {groups.map((g) => (
               <div key={g.project}>
@@ -230,7 +237,7 @@ export function Gantt(p: ViewCtx & { first: string; setFirst: (first: string) =>
                   const open = () => p.open(t)
                   if (to < 0 || from >= days) return <EdgeLane key={s.key} title={t.title} sub={sub} before={to < 0} look={look} onClick={open} />
                   return (
-                    <Lane key={s.key} title={t.title} look={look} dayW={dayW} rowW={rowW}
+                    <Lane key={s.key} title={t.title} look={look} dayW={dayW} rowW={rowW} onClick={open}
                       bars={[{ from: Math.max(from, 0), to: Math.min(to, days - 1), sub, onClick: open }]} />
                   )
                 })}

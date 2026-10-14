@@ -7,11 +7,13 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Profile
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import app.omnitask.time.ChronoUnit
+import app.omnitask.time.NOON
 import app.omnitask.time.atTime
 import app.omnitask.time.hhmm
 import app.omnitask.time.minusDays
@@ -62,6 +64,8 @@ object WebFocus {
         val tonightBed: BedIn? = null,
         /** Tonight's wake time when it is not the usual one (a morning event no longer moves it). */
         val tonightWake: BedIn? = null,
+        /** Tonight's wake time was set on the watch (Android's `sleep.wake.watch`, through the settings file). */
+        val wakeFromWatch: Boolean = false,
         /** The text of the profile note (`Omni/โปรไฟล์.md`), when the vault has one. */
         val profile: String? = null,
         val events: List<EventIn> = emptyList(),
@@ -91,6 +95,9 @@ object WebFocus {
         val phase: String? = null,
         /** For an active event: how far into it the clock is, 0 to 1, where the red line crosses its card. */
         val progress: Float = 0f,
+        /** For a task late or open a long while: [extra] starts with when it last moved, and [weeks] has a bar a week. */
+        val stuck: Boolean = false,
+        val weeks: List<String> = emptyList(),
     )
 
     @Serializable
@@ -110,8 +117,16 @@ object WebFocus {
         val becauseAt: String? = null,
         /** The wake time was picked for tonight. */
         val wakePicked: Boolean = false,
+        /** The picked wake time came from the watch. */
+        val fromWatch: Boolean = false,
+        /** The wake time is tomorrow's (the night is planned ahead, in the daytime). */
+        val tomorrow: Boolean = false,
     )
 
+    /**
+     * The summary's third number: until bed at night (`night`), the free time left in the daytime (`free`). The night
+     * the sleep card plans is there all day long: last night's until its wake time, then tonight's.
+     */
     @Serializable
     data class Third(val kind: String, val minutes: Long, val night: Night? = null)
 
@@ -159,6 +174,8 @@ object WebFocus {
         val wake: String = "",
         /** The coming Saturday: where neglected future work and "do this Saturday" are scheduled. */
         val softDate: String,
+        /** Until noon after a night: the minutes of sleep it gave, from its planned bedtime. */
+        val lastNight: Long? = null,
     )
 
     private fun hm(t: LocalTime) = hhmm(t.hour, t.minute)
@@ -186,22 +203,38 @@ object WebFocus {
         // Read off the plan, so the numbers match the overdue card and the timeline, as on Android.
         val overdue = DayPlan.lateCount(plan)
 
-        // Tonight's bedtime: the one picked for this evening, or the usual one from the profile.
-        val eve = if (now.time >= LocalTime.of(18, 0)) today else today.minusDays(1)
-        val picked = s.tonightBed?.takeIf { it.evening == eve.toString() }?.let { runCatching { LocalTime.parse(it.time) }.getOrNull() }
-        val bedtime = picked ?: profile.sleep
-        val pickedWake = s.tonightWake?.takeIf { it.evening == eve.toString() }?.let { runCatching { LocalTime.parse(it.time) }.getOrNull() }
-        val night = DayPlan.night(events, profile, now, bedtime, pickedWake)
-        val third = if (night != null) {
-            Third(
-                "night", night.toBed,
-                Night(
-                    hm(night.bedAt.time), hm(night.wakeAt.time), night.toBed, night.sleep, night.because?.title,
-                    night.because?.let { hm(it.begin.time) }, pickedWake != null,
-                ),
-            )
+        // The night the sleep card plans, all day long: last night until its wake time, then tonight's (as Android's
+        // Focus screen). Bed and wake are the ones picked for that evening, or the usual ones from the profile.
+        val yesterday = today.minusDays(1)
+        fun pickOf(b: BedIn?, evening: LocalDate) =
+            b?.takeIf { it.evening == evening.toString() }?.let { runCatching { LocalTime.parse(it.time) }.getOrNull() }
+        fun bedOf(evening: LocalDate) = pickOf(s.tonightBed, evening) ?: profile.sleep
+        fun wakeOf(evening: LocalDate) = pickOf(s.tonightWake, evening)
+        val clock = now.time
+        val eve = if (clock < LocalTime.of(18, 0) && clock < (wakeOf(yesterday) ?: profile.wake)) yesterday else today
+        // From 18:00 until the wake time it is night: the summary counts down to bed instead of the free time left.
+        val isNight = eve == yesterday || clock >= LocalTime.of(18, 0)
+        val bedtime = bedOf(eve)
+        val pickedWake = wakeOf(eve)
+        val night = DayPlan.night(events, profile, now, bedtime, pickedWake, evening = eve)
+        // Until noon after a night: how long it gave, from its planned bedtime.
+        val lastNight = if (eve == today && clock < LocalTime.NOON) {
+            val bed = bedOf(yesterday)
+            val at = if (bed >= LocalTime.NOON) yesterday.atTime(bed) else today.atTime(bed)
+            DayPlan.night(events, profile, at, bed, wakeOf(yesterday), evening = yesterday)?.sleep
         } else {
-            Third("free", DayPlan.freeMinutesLeft(events, now, profile.wake, profile.sleep))
+            null
+        }
+        val nightOut = night?.let {
+            Night(
+                hm(it.bedAt.time), hm(it.wakeAt.time), it.toBed, it.sleep, it.because?.title, it.because?.let { e -> hm(e.begin.time) },
+                wakePicked = pickedWake != null, fromWatch = pickedWake != null && s.wakeFromWatch, tomorrow = it.wakeAt.date > today,
+            )
+        }
+        val third = if (night != null && isNight) {
+            Third("night", night.toBed, nightOut)
+        } else {
+            Third("free", DayPlan.freeMinutesLeft(events, now, profile.wake, profile.sleep), nightOut)
         }
 
         val pins = Countdown.parseAll(s.countdowns.ifEmpty { listOfNotNull(s.countdown) })
@@ -216,7 +249,7 @@ object WebFocus {
                 third = third,
                 countdowns = countdowns,
                 notices = brief.warnings,
-                plan = planOut(plan, today, now, blocked, progress, s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }),
+                plan = planOut(plan, today, now, blocked, progress, s.events.filter { it.link.isNotEmpty() }.associate { it.id to it.link }, tasks),
                 suggestions = brief.suggestions.map { SuggestionOut(it.id, it.task.key, it.kind.name, it.task.title, it.text) },
                 waiting = brief.waiting.map { WaitingOut(it.key, Focus.waitingFor(it), Focus.ageDays(it, today)) },
                 future = brief.future.map { it.key },
@@ -233,6 +266,7 @@ object WebFocus {
                 evening = eve.toString(),
                 wake = hm(pickedWake ?: profile.wake),
                 softDate = Focus.softDate(today).toString(),
+                lastNight = lastNight,
             ),
         )
     }
@@ -251,7 +285,7 @@ object WebFocus {
      */
     private fun planOut(
         plan: List<DayPlan.Section>, today: LocalDate, now: LocalDateTime, blocked: Set<Task>, progress: Map<String, Pair<Int, Int>>,
-        links: Map<Long, String> = emptyMap(),
+        links: Map<Long, String> = emptyMap(), tasks: List<Task> = emptyList(),
     ): List<Section> {
         val nowTime = now.time
         val inEvent = plan.any { sec -> sec.items.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE } }
@@ -271,7 +305,7 @@ object WebFocus {
                     nowShown = true
                 }
                 items += when (item) {
-                    is DayPlan.Item.TaskItem -> taskItem(item, today, item.task in blocked, progress)
+                    is DayPlan.Item.TaskItem -> taskItem(item, today, item.task in blocked, progress, tasks)
                     is DayPlan.Item.EventItem -> {
                         val e = item.event
                         val phase = DayPlan.phase(e, now)
@@ -302,13 +336,19 @@ object WebFocus {
         }
     }
 
-    private fun taskItem(item: DayPlan.Item.TaskItem, today: LocalDate, blocked: Boolean, progress: Map<String, Pair<Int, Int>>): PlanItem {
+    private fun taskItem(
+        item: DayPlan.Item.TaskItem, today: LocalDate, blocked: Boolean, progress: Map<String, Pair<Int, Int>>, tasks: List<Task>,
+    ): PlanItem {
         val t = item.task
         val late = t.isOpen && t.due?.let { it < today } == true
         val done = t.status == Status.DONE
+        // Late or long-open: how it has moved (a bar a week) and when it last did, one tap from writing why (StuckLog).
+        val stuck = !done && StuckLog.matters(t, today)
+        val subs = if (stuck) WebStuck.subtasksOf(t, tasks) else emptyList()
         // Every row is today's, so "due today" would only repeat: a lead is for overdue work only, and a finished task is a title.
         val lead = if (late && !done) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
         val sub = if (done) emptyList() else listOfNotNull(
+            if (stuck) WebStuck.status(t, subs, today) else null,
             if (t.status == Status.IN_PROGRESS) tr("กำลังทำ", "In progress") else null,
             Projects.projectOf(t),
             progress[t.key]?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
@@ -316,7 +356,7 @@ object WebFocus {
         return PlanItem(
             "task", item.time?.let { hm(it) }, t.key, t.title, lead, late,
             if (sub.isEmpty()) null else sub.joinToString(", "), blocked,
-            done = done,
+            done = done, stuck = stuck, weeks = if (stuck) StuckLog.weeks(t, subs, today).map { it.name } else emptyList(),
         )
     }
 }
