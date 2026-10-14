@@ -225,7 +225,7 @@ export function FocusPage(p: PageProps) {
                   <div class="donut" role="img" aria-label={`เสร็จแล้ว ${f.ring.done} จาก ${f.ring.total}`} style={{ '--pct': `${pct}%` }}>
                     <div class="donut-in"><span class="donut-num">{f.ring.done}/{f.ring.total}</span><span class="muted micro">เสร็จแล้ว</span></div>
                   </div>
-                  <div class="stat"><div class={`stat-num${f.ring.overdue > 0 ? ' red' : ''}`}>{f.ring.overdue}</div><div class="muted small">เลยกำหนด</div></div>
+                  <div class="stat"><div class={`stat-num${f.ring.overdue > 0 ? ' red' : ''}`}>{f.ring.overdue}</div><div class="muted small">ค้างอยู่</div></div>
                   <div class="stat"><div class="stat-num">{f.ring.events}</div><div class="muted small">นัดวันนี้</div></div>
                   {night
                     ? <div class="stat"><div class={`stat-num${night.toBed < 30 ? ' amber' : ''}`}>{hm(night.toBed)}</div><div class="muted small">ก่อนนอน</div></div>

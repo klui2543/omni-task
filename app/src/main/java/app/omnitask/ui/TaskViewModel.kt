@@ -369,7 +369,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val today = LocalDate.now()
         val now = CalendarReader.month(app, today) + CalendarReader.events(app, today.minusDays(7).atStartOfDay(), today.plusDays(35).atStartOfDay())
         val other = shownMonth?.takeIf { it.withDayOfMonth(1) != LocalDate.now().withDayOfMonth(1) }?.let { CalendarReader.month(app, it) }.orEmpty()
-        (now + other).distinctBy { it.id to it.begin }
+        CalendarEvent.distinct(now + other)
     }.getOrDefault(emptyList())
 
     /** Re-reads only the calendar (not the vault) once a sync settles, then redraws the widgets so they follow too. */
@@ -879,7 +879,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val more = withContext(Dispatchers.IO) { runCatching { CalendarReader.month(getApplication(), day) }.getOrDefault(emptyList()) }
             if (more.isEmpty()) return@launch
-            _state.update { s -> s.copy(events = (s.events + more).distinctBy { it.id to it.begin }) }
+            _state.update { s -> s.copy(events = CalendarEvent.distinct(s.events + more)) }
         }
     }
 

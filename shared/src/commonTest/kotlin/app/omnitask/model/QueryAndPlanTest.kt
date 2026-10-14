@@ -130,6 +130,31 @@ class QueryAndPlanTest {
     }
 
     @Test
+    fun focusNumbersAreReadOffThePlan() {
+        // The owner's day: one task with no time, one scheduled for a day gone by, and an all-day event that two
+        // calendars on the phone both hold, next to a timed one.
+        val tasks = listOf(
+            t("- [ ] ปรับระบบป้าย ⏳ 2026-10-07"),
+            t("- [ ] How to ดูหุ้น #อนาคต ⏳ 2026-10-05"),
+            t("- [x] เสร็จเมื่อวาน 📅 2026-10-06 ✅ 2026-10-06"),
+        )
+        val allDay = CalendarEvent(7, "ตารางเวรออก", today.atStartOfDay(), today.plusDays(1).atStartOfDay(), allDay = true)
+        val events = CalendarEvent.distinct(
+            listOf(
+                allDay,
+                allDay.copy(id = 3),
+                CalendarEvent(5, "ทำเล็บ", LocalDateTime.parse("2026-10-07T18:00"), LocalDateTime.parse("2026-10-07T19:00")),
+            ),
+        )
+        assertEquals(listOf(3L, 5L), events.map { it.id })
+        val plan = DayPlan.build(tasks, events, today, includeDone = true)
+        // Scheduled for a day gone by and not due: not overdue by date, but it is in the overdue card, so it counts.
+        assertEquals(1, DayPlan.lateCount(plan))
+        // All-day events count too, as many as the timeline shows.
+        assertEquals(2, DayPlan.eventCount(plan))
+    }
+
+    @Test
     fun multiLevelSortKeepsMissingValuesLast() {
         val today = LocalDate.parse("2026-10-07")
         val a = TaskLine.parse("- [ ] ก ⏫ 📅 2026-10-09")!!

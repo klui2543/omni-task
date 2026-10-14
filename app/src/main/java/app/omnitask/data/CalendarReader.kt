@@ -166,7 +166,7 @@ object CalendarReader {
                 }
             }
         }
-        return out
+        return CalendarEvent.distinct(out)
     }
 
     fun month(context: Context, anyDay: LocalDate): List<CalendarEvent> {

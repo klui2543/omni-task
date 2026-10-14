@@ -171,7 +171,8 @@ object WebFocus {
         // Done today counts anything ticked today that belonged to today (or was overdue), as on Android.
         val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
         val doneToday = tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
-        val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
+        // Read off the plan, so the numbers match the overdue card and the timeline, as on Android.
+        val overdue = DayPlan.lateCount(plan)
 
         // Tonight's bedtime: the one picked for this evening, or the usual one from the profile.
         val eve = if (now.time >= LocalTime.of(18, 0)) today else today.minusDays(1)
@@ -199,7 +200,7 @@ object WebFocus {
 
         return json.encodeToString(
             Out(
-                ring = Ring(doneToday, openToday + doneToday, overdue, todayEvents.count { !it.allDay }),
+                ring = Ring(doneToday, openToday + doneToday, overdue, DayPlan.eventCount(plan)),
                 third = third,
                 countdown = countdown,
                 notices = brief.warnings,

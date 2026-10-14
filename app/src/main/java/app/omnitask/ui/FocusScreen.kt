@@ -78,7 +78,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     // Done today counts anything ticked today that belonged to today (or was overdue).
     val doneToday = state.tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
     val total = openToday + doneToday
-    val overdue = brief.must.count { t -> t.due?.let { it < today } == true }
+    // Read off the plan, so the numbers match the overdue card and the timeline below.
+    val overdue = DayPlan.lateCount(plan)
+    val eventCount = DayPlan.eventCount(plan)
     // The clock the timeline follows: it moves on at every minute, so the now line and the running event keep up with real time.
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) {
@@ -137,8 +139,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     DoneRing(doneToday, total)
                     Row(Modifier.weight(1f).padding(start = 12.dp).height(IntrinsicSize.Min)) {
-                        Stat("$overdue", tr("เลยกำหนด", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
-                        Stat("${events.count { !it.allDay }}", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
+                        Stat("$overdue", tr("ค้างอยู่", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
+                        Stat("$eventCount", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
                         if (night != null && isNight) {
                             Stat(hm(night.toBed), tr("ก่อนนอน", "Until bed"), if (night.toBed < 30) C.amber else C.text, Modifier.weight(1f))
                         } else {
