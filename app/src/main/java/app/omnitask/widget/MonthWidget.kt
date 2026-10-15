@@ -9,6 +9,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.Bundle
+import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -31,7 +33,7 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
-import androidx.glance.appwidget.compose
+import androidx.glance.appwidget.runComposition
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.provideContent
@@ -44,6 +46,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,7 +94,13 @@ import app.omnitask.notify.CalendarEvent
 import app.omnitask.notify.Scheduler
 import app.omnitask.ui.Palette
 import app.omnitask.ui.Palettes
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
@@ -103,23 +113,27 @@ import app.omnitask.time.*
  * under the grid. ‹ › move this widget a month at a time; the title brings it back to this month and today. Frames
  * and emoji are set from the pencil.
  *
- * Which month and day show is the widget's own state, read while composing, and the work for several months around
- * it is loaded once into [MonthSource]: a tap recomposes from what is already in memory, so the widget answers at
- * once. A Glance session keeps its first composition alive, so data loaded before it would never change; a new
- * [STAMP] (see [OmniWidgets.refresh]) tells the composition to load again after the vault or the calendar changed.
+ * Which month and day show is the widget's own state, saved with it and kept in memory by [MonthLive], and the work
+ * for several months around it is loaded once into [MonthSource]: a tap recomposes from what is already in memory.
+ * A tap does not go through Glance's own session for the widget (see [MonthLive] for why). A new [STAMP] (see
+ * [OmniWidgets.refresh]) tells the composition to load again after the vault or the calendar changed.
  */
 class MonthWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
     override val stateDefinition = PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val widgetId = MonthLive.key(context, id)
         val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
-        val first = MonthSource.load(context, nav(prefs).fresh(System.currentTimeMillis()).offset, prefs[STAMP] ?: 0L)
+        val first = MonthSource.load(
+            context, (MonthLive.navs[widgetId] ?: nav(prefs)).fresh(System.currentTimeMillis()).offset, maxOf(prefs[STAMP] ?: 0L, MonthLive.stamp.value),
+        )
         provideContent {
             val state = currentState<Preferences>()
-            // Left alone for ten minutes, the widget is back on today (an alarm redraws it then; see MonthPick).
-            val nav = nav(state).fresh(System.currentTimeMillis())
-            val stamp = state[STAMP] ?: 0L
+            // What a tap set in memory is the newest; the saved state stands in after the app was closed. Left alone for
+            // ten minutes, the widget is back on today (an alarm redraws it then; see MonthPick).
+            val nav = (MonthLive.navs[widgetId] ?: nav(state)).fresh(System.currentTimeMillis())
+            val stamp = maxOf(state[STAMP] ?: 0L, MonthLive.stamp.value)
             var source by remember { mutableStateOf(first) }
             // Load again only when the data changed or the month moved past what is loaded.
             LaunchedEffect(nav.offset, stamp) {
@@ -151,11 +165,17 @@ class MonthWidget : GlanceAppWidget() {
             p[TOUCHED] = nav.touchedAt
         }
 
-        /** Applies [change] to the widget's state, redraws it, and sets the alarm that brings it back to today. */
+        /**
+         * Applies [change] to the widget's place, shows it at once (see [MonthLive]), saves it for after the app is
+         * closed, and sets the alarm that brings the widget back to today.
+         */
         internal suspend fun act(context: Context, id: GlanceId, change: (MonthNav, Long) -> MonthNav) {
             val now = System.currentTimeMillis()
-            updateAppWidgetState(context, id) { p -> save(p, change(nav(p).fresh(now), now)) }
-            if (!push(context, id)) MonthWidget().update(context, id)
+            val widgetId = MonthLive.key(context, id)
+            val current = MonthLive.navs[widgetId] ?: nav(getAppWidgetState(context, PreferencesGlanceStateDefinition, id))
+            val next = change(current.fresh(now), now)
+            MonthLive.show(context, id, next)
+            updateAppWidgetState(context, id) { p -> save(p, next) }
             runCatching {
                 Scheduler.scheduleOneOff(
                     context,
@@ -164,25 +184,11 @@ class MonthWidget : GlanceAppWidget() {
             }
         }
 
-        /**
-         * Draws the widget here and hands it to the launcher at once. [update] goes through Glance's session for the
-         * widget, and when that session has ended (Glance ends it a few seconds after the last event) it starts a new
-         * one through WorkManager and waits until it is ready: about five seconds on the owner's phone, with every tap
-         * after it waiting in line, so the widget froze and then jumped. False when it could not be drawn here.
-         */
-        @OptIn(ExperimentalGlanceApi::class)
-        private suspend fun push(context: Context, id: GlanceId): Boolean = runCatching {
-            val manager = AppWidgetManager.getInstance(context)
-            val widgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
-            val state = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
-            val views = MonthWidget().compose(context, id, options = manager.getAppWidgetOptions(widgetId), state = state)
-            manager.updateAppWidget(widgetId, views)
-        }.isSuccess
-
         /** Redraws every month widget with fresh data. */
         suspend fun refresh(context: Context) {
-            // One stamp for all of them, so they share one load.
+            // One stamp for all of them, so they share one load; the compositions MonthLive keeps read it from memory.
             val stamp = System.currentTimeMillis()
+            Snapshot.withMutableSnapshot { MonthLive.stamp.value = stamp }
             GlanceAppWidgetManager(context).getGlanceIds(MonthWidget::class.java).forEach { id ->
                 runCatching {
                     updateAppWidgetState(context, id) { it[STAMP] = stamp }
@@ -190,6 +196,77 @@ class MonthWidget : GlanceAppWidget() {
                 }
             }
         }
+    }
+}
+
+/**
+ * The month widget's composition kept running inside the app while the widget is in use, so a tap redraws only what
+ * changed and quick taps fold into one redraw.
+ *
+ * Going through Glance's own session was slow on the owner's phone: [GlanceAppWidget.update] waits for that session,
+ * which Glance runs through WorkManager and ends a few seconds after the last event, and starting it again took about
+ * five seconds with every later tap waiting behind it. Drawing the whole widget afresh for each tap took about half a
+ * second, and the taps queued up behind each other. Here the composition runs in the app's own process (Glance's
+ * [runComposition]), the tapped place is snapshot state it reads ([navs]), and each new picture goes straight to
+ * [AppWidgetManager]. Glance ends such a composition 45 seconds after it starts; while the widget was tapped in the last
+ * [KEEP_MS] it is started again in the background, so the next tap finds it ready.
+ */
+internal object MonthLive {
+    /** Where each widget is, by app widget id; set by a tap, read while composing. */
+    val navs = mutableStateMapOf<Int, MonthNav>()
+
+    /** The data stamp [MonthWidget.refresh] set last, for compositions that started before it. */
+    val stamp = mutableStateOf(0L)
+
+    private const val KEEP_MS = 90_000L
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val running = HashMap<Int, Job>()
+
+    @Volatile
+    private var lastTap = 0L
+
+    fun key(context: Context, id: GlanceId): Int = runCatching { GlanceAppWidgetManager(context).getAppWidgetId(id) }.getOrDefault(-1)
+
+    fun set(widgetId: Int, nav: MonthNav) {
+        Snapshot.withMutableSnapshot { navs[widgetId] = nav }
+    }
+
+    /** Shows [nav] on the widget: the kept composition redraws with it, or one is started for it. */
+    fun show(context: Context, id: GlanceId, nav: MonthNav) {
+        val widgetId = key(context, id)
+        lastTap = System.currentTimeMillis()
+        set(widgetId, nav)
+        val app = context.applicationContext
+        keep(app, id, widgetId, null) { views -> AppWidgetManager.getInstance(app).updateAppWidget(widgetId, views) }
+    }
+
+    /**
+     * Keeps [id]'s composition running and hands each new picture to [publish]; [options] stands in for the launcher's
+     * (the emulator test has no launcher). Falls back to Glance's own update when the composition cannot run here.
+     */
+    @OptIn(ExperimentalGlanceApi::class)
+    fun keep(context: Context, id: GlanceId, widgetId: Int, options: Bundle?, publish: (RemoteViews) -> Unit): Job = synchronized(running) {
+        running[widgetId]?.takeIf { it.isActive } ?: scope.launch {
+            try {
+                do {
+                    val began = System.currentTimeMillis()
+                    val state = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
+                    val sizes = options ?: AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+                    var drawn = false
+                    MonthWidget().runComposition(context, id, options = sizes, state = state).conflate().collect { publish(it); drawn = true }
+                    // Nothing drawn here: Glance's own update takes over. One that ends at once would only spin.
+                    if (!drawn) {
+                        MonthWidget().update(context, id)
+                        break
+                    }
+                    if (System.currentTimeMillis() - began < 1_000) break
+                } while (System.currentTimeMillis() - lastTap < KEEP_MS)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                runCatching { MonthWidget().update(context, id) }
+            }
+        }.also { running[widgetId] = it }
     }
 }
 

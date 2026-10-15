@@ -1,6 +1,12 @@
 package app.omnitask.widget
 
 import android.app.Application
+import android.appwidget.AppWidgetManager
+import android.os.Bundle
+import android.util.SizeF
+import androidx.glance.GlanceId
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeout
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -110,6 +116,41 @@ class WidgetShotsTest {
             }
         }
         File(out, "$name.png").outputStream().use { checkNotNull(bmp).compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /**
+     * The composition kept for taps (MonthLive) redraws when a tap sets the widget's place in memory, quickly and
+     * without Glance's session. Writes how long each redraw took next to the pictures.
+     */
+    @Test
+    fun aTapRedrawsTheKeptComposition() = runBlocking<Unit> {
+        MonthSource.sample = sample(CellStyle.TINT)
+        // A widget id no launcher has, as Glance makes for previews.
+        val id = Class.forName("androidx.glance.appwidget.AppWidgetUtilsKt").getMethod("createFakeAppWidgetId").invoke(null) as GlanceId
+        val widgetId = MonthLive.key(context, id)
+        val options = Bundle().apply {
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 360)
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 360)
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 480)
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 480)
+            putParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, arrayListOf(SizeF(360f, 480f)))
+        }
+        val drawn = Channel<Long>(Channel.UNLIMITED)
+        val job = MonthLive.keep(context, id, widgetId, options) { drawn.trySend(System.nanoTime()) }
+        try {
+            withTimeout(20_000) { drawn.receive() }
+            val today = LocalDate.now()
+            val times = (21..25).map { day ->
+                while (drawn.tryReceive().isSuccess) Unit
+                val start = System.nanoTime()
+                MonthLive.set(widgetId, app.omnitask.model.MonthNav(picked = LocalDate(today.year, today.monthNumber, day), touchedAt = System.currentTimeMillis()))
+                (withTimeout(5_000) { drawn.receive() } - start) / 1_000_000
+            }
+            File(out, "timings.txt").appendText("kept composition, taps ${times.joinToString(" ")} ms\n")
+        } finally {
+            job.cancel()
+            MonthLive.navs.remove(widgetId)
+        }
     }
 
     @Test
