@@ -259,6 +259,9 @@ data class QuickAddRequest(
     /** Text shared from another app, and its link, which goes into the task's details. */
     val text: String = "",
     val link: String? = null,
+    /** A calendar event instead of a task, on [day] (today when null). */
+    val event: Boolean = false,
+    val day: LocalDate? = null,
 )
 
 /** One entry in the assistant conversation. */
@@ -1621,6 +1624,27 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 { e -> _state.update { it.copy(message = tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}")) } },
             )
             reload()
+        }
+    }
+
+    /** Adds an event to calendar [calendarId]: all day when [start] is null, else [minutes] long from [start]. */
+    fun addEvent(calendarId: Long, title: String, day: LocalDate, start: kotlinx.datetime.LocalTime?, minutes: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                val id = if (start == null) {
+                    CalendarReader.insertAllDay(app, calendarId, title, day)
+                } else {
+                    CalendarReader.insert(app, calendarId, title, day.atTime(start), day.atTime(start).plusMinutes(minutes.toLong()))
+                }
+                if (id != null) {
+                    // Up to Google at once, so the event shows on the owner's other devices too.
+                    CalendarReader.requestSync(app, force = true)
+                    runCatching { OmniWidgets.refresh(app) }
+                }
+                id
+            }
+            _state.update { it.copy(message = if (id != null) tr("ลงปฏิทินแล้ว: $title", "Added to calendar: $title") else tr("ลงปฏิทินไม่ได้", "Cannot add the event")) }
         }
     }
 

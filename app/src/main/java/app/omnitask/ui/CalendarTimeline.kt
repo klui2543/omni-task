@@ -149,6 +149,10 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                 rangeLabel(start, end, state.today), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
+            // A new event on the first day shown, or today when it is in view.
+            SquareButton(Ic.event, tr("เพิ่มนัดลงปฏิทิน", "New calendar event"), {
+                vm.requestQuickAdd(QuickAddRequest(event = true, day = if (showsToday) state.today else start))
+            }, modifier = Modifier.padding(end = 6.dp))
             TodayButton({ anchorText = state.today.toString(); toNow++ }, Modifier.padding(end = 6.dp))
             val (prev, next) = when (days) {
                 1 -> tr("วันก่อน", "Previous day") to tr("วันถัดไป", "Next day")

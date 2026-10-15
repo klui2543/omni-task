@@ -58,7 +58,7 @@ import app.omnitask.time.*
 /** Add a task in one line; day words, times, #tags and ! marks are read out of the sentence. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, initial: String = "", link: String? = null, onAskAssistant: (String) -> Unit, onDismiss: () -> Unit) {
+fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, initial: String = "", link: String? = null, onAskAssistant: (String) -> Unit, onEvent: (String) -> Unit = {}, onDismiss: () -> Unit) {
     var field by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     val text = field.text
     fun setText(value: String) { field = TextFieldValue(value, TextRange(value.length)) }
@@ -112,7 +112,15 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     }
 
     SheetFrame(onDismiss) {
-        Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("เพิ่มงาน", "New task"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = C.text)
+            // The same sentence as a calendar event instead: day words and the time carry over.
+            Text(
+                tr("ลงปฏิทินแทน", "Calendar event instead"),
+                Modifier.clip(RoundedCornerShape(16.dp)).background(C.raised).clickable { onEvent(text.trim()) }.padding(horizontal = 12.dp, vertical = 7.dp),
+                color = C.accentText, fontSize = TS.body, maxLines = 1,
+            )
+        }
         BasicTextField(
             value = field,
             onValueChange = { field = it },
