@@ -56,8 +56,23 @@ class CalendarSyncTest {
             put(CalendarContract.Calendars.OWNER_ACCOUNT, "omni-test")
             put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, "UTC")
         }
-        val uri = context.contentResolver.insert(syncAdapter(CalendarContract.Calendars.CONTENT_URI), values)
-        calendarId = ContentUris.parseId(checkNotNull(uri) { "the provider refused the test calendar" })
+        // A fresh emulator's provider can answer the first insert before it is ready (an id of 0, no calendar behind
+        // it), so the calendar counts as made only once it shows up in the list; otherwise it is made again.
+        var made = false
+        for (attempt in 1..5) {
+            val uri = context.contentResolver.insert(syncAdapter(CalendarContract.Calendars.CONTENT_URI), values)
+            val id = uri?.let { runCatching { ContentUris.parseId(it) }.getOrDefault(-1L) } ?: -1L
+            if (id > 0) {
+                calendarId = id
+                val end = System.currentTimeMillis() + 5_000
+                while (System.currentTimeMillis() < end && CalendarReader.calendars(context).none { it.id == id }) Thread.sleep(250)
+                made = CalendarReader.calendars(context).any { it.id == id }
+                if (made) break
+                context.contentResolver.delete(syncAdapter(CalendarContract.Calendars.CONTENT_URI), "${CalendarContract.Calendars._ID} = ?", arrayOf("$id"))
+            }
+            Thread.sleep(1_000L * attempt)
+        }
+        check(made) { "the provider would not keep the test calendar" }
         context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).edit()
             .putString("vault", "content://com.android.externalstorage.documents/tree/primary%3AVault").commit()
     }
