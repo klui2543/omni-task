@@ -75,15 +75,16 @@ import app.omnitask.time.*
 /**
  * The month on the home screen (4×5): a grid from Sunday with the owner's coloured frames and emoji, red Sundays and
  * public holidays, a dot on days with work or events, and today and tomorrow listed below. The grid is drawn as one
- * picture, since a widget cannot draw a frame running across days; a tap layer over it opens the day in the app.
- * ‹ › move this widget a month at a time; the title brings it back to this month.
+ * picture, since a widget cannot draw a frame running across days; a tap layer over it lists the tapped day's work
+ * under the grid. ‹ › move this widget a month at a time; the title brings it back to this month and today. Frames
+ * and emoji are set from the pencil.
  */
 class MonthWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val offset = MonthWidgetState.offset(context, id)
-        val data = MonthData.load(context, offset)
+        val data = MonthData.load(context, offset, MonthWidgetState.day(context, id))
         provideContent { MonthContent(context, data) }
     }
 }
@@ -101,15 +102,36 @@ internal object MonthWidgetState {
     suspend fun offset(context: Context, id: GlanceId): Int = prefs(context).getInt(key(context, id), 0)
 
     suspend fun set(context: Context, id: GlanceId, offset: Int) = prefs(context).edit().putInt(key(context, id), offset).apply()
+
+    private suspend fun dayKey(context: Context, id: GlanceId) = "day.${GlanceAppWidgetManager(context).getAppWidgetId(id)}"
+
+    /** The day tapped on this widget, whose work the list shows; null shows today and tomorrow. */
+    suspend fun day(context: Context, id: GlanceId): LocalDate? =
+        prefs(context).getString(dayKey(context, id), null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
+    suspend fun setDay(context: Context, id: GlanceId, day: LocalDate?) =
+        prefs(context).edit().apply { if (day == null) remove(dayKey(context, id)) else putString(dayKey(context, id), day.toString()) }.apply()
 }
 
 private val DELTA = ActionParameters.Key<Int>("delta")
+private val DAY = ActionParameters.Key<String>("day")
 
-/** ‹ and › move the widget a month; a delta of 0 brings it back to this month. */
+/** ‹ and › move the widget a month; a delta of 0 brings it back to this month and to today's list. */
 class MonthShift : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val delta = parameters[DELTA] ?: 0
         MonthWidgetState.set(context, glanceId, if (delta == 0) 0 else MonthWidgetState.offset(context, glanceId) + delta)
+        if (delta == 0) MonthWidgetState.setDay(context, glanceId, null)
+        MonthWidget().update(context, glanceId)
+    }
+}
+
+/** A tap on a day lists that day's work under the grid; tapping it again goes back to today. */
+class MonthPick : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val day = parameters[DAY]?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return
+        val now = MonthWidgetState.day(context, glanceId)
+        MonthWidgetState.setDay(context, glanceId, if (now == day || day == LocalDate.now()) null else day)
         MonthWidget().update(context, glanceId)
     }
 }
@@ -133,6 +155,8 @@ internal class MonthData(
     val holidays: Map<LocalDate, String>,
     /** Days with open work or an event, for the dot. */
     val busy: Set<LocalDate>,
+    /** The day tapped, ringed on the grid; null when the list shows today and tomorrow. */
+    val selected: LocalDate?,
     val agenda: List<Pair<LocalDate, List<Item>>>,
 ) {
     sealed interface Item {
@@ -141,14 +165,15 @@ internal class MonthData(
     }
 
     companion object {
-        suspend fun load(context: Context, offset: Int): MonthData = withContext(Dispatchers.IO) {
+        suspend fun load(context: Context, offset: Int, selected: LocalDate? = null): MonthData = withContext(Dispatchers.IO) {
             Lang.load(context)
             Appearance.load(context)
             val today = LocalDate.now()
             val month = today.withDayOfMonth(1).plusMonths(offset.toLong())
             val days = MonthGrid.days(month)
-            val from = minOf(days.first(), today)
-            val to = maxOf(days.last(), today.plusDays(1))
+            val listed = if (selected == null || selected == today) listOf(today, today.plusDays(1)) else listOf(selected)
+            val from = minOf(days.first(), listed.first())
+            val to = maxOf(days.last(), listed.last())
             val holidayIds = runCatching { CalendarReader.calendars(context).filter { it.holiday }.map { it.id }.toSet() }.getOrDefault(emptySet())
             val events = runCatching { CalendarReader.events(context, from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
                 .filter { it.calendarId !in holidayIds }
@@ -157,13 +182,13 @@ internal class MonthData(
             fun tasksOn(d: LocalDate) = tasks.filter { (it.due ?: it.scheduled) == d }
             fun eventsOn(d: LocalDate) = events.filter { onDay(it, d) }
             val busy = days.filter { d -> tasksOn(d).isNotEmpty() || eventsOn(d).isNotEmpty() }.toSet()
-            val agenda = listOf(today, today.plusDays(1)).map { d ->
+            val agenda = listed.map { d ->
                 val events: List<Item> = eventsOn(d).sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map {
                     Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time))
                 }
                 d to events + tasksOn(d).map { Item.Todo(it) }
             }
-            MonthData(today, month, offset, MonthMarksStore.local(context), holidays, busy, agenda)
+            MonthData(today, month, offset, MonthMarksStore.local(context), holidays, busy, selected?.takeIf { it != today }, agenda)
         }
 
         /** An all-day event ends at the next midnight; a timed one counts on every day it touches. */
@@ -218,7 +243,9 @@ private fun MonthContent(context: Context, data: MonthData) {
                     Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
                         for (i in 0 until 7) {
                             val d = days[w * 7 + i]
-                            Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(openMonth(context, d, pick = true))) {}
+                            // With the list showing, a tap lists the day's work there; too small for a list, it opens the app.
+                            val tap = if (showAgenda) actionRunCallback<MonthPick>(actionParametersOf(DAY to d.toString())) else open(context)
+                            Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(tap)) {}
                         }
                     }
                 }
@@ -237,13 +264,15 @@ private fun Header(context: Context, data: MonthData) {
         val title = GlanceModifier.defaultWeight().padding(start = 2.dp)
         Text(
             MonthGrid.title(data.month),
-            if (data.offset != 0) title.clickable(actionRunCallback<MonthShift>(actionParametersOf(DELTA to 0))) else title.clickable(openMonth(context, data.month, pick = false)),
+            if (data.offset != 0 || data.selected != null) title.clickable(actionRunCallback<MonthShift>(actionParametersOf(DELTA to 0))) else title.clickable(open(context)),
             style = TextStyle(color = cp { it.text }, fontSize = 17.sp, fontWeight = androidx.glance.text.FontWeight.Medium),
             maxLines = 1,
         )
         IconButton(R.drawable.ic_w_back, tr("เดือนก่อน", "Previous month"), cp { it.muted }, actionRunCallback<MonthShift>(actionParametersOf(DELTA to -1)))
         IconButton(R.drawable.ic_w_next, tr("เดือนถัดไป", "Next month"), cp { it.muted }, actionRunCallback<MonthShift>(actionParametersOf(DELTA to 1)))
-        IconButton(R.drawable.ic_w_pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), cp { it.accentText }, openMonth(context, data.month, pick = false))
+        IconButton(R.drawable.ic_w_pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), cp { it.accentText },
+            // The pencil is the way into frames and emoji; a day picked on the widget comes along chosen.
+            data.selected?.let { openMonth(context, it, pick = true) } ?: openMonth(context, data.month, pick = false))
         Spacer(GlanceModifier.width(4.dp))
         Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 30)
     }
@@ -260,7 +289,7 @@ private fun IconButton(icon: Int, description: String, tint: ColorProvider, acti
 private fun Agenda(context: Context, data: MonthData) {
     LazyColumn(GlanceModifier.fillMaxSize()) {
         data.agenda.forEachIndexed { index, (day, items) ->
-            item { DayHead(data, day, index == 0) }
+            item { DayHead(data, day, index > 0) }
             data.holidays[day]?.let { name -> item { Label(name, cp { it.red }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 2.dp)) } }
             if (items.isEmpty() && data.holidays[day] == null) {
                 item { Label(tr("ว่าง", "Nothing planned"), cp { it.faint }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 4.dp)) }
@@ -271,13 +300,15 @@ private fun Agenda(context: Context, data: MonthData) {
 }
 
 @Composable
-private fun DayHead(data: MonthData, day: LocalDate, today: Boolean) {
-    Row(GlanceModifier.fillMaxWidth().padding(start = 4.dp, top = if (today) 0.dp else 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun DayHead(data: MonthData, day: LocalDate, gap: Boolean) {
+    Row(GlanceModifier.fillMaxWidth().padding(start = 4.dp, top = if (gap) 6.dp else 0.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         val stickers = data.marks.stickersOn(day).joinToString("")
-        Label(
-            (if (today) tr("วันนี้ ", "Today ") + MonthGrid.dayMonth(day) else tr("พรุ่งนี้", "Tomorrow")) + if (stickers.isEmpty()) "" else " $stickers",
-            cp { it.muted }, 11.5.sp,
-        )
+        val name = when (day) {
+            data.today -> tr("วันนี้ ", "Today ") + MonthGrid.dayMonth(day)
+            data.today.plusDays(1) -> tr("พรุ่งนี้ ", "Tomorrow ") + MonthGrid.dayMonth(day)
+            else -> MonthGrid.heads[(day.dayOfWeek.ordinal + 1) % 7] + " " + MonthGrid.dayMonth(day)
+        }
+        Label(name + if (stickers.isEmpty()) "" else " $stickers", if (day == data.selected) cp { it.accentText } else cp { it.muted }, 11.5.sp, bold = day == data.selected)
         data.marks.frameOn(day)?.let { f ->
             val (n, of) = f.position(day) ?: return@let
             val color = Color(f.color.argb)
@@ -377,6 +408,7 @@ internal class MonthPainter(private val context: Context, private val p: Palette
         // Day numbers, dots and emoji.
         val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(12.5f); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT }
         val todayBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb() }
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb(); style = Paint.Style.STROKE; strokeWidth = dp(1.6f) }
         val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.lime.toArgb() }
         val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(10f); textAlign = Paint.Align.RIGHT }
         val more = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(8.5f); textAlign = Paint.Align.RIGHT; color = p.muted.toArgb() }
@@ -385,6 +417,7 @@ internal class MonthPainter(private val context: Context, private val p: Palette
             val r = rect(i)
             val inMonth = d.monthNumber == data.month.monthNumber
             val cy = r.top + dp(if (small) 3f else 5f) + dp(11f)
+            if (d == data.selected) c.drawCircle(r.centerX(), cy, dp(11.5f), ring)
             if (d == data.today) {
                 c.drawCircle(r.centerX(), cy, dp(11.5f), todayBg)
                 num.color = p.onAccent.toArgb(); num.typeface = Typeface.DEFAULT_BOLD

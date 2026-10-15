@@ -207,7 +207,7 @@ private fun Grid(
         val widthDp = maxWidth.value
         val palette = Palettes.current
         val bitmap = remember(month, marks, holidays, busy, widthDp, palette, today) {
-            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, busy, emptyList()), widthDp, CELL, rows).asImageBitmap()
+            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, busy, null, emptyList()), widthDp, CELL, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val chosen by rememberUpdatedState(selection)
