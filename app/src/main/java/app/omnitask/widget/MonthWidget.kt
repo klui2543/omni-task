@@ -163,9 +163,11 @@ class MonthWidget : GlanceAppWidget() {
 
         /** Redraws every month widget with fresh data. */
         suspend fun refresh(context: Context) {
+            // One stamp for all of them, so they share one load.
+            val stamp = System.currentTimeMillis()
             GlanceAppWidgetManager(context).getGlanceIds(MonthWidget::class.java).forEach { id ->
                 runCatching {
-                    updateAppWidgetState(context, id) { it[STAMP] = System.currentTimeMillis() }
+                    updateAppWidgetState(context, id) { it[STAMP] = stamp }
                     MonthWidget().update(context, id)
                 }
             }
@@ -260,8 +262,26 @@ internal class MonthSource(
         @androidx.annotation.VisibleForTesting
         internal var sample: MonthSource? = null
 
+        /**
+         * The months loaded last, kept for as long as the app's process lives. Glance ends a widget's session after five
+         * seconds without a tap (and about 45 seconds after it began), and the next tap starts a new one; reading the
+         * vault and the calendar again there took seconds, so taps seemed lost. A new session takes these instead.
+         */
+        @Volatile
+        private var kept: MonthSource? = null
+
+        /** Whether [source] can stand for a fresh load: same data ([stamp]), same day, and the month in what it holds. */
+        fun reusable(source: MonthSource?, stamp: Long, offset: Int, today: LocalDate): Boolean =
+            source != null && source.stamp == stamp && source.today == today && source.covers(offset)
+
         /** Loads the months around [offset]: three before it and three after, so ‹ › rarely need a load. */
-        suspend fun load(context: Context, offset: Int, stamp: Long): MonthSource = sample ?: withContext(Dispatchers.IO) {
+        suspend fun load(context: Context, offset: Int, stamp: Long): MonthSource {
+            sample?.let { return it }
+            kept?.takeIf { reusable(it, stamp, offset, LocalDate.now()) }?.let { return it }
+            return read(context, offset, stamp).also { kept = it }
+        }
+
+        private suspend fun read(context: Context, offset: Int, stamp: Long): MonthSource = withContext(Dispatchers.IO) {
             Lang.load(context)
             Appearance.load(context)
             val today = LocalDate.now()

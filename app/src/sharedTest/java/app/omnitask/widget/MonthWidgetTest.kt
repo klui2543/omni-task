@@ -91,6 +91,18 @@ class MonthWidgetTest {
     }
 
     @Test
+    fun aNewSessionReusesTheMonthsLoadedBefore() {
+        val source = MonthSource(d(15), 7, LocalDate(2026, 7, 1), LocalDate(2027, 1, 31), MonthMarks(), emptyList(), emptyList(), emptyMap())
+        check(MonthSource.reusable(source, 7, 0, d(15)))
+        check(MonthSource.reusable(source, 7, 2, d(15)))
+        // The vault or the calendar changed, the day turned, or the month is past what was loaded: read again.
+        check(!MonthSource.reusable(source, 8, 0, d(15)))
+        check(!MonthSource.reusable(source, 7, 0, d(16)))
+        check(!MonthSource.reusable(source, 7, 5, d(15)))
+        check(!MonthSource.reusable(null, 7, 0, d(15)))
+    }
+
+    @Test
     fun aSaveIsReadBackWithoutAVault() {
         context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).edit().remove("vault").commit()
         val saved = MonthMarksStore.save(context, MonthMarks().withStickers(d(15), listOf("🎂")))
