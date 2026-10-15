@@ -1,5 +1,6 @@
 package app.omnitask.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -14,6 +15,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
+import androidx.glance.ExperimentalGlanceApi
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -29,6 +31,7 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.compose
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.provideContent
@@ -152,7 +155,7 @@ class MonthWidget : GlanceAppWidget() {
         internal suspend fun act(context: Context, id: GlanceId, change: (MonthNav, Long) -> MonthNav) {
             val now = System.currentTimeMillis()
             updateAppWidgetState(context, id) { p -> save(p, change(nav(p).fresh(now), now)) }
-            MonthWidget().update(context, id)
+            if (!push(context, id)) MonthWidget().update(context, id)
             runCatching {
                 Scheduler.scheduleOneOff(
                     context,
@@ -160,6 +163,21 @@ class MonthWidget : GlanceAppWidget() {
                 )
             }
         }
+
+        /**
+         * Draws the widget here and hands it to the launcher at once. [update] goes through Glance's session for the
+         * widget, and when that session has ended (Glance ends it a few seconds after the last event) it starts a new
+         * one through WorkManager and waits until it is ready: about five seconds on the owner's phone, with every tap
+         * after it waiting in line, so the widget froze and then jumped. False when it could not be drawn here.
+         */
+        @OptIn(ExperimentalGlanceApi::class)
+        private suspend fun push(context: Context, id: GlanceId): Boolean = runCatching {
+            val manager = AppWidgetManager.getInstance(context)
+            val widgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
+            val state = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
+            val views = MonthWidget().compose(context, id, options = manager.getAppWidgetOptions(widgetId), state = state)
+            manager.updateAppWidget(widgetId, views)
+        }.isSuccess
 
         /** Redraws every month widget with fresh data. */
         suspend fun refresh(context: Context) {
@@ -359,6 +377,26 @@ internal fun widgetPalette(context: Context): Palette {
 /** Room above the first row for a frame's name tag, which sits on the frame's top edge. */
 private const val TAG_INSET = 8f
 
+/**
+ * The month pictures drawn last, kept across compositions: a tap draws the widget afresh (see MonthWidget.push), and
+ * the picture only changes with the month, the work, the style or the size. A few are kept, one per size the launcher
+ * asks for.
+ */
+private object Pictures {
+    data class Key(
+        val month: LocalDate, val today: LocalDate, val marks: MonthMarks, val holidays: Map<LocalDate, String>,
+        val work: Map<LocalDate, List<MonthData.Mark>>, val style: CellStyle, val width: Float, val cell: Float, val rows: Int,
+        val palette: Palette,
+    )
+
+    private val kept = object : LinkedHashMap<Key, Bitmap>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Bitmap>?) = size > 4
+    }
+
+    @Synchronized
+    fun get(key: Key, draw: () -> Bitmap): Bitmap = kept.getOrPut(key, draw)
+}
+
 /** The least room the list under the grid needs: a day's heading, one row and the "more" line. */
 private const val MIN_LIST = 86f
 
@@ -391,7 +429,7 @@ private fun MonthContent(context: Context, data: MonthData) {
             // The picture changes only with the month, the work or the size; a tap on a day keeps it and moves the box,
             // drawn on top, so the launcher gets a small update.
             val palette = widgetPalette(context)
-            val bitmap = remember(data.month, data.today, data.marks, data.holidays, data.work, data.style, gridWidth, cell, rows, palette) {
+            val bitmap = Pictures.get(Pictures.Key(data.month, data.today, data.marks, data.holidays, data.work, data.style, gridWidth, cell, rows, palette)) {
                 MonthPainter(context, palette, maxScale = 2f, background = palette.card.toArgb(), ring = false)
                     .draw(data, gridWidth, cell, rows)
             }

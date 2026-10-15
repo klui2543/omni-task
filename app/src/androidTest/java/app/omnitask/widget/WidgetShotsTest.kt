@@ -89,7 +89,10 @@ class WidgetShotsTest {
             if (picked != null) p[MonthWidget.DAY] = LocalDate(today.year, today.monthNumber, picked).toString()
             p[MonthWidget.TOUCHED] = System.currentTimeMillis()
         }
+        val start = System.nanoTime()
         val views = runBlocking { MonthWidget().compose(themed, size = size, state = state) }
+        // How long drawing the widget takes, which is what a tap waits for now (see MonthWidget.push).
+        File(out, "timings.txt").appendText("$name ${(System.nanoTime() - start) / 1_000_000} ms\n")
         val density = themed.resources.displayMetrics.density
         val w = (size.width.value * density).toInt()
         val h = (size.height.value * density).toInt()
