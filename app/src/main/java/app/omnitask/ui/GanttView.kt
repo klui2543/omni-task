@@ -5,7 +5,9 @@ import android.content.Intent
 import android.provider.CalendarContract
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,12 +26,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +54,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.omnitask.data.CalendarReader
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -111,6 +117,14 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
     fun openEvent(e: CalendarEvent) {
         val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id)
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+    }
+    // A long press shows what the phone's calendar store holds for the event, for one that the calendar app does not show.
+    var inspecting by remember { mutableStateOf<Pair<CalendarEvent, CalendarReader.EventInfo?>?>(null) }
+    fun inspectEvent(e: CalendarEvent) {
+        inspecting = e to CalendarReader.inspect(context, e.id)
+    }
+    inspecting?.let { (e, info) ->
+        EventInfoDialog(e, info, onOpen = { inspecting = null; openEvent(e) }, onDismiss = { inspecting = null })
     }
 
     // Dated tasks that are open, or were done within the range; a bar runs from start (or scheduled) to due.
@@ -218,12 +232,14 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                                     date = ganttEventDate(e, today),
                                     dim = e.ganttLastDay() < today,
                                     onClick = { openEvent(e) },
+                                    onLongClick = { inspectEvent(e) },
                                 )
                             },
                             colors = GanttEventColors,
                             dayW = dayW,
                             rowW = rowW,
                             onClick = { openEvent(next) },
+                            onLongClick = { inspectEvent(next) },
                         )
                     }
                     groups.forEach { (project, list) ->
@@ -243,7 +259,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
 private class GanttSpan(val task: Task, val start: LocalDate, val end: LocalDate)
 
 /** One bar in a lane, in days from the range start, already cut to the range. */
-private class GanttBar(val from: Int, val to: Int, val date: String, val dim: Boolean = false, val onClick: () -> Unit)
+private class GanttBar(val from: Int, val to: Int, val date: String, val dim: Boolean = false, val onClick: () -> Unit, val onLongClick: (() -> Unit)? = null)
 
 /** A bar laid out in the lane. */
 private class GanttPlaced(val bar: GanttBar, val x: Dp, val width: Dp)
@@ -342,20 +358,21 @@ private fun GanttTaskLane(s: GanttSpan, first: LocalDate, days: Int, today: Loca
 }
 
 /** One row of bars sharing a title: a task's single bar, or every occurrence of an event. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GanttLane(title: String, bars: List<GanttBar>, colors: GanttColors, dayW: Dp, rowW: Dp, onClick: () -> Unit) {
+private fun GanttLane(title: String, bars: List<GanttBar>, colors: GanttColors, dayW: Dp, rowW: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     // A sliver between neighbouring days, thinner when thirty days share a phone.
     val inset = if (dayW < 20.dp) 1.dp else 2.dp
     val placed = bars.sortedBy { it.from }.map { b ->
         GanttPlaced(b, dayW * b.from + inset, (dayW * (b.to - b.from + 1) - inset * 2).coerceAtLeast(2.dp))
     }
     val beside = if (placed.isEmpty() || placed.any { it.width >= GanttInsideMin }) null else ganttBeside(placed, rowW)
-    Box(Modifier.fillMaxWidth().height(GanttLaneH).clipToBounds().clickable(onClick = onClick)) {
+    Box(Modifier.fillMaxWidth().height(GanttLaneH).clipToBounds().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         placed.forEach { p ->
             Row(
                 Modifier.align(Alignment.CenterStart).offset(x = p.x).width(p.width).height(GanttBarH)
                     .alpha(if (p.bar.dim) 0.55f else 1f).clip(GanttBarShape).background(colors.fill)
-                    .clickable(onClick = p.bar.onClick),
+                    .combinedClickable(onClick = p.bar.onClick, onLongClick = p.bar.onLongClick),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.width(3.dp).fillMaxHeight().background(colors.accent))
@@ -365,7 +382,7 @@ private fun GanttLane(title: String, bars: List<GanttBar>, colors: GanttColors, 
         if (beside != null) {
             Box(
                 Modifier.align(Alignment.CenterStart).offset(x = beside.x).width(beside.width.coerceAtLeast(0.dp))
-                    .clickable(onClick = beside.placed.bar.onClick),
+                    .combinedClickable(onClick = beside.placed.bar.onClick, onLongClick = beside.placed.bar.onLongClick),
                 contentAlignment = if (beside.alignEnd) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
                 GanttBarText(
@@ -449,4 +466,37 @@ private fun ganttEventDate(e: CalendarEvent, today: LocalDate): String {
         e.allDay -> tr("ทั้งวัน", "All day")
         else -> tr("${e.begin.format(GanttClock)} ถึง ${e.end.format(GanttClock)}", "${e.begin.format(GanttClock)} to ${e.end.format(GanttClock)}")
     }
+}
+
+/** What the phone's calendar store says about [e]: which calendar it is in and whether it is deleted or waiting to sync. */
+@Composable
+private fun EventInfoDialog(e: CalendarEvent, info: CalendarReader.EventInfo?, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    fun yes(b: Boolean) = if (b) tr("ใช่", "Yes") else tr("ไม่", "No")
+    val lines = if (info == null) {
+        listOf(
+            tr("ไม่พบนัดนี้ในฐานข้อมูลปฏิทินของเครื่อง (id ${e.id})", "This event is not in the phone's calendar store (id ${e.id})"),
+            tr("แต่รายการรอบนัดยังมีอยู่ จึงยังแสดงใน Omni", "but its occurrences are still listed, so Omni still shows it"),
+        )
+    } else {
+        val cal = info.calendar
+        listOfNotNull(
+            tr("ปฏิทิน: ", "Calendar: ") + (cal?.name?.ifBlank { null } ?: tr("ไม่พบ (id ${info.calendarId})", "Not found (id ${info.calendarId})")),
+            cal?.let { tr("บัญชี: ", "Account: ") + it.account.ifBlank { "-" } + if (it.isGoogle) " (Google)" else tr(" (ไม่ใช่ Google)", " (not Google)") },
+            cal?.let { tr("แสดงในแอปปฏิทิน: ", "Shown in the calendar app: ") + yes(it.visible) },
+            tr("ปิดไว้ใน Omni: ", "Switched off in Omni: ") + yes(info.hiddenInOmni),
+            tr("ถูกลบแล้ว: ", "Deleted: ") + yes(info.deleted),
+            tr("มีการแก้ที่ยังไม่ sync: ", "Changes waiting to sync: ") + yes(info.dirty),
+            tr("เคย sync ขึ้น Google แล้ว: ", "Synced to Google before: ") + yes(info.syncId != null),
+            tr("นัดซ้ำ: ", "Recurring: ") + yes(info.recurring),
+            "id: ${info.id}",
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(e.title.ifBlank { tr("ไม่มีชื่อ", "Untitled") }) },
+        text = { Text(lines.joinToString("\n"), color = C.text2) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
+        dismissButton = { TextButton(onClick = onOpen) { Text(tr("เปิดในปฏิทิน", "Open in calendar"), color = C.text2) } },
+    )
 }
