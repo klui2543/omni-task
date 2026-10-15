@@ -184,3 +184,33 @@ object MonthGrid {
         "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
     )
 }
+
+/**
+ * Which month the month widget shows and which day's work it lists, and how each tap changes that. Every tap on a
+ * day lists that day, whether it was meant or not: tapping the chosen day again keeps it, and a day from the next or
+ * previous month (the faint ones at the grid's edges) brings that month up. Today is reached by tapping it or the
+ * title. Left alone for [IDLE_MS], the widget goes back to today. [touchedAt] is when it was last tapped, in epoch
+ * milliseconds.
+ */
+data class MonthNav(val offset: Int = 0, val picked: LocalDate? = null, val touchedAt: Long = 0) {
+
+    /** What the widget shows at [now]: this state, or today's month after it was left alone long enough. */
+    fun fresh(now: Long): MonthNav = if (touchedAt != 0L && now - touchedAt > IDLE_MS) MonthNav() else this
+
+    fun tapDay(day: LocalDate, today: LocalDate, now: Long): MonthNav =
+        MonthNav(offset = monthsBetween(today, day), picked = day.takeIf { it != today }, touchedAt = now)
+
+    /** ‹ and ›: the chosen day stays, so its list is still there after looking at another month. */
+    fun shift(delta: Int, now: Long): MonthNav = fresh(now).copy(offset = fresh(now).offset + delta, touchedAt = now)
+
+    fun home(now: Long): MonthNav = MonthNav(touchedAt = now)
+
+    /** The day whose work is listed; null lists today and tomorrow. */
+    fun listed(today: LocalDate): LocalDate? = picked?.takeIf { it != today }
+
+    companion object {
+        const val IDLE_MS = 10 * 60 * 1000L
+
+        fun monthsBetween(from: LocalDate, to: LocalDate) = (to.year - from.year) * 12 + (to.monthNumber - from.monthNumber)
+    }
+}
