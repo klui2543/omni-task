@@ -122,12 +122,12 @@ input.field:focus{border-color:var(--accentLine)}
     <input class="field" id="text" type="text" placeholder="เช่น ประชุมทีม พรุ่งนี้ 14:00" autocomplete="off">
 
     <div class="row" style="margin-top:10px" id="readRow"></div>
-    <div class="hintt">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 หรือ 14:00-16:00 #tag ! !! !!!</div>
+    <div class="hintt">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!!</div>
 
     <!-- what the event would be, right above the buttons; tap to change -->
     <button class="opt" id="opt" type="button"></button>
     <div class="pop" id="pop">
-      <div class="lbl" style="margin-top:0">นานเท่าไร (ถ้าไม่ได้พิมพ์เวลาจบ)</div>
+      <div class="lbl" style="margin-top:0">นานเท่าไร</div>
       <div class="chips" id="durs"></div>
       <div class="lbl">ปฏิทิน</div>
       <div class="chips" id="cals"></div>
@@ -154,7 +154,7 @@ input.field:focus{border-color:var(--accentLine)}
   <div class="snack" id="snack"></div>
 </div>
 
-<p class="note">พิมพ์เสร็จ นิ้วโป้งอยู่ด้านล่างแล้ว กดปุ่มเดียวจบ: <b>เพิ่มงาน</b> ลง Omni note หรือ <b>ลงปฏิทิน</b> เป็นนัด แถบเทาเหนือปุ่มบอกว่านัดจะออกมาแบบไหน (ปกติไม่ต้องแตะ ใช้ระยะเวลาและปฏิทินครั้งล่าสุด) พิมพ์เวลาจบในประโยคได้ เช่น 14:00-16:00 ครั้งแรกที่กดลงปฏิทิน เครื่องจะถามสิทธิ์</p>
+<p class="note">พิมพ์เสร็จ นิ้วโป้งอยู่ด้านล่างแล้ว กดปุ่มเดียวจบ: <b>เพิ่มงาน</b> ลง Omni note หรือ <b>ลงปฏิทิน</b> เป็นนัด แถบเทาเหนือปุ่มบอกว่านัดจะออกมาแบบไหน (ปกติไม่ต้องแตะ ใช้ระยะเวลาและปฏิทินครั้งล่าสุด) ครั้งแรกที่กดลงปฏิทิน เครื่องจะถามสิทธิ์</p>
 
 <script>
 const TODAY = new Date(2026, 9, 15); // 15 October 2026, like the rest of the mockups
@@ -179,9 +179,7 @@ function read(text) {
   if (/พรุ่งนี้/.test(rest)) { day = new Date(TODAY.getTime() + 864e5); rest = rest.replace("พรุ่งนี้", " "); }
   else if (/วันนี้/.test(rest)) { day = new Date(TODAY); rest = rest.replace("วันนี้", " "); }
   let end = null;
-  const range = rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)\s*(?:-|ถึง)\s*([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
-  if (range) { time = hm(+range[1], +range[2]); end = hm(+range[3], +range[4]); rest = rest.replace(range[0], " "); }
-  const t = time ? null : rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
+  const t = rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
   if (t) { time = hm(+t[1], +t[2]); rest = rest.replace(t[0], " "); }
   const title = rest.replace(/\s+/g, " ").trim();
   return { title, day, time, end };
