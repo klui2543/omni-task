@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.omnitask.ui
 
 import android.content.ClipData
@@ -6,6 +8,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -354,11 +357,16 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                     (if (sel == state.today) tr("วันนี้, ", "Today, ") else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)),
                     Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), color = C.text2, style = MaterialTheme.typography.titleSmall,
                 )
+                val eventActions = rememberEventActions(vm)
                 val ev: List<CalendarEvent> = eventsOn(sel)
                 val ts = tasksOn(sel)
                 if (ev.isEmpty() && ts.isEmpty()) Text(tr("ว่างทั้งวัน", "Free all day"), Modifier.padding(16.dp), color = C.muted)
                 ev.forEach { e ->
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().combinedClickable(onClick = { eventActions.open(e) }, onLongClick = { eventActions.inspect(e) })
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
                         Column(Modifier.padding(start = 12.dp)) {
                             Text(e.title, color = C.text, fontSize = TS.body)

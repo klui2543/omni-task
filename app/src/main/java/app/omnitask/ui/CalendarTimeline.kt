@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.omnitask.ui
 
 import android.content.ContentUris
@@ -5,6 +7,7 @@ import android.content.Intent
 import android.provider.CalendarContract
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,11 +97,7 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
     // Keeps the events of the shown range, even weeks away from the ones loaded at start.
     LaunchedEffect(start) { vm.loadMonth(start) }
 
-    val context = LocalContext.current
-    fun openEvent(e: CalendarEvent) {
-        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id)
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-    }
+    val eventActions = rememberEventActions(vm)
 
     val textSize = when (days) {
         1 -> TS.body
@@ -208,9 +207,9 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                         Column(Modifier.weight(1f).padding(horizontal = 1.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             val shown = if (unfolded) items else items.take(STRIP_FOLD)
                             shown.forEach { item ->
-                                AllDayPill(item, textSize) {
+                                AllDayPill(item, textSize, onLongClick = item.event?.let { e -> { eventActions.inspect(e) } }) {
                                     val e = item.event
-                                    if (e != null) openEvent(e) else item.task?.let(onOpen)
+                                    if (e != null) eventActions.open(e) else item.task?.let(onOpen)
                                 }
                             }
                             if (items.size > shown.size) {
@@ -272,7 +271,7 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                                     TimeBlock(
                                         e.title, if (days == 1) eventTime(e) else null,
                                         bar = C.teal, tint = C.teal.copy(alpha = 0.25f), fg = EventText, timeColor = C.tealText,
-                                        size = textSize, height = h, done = false, onClick = { openEvent(e) }, modifier = place,
+                                        size = textSize, height = h, done = false, onClick = { eventActions.open(e) }, onLongClick = { eventActions.inspect(e) }, modifier = place,
                                     )
                                 } else if (t != null) {
                                     val tint = t.priority.tint
@@ -311,6 +310,7 @@ private fun TimeBlock(
     done: Boolean,
     onClick: () -> Unit,
     modifier: Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
     // Lines that fit the block; sp and dp match at the default font scale, and anything past the edge is clipped.
     val line = size.value * 1.25f
@@ -319,7 +319,7 @@ private fun TimeBlock(
     Row(
         // The plain background first, so the hour lines do not show through the tint.
         modifier.padding(start = 1.dp, end = 2.dp, bottom = 1.dp).clip(RoundedCornerShape(6.dp))
-            .background(C.bg).background(tint).clickable(onClick = onClick),
+            .background(C.bg).background(tint).combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Box(Modifier.width(3.dp).fillMaxHeight().background(bar))
         Column(Modifier.padding(start = 4.dp, end = 3.dp, top = 2.dp)) {
@@ -344,13 +344,13 @@ private fun TimeBlock(
 }
 
 @Composable
-private fun AllDayPill(item: AllDayItem, size: TextUnit, onClick: () -> Unit) {
+private fun AllDayPill(item: AllDayItem, size: TextUnit, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val task = item.task
     val done = task != null && !task.isOpen
     val bg = if (task == null) C.teal.copy(alpha = 0.25f) else if (done) C.faint.copy(alpha = 0.12f) else task.priority.tint.copy(alpha = 0.22f)
     Text(
         item.title,
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(bg).clickable(onClick = onClick).padding(horizontal = 5.dp, vertical = 2.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(bg).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 5.dp, vertical = 2.dp),
         color = if (task == null) EventText else if (done) C.muted else C.text,
         fontSize = size, lineHeight = size * 1.25f, maxLines = 1, overflow = TextOverflow.Ellipsis,
         textDecoration = if (done) TextDecoration.LineThrough else null,
