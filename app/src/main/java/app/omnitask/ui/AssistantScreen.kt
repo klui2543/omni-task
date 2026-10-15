@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
+import app.omnitask.model.Gemini
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.Task
@@ -97,7 +98,9 @@ private val EXAMPLES: List<String>
 /**
  * The assistant from the C+ mockup: it reads the profile note, the tasks and Google Calendar,
  * answers "when should I do X" with ranked slots, and asks before remembering anything.
- * Everything here is rule-based; "ถาม Claude" hands the picture to the Claude app on the owner's subscription.
+ * The answers are rule-based; "ถาม Claude" hands the picture to the Claude app on the owner's subscription. With a
+ * Gemini key in Settings, typed questions go to Gemini instead ([TaskViewModel.askGemini]), which may suggest changes
+ * to the tasks that are saved only once the owner confirms them.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -125,7 +128,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     }
     fun send(text: String = input) {
         if (text.isBlank()) return
-        vm.ask(text.trim())
+        if (state.gemini.asks) vm.askGemini(text.trim(), snapshot(state, vm.habits())) else vm.ask(text.trim())
         input = ""
     }
     fun askClaude(question: String) {
@@ -146,6 +149,16 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(tr("ผู้ช่วย", "Assistant"), style = MaterialTheme.typography.headlineSmall, color = C.text)
                 Text(sources(state), color = C.muted, fontSize = TS.caption)
+            }
+            // Where typed questions go, once a Gemini key is set: Gemini, or the rules that answer offline.
+            if (state.gemini.ready) {
+                Text(
+                    if (state.gemini.chat) "Gemini" else tr("กฎ", "Rules"),
+                    Modifier.padding(end = 8.dp).clip(RoundedCornerShape(14.dp))
+                        .background(if (state.gemini.chat) C.accentSoft else C.card).border(1.dp, if (state.gemini.chat) C.accentLine else C.cardBorder, RoundedCornerShape(14.dp))
+                        .clickable { vm.setGeminiChat(!state.gemini.chat) }.padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = if (state.gemini.chat) C.accentText else C.text2, fontSize = TS.caption,
+                )
             }
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
         }
@@ -219,6 +232,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         vm.acceptProposals(index, which)
                     }
                     is Chat.Ranked -> RankedCard(item, onOpen)
+                    is Chat.Ai -> AiCard(item, onOpen, { vm.toggleAiChange(index, it) }) { vm.applyAi(index) }
                 }
             }
 
@@ -293,7 +307,12 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 maxLines = 3,
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text(tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body)
+                        if (input.isEmpty()) {
+                            Text(
+                                if (state.gemini.asks) tr("ถาม Gemini เรื่องงาน หรือให้ช่วยแก้งาน", "Ask Gemini, or have it change tasks") else tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"),
+                                color = C.faint, fontSize = TS.body,
+                            )
+                        }
                         inner()
                     }
                 },
@@ -812,6 +831,63 @@ private fun TodayCard(tasks: List<Task>, state: UiState, onOpen: (Task) -> Unit)
                         reason(t, state).takeIf { it.isNotEmpty() }?.let { Text(it, color = C.muted, fontSize = TS.caption) }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Gemini's answer, and the changes it suggests: each can be left out, and only the picked ones are saved. */
+@Composable
+private fun AiCard(item: Chat.Ai, onOpen: (Task) -> Unit, onToggle: (Int) -> Unit, onApply: () -> Unit) {
+    Card {
+        Column(Modifier.padding(14.dp)) {
+            Text("Gemini", color = C.accentText, fontSize = TS.caption)
+            when {
+                item.error != null -> Text(item.error, Modifier.padding(top = 4.dp), color = C.amber, fontSize = TS.body, lineHeight = 1.4.em)
+                item.reply == null -> Text(tr("กำลังคิด", "Thinking"), Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.body)
+                item.reply.isNotEmpty() -> Text(item.reply, Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.body, lineHeight = 1.4.em)
+            }
+            if (item.changes.isNotEmpty()) {
+                Text(
+                    tr("เสนอให้แก้ ${item.changes.size} รายการ แตะเพื่อเลือกหรือไม่เลือก", "${item.changes.size} suggested changes. Tap to pick or leave out"),
+                    Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.caption,
+                )
+                item.changes.forEachIndexed { i, c ->
+                    val task = item.targets[c.index]
+                    val done = i in item.applied
+                    val on = i in item.picked
+                    Row(
+                        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken)
+                            .clickable(enabled = !done) { onToggle(i) }.padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier.size(22.dp).clip(RoundedCornerShape(7.dp))
+                                .background(if (on || done) (if (done) C.lime else C.accent) else C.card)
+                                .border(1.dp, if (on || done) Color.Transparent else C.control, RoundedCornerShape(7.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) { if (on || done) Icon(Ic.check, null, tint = C.onAccent, modifier = Modifier.size(14.dp)) }
+                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                            Text(
+                                task?.title ?: c.title.orEmpty(),
+                                if (task != null) Modifier.clickable { onOpen(task) } else Modifier,
+                                color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(Gemini.describe(c), color = C.accentText, fontSize = TS.caption)
+                            if (c.why.isNotEmpty()) Text(c.why, color = C.muted, fontSize = TS.caption)
+                        }
+                    }
+                }
+                val left = item.picked.count { it !in item.applied }
+                PrimaryButton(
+                    when {
+                        left > 0 -> tr("บันทึกที่เลือก $left รายการ", "Save $left picked")
+                        item.applied.isNotEmpty() -> tr("บันทึกแล้ว", "Saved")
+                        else -> tr("ยังไม่ได้เลือก", "Nothing picked")
+                    },
+                    { if (left > 0) onApply() },
+                    Modifier.padding(top = 10.dp).fillMaxWidth(), color = if (left > 0) C.accent else C.lime,
+                )
             }
         }
     }

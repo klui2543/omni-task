@@ -16,6 +16,7 @@ import android.graphics.Bitmap
 import app.omnitask.CrashLog
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.DriveLink
+import app.omnitask.data.GeminiClient
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.BehaviorLog
 import app.omnitask.data.SettingsSync
@@ -29,6 +30,7 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.Gemini
 import app.omnitask.model.Behavior
 import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Insight
@@ -181,6 +183,8 @@ data class UiState(
     val strictProjects: Set<String> = emptySet(),
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
+    /** The owner's Gemini key and model (this phone only), and whether typed questions go to Gemini. */
+    val gemini: GeminiUi = GeminiUi(),
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -248,6 +252,12 @@ data class DriveUi(
 
 /** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
 /** Opens the month page at [day]; with [pick], that day comes selected. */
+/** Gemini for the assistant: [key] and [model] as set in Settings; [chat] sends typed questions to it instead of the rules. */
+data class GeminiUi(val key: String = "", val model: String = "", val chat: Boolean = true) {
+    val ready get() = key.isNotBlank()
+    val asks get() = ready && chat
+}
+
 data class MonthRequest(val day: LocalDate, val pick: Boolean)
 
 data class QuickAddRequest(
@@ -275,6 +285,19 @@ sealed interface Chat {
         val toCalendar: Boolean = false,
     ) : Chat
     data class Ranked(val items: List<Pair<Task, String>>) : Chat
+    /**
+     * A question to Gemini: its [reply] (null while waiting) or an [error], the [changes] it suggests, the tasks they
+     * name by number ([targets]), the ones [picked] to save and the ones already [applied].
+     */
+    data class Ai(
+        val question: String,
+        val reply: String? = null,
+        val error: String? = null,
+        val changes: List<Gemini.Change> = emptyList(),
+        val targets: Map<Int, Task> = emptyMap(),
+        val picked: Set<Int> = emptySet(),
+        val applied: Set<Int> = emptySet(),
+    ) : Chat
 }
 
 data class AgendaDay(val day: LocalDate, val events: List<CalendarEvent>, val tasks: List<Task>)
@@ -297,7 +320,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private var behaviorSend: kotlinx.coroutines.Job? = null
 
     private val _state = MutableStateFlow(
-        fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse), drive = DriveUi(on = DriveLink.isOn(app)))),
+        fromPrefs(
+            UiState(
+                vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse), drive = DriveUi(on = DriveLink.isOn(app)),
+                gemini = GeminiUi(GeminiClient.key(app), GeminiClient.model(app), GeminiClient.chat(app)),
+            ),
+        ),
     )
 
     /** The settings kept in preferences (and synced through the vault file), laid over [base]. */
@@ -1577,6 +1605,98 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearChat() = _state.update { it.copy(chat = emptyList()) }
+
+    // ---- Gemini ----
+
+    /** Keeps the Gemini key and model on this phone ([GeminiClient]); a blank key turns Gemini off. */
+    fun setGemini(key: String, model: String) {
+        GeminiClient.save(getApplication(), key, model)
+        _state.update { it.copy(gemini = it.gemini.copy(key = key.trim(), model = model.trim())) }
+    }
+
+    /** Whether typed questions go to Gemini or to the rule-based assistant. */
+    fun setGeminiChat(on: Boolean) {
+        GeminiClient.setChat(getApplication(), on)
+        _state.update { it.copy(gemini = it.gemini.copy(chat = on)) }
+    }
+
+    /**
+     * Asks Gemini with [context], the picture of the day "ask Claude" hands over, and the earlier questions and
+     * answers of this conversation. Its suggested changes come back all picked; nothing is written until [applyAi].
+     */
+    fun askGemini(question: String, context: String) {
+        val s = _state.value
+        val editable = Gemini.editable(s.tasks)
+        val history = s.chat.filterIsInstance<Chat.Ai>().mapNotNull { a -> a.reply?.let { Gemini.Turn(a.question, it) } }
+        val body = Gemini.request(context, editable, history, question, LocalDateTime.now())
+        val waiting = Chat.Ai(question)
+        _state.update { it.copy(chat = it.chat + Chat.Asked(question) + waiting) }
+        val index = _state.value.chat.lastIndex
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Gemini.parse(GeminiClient.send(getApplication(), body), editable.size) } }
+            val answered = result.fold(
+                { a ->
+                    waiting.copy(
+                        reply = a.reply.ifEmpty { if (a.changes.isEmpty()) tr("Gemini ไม่มีคำตอบ", "Gemini had nothing to say") else "" },
+                        changes = a.changes,
+                        targets = a.changes.filter { it.index >= 0 }.associate { it.index to editable[it.index] },
+                        picked = a.changes.indices.toSet(),
+                    )
+                },
+                { e -> waiting.copy(error = (e as? Gemini.Failure)?.message ?: tr("Gemini ตอบไม่ได้", "Gemini could not answer")) },
+            )
+            // The conversation may have been cleared while waiting.
+            _state.update { st -> if (st.chat.getOrNull(index) === waiting) st.copy(chat = st.chat.toMutableList().also { it[index] = answered }) else st }
+        }
+    }
+
+    private fun updateAi(index: Int, change: (Chat.Ai) -> Chat.Ai) = _state.update {
+        val item = it.chat.getOrNull(index) as? Chat.Ai ?: return@update it
+        it.copy(chat = it.chat.toMutableList().also { list -> list[index] = change(item) })
+    }
+
+    fun toggleAiChange(index: Int, change: Int) = updateAi(index) {
+        if (change in it.applied) it else it.copy(picked = if (change in it.picked) it.picked - change else it.picked + change)
+    }
+
+    /** The task as it stands now, for a change suggested before an earlier one was saved. */
+    private fun current(task: Task): Task = _state.value.tasks.firstOrNull { it.key == task.key && it.title == task.title } ?: task
+
+    /** Saves the picked changes: one write per task (ticking done goes the usual way), new tasks in one write. */
+    fun applyAi(index: Int) {
+        val ai = _state.value.chat.getOrNull(index) as? Chat.Ai ?: return
+        val todo = ai.picked.filter { it !in ai.applied }.sorted()
+        if (todo.isEmpty()) return
+        val picked = todo.map { ai.changes[it] }
+        Gemini.byTask(picked).forEach { (i, changes) ->
+            val task = ai.targets[i]?.let(::current) ?: return@forEach
+            if (changes.first().op == Gemini.DONE) {
+                if (task.isOpen) toggleDone(task)
+                return@forEach
+            }
+            changes.forEach { c ->
+                val field = when (c.op) {
+                    Gemini.DUE -> DateField.DUE
+                    Gemini.SCHEDULED -> DateField.SCHEDULED
+                    else -> null
+                }
+                if (field != null) learn(Behavior.moved(task, field.name, c.date?.let { LocalDate.parse(it) }, LocalDateTime.now(), BehaviorLog.SRC))
+            }
+            edit(task) { Gemini.line(it, changes) }
+        }
+        val added = picked.filter { it.op == Gemini.ADD }.map { Gemini.newLine(it, LocalDate.now()) }
+        val vault = _state.value.vault
+        if (added.isNotEmpty() && vault != null) {
+            viewModelScope.launch {
+                val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, added.joinToString("\n")) } } }
+                if (result.isSuccess) added.forEach(::noteCreated)
+                result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}")) } }
+                reload()
+            }
+        }
+        updateAi(index) { it.copy(applied = it.applied + todo) }
+    }
+
 
     private fun updateSlots(index: Int, change: (Chat.Slots) -> Chat.Slots) = _state.update {
         val item = it.chat.getOrNull(index) as? Chat.Slots ?: return@update it

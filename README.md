@@ -41,6 +41,18 @@ the web in `web/src/behavior.ts`, until they are written to the file.
 A kind of work whose reminders keep being put off by an hour is asked about first. A yes is written to the profile
 note (`- เตือนช้าลง:`), and only new tasks of that kind are then offered a later reminder.
 
+## Gemini for the assistant (optional)
+
+Settings > Gemini takes the owner's own Gemini API key (free at https://aistudio.google.com/apikey) and, optionally, a
+model name (blank means `gemini-flash-latest`). With a key, questions typed to the assistant go to Gemini with the same
+picture of the day "ask Claude" hands over, plus the open tasks numbered; the chip next to the heading switches back to
+the rule-based answers. Gemini can suggest changes (done, due, scheduled, start, reminder, priority, a new task); they
+come back as a list to tick, and only the ticked ones are written. The request and the reading of the answer are in
+`shared/.../model/Gemini.kt`; Android sends it with `data/GeminiClient.kt`, the web with `web/src/gemini.ts`.
+
+The key stays on the device (Android: preferences of its own, the web: this browser), never in the vault or
+`omni-settings.json`. On the free tier Google may use what is sent to improve its models.
+
 ## Google Drive for the Omni folder (Android)
 
 Settings > Google Drive connects the Omni folder (`📁 Folder/หลังบ้าน/Omni`) on Drive. From then on the app reads and

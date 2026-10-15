@@ -843,6 +843,15 @@ input.pj-focus-input { border: 1.5px solid var(--accent); border-radius: 12px; p
 .as-plus, .as-done { flex: none; width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; font-size: 16px; }
 .as-plus { border: 1px solid var(--control); background: var(--card); color: var(--accent-text); }
 .as-done { background: var(--lime-soft); color: var(--lime-text); }
+.as-ai .accent-text, .as-ai-change .accent-text { color: var(--accent-text); }
+.as-ai-reply { white-space: pre-wrap; line-height: 1.5; }
+.as-ai-error { color: var(--amber-text, var(--amber)); }
+.as-ai-change { padding: 8px 0; }
+.as-ai-change input[type=checkbox] { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.as-ai-change .link-plain { color: var(--text); }
+.as-mode { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--control); background: var(--card); color: var(--text2); font-size: 13.5px; }
+.as-mode.on { background: var(--accent-soft); border-color: var(--accent-line, var(--accent-soft)); color: var(--accent-text); }
+.set-input { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--control); background: var(--sunken, var(--card)); color: var(--text); padding: 0 12px; font: inherit; }
 .as-foot { position: sticky; bottom: 0; margin-top: auto; background: var(--bg); padding: 6px 0 92px; display: flex; flex-direction: column; gap: 8px; z-index: 3; }
 @media (min-width: 1000px) { .as-foot { padding-bottom: 12px; } }
 .as-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }

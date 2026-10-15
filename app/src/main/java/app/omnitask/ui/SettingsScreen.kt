@@ -43,6 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import app.omnitask.model.Gemini
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,6 +94,9 @@ class DriveSettings(
     val onDismissClash: (String) -> Unit = {},
 )
 
+/** The owner's Gemini API key and model for the assistant (kept on this phone only, see GeminiClient). */
+class GeminiSettings(val key: String, val model: String, val onSave: (key: String, model: String) -> Unit)
+
 /** The choices for [ArchiveSettings.days]. */
 private val ARCHIVE_DAYS = listOf(0, 1, 3, 7, 14, 30)
 
@@ -103,6 +113,7 @@ fun SettingsScreen(
     archive: ArchiveSettings? = null,
     calendars: CalendarChoices? = null,
     drive: DriveSettings? = null,
+    gemini: GeminiSettings? = null,
     head: (@Composable () -> Unit)? = null,
     tail: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
@@ -179,6 +190,9 @@ fun SettingsScreen(
         }
         if (drive != null) {
             item { DriveGroup(drive) }
+        }
+        if (gemini != null) {
+            item { GeminiGroup(gemini) }
         }
         if (profile != null) {
             item {
@@ -284,6 +298,69 @@ fun SettingsScreen(
         }
         tail?.let { item { it() } }
     }
+}
+
+/** The Gemini key and model: typed questions to the assistant go to Gemini once a key is saved. */
+@Composable
+private fun GeminiGroup(gemini: GeminiSettings) {
+    var key by remember(gemini.key) { mutableStateOf(gemini.key) }
+    var model by remember(gemini.model) { mutableStateOf(gemini.model) }
+    var shown by remember { mutableStateOf(false) }
+    val uri = LocalUriHandler.current
+    val changed = key.trim() != gemini.key || model.trim() != gemini.model
+    SettingsGroup("Gemini") {
+        Text(
+            tr(
+                "ใส่ API key ของ Gemini แล้วคำถามที่พิมพ์ในหน้าผู้ช่วยจะไปถาม Gemini พร้อมงานและนัดของคุณ Gemini เสนอการแก้งานได้ แต่จะบันทึกเฉพาะที่คุณกดยืนยัน",
+                "With a Gemini API key, questions typed to the assistant go to Gemini with your tasks and events. Gemini can suggest changes to tasks; only the ones you confirm are saved.",
+            ),
+            Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+        )
+        Text(
+            tr("ขอ key ฟรีได้ที่ Google AI Studio", "Get a free key at Google AI Studio"),
+            Modifier.padding(top = 6.dp).clickable { uri.openUri("https://aistudio.google.com/apikey") },
+            color = C.accentText, fontSize = TS.caption,
+        )
+        Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                SettingsField(key, "API key", { key = it }, if (shown) VisualTransformation.None else PasswordVisualTransformation())
+            }
+            TextButton(onClick = { shown = !shown }) { Text(if (shown) tr("ซ่อน", "Hide") else tr("ดู", "Show"), color = C.text2, fontSize = TS.caption) }
+        }
+        Box(Modifier.padding(top = 8.dp)) {
+            SettingsField(model, tr("โมเดล (ว่างไว้ = ${Gemini.DEFAULT_MODEL})", "Model (blank = ${Gemini.DEFAULT_MODEL})"), { model = it })
+        }
+        Text(
+            tr(
+                "key อยู่ในเครื่องนี้เท่านั้น ไม่ขึ้นไปใน vault\nแบบฟรี Google อาจนำข้อความที่ส่งไปใช้ปรับปรุงโมเดล",
+                "The key stays on this phone and never goes into the vault.\nOn the free tier, Google may use what is sent to improve its models.",
+            ),
+            Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+        )
+        Row(Modifier.padding(top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (changed) PrimaryButton(tr("บันทึก", "Save"), { gemini.onSave(key, model) })
+            if (gemini.key.isNotEmpty()) GhostButton(tr("ลบ key", "Remove key"), { key = ""; gemini.onSave("", model) })
+        }
+    }
+}
+
+@Composable
+private fun SettingsField(value: String, hint: String, onChange: (String) -> Unit, visual: VisualTransformation = VisualTransformation.None) {
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        visualTransformation = visual,
+        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
+        cursorBrush = SolidColor(C.accent),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp),
+        decorationBox = { inner ->
+            Box {
+                if (value.isEmpty()) Text(hint, color = C.faint, fontSize = TS.body)
+                inner()
+            }
+        },
+    )
 }
 
 /** Connecting the Omni folder on Google Drive, and how it is going once connected. */

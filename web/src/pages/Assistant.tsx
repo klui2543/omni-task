@@ -10,10 +10,11 @@ import { notifyChoice } from '../settingsNotify'
 import type { PageProps } from '../Home'
 import { EditPanel } from '../ui/EditPanel'
 import { CalendarWriteDialog, CustomTimeDialog, RangeDialog } from '../ui/assistant/AssistantDialogs'
-import { AgendaCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, ReviewCard, SlotsCard, dayShort } from '../ui/assistant/Cards'
+import { AgendaCard, AiCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, ReviewCard, SlotsCard, dayShort } from '../ui/assistant/Cards'
 import { AskCard, Interview } from '../ui/assistant/Interview'
 import { StuckDeck } from '../ui/Stuck'
-import { byNote } from '../vault'
+import { byNote, noteOf } from '../vault'
+import { askGemini, byTask, GeminiError, geminiLine, geminiNewLines, geminiSetup } from '../gemini'
 
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
@@ -59,6 +60,8 @@ export function AssistantPage(p: PageProps) {
   const [writing, setWriting] = useState(false)
   const [selected, setSelected] = useState<{ key: string; title: string } | null>(null)
   const [answered, setAnswered] = useState(0)
+  const [gemini, setGemini] = useState(geminiSetup.get)
+  const toGemini = !!gemini.key && gemini.chat
   const connected = Auth.granted(CALENDAR_SCOPE)
   const canWrite = Auth.granted(CALENDAR_WRITE_SCOPE)
   const end = useRef<HTMLDivElement>(null)
@@ -157,6 +160,7 @@ export function AssistantPage(p: PageProps) {
     const text = raw.trim()
     if (!text || !snap) return
     setInput('')
+    if (toGemini) { askAi(text); return }
     const r = A.route(text)
     if (r.kind === 'plan') planRange([r.from, r.to], text)
     else if (r.kind === 'agenda') showAgenda([r.from, r.to], text)
@@ -306,6 +310,67 @@ export function AssistantPage(p: PageProps) {
     }
   }
 
+  // ---- Gemini ----
+
+  /** Asks Gemini with the picture of the day and this conversation's earlier answers; its changes come back all picked. */
+  const askAi = async (question: string) => {
+    if (!snap) return
+    const history = chat.flatMap((c) => (c.t === 'ai' && c.reply ? [{ question: c.question, reply: c.reply }] : []))
+    const item: Extract<Chat, { t: 'ai' }> = { t: 'ai', question, changes: [], labels: [], keys: [], picked: [], applied: [] }
+    push({ t: 'asked', text: question }, item)
+    let answered: Chat
+    try {
+      const a = await askGemini(snap, state(), history, question)
+      answered = {
+        ...item, reply: a.reply || (a.changes.length > 0 ? '' : 'Gemini ไม่มีคำตอบ'),
+        changes: a.changes, labels: a.labels, keys: a.keys, picked: a.changes.map((_, i) => i),
+      }
+    } catch (e) {
+      answered = { ...item, error: e instanceof GeminiError ? e.message : 'Gemini ตอบไม่ได้' }
+    }
+    // The conversation may have been cleared while waiting.
+    setChat((c) => c.map((x) => (x === item ? answered : x)))
+  }
+
+  /** The title of the task a change is about, or the new task's. */
+  const aiTitle = (item: Extract<Chat, { t: 'ai' }>, i: number) => {
+    const c = item.changes[i]
+    if (c.op === 'add') return c.title ?? ''
+    return snap?.byKey.get(item.keys[c.index])?.title ?? 'งานนี้ถูกแก้หรือย้ายไปแล้ว'
+  }
+
+  /** Saves the picked changes: one write per task (ticking done goes the usual way), the new tasks in one write. */
+  const applyAi = async (index: number) => {
+    const item = chat[index]
+    if (item?.t !== 'ai' || !snap) return
+    const todo = item.picked.filter((i) => !item.applied.includes(i))
+    if (todo.length === 0) return
+    const saved: number[] = []
+    for (const [n, changes] of byTask(todo.map((i) => item.changes[i]))) {
+      const t = snap.byKey.get(item.keys[n])
+      if (!t) continue
+      const which = todo.filter((i) => item.changes[i].op !== 'add' && item.changes[i].index === n)
+      if (changes[0].op === 'done') {
+        if (t.open) p.tick(t)
+        saved.push(...which)
+        continue
+      }
+      let ok = false
+      await p.run(async () => {
+        const now = p.fresh(t)
+        const r = await p.vault.editNote((text) => geminiLine(text, now.raw, now.lineIndex, changes), noteOf(now))
+        ok = r.ok
+        if (ok) changes.forEach((c) => { if (c.op === 'due' || c.op === 'scheduled') learn.moved(now, c.op === 'due' ? 'DUE' : 'SCHEDULED', c.date ?? null) })
+        return r
+      })
+      if (ok) saved.push(...which)
+    }
+    const adds = todo.filter((i) => item.changes[i].op === 'add')
+    if (adds.length > 0 && (await writeLines(geminiNewLines(adds.map((i) => item.changes[i]))))) saved.push(...adds)
+    patch(index, 'ai', (c) => ({ ...c, applied: [...c.applied, ...saved] }))
+    setNote(saved.length < todo.length ? 'บางรายการบันทึกไม่ได้ งานอาจถูกแก้จากที่อื่น' : '')
+  }
+
   /** Hands the picture of the day to Claude: a new tab on claude.ai with the same text Android sends to its app. */
   const askClaude = (question: string) => {
     if (!snap) return
@@ -381,6 +446,11 @@ export function AssistantPage(p: PageProps) {
             <span class="muted small">{sources}</span>
           </div>
           <div class="head-tools">
+            {/* Where typed questions go, once a Gemini key is set: Gemini, or the rules that answer offline. */}
+            {gemini.key && (
+              <button class={`as-mode${gemini.chat ? ' on' : ''}`} aria-pressed={gemini.chat} title="คำถามที่พิมพ์ไปที่ Gemini หรือใช้กฎในแอป"
+                onClick={() => setGemini(geminiSetup.set({ chat: !gemini.chat }))}>{gemini.chat ? 'Gemini' : 'กฎ'}</button>
+            )}
             {chat.length > 0 && <button class="ghost" onClick={() => setChat(() => [])}>เริ่มใหม่</button>}
             <button class="ghost narrow-only" onClick={() => p.onNavigate('settings')}>ตั้งค่า</button>
           </div>
@@ -440,6 +510,11 @@ export function AssistantPage(p: PageProps) {
                 return <RankedCard key={i} hot={3} items={c.items} onOpen={openTask} intro="ลำดับที่ควรทำ เรียงจากเลยกำหนด ใกล้ครบ คนรอ แล้วค่อยความสำคัญ" />
               case 'review': return <ReviewCard key={i} title={c.title} lines={c.lines} stuckAt={c.stuckAt} onStuck={() => setDialog({ kind: 'stuck' })} />
               case 'agenda': return <AgendaCard key={i} title={c.title} summary={c.summary} data={c.data} today={t0} onOpen={openTask} />
+              case 'ai':
+                return (
+                  <AiCard key={i} item={c} title={(k) => aiTitle(c, k)} busy={p.busy} onOpen={openTask} onApply={() => applyAi(i)}
+                    onToggle={(k) => patch(i, 'ai', (x) => (x.applied.includes(k) ? x : { ...x, picked: x.picked.includes(k) ? x.picked.filter((n) => n !== k) : [...x.picked, k] }))} />
+                )
               case 'range':
                 return <RangeCard key={i} title={c.title} proposals={c.proposals} accepted={c.accepted} busy={p.busy} toCalendar={!!c.toCalendar} onCalendar={(on) => setCalendar(i, 'range', on)} onAccept={(w) => acceptProposals(i, w)} onOpen={openTask} />
             }
@@ -455,7 +530,7 @@ export function AssistantPage(p: PageProps) {
             </div>
           )}
           <form class="as-input" onSubmit={(e) => { e.preventDefault(); ask(input) }}>
-            <input aria-label="ข้อความถึงผู้ช่วย" placeholder="อยากทำอะไร หรือถามเรื่องงาน" value={input} onInput={(e) => setInput(e.currentTarget.value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
+            <input aria-label="ข้อความถึงผู้ช่วย" placeholder={toGemini ? 'ถาม Gemini เรื่องงาน หรือให้ช่วยแก้งาน' : 'อยากทำอะไร หรือถามเรื่องงาน'} value={input} onInput={(e) => setInput(e.currentTarget.value)} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
             <button class="primary round-send" type="submit" disabled={!input.trim() || !snap}>ส่ง</button>
           </form>
         </div>

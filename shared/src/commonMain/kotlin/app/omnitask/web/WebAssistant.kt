@@ -4,6 +4,7 @@ import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import app.omnitask.model.Behavior
 import app.omnitask.model.Focus
+import app.omnitask.model.Gemini
 import app.omnitask.model.Insight
 import app.omnitask.model.Learned
 import app.omnitask.model.Planner
@@ -376,6 +377,53 @@ object WebAssistant {
             }
         }
     }
+
+    // ---- Gemini ----
+
+    /** The request body for Gemini and the keys of the tasks numbered in it, in order (the numbers in its answer). */
+    @Serializable
+    data class GeminiAsk(val body: String, val keys: List<String>)
+
+    /** Builds the question for Gemini from the same picture of the day [snapshot] makes; [historyJson] is a list of [Gemini.Turn]. */
+    fun geminiRequest(fileKey: String, path: String, text: String, stateJson: String, historyJson: String, question: String): String {
+        val s = parse(stateJson)
+        val now = LocalDateTime.parse(s.now)
+        val editable = Gemini.editable(WebNotes.tasks(fileKey, path, text, now.date))
+        val history = json.decodeFromString<List<Gemini.Turn>>(historyJson)
+        val body = Gemini.request(snapshot(fileKey, path, text, stateJson), editable, history, question, now)
+        return json.encodeToString(GeminiAsk(body, editable.map { it.key }))
+    }
+
+    @Serializable
+    data class GeminiOut(val reply: String = "", val changes: List<Gemini.Change> = emptyList(), val labels: List<String> = emptyList(), val error: String? = null)
+
+    /** Gemini's answer read ([Gemini.parse]), each change with its words for the card; [count] is how many tasks were numbered. */
+    fun geminiAnswer(body: String, count: Int): String = json.encodeToString(
+        try {
+            val a = Gemini.parse(body, count)
+            GeminiOut(a.reply, a.changes, a.changes.map { Gemini.describe(it) })
+        } catch (e: Gemini.Failure) {
+            GeminiOut(error = e.message)
+        },
+    )
+
+    /** What to tell the owner when Gemini answered with an HTTP error. */
+    fun geminiError(status: Int, body: String): String = Gemini.errorMessage(status, body)
+
+    /** The note with the date, priority and reminder changes picked for one task ([Gemini.line]); a conflict when the line moved on. */
+    fun geminiLine(text: String, raw: String, lineIndex: Int, changesJson: String): String {
+        val changes = json.decodeFromString<List<Gemini.Change>>(changesJson)
+        val separator = VaultText.separatorOf(text)
+        val lines = text.split(separator).toMutableList()
+        val i = if (lines.getOrNull(lineIndex) == raw) lineIndex else lines.indexOf(raw)
+        if (i < 0) return json.encodeToString(WebCore.EditResult(false, error = "conflict"))
+        lines[i] = Gemini.line(lines[i], changes)
+        return json.encodeToString(WebCore.EditResult(true, lines.joinToString(separator)))
+    }
+
+    /** The new task lines for the "add" changes picked. */
+    fun geminiNewLines(changesJson: String, today: String): String =
+        json.encodeToString(json.decodeFromString<List<Gemini.Change>>(changesJson).map { Gemini.newLine(it, LocalDate.parse(today)) })
 
     // ---- Writing to the note ----
 

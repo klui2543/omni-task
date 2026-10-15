@@ -36,6 +36,19 @@ object WebAssistantApi {
 
     fun snapshot(fileKey: String, path: String, text: String, state: String): String = WebAssistant.snapshot(fileKey, path, text, state)
 
+    fun geminiRequest(fileKey: String, path: String, text: String, state: String, history: String, question: String): String =
+        WebAssistant.geminiRequest(fileKey, path, text, state, history, question)
+
+    fun geminiAnswer(body: String, count: Int): String = WebAssistant.geminiAnswer(body, count)
+
+    fun geminiError(status: Int, body: String): String = WebAssistant.geminiError(status, body)
+
+    fun geminiLine(text: String, raw: String, lineIndex: Int, changes: String): String = WebAssistant.geminiLine(text, raw, lineIndex, changes)
+
+    fun geminiNewLines(changes: String, today: String): String = WebAssistant.geminiNewLines(changes, today)
+
+    fun geminiEndpoint(model: String): String = app.omnitask.model.Gemini.endpoint(model)
+
     fun slotLine(title: String, day: String, start: String?, today: String): String = WebAssistant.slotLine(title, day, start, today)
 
     fun addLines(text: String, lines: String): String = WebAssistant.addLines(text, lines)

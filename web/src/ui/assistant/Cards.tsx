@@ -204,3 +204,44 @@ export function RangeCard(p: {
     </section>
   )
 }
+
+/** Gemini's answer and the changes it suggests: each can be left out, and only the picked ones are saved. */
+export function AiCard(p: {
+  item: Extract<Chat, { t: 'ai' }>
+  title: (i: number) => string
+  busy: boolean
+  onToggle: (i: number) => void
+  onApply: () => void
+  onOpen: (key: string) => void
+}) {
+  const it = p.item
+  const left = it.picked.filter((i) => !it.applied.includes(i))
+  return (
+    <section class="as-card as-ai" aria-label="คำตอบจาก Gemini">
+      <span class="muted small accent-text">Gemini</span>
+      {it.error ? <span class="as-ai-error">{it.error}</span> : it.reply === undefined ? <span class="muted">กำลังคิด</span> : it.reply && <span class="as-ai-reply">{it.reply}</span>}
+      {it.changes.length > 0 && (
+        <>
+          <span class="muted small">เสนอให้แก้ {it.changes.length} รายการ แตะเพื่อเลือกหรือไม่เลือก</span>
+          {it.changes.map((c, i) => {
+            const done = it.applied.includes(i)
+            const key = c.index >= 0 ? it.keys[c.index] : undefined
+            return (
+              <div key={i} class="as-prop as-ai-change">
+                <input type="checkbox" aria-label={`เลือก ${p.title(i)}`} checked={done || it.picked.includes(i)} disabled={done} onChange={() => p.onToggle(i)} />
+                <span class="as-prop-body">
+                  {key ? <button class="link-plain" onClick={() => p.onOpen(key)}>{p.title(i)}</button> : <span>{p.title(i)}</span>}
+                  <span class="small accent-text">{it.labels[i]}</span>
+                  {c.why && <span class="muted small">{c.why}</span>}
+                </span>
+                {done && <span class="as-done" role="img" aria-label="บันทึกแล้ว">✓</span>}
+              </div>
+            )
+          })}
+          <button class="primary" disabled={p.busy || left.length === 0} style={left.length === 0 && it.applied.length > 0 ? { background: 'var(--lime)' } : undefined}
+            onClick={p.onApply}>{left.length > 0 ? `บันทึกที่เลือก ${left.length} รายการ` : it.applied.length > 0 ? 'บันทึกแล้ว' : 'ยังไม่ได้เลือก'}</button>
+        </>
+      )}
+    </section>
+  )
+}

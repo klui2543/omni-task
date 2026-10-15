@@ -11,6 +11,7 @@ import { URGENT_RULES, urgentRule } from '../settings'
 import { ARCHIVE_DAYS, archiveDays, sweepAndSay } from '../settingsDevice'
 import { FONTS, PALETTES, SCALES, THEMES, appearance, setAppearance } from '../settingsAppearance'
 import { notifyChoice } from '../settingsNotify'
+import { geminiSetup } from '../gemini'
 import { askPermission, check as checkReminders, permission, test as testReminder, type Permission } from '../reminders'
 
 /** A row of choices that works like a radio group, in Android's segmented look. */
@@ -191,6 +192,7 @@ export function SettingsPage(p: PageProps) {
           </section>
 
           <RemindersCard />
+          <GeminiCard />
         </div>
       </div>
     </main>
@@ -331,6 +333,40 @@ function CalendarsCard(p: PageProps) {
       {cals?.length === 0 && !error && <span class="set-note">ไม่พบปฏิทิน</span>}
       <span class="set-note">เฉพาะปฏิทินที่เปิดไว้ใน Google Calendar ปฏิทินที่เพิ่มใหม่จะแสดงเอง ตัวเลือกนี้อยู่ในเครื่องนี้</span>
       {error && <span class="error" role="alert">{error}</span>}
+    </section>
+  )
+}
+
+/**
+ * Gemini for the assistant: with a key, questions typed to the assistant go to Gemini with the tasks and events, and
+ * the changes it suggests are saved only once confirmed. The key stays in this browser (gemini.ts), never in the vault.
+ */
+function GeminiCard() {
+  const [kept, setKept] = useState(geminiSetup.get)
+  const [key, setKey] = useState(kept.key)
+  const [model, setModel] = useState(kept.model)
+  const [shown, setShown] = useState(false)
+  const changed = key.trim() !== kept.key || model.trim() !== kept.model
+  const save = (k: string, m: string) => setKept(geminiSetup.set({ key: k.trim(), model: m.trim() }))
+  return (
+    <section class="set-card" aria-label="Gemini">
+      <h2>Gemini</h2>
+      <span class="set-note">ใส่ API key ของ Gemini แล้วคำถามที่พิมพ์ในหน้าผู้ช่วยจะไปถาม Gemini พร้อมงานและนัดของคุณ Gemini เสนอการแก้งานได้ แต่จะบันทึกเฉพาะที่คุณกดยืนยัน</span>
+      <a class="set-note" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">ขอ key ฟรีได้ที่ Google AI Studio</a>
+      <label class="set-row">
+        <input class="set-input" type={shown ? 'text' : 'password'} aria-label="API key ของ Gemini" placeholder="API key" autocomplete="off"
+          value={key} onInput={(e) => setKey(e.currentTarget.value)} />
+        <button class="pillbtn" type="button" onClick={() => setShown(!shown)}>{shown ? 'ซ่อน' : 'ดู'}</button>
+      </label>
+      <label class="set-row">
+        <input class="set-input" aria-label="โมเดลของ Gemini" placeholder="โมเดล (ว่างไว้ = gemini-flash-latest)" value={model} onInput={(e) => setModel(e.currentTarget.value)} />
+      </label>
+      <span class="set-note">key อยู่ในเบราว์เซอร์นี้เท่านั้น ไม่ขึ้นไปใน vault แบบฟรี Google อาจนำข้อความที่ส่งไปใช้ปรับปรุงโมเดล</span>
+      <div class="set-row">
+        <span class="grow" />
+        {kept.key && <button class="pillbtn danger" onClick={() => { setKey(''); save('', model) }}>ลบ key</button>}
+        {changed && <button class="pillbtn" onClick={() => save(key, model)}>บันทึก</button>}
+      </div>
     </section>
   )
 }
