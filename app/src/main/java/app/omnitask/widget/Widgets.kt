@@ -74,9 +74,11 @@ import app.omnitask.time.*
 object OmniWidgets {
     suspend fun refresh(context: Context) {
         CalendarWatch.armIfNeeded(context)
-        listOf(QuickAddWidget(), TodayWidget(), NextWidget(), MatrixWidget(), WaitingWidget(), MonthWidget()).forEach {
+        listOf(QuickAddWidget(), TodayWidget(), NextWidget(), MatrixWidget(), WaitingWidget()).forEach {
             runCatching { it.updateAll(context) }
         }
+        // The month widget keeps its data in its composition; a new stamp makes it load again.
+        runCatching { MonthWidget.refresh(context) }
     }
 }
 

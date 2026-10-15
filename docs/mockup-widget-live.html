@@ -1,0 +1,204 @@
+<title>Omni widget tap test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Two panels side by side: the home-screen widget and the app's calendar tab, both live. */
+:root{color-scheme:dark;--bg:#0e0e10;--card:#161618;--border:#26262a;--raised:#1e1e22;--line:#212125;--grid:#2e2e35;--control:#34343a;
+--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;
+--lime:#7fae93;--red:#d9726c;--amber:#c4a56a;--violet:#a893c9;--teal:#7d8794;--tealText:#8ccbc4;--hint:#e8d36a}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:"IBM Plex Sans Thai Looped",system-ui,sans-serif;padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top{max-width:840px;margin:0 auto 18px;font-size:13px;color:var(--muted);line-height:1.6}
+.top b{color:var(--text);font-weight:600;font-size:15px;display:block;margin-bottom:2px}
+.grid{display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.col{width:390px;max-width:100%;min-width:0}
+h2{font-size:14px;font-weight:600;margin:0 0 10px;color:var(--text2)}
+.home{background:linear-gradient(160deg,#2a2622,#3a2a26 60%,#1f1c1a);border-radius:24px;padding:22px 12px}
+.w{border-radius:24px;padding:14px 12px 10px;background:#141416f0;transition:opacity .15s}
+.w.busy{opacity:.85}
+.hd{display:flex;align-items:center;gap:4px;padding:0 2px 8px}
+.hd b{font-size:19px;font-weight:500;flex:1;cursor:pointer}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,.c:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ib{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:17px}
+.ib:hover{background:#ffffff10}
+.plus{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--onAccent);display:flex;align-items:center;justify-content:center;font-size:18px;margin-left:4px}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:10.5px;color:var(--faint);text-align:center;padding-bottom:5px}.dow span:first-child{color:var(--red)}
+.mon{position:relative;border-top:1px solid var(--grid);border-left:1px solid var(--grid)}
+.wk{display:grid;grid-template-columns:repeat(7,1fr)}
+.c{position:relative;height:var(--ch,42px);border-right:1px solid var(--grid);border-bottom:1px solid var(--grid);text-align:center;padding-top:5px;cursor:pointer}
+.c:hover{background:#ffffff08}
+.n{position:relative;z-index:2;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;width:24px;height:24px;font-size:12.5px;color:var(--text2)}
+.sun .n,.hol .n{color:var(--red)}.out .n{opacity:.3}
+.today .n{background:var(--accent);color:var(--onAccent);font-weight:600}
+.picked .n{box-shadow:0 0 0 1.6px var(--accent)}
+.has::after{content:"";position:absolute;left:6px;bottom:6px;width:5px;height:5px;border-radius:50%;background:var(--lime);z-index:2}
+.st{position:absolute;bottom:2px;right:3px;font-size:10px;line-height:12px;z-index:2;letter-spacing:-1px}
+.frames{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1}
+.tag{position:absolute;font-size:9px;line-height:13px;padding:0 5px;border-radius:4px;font-weight:600;color:#0e0e10;z-index:3;white-space:nowrap;pointer-events:none}
+.ag{padding:8px 4px 0;min-height:186px}
+.day{font-size:11.5px;color:var(--muted);padding:6px 0 2px;display:flex;align-items:center;gap:6px}
+.day.on{color:var(--accentText);font-weight:500}
+.chip{font-size:10.5px;border-radius:9px;padding:0 7px;line-height:17px}
+.it{display:flex;align-items:center;gap:9px;height:30px;font-size:13.5px}
+.it .g{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it small{font-size:11.5px;color:var(--muted)}.it small.late{color:var(--red)}
+.m{width:3px;height:16px;border-radius:2px;background:var(--teal);margin:0 8px 0 0}
+.ck{width:15px;height:15px;border-radius:50%;border:1.6px solid var(--faint);margin:0 2px;flex:none}.ck.late{border-color:var(--red)}
+.ck.done{background:var(--faint)}
+.more{font-size:12.5px;color:var(--accentText);height:28px;display:flex;align-items:center}
+.hol2{font-size:12px;color:var(--red)}
+.note{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.65}.note b{color:var(--text2);font-weight:500}
+.app{background:var(--bg);border-radius:22px;border:1px solid #1b1b1f;padding:12px 12px 14px;min-height:640px}
+.app.flash{animation:fl .5s}
+@keyframes fl{from{box-shadow:0 0 0 2px var(--hint)}to{box-shadow:0 0 0 0 transparent}}
+.tabs2{display:flex;gap:6px;margin:0 0 10px;overflow:hidden}.tabs2 span{font-size:12px;padding:5px 11px;border-radius:15px;border:1px solid var(--control);color:var(--text2);white-space:nowrap}.tabs2 span.on{background:#1d2330;border-color:var(--accent);color:var(--text)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px 8px;margin-bottom:10px}
+.ch{display:flex;align-items:center;gap:6px;padding:0 4px 8px}.ch b{flex:1;font-size:15px;font-weight:600}
+.sq{width:34px;height:34px;border-radius:10px;background:var(--raised);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:14px}
+.tb{height:34px;border-radius:10px;background:var(--raised);border:1px solid var(--border);padding:0 10px;color:var(--accentText);font-size:12.5px}
+.dl{padding:6px 10px}
+.dl h4{margin:4px 0 4px;font-size:13.5px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.r{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:13.5px;border-top:1px solid var(--line)}
+.r .g{flex:1}.r small{font-size:12px;color:var(--muted)}.r small.late{color:var(--red)}
+.ev{width:4px;height:28px;border-radius:2px;background:var(--teal);flex:none}
+.sub{font-size:12px;color:var(--tealText)}
+.empty{font-size:13px;color:var(--muted);padding:10px 0 4px}
+.log{max-width:840px;margin:18px auto 0;font-size:12px;color:var(--faint)}
+</style>
+
+<div class="top"><b>ลองกดได้: widget เดือน และหน้าปฏิทินในแอป</b>
+แตะวันใน widget เพื่อดูงานของวันนั้น (รายการเปลี่ยนแทบทันที ตามที่จะทำในแอปจริง) ข้อมูลในภาพเป็นตัวอย่าง</div>
+<div class="grid">
+<div class="col">
+<h2>Widget บนหน้าจอหลัก</h2>
+<div class="home"><div class="w" id="W"></div></div>
+<p class="note"><b>แตะวัน</b> ดูงานของวันนั้น, <b>แตะซ้ำ, แตะวันนี้ หรือชื่อเดือน</b> กลับวันนี้<br><b>‹ ›</b> เลื่อนเดือน, <b>✎</b> เปิดหน้ากรอบและ Emoji<br><b>"อีก n รายการ"</b> หรือ <b>หัวรายการ</b> เปิดหน้าปฏิทินในแอปที่วันนั้น (ด้านขวา)</p>
+</div>
+<div class="col">
+<h2>หน้าปฏิทินในแอป (แท็บงาน &gt; ปฏิทิน)</h2>
+<div class="app" id="APP">
+<div class="tabs2"><span>รายการ</span><span>Kanban</span><span>Matrix</span><span>Gantt</span><span class="on">ปฏิทิน</span></div>
+<div class="card"><div id="A"></div></div>
+<div class="card dl" id="AD"></div>
+</div>
+<p class="note">หน้าตาเดียวกับ widget แสดงงานของวันที่เลือกครบทุกรายการ ติ๊กเสร็จได้ทั้งสองที่</p>
+</div>
+</div>
+<p class="log" id="LOG"></p>
+
+<script>
+// Example data, keyed by ISO date. Today is 15 October 2026 (2569).
+const TODAY="2026-10-15";
+const COL={violet:"#a893c9",amber:"#c4a56a",lime:"#7fae93"};
+const TH_M=["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const TH_S=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const TH_D=["อา","จ","อ","พ","พฤ","ศ","ส"];
+const TH_DL=["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
+const HOL={"2026-10-13":"วันนวมินทรมหาราช","2026-10-23":"วันปิยมหาราช","2026-12-05":"วันพ่อแห่งชาติ","2026-12-10":"วันรัฐธรรมนูญ","2026-12-31":"วันสิ้นปี"};
+const ST={"2026-10-06":["🏥"],"2026-10-09":["💪","📚"],"2026-10-15":["🎂","☕"],"2026-10-20":["😴"],"2026-10-23":["✈️"],"2026-10-24":["🏖️","📸"],"2026-10-31":["🎃"],"2026-11-12":["🎉"]};
+const R=(a,b)=>{const o=[];for(let d=a;d<=b;d++)o.push("2026-10-"+String(d).padStart(2,"0"));return o};
+const FR=[{days:R(12,16),color:"violet",label:"อบรม Excel"},{days:R(23,26),color:"amber",label:"เชียงใหม่"},{days:["2026-10-30"],color:"lime",label:""}];
+const EV={"2026-10-05":[["หมอฟัน","14:00"]],"2026-10-15":[["ประชุมทีม","10:00"]],"2026-10-16":[["เพิ่มงาน ทดสอบ","ทั้งวัน"]],"2026-10-22":[["ประชุมลูกค้า","13:30"]],"2026-10-23":[["บินไปเชียงใหม่","08:30"]],"2026-10-26":[["บินกลับ","18:10"]],"2026-11-04":[["สัมมนา","09:00"]]};
+const TK={"2026-10-02":["จ่ายค่าเน็ต"],"2026-10-09":["ส่งใบเสนอราคา"],"2026-10-12":["เตรียมไฟล์อบรม"],"2026-10-15":["ส่งรายงานไตรมาส","จองร้านอาหาร"],"2026-10-16":["ซื้อเค้กวันเกิดแม่"],"2026-10-20":["ตัดผม"],"2026-10-22":["ส่งแบบร่างหน้าเว็บ","โทรหาช่างแอร์"],"2026-10-23":["เช็กอินที่พัก","ซื้อของฝาก"],"2026-10-27":["สรุปค่าใช้จ่ายทริป"],"2026-10-29":["ประชุมงบปีหน้า"],"2026-11-02":["ต่อประกันรถ"],"2026-11-10":["ส่งภาษี"]};
+const LATE=[["ต่อภาษีรถ","2026-10-12"],["ตอบอีเมลลูกค้า","2026-10-06"],["คืนหนังสือห้องสมุด","2026-10-01"]];
+const done=new Set();
+
+const P=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(Date.UTC(y,m-1,d))};
+const F=t=>t.toISOString().slice(0,10);
+const add=(s,n)=>{const t=P(s);t.setUTCDate(t.getUTCDate()+n);return F(t)};
+const diff=(a,b)=>Math.round((P(b)-P(a))/864e5);
+const dm=s=>{const t=P(s);return t.getUTCDate()+" "+TH_S[t.getUTCMonth()]};
+const dayName=s=>{const t=P(s);return TH_DL[t.getUTCDay()]+" "+t.getUTCDate()+" "+TH_M[t.getUTCMonth()]};
+const busy=s=>(EV[s]||[]).length+(TK[s]||[]).filter(x=>!done.has(x)).length>0;
+const frameOn=s=>FR.find(f=>f.days.includes(s));
+
+// One month grid, from Sunday, with frames merged across touching days.
+function month(el,ym,picked,onTap,ch){
+  const[y,m]=ym;const first=new Date(Date.UTC(y,m,1));const start=add(F(first),-first.getUTCDay());
+  const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();const rows=Math.ceil((first.getUTCDay()+last)/7);
+  let h=`<div class="dow">${TH_D.map(d=>`<span>${d}</span>`).join("")}</div><div class="mon" style="--ch:${ch}px">`;
+  for(let w=0;w<rows;w++){h+='<div class="wk">';for(let i=0;i<7;i++){const s=add(start,w*7+i),t=P(s),out=t.getUTCMonth()!==m;
+    const st=ST[s]||[];
+    h+=`<div class="c${i==0?" sun":""}${out?" out":""}${!out&&HOL[s]?" hol":""}${s==TODAY?" today":""}${s==picked?" picked":""}${!out&&busy(s)?" has":""}" data-d="${s}" role="button" tabindex="0" aria-label="${dayName(s)}"><span class="n">${t.getUTCDate()}</span>${!out&&st.length?`<span class="st">${st.slice(0,3).join("")}</span>`:""}</div>`;}h+="</div>";}
+  el.innerHTML=h+"</div>";
+  const mon=el.querySelector(".mon");
+  mon.querySelectorAll(".c").forEach(c=>{c.onclick=()=>onTap(c.dataset.d);c.onkeydown=e=>{if(e.key=="Enter"||e.key==" "){e.preventDefault();onTap(c.dataset.d)}}});
+  requestAnimationFrame(()=>frames(mon));
+}
+function frames(mon){
+  const box=mon.getBoundingClientRect();let svg='<svg class="frames">';
+  FR.forEach(f=>{const set=new Set(f.days),col=COL[f.color];let path="",fill="";let firstShown=null;
+    f.days.forEach(s=>{const c=mon.querySelector(`[data-d="${s}"]`);if(!c)return;if(!firstShown)firstShown=c;
+      const r=c.getBoundingClientRect(),x0=r.left-box.left-.5,y0=r.top-box.top-.5,x1=x0+r.width,y1=y0+r.height;
+      fill+=`<rect x="${x0}" y="${y0}" width="${r.width}" height="${r.height}" fill="${col}" fill-opacity=".10"/>`;
+      if(!set.has(add(s,-7)))path+=`M${x0} ${y0}H${x1}`;if(!set.has(add(s,7)))path+=`M${x0} ${y1}H${x1}`;
+      if(!set.has(add(s,-1)))path+=`M${x0} ${y0}V${y1}`;if(!set.has(add(s,1)))path+=`M${x1} ${y0}V${y1}`;});
+    svg+=fill+`<path d="${path}" fill="none" stroke="${col}" stroke-width="1.2"/>`;
+    if(f.label&&firstShown){const r=firstShown.getBoundingClientRect();mon.insertAdjacentHTML("beforeend",`<span class="tag" style="left:${r.left-box.left+.5}px;top:${r.top-box.top-7}px;background:${col}">${f.label}</span>`);}});
+  mon.insertAdjacentHTML("beforeend",svg+"</svg>");
+}
+const chip=s=>{const f=frameOn(s);if(!f||!f.label)return"";const i=f.days.indexOf(s)+1;return `<span class="chip" style="background:${COL[f.color]}33;color:${COL[f.color]}">${f.label}${f.days.length>1?` วันที่ ${i} จาก ${f.days.length}`:""}</span>`};
+// What a day lists: events, its tasks, and for today the overdue ones after them.
+function items(s){
+  const out=(EV[s]||[]).map(([t,time])=>({k:"ev",t,time}));
+  (TK[s]||[]).forEach(t=>out.push({k:"tk",t}));
+  if(s==TODAY)LATE.forEach(([t,due])=>out.push({k:"tk",t,late:diff(due,TODAY)}));
+  return out.filter(x=>x.k=="ev"||!done.has(x.t));
+}
+
+// ---- widget ----
+const W={ym:[2026,9],picked:null};
+function drawWidget(){
+  const el=document.getElementById("W");
+  el.innerHTML=`<div class="hd"><b id="wt" title="กลับวันนี้">${TH_M[W.ym[1]]} ${W.ym[0]+543}</b><button class="ib" id="wp" aria-label="เดือนก่อน">‹</button><button class="ib" id="wn" aria-label="เดือนถัดไป">›</button><button class="ib" id="we" style="color:var(--accentText)" aria-label="ใส่กรอบและ Emoji">✎</button><button class="plus" aria-label="เพิ่มงาน">+</button></div><div id="wg"></div><div class="ag" id="wa"></div>`;
+  month(el.querySelector("#wg"),W.ym,W.picked,s=>widgetAct(()=>{W.picked=(W.picked==s||s==TODAY)?null:s}),42);
+  el.querySelector("#wt").onclick=()=>widgetAct(()=>{W.picked=null;W.ym=[2026,9]});
+  el.querySelector("#wp").onclick=()=>widgetAct(()=>{W.ym=W.ym[1]==0?[W.ym[0]-1,11]:[W.ym[0],W.ym[1]-1]});
+  el.querySelector("#wn").onclick=()=>widgetAct(()=>{W.ym=W.ym[1]==11?[W.ym[0]+1,0]:[W.ym[0],W.ym[1]+1]});
+  el.querySelector("#we").onclick=()=>log("✎ เปิดหน้ากรอบและ Emoji"+(W.picked?` โดยเลือกวันที่ ${dm(W.picked)} ไว้ให้`:""));
+  // The list: what fits in about 6 rows, then the rest as one line that opens the app.
+  const days=W.picked?[W.picked]:[TODAY,add(TODAY,1)];let rows=[],count=0;
+  days.forEach((s,i)=>{rows.push({head:s,i});if(HOL[s])rows.push({hol:HOL[s]});const it=items(s);if(!it.length&&!HOL[s])rows.push({empty:1});it.forEach(x=>{rows.push({x,s});count++;});});
+  const CAP=7;let shown=rows.length<=CAP?rows:rows.slice(0,CAP-1);while(shown.length&&!shown[shown.length-1].x&&shown.length<rows.length)shown=shown.slice(0,-1);
+  const left=count-shown.filter(r=>r.x).length;
+  let h="";shown.forEach(r=>{
+    if(r.head){const st=(ST[r.head]||[]).join("");const name=r.head==TODAY?"วันนี้ "+dm(r.head):r.head==add(TODAY,1)?"พรุ่งนี้ "+dm(r.head):TH_D[P(r.head).getUTCDay()]+" "+dm(r.head);
+      h+=`<button class="day${W.picked?" on":""}" data-open="${r.head}" style="${r.i?"padding-top:8px":""}">${name}${st?" "+st:""}${chip(r.head)}</button>`;}
+    else if(r.hol)h+=`<div class="hol2">${r.hol}</div>`;
+    else if(r.empty)h+=`<div class="it"><small>ว่าง</small></div>`;
+    else h+=line(r.x,"it");});
+  if(left>0)h+=`<button class="more" data-open="${W.picked||TODAY}">อีก ${left} รายการ, เปิดในแอป</button>`;
+  const ag=el.querySelector("#wa");ag.innerHTML=h;
+  ag.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openApp(b.dataset.open));
+  ag.querySelectorAll("[data-tick]").forEach(b=>b.onclick=()=>tick(b.dataset.tick));
+}
+function line(x,cls){
+  if(x.k=="ev")return cls=="it"?`<div class="it"><span class="m"></span><span class="g">${x.t}</span><small>${x.time}</small></div>`:`<div class="r"><span class="ev"></span><span class="g">${x.t}<br><span class="sub">${x.time}</span></span></div>`;
+  const late=x.late?`<small class="late">เลย ${x.late} วัน</small>`:"";
+  return `<div class="${cls}"><button class="ck${x.late?" late":""}" data-tick="${x.t}" aria-label="ติ๊กเสร็จ ${x.t}"></button><span class="g">${x.t}</span>${late}</div>`;
+}
+// A widget redraws a moment after a tap, as on the phone.
+function widgetAct(change){const w=document.getElementById("W");w.classList.add("busy");setTimeout(()=>{change();drawWidget();w.classList.remove("busy")},150);}
+function tick(t){done.add(t);log(`ติ๊ก "${t}" เสร็จแล้ว`);drawWidget();drawApp();}
+
+// ---- app calendar ----
+const A={ym:[2026,9],picked:TODAY};
+function drawApp(){
+  const el=document.getElementById("A");
+  el.innerHTML=`<div class="ch"><b>${TH_M[A.ym[1]]} ${A.ym[0]+543}</b><button class="tb" id="at">วันนี้</button><button class="sq" id="ae" style="color:var(--accentText)" aria-label="ใส่กรอบและ Emoji">✎</button><button class="sq" id="ap" aria-label="เดือนก่อน">‹</button><button class="sq" id="an" aria-label="เดือนถัดไป">›</button></div><div id="ag"></div>`;
+  month(el.querySelector("#ag"),A.ym,A.picked,s=>{A.picked=s;const t=P(s);A.ym=[t.getUTCFullYear(),t.getUTCMonth()];drawApp()},46);
+  el.querySelector("#at").onclick=()=>{A.picked=TODAY;A.ym=[2026,9];drawApp()};
+  el.querySelector("#ap").onclick=()=>{A.ym=A.ym[1]==0?[A.ym[0]-1,11]:[A.ym[0],A.ym[1]-1];drawApp()};
+  el.querySelector("#an").onclick=()=>{A.ym=A.ym[1]==11?[A.ym[0]+1,0]:[A.ym[0],A.ym[1]+1];drawApp()};
+  el.querySelector("#ae").onclick=()=>log(`✎ เปิดหน้ากรอบและ Emoji โดยเลือกวันที่ ${dm(A.picked)} ไว้ให้`);
+  const s=A.picked,st=(ST[s]||[]).join(""),it=items(s);
+  let h=`<h4>${s==TODAY?"วันนี้, ":""}${dayName(s)}${st?" "+st:""} ${chip(s)}</h4>${HOL[s]?`<div class="hol2">${HOL[s]}</div>`:""}`;
+  h+=it.length?it.map(x=>line(x,"r")).join(""):`<div class="empty">ว่างทั้งวัน</div>`;
+  const d=document.getElementById("AD");d.innerHTML=h;d.querySelectorAll("[data-tick]").forEach(b=>b.onclick=()=>tick(b.dataset.tick));
+}
+function openApp(s){A.picked=s;const t=P(s);A.ym=[t.getUTCFullYear(),t.getUTCMonth()];drawApp();const a=document.getElementById("APP");a.classList.remove("flash");void a.offsetWidth;a.classList.add("flash");log(`เปิดแอปที่หน้าปฏิทิน วันที่ ${dm(s)}`);}
+function log(t){document.getElementById("LOG").textContent="ล่าสุด: "+t;}
+drawWidget();drawApp();
+addEventListener("resize",()=>{drawWidget();drawApp()});
+</script>

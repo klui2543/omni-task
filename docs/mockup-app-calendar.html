@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App calendar like the widget</title>
+<style>
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_semibold.ttf);font-weight:600}
+:root{--bg:#0e0e10;--card:#161618;--border:#26262a;--raised:#1e1e22;--line:#212125;--grid:#2e2e35;--control:#34343a;
+--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;
+--lime:#7fae93;--red:#d9726c;--amber:#c4a56a;--violet:#a893c9}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px 40px}
+.grid{display:flex;flex-wrap:wrap;gap:36px 32px;justify-content:center;max-width:1300px;margin:0 auto}
+.col{width:390px;max-width:100%;min-width:0}
+h2{font-size:15px;font-weight:600;margin:0 0 4px}
+.what{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.55;min-height:58px}
+.note{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.65}
+.note b{color:var(--text2);font-weight:500}
+.home{background:linear-gradient(160deg,#1d2a33,#2b2233 60%,#1a1f2a);border-radius:24px;padding:22px 14px}
+.phone{background:var(--bg);border-radius:22px;padding:14px 12px;border:1px solid #1b1b1f}
+.w{border-radius:24px;padding:16px 14px 14px;position:relative;background:#141416f0}
+.ib{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px}
+.fr-ic{width:14px;height:12px;border:2px solid var(--accentText);border-radius:3px}
+.hd{display:flex;align-items:center;gap:4px;padding:0 2px 10px}
+.hd b{font-size:17px;font-weight:600;flex:1}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:10.5px;color:var(--faint);text-align:center;padding-bottom:5px}
+.dow span:first-child{color:var(--red)}
+.mon{position:relative;border-top:1px solid var(--grid);border-left:1px solid var(--grid)}
+.wk{display:grid;grid-template-columns:repeat(7,1fr)}
+.c{position:relative;height:var(--ch,44px);border-right:1px solid var(--grid);border-bottom:1px solid var(--grid);text-align:center;padding-top:5px}
+.n{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;width:24px;height:24px;font-size:12.5px;color:var(--text2);position:relative;z-index:2}
+.sun .n,.hol .n{color:var(--red)}
+.out .n{opacity:.25}
+.today .n{background:var(--accent);color:var(--onAccent);font-weight:600}
+.has::after{content:"";position:absolute;left:6px;bottom:6px;width:5px;height:5px;border-radius:50%;background:var(--lime);z-index:2}
+.st{position:absolute;bottom:2px;right:3px;font-size:10px;line-height:12px;z-index:2;letter-spacing:-1px;white-space:nowrap}
+.st small{font-size:8.5px;color:var(--muted);letter-spacing:0;margin-left:2px}
+.mini .st{display:none}
+.frames{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1}
+.tag{position:absolute;font-size:9px;line-height:13px;padding:0 5px;border-radius:4px;font-weight:600;color:#0e0e10;z-index:3;white-space:nowrap}
+.ag{margin-top:12px;padding-top:4px}
+.day{font-size:11.5px;color:var(--muted);padding:6px 4px 4px;display:flex;align-items:center;gap:6px}
+.chip{font-size:10.5px;border-radius:10px;padding:0 7px;line-height:17px}
+.it{display:flex;align-items:center;gap:10px;padding:6px 4px;font-size:13.5px}
+.it .g{flex:1}.it small{color:var(--muted);font-size:12px}
+.m{width:3px;height:16px;border-radius:2px}
+.ck{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--faint)}
+/* editor */
+.top{display:flex;align-items:center;gap:10px;padding:2px 4px 12px}
+.top .t{flex:1;font-size:16px;font-weight:600;text-align:center}
+.ghost{color:var(--accentText);font-size:13px}
+.sel{position:absolute;inset:3px;border-radius:8px;background:#9db4d32e;border:1.5px solid var(--accent);z-index:0}
+.sel i{position:absolute;right:3px;bottom:2px;font-size:9px;color:var(--accentText);font-style:normal}
+.sheet{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:14px;margin-top:12px}
+.sheet h3{font-size:14px;margin:0 0 2px;font-weight:600}
+.sheet .sub{font-size:12px;color:var(--muted);margin-bottom:12px}
+.sws{display:flex;gap:12px;align-items:center}
+.sw{width:26px;height:26px;border-radius:50%}
+.sw.on{outline:2px solid var(--text);outline-offset:3px}
+.sw.none{border:1.5px dashed var(--faint);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--faint)}
+.lbl{font-size:11.5px;color:var(--muted);margin:14px 0 6px}
+.inp{background:var(--raised);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--text)}
+.inp span{color:var(--faint)}
+.btns{display:flex;gap:10px;margin-top:14px}
+.btn{flex:1;text-align:center;border-radius:20px;padding:9px;font-size:13px;font-weight:600}
+.btn.p{background:var(--accent);color:var(--onAccent)}
+.btn.s{border:1px solid var(--control);color:var(--text2)}
+.list .row{display:flex;align-items:center;gap:10px;font-size:13px;padding:8px 2px;border-top:1px solid var(--line)}
+.list .row .g{flex:1}.list .row small{color:var(--muted)}
+.box{width:16px;height:12px;border-radius:3px;border:2px solid}
+/* rules */
+.mini{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px 12px 14px;margin-bottom:12px}
+.mini h4{margin:0 0 8px;font-size:12.5px;font-weight:500;color:var(--text2)}
+.mini .c{--ch:32px;padding-top:3px}
+.mini .n{width:20px;height:20px;font-size:11px}
+
+.app{background:var(--bg);border-radius:22px;border:1px solid #1b1b1f;padding:10px 12px 14px}
+.sb{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding:0 4px 8px}
+.tabs2{display:flex;gap:6px;margin:4px 0 10px;overflow:hidden}.tabs2 span{font-size:12px;padding:5px 11px;border-radius:15px;border:1px solid var(--control);color:var(--text2);white-space:nowrap}.tabs2 span.on{background:#1d2330;border-color:var(--accent);color:var(--text)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px 8px 10px;margin-bottom:10px}
+.ch{display:flex;align-items:center;gap:6px;padding:0 4px 8px}.ch b{flex:1;font-size:15px;font-weight:600}
+.sq{width:34px;height:34px;border-radius:10px;background:var(--raised);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:14px}
+.tb{height:34px;border-radius:10px;background:var(--raised);border:1px solid var(--border);display:flex;align-items:center;padding:0 10px;color:var(--accentText);font-size:12.5px}
+.c.picked .n{box-shadow:0 0 0 1.6px var(--accent)}
+.dl{padding:4px 8px}.dl h4{margin:4px 0 6px;font-size:13.5px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hol2{font-size:12px;color:var(--red);margin:-2px 0 6px}
+.r{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13.5px;border-top:1px solid var(--line)}.r .g{flex:1}.r small{font-size:12px;color:var(--muted)}.r small.late{color:var(--red)}
+.ev{width:4px;height:28px;border-radius:2px;background:var(--teal)}
+.ck2{width:16px;height:16px;border-radius:50%;border:1.6px solid var(--faint)}.ck2.late{border-color:var(--red)}
+.tapw{position:absolute;inset:-3px;border:2px dashed #e8d36a;border-radius:6px;z-index:5}
+.arrow{font-size:12.5px;color:var(--faint);margin:8px 0 0;line-height:1.6}
+</style></head><body>
+<div class="grid">
+<div class="col">
+<h2>1. แตะวันบน widget</h2>
+<p class="what">แตะวันไหน (เช่น 23) แอปเปิดหน้าปฏิทินทันที เลือกวันนั้นไว้ให้ ไม่มีการเปลี่ยนใน widget แล้ว จึงไม่ค้าง</p>
+<div class="home"><div class="w" id="W"></div></div>
+<p class="note"><b>‹ ›</b> เลื่อนเดือนใน widget (แก้ให้ไม่ค้างแล้ว)<br><b>✎</b> เปิดหน้ากรอบและ Emoji เหมือนเดิม<br><b>รายการด้านล่าง</b> วันนี้ (รวมงานค้าง) กับพรุ่งนี้ เกินที่เป็น "อีก n รายการ"</p>
+</div>
+<div class="col">
+<h2>2. หน้าปฏิทินในแอป (แท็บงาน > ปฏิทิน)</h2>
+<p class="what">หน้าตาเดียวกับ widget: เริ่มวันอาทิตย์ ปี พ.ศ. วันหยุดสีแดง กรอบ Emoji และจุดงาน ด้านล่างเป็นงานของวันที่เลือก</p>
+<div class="app">
+<div class="sb"><span>11:47</span><span>78%</span></div>
+<div class="tabs2"><span>รายการ</span><span>Kanban</span><span>Matrix</span><span>Gantt</span><span class="on">ปฏิทิน</span></div>
+<div class="card"><div id="A"></div></div>
+<div class="card dl">
+<h4>ศุกร์ 23 ตุลาคม ✈️ <span class="chip" style="background:#c4a56a33;color:var(--amber)">เชียงใหม่ วันที่ 1 จาก 4</span></h4>
+<div class="hol2">วันปิยมหาราช</div>
+<div class="r"><span class="ev"></span><span class="g">บินไปเชียงใหม่<br><small style="color:var(--tealText,#8ccbc4)">08:30 ถึง 09:45</small></span></div>
+<div class="r"><span class="ck2"></span><span class="g">เช็กอินที่พัก</span></div>
+<div class="r"><span class="ck2"></span><span class="g">ซื้อของฝาก</span></div>
+</div>
+</div>
+<p class="note"><b>แตะวันในปฏิทิน</b> เลือกวันนั้น ดูงานด้านล่าง<br><b>✎</b> ที่หัวปฏิทิน เปิดหน้ากรอบและ Emoji (เลือกวันที่เลือกอยู่ไว้ให้)<br><b>วันนี้</b> กลับมาวันนี้ ถ้าเลือกวันนี้ รายการจะรวมงานค้างด้วยเหมือน widget</p>
+</div>
+</div>
+<script>
+const COL={violet:"#a893c9",amber:"#c4a56a",lime:"#7fae93",red:"#d9726c",blue:"#9db4d3"};
+const dow='<span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>';
+// Draws a month (or a mini strip) and the merged frame outlines.
+// Two frame days touch when they are next to each other in the week, a week apart,
+// or Saturday then Sunday (that edge is left open so the two pieces read as one span).
+function cal(el,o){
+  const start=o.start,rows=o.rows,last=o.last||31;
+  if(o.head)el.insertAdjacentHTML("beforeend",o.head);
+  el.insertAdjacentHTML("beforeend",`<div class="dow">${dow}</div>`);
+  const mon=document.createElement("div");mon.className="mon";el.appendChild(mon);
+  if(o.ch)mon.style.setProperty("--ch",o.ch+"px");
+  for(let w=0;w<rows;w++){const wk=document.createElement("div");wk.className="wk";
+    for(let i=0;i<7;i++){const d=start+w*7+i,out=d<1||d>last,shown=d<1?30+d:d>last?d-last:d;
+      const c=document.createElement("div");c.dataset.d=d;
+      c.className="c"+(i==0?" sun":"")+(out?" out":"")+(!out&&o.hol&&o.hol[d]?" hol":"")+(!out&&d==o.today?" today":"")+(!out&&o.has&&o.has[d]?" has":"");
+      c.innerHTML=`<span class="n">${shown}</span>`+(!out&&o.st&&o.st[d]?`<span class="st">${emo(o.st[d])}</span>`:"")+(o.sel&&o.sel.includes(d)?'<span class="sel"><i>✓</i></span>':"");
+      wk.appendChild(c);}
+    mon.appendChild(wk);}
+  requestAnimationFrame(()=>drawFrames(mon,o.frames||[],start));
+}
+// Shows up to three stickers; the rest become +n.
+const emo=a=>a.slice(0,3).join("")+(a.length>3?`<small>+${a.length-3}</small>`:"");
+function drawFrames(mon,frames,start){
+  const box=mon.getBoundingClientRect();
+  const cell=d=>mon.querySelector(`[data-d="${d}"]`);
+  let svg='<svg class="frames">';
+  frames.forEach(f=>{
+    const set=new Set(f.days),col=COL[f.color];
+    let path="",fill="";
+    f.days.forEach(d=>{
+      const r=cell(d).getBoundingClientRect();
+      const x0=r.left-box.left-0.5,y0=r.top-box.top-0.5,x1=x0+r.width,y1=y0+r.height;
+      const colI=(d-start)%7;
+      fill+=`<rect x="${x0}" y="${y0}" width="${r.width}" height="${r.height}" fill="${col}" fill-opacity=".10"/>`;
+      if(!set.has(d-7))path+=`M${x0} ${y0}H${x1}`;
+      if(!set.has(d+7))path+=`M${x0} ${y1}H${x1}`;
+      if(!set.has(d-1)||colI==0&&!set.has(d-1))path+=colI==0&&set.has(d-1)?"":`M${x0} ${y0}V${y1}`;
+      if(!set.has(d+1))path+=`M${x1} ${y0}V${y1}`;
+    });
+    svg+=fill+`<path d="${path}" fill="none" stroke="${col}" stroke-width="1.2" stroke-linecap="square"/>`;
+    if(f.label){const r=cell(f.days[0]).getBoundingClientRect();
+      mon.insertAdjacentHTML("beforeend",`<span class="tag" style="left:${r.left-box.left+0.5}px;top:${r.top-box.top-7}px;background:${col}">${f.label}</span>`);}
+  });
+  mon.insertAdjacentHTML("beforeend",svg+"</svg>");
+  // Lift the date labels above a frame tag where they meet: move the tag's day number down a little
+  mon.querySelectorAll(".tag").forEach(t=>{});
+}
+const range=(a,b)=>Array.from({length:b-a+1},(_,i)=>a+i);
+const HOL={13:1,23:1};
+
+
+const ST={6:["🏥"],9:["💪","📚"],15:["🎂","☕"],20:["😴"],23:["✈️"],24:["🏖️","📸"],31:["🎃"]};
+const FR=[{days:range(12,16),color:"violet",label:"อบรม Excel"},{days:range(23,26),color:"amber",label:"เชียงใหม่"},{days:[30],color:"lime"}];
+const HAS={2:1,5:1,7:1,9:1,12:1,13:1,14:1,15:1,16:1,20:1,21:1,23:1,24:1,27:1,29:1,30:1};
+(()=>{const el=document.getElementById("W");
+cal(el,{start:-3,rows:5,today:15,hol:HOL,ch:44,has:HAS,st:ST,frames:FR,
+ head:`<div class="hd"><b>ตุลาคม 2569</b><span class="ib">‹</span><span class="ib">›</span><span class="ib" style="color:var(--accentText);font-size:16px">✎</span><span class="ib">+</span></div>`});
+requestAnimationFrame(()=>{const c=el.querySelector('[data-d="23"]');c.insertAdjacentHTML("beforeend",'<span class="tapw"></span>');});
+el.insertAdjacentHTML("beforeend",`<div class="ag"><div class="day">วันนี้ 15 ต.ค. 🎂☕</div>
+<div class="it"><span class="m" style="background:var(--accent)"></span><span class="g">ประชุมทีม</span><small>10:00</small></div>
+<div class="it"><span class="ck"></span><span class="g">ส่งรายงานไตรมาส</span></div>
+<div class="it"><span class="ck" style="border-color:var(--red)"></span><span class="g">ต่อภาษีรถ</span><small style="color:var(--red)">เลย 3 วัน</small></div>
+<div class="day" style="color:var(--accentText)">อีก 3 รายการ, เปิดในแอป</div></div>`);})();
+(()=>{const el=document.getElementById("A");
+cal(el,{start:-3,rows:5,today:15,hol:HOL,ch:46,has:HAS,st:ST,frames:FR,
+ head:`<div class="ch"><b>ตุลาคม 2569</b><span class="tb">วันนี้</span><span class="sq" style="color:var(--accentText)">✎</span><span class="sq">‹</span><span class="sq">›</span></div>`});
+requestAnimationFrame(()=>el.querySelector('[data-d="23"]').classList.add("picked"));})();
+</script>
+</body></html>

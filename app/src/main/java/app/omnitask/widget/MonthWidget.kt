@@ -32,6 +32,19 @@ import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.state.getAppWidgetState
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.currentState
+import androidx.glance.state.PreferencesGlanceStateDefinition
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -78,14 +91,50 @@ import app.omnitask.time.*
  * picture, since a widget cannot draw a frame running across days; a tap layer over it lists the tapped day's work
  * under the grid. ‹ › move this widget a month at a time; the title brings it back to this month and today. Frames
  * and emoji are set from the pencil.
+ *
+ * Which month and day show is the widget's own state, read while composing, and the work for several months around
+ * it is loaded once into [MonthSource]: a tap recomposes from what is already in memory, so the widget answers at
+ * once. A Glance session keeps its first composition alive, so data loaded before it would never change; a new
+ * [STAMP] (see [OmniWidgets.refresh]) tells the composition to load again after the vault or the calendar changed.
  */
 class MonthWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
+    override val stateDefinition = PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val offset = MonthWidgetState.offset(context, id)
-        val data = MonthData.load(context, offset, MonthWidgetState.day(context, id))
-        provideContent { MonthContent(context, data) }
+        val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
+        val first = MonthSource.load(context, prefs[OFFSET] ?: 0, prefs[STAMP] ?: 0L)
+        provideContent {
+            val state = currentState<Preferences>()
+            val offset = state[OFFSET] ?: 0
+            val stamp = state[STAMP] ?: 0L
+            var source by remember { mutableStateOf(first) }
+            // Load again only when the data changed or the month moved past what is loaded.
+            LaunchedEffect(offset, stamp) {
+                if (stamp != source.stamp || !source.covers(offset)) source = MonthSource.load(context, offset, stamp)
+            }
+            val picked = state[DAY]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            MonthContent(context, source.view(offset, picked))
+        }
+    }
+
+    companion object {
+        /** The month shown, as months from this one. */
+        internal val OFFSET = intPreferencesKey("offset")
+        /** The day tapped, whose work the list shows; absent shows today and tomorrow. */
+        internal val DAY = stringPreferencesKey("day")
+        /** Changes when the vault or the calendar did, so the loaded work is read again. */
+        internal val STAMP = longPreferencesKey("stamp")
+
+        /** Redraws every month widget with fresh data. */
+        suspend fun refresh(context: Context) {
+            GlanceAppWidgetManager(context).getGlanceIds(MonthWidget::class.java).forEach { id ->
+                runCatching {
+                    updateAppWidgetState(context, id) { it[STAMP] = System.currentTimeMillis() }
+                    MonthWidget().update(context, id)
+                }
+            }
+        }
     }
 }
 
@@ -93,45 +142,28 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = MonthWidget()
 }
 
-/** Which month each placed widget shows, as months from this one; kept per widget so two of them can differ. */
-internal object MonthWidgetState {
-    private fun prefs(context: Context) = context.getSharedPreferences("omnitask.monthWidget", Context.MODE_PRIVATE)
-
-    private suspend fun key(context: Context, id: GlanceId) = "offset.${GlanceAppWidgetManager(context).getAppWidgetId(id)}"
-
-    suspend fun offset(context: Context, id: GlanceId): Int = prefs(context).getInt(key(context, id), 0)
-
-    suspend fun set(context: Context, id: GlanceId, offset: Int) = prefs(context).edit().putInt(key(context, id), offset).apply()
-
-    private suspend fun dayKey(context: Context, id: GlanceId) = "day.${GlanceAppWidgetManager(context).getAppWidgetId(id)}"
-
-    /** The day tapped on this widget, whose work the list shows; null shows today and tomorrow. */
-    suspend fun day(context: Context, id: GlanceId): LocalDate? =
-        prefs(context).getString(dayKey(context, id), null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-
-    suspend fun setDay(context: Context, id: GlanceId, day: LocalDate?) =
-        prefs(context).edit().apply { if (day == null) remove(dayKey(context, id)) else putString(dayKey(context, id), day.toString()) }.apply()
-}
-
 private val DELTA = ActionParameters.Key<Int>("delta")
-private val DAY = ActionParameters.Key<String>("day")
+private val DAY_PARAM = ActionParameters.Key<String>("day")
 
 /** ‹ and › move the widget a month; a delta of 0 brings it back to this month and to today's list. */
 class MonthShift : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val delta = parameters[DELTA] ?: 0
-        MonthWidgetState.set(context, glanceId, if (delta == 0) 0 else MonthWidgetState.offset(context, glanceId) + delta)
-        if (delta == 0) MonthWidgetState.setDay(context, glanceId, null)
+        updateAppWidgetState(context, glanceId) { p ->
+            p[MonthWidget.OFFSET] = if (delta == 0) 0 else (p[MonthWidget.OFFSET] ?: 0) + delta
+            if (delta == 0) p.remove(MonthWidget.DAY)
+        }
         MonthWidget().update(context, glanceId)
     }
 }
 
-/** A tap on a day lists that day's work under the grid; tapping it again goes back to today. */
+/** A tap on a day lists that day's work under the grid; tapping it again, or today, goes back to today. */
 class MonthPick : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val day = parameters[DAY]?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return
-        val now = MonthWidgetState.day(context, glanceId)
-        MonthWidgetState.setDay(context, glanceId, if (now == day || day == LocalDate.now()) null else day)
+        val day = parameters[DAY_PARAM] ?: return
+        updateAppWidgetState(context, glanceId) { p ->
+            if (p[MonthWidget.DAY] == day || day == LocalDate.now().toString()) p.remove(MonthWidget.DAY) else p[MonthWidget.DAY] = day
+        }
         MonthWidget().update(context, glanceId)
     }
 }
@@ -146,6 +178,72 @@ private fun openMonth(context: Context, day: LocalDate, pick: Boolean) = actionS
         // A distinct address per day keeps each cell's PendingIntent its own.
         .setData(android.net.Uri.parse("omnitask://widget/month/$day/${if (pick) 1 else 0}")),
 )
+
+/** Opens the app's calendar at [day], with that day's work listed. */
+internal fun openCalendar(context: Context, day: LocalDate) = actionStartActivity(
+    Intent(context, MainActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        .putExtra(MainActivity.EXTRA_ACTION, MainActivity.ACTION_CALENDAR)
+        .putExtra(MainActivity.EXTRA_DAY, day.toString())
+        .setData(android.net.Uri.parse("omnitask://widget/calendar/$day")),
+)
+
+/**
+ * The work, events and holidays from [from] to [to], loaded once; [view] picks out one month and one day from it
+ * without reading anything again.
+ */
+internal class MonthSource(
+    val today: LocalDate,
+    val stamp: Long,
+    private val from: LocalDate,
+    private val to: LocalDate,
+    private val marks: MonthMarks,
+    private val tasks: List<Task>,
+    private val events: List<CalendarEvent>,
+    private val holidays: Map<LocalDate, String>,
+) {
+    private fun month(offset: Int) = today.withDayOfMonth(1).plusMonths(offset.toLong())
+
+    fun covers(offset: Int): Boolean = MonthGrid.days(month(offset)).let { it.first() >= from && it.last() <= to }
+
+    fun view(offset: Int, picked: LocalDate?): MonthData {
+        val month = month(offset)
+        val days = MonthGrid.days(month)
+        val selected = picked?.takeIf { it != today && it >= from && it <= to }
+        val listed = if (selected == null) listOf(today, today.plusDays(1)) else listOf(selected)
+        fun tasksOn(d: LocalDate) = tasks.filter { (it.due ?: it.scheduled) == d }
+        fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
+        val busy = days.filter { d -> tasksOn(d).isNotEmpty() || eventsOn(d).isNotEmpty() }.toSet()
+        val agenda = listed.map { d ->
+            val events: List<MonthData.Item> = eventsOn(d).sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map {
+                MonthData.Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time))
+            }
+            // Today also carries the work past its deadline, as on Focus and the Today widget, after today's own.
+            val overdue = if (d == today) tasks.filter { t -> t.due?.let { it < today } == true }.sortedBy { it.due }
+                .map { MonthData.Item.Todo(it, ChronoUnit.DAYS.between(it.due!!, today)) } else emptyList()
+            d to events + tasksOn(d).map { MonthData.Item.Todo(it) } + overdue
+        }
+        return MonthData(today, month, offset, marks, holidays, busy, selected, agenda)
+    }
+
+    companion object {
+        /** Loads the months around [offset]: three before it and three after, so ‹ › rarely need a load. */
+        suspend fun load(context: Context, offset: Int, stamp: Long): MonthSource = withContext(Dispatchers.IO) {
+            Lang.load(context)
+            Appearance.load(context)
+            val today = LocalDate.now()
+            val center = today.withDayOfMonth(1).plusMonths(offset.toLong())
+            val from = minOf(MonthGrid.start(center.minusMonths(3)), today)
+            val to = maxOf(MonthGrid.days(center.plusMonths(3)).last(), today.plusDays(1))
+            val holidayIds = runCatching { CalendarReader.calendars(context).filter { it.holiday }.map { it.id }.toSet() }.getOrDefault(emptySet())
+            val events = runCatching { CalendarReader.events(context, from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+                .filter { it.calendarId !in holidayIds }
+            val holidays = runCatching { CalendarReader.holidays(context, from, to) }.getOrDefault(emptyMap())
+            val tasks = Scheduler.loadVaultTasks(context).filter { it.isOpen }
+            MonthSource(today, stamp, from, to, MonthMarksStore.local(context), tasks, events, holidays)
+        }
+    }
+}
 
 internal class MonthData(
     val today: LocalDate,
@@ -166,35 +264,6 @@ internal class MonthData(
     }
 
     companion object {
-        suspend fun load(context: Context, offset: Int, selected: LocalDate? = null): MonthData = withContext(Dispatchers.IO) {
-            Lang.load(context)
-            Appearance.load(context)
-            val today = LocalDate.now()
-            val month = today.withDayOfMonth(1).plusMonths(offset.toLong())
-            val days = MonthGrid.days(month)
-            val listed = if (selected == null || selected == today) listOf(today, today.plusDays(1)) else listOf(selected)
-            val from = minOf(days.first(), listed.first())
-            val to = maxOf(days.last(), listed.last())
-            val holidayIds = runCatching { CalendarReader.calendars(context).filter { it.holiday }.map { it.id }.toSet() }.getOrDefault(emptySet())
-            val events = runCatching { CalendarReader.events(context, from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
-                .filter { it.calendarId !in holidayIds }
-            val holidays = runCatching { CalendarReader.holidays(context, from, to) }.getOrDefault(emptyMap())
-            val tasks = Scheduler.loadVaultTasks(context).filter { it.isOpen }
-            fun tasksOn(d: LocalDate) = tasks.filter { (it.due ?: it.scheduled) == d }
-            fun eventsOn(d: LocalDate) = events.filter { onDay(it, d) }
-            val busy = days.filter { d -> tasksOn(d).isNotEmpty() || eventsOn(d).isNotEmpty() }.toSet()
-            val agenda = listed.map { d ->
-                val events: List<Item> = eventsOn(d).sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map {
-                    Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time))
-                }
-                // Today also carries the work past its deadline, as on Focus and the Today widget, after today's own.
-                val overdue = if (d == today) tasks.filter { t -> t.due?.let { it < today } == true }.sortedBy { it.due }
-                    .map { Item.Todo(it, ChronoUnit.DAYS.between(it.due!!, today)) } else emptyList()
-                d to events + tasksOn(d).map { Item.Todo(it) } + overdue
-            }
-            MonthData(today, month, offset, MonthMarksStore.local(context), holidays, busy, selected?.takeIf { it != today }, agenda)
-        }
-
         /** An all-day event ends at the next midnight; a timed one counts on every day it touches. */
         fun onDay(e: CalendarEvent, d: LocalDate): Boolean =
             e.begin.date <= d && (e.end.date > d || (e.begin.date == d))
@@ -248,7 +317,7 @@ private fun MonthContent(context: Context, data: MonthData) {
                         for (i in 0 until 7) {
                             val d = days[w * 7 + i]
                             // With the list showing, a tap lists the day's work there; too small for a list, it opens the app.
-                            val tap = if (showAgenda) actionRunCallback<MonthPick>(actionParametersOf(DAY to d.toString())) else open(context)
+                            val tap = if (showAgenda) actionRunCallback<MonthPick>(actionParametersOf(DAY_PARAM to d.toString())) else openCalendar(context, d)
                             Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(tap)) {}
                         }
                     }
@@ -268,7 +337,7 @@ private fun Header(context: Context, data: MonthData) {
         val title = GlanceModifier.defaultWeight().padding(start = 2.dp)
         Text(
             MonthGrid.title(data.month),
-            if (data.offset != 0 || data.selected != null) title.clickable(actionRunCallback<MonthShift>(actionParametersOf(DELTA to 0))) else title.clickable(open(context)),
+            if (data.offset != 0 || data.selected != null) title.clickable(actionRunCallback<MonthShift>(actionParametersOf(DELTA to 0))) else title.clickable(openCalendar(context, data.today)),
             style = TextStyle(color = cp { it.text }, fontSize = 17.sp, fontWeight = androidx.glance.text.FontWeight.Medium),
             maxLines = 1,
         )
@@ -296,12 +365,12 @@ private fun Agenda(context: Context, data: MonthData, heightDp: Float) {
     class Line(val height: Float, val entry: Boolean, val content: @Composable () -> Unit)
     val lines = ArrayList<Line>()
     data.agenda.forEachIndexed { index, (day, items) ->
-        lines += Line(if (index > 0) 26f else 20f, false) { DayHead(data, day, index > 0) }
+        lines += Line(if (index > 0) 26f else 20f, false) { DayHead(context, data, day, index > 0) }
         data.holidays[day]?.let { name -> lines += Line(20f, false) { Label(name, cp { it.red }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 2.dp)) } }
         if (items.isEmpty() && data.holidays[day] == null) {
             lines += Line(22f, false) { Label(tr("ว่าง", "Nothing planned"), cp { it.faint }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 4.dp)) }
         }
-        items.forEach { entry -> lines += Line(30f, true) { AgendaLine(context, entry) } }
+        items.forEach { entry -> lines += Line(30f, true) { AgendaLine(context, day, entry) } }
     }
     // Everything fits, or as much as fits above the "more" line.
     val budget = if (lines.sumOf { it.height.toDouble() } <= heightDp) heightDp else heightDp - 28f
@@ -313,7 +382,7 @@ private fun Agenda(context: Context, data: MonthData, heightDp: Float) {
     LazyColumn(GlanceModifier.fillMaxSize()) {
         shownLines.forEach { line -> item { line.content() } }
         if (left > 0) item {
-            Row(GlanceModifier.fillMaxWidth().height(28.dp).padding(horizontal = 4.dp).clickable(open(context)), verticalAlignment = Alignment.CenterVertically) {
+            Row(GlanceModifier.fillMaxWidth().height(28.dp).padding(horizontal = 4.dp).clickable(openCalendar(context, data.selected ?: data.today)), verticalAlignment = Alignment.CenterVertically) {
                 Label(tr("อีก $left รายการ, เปิดในแอป", "$left more, open the app"), cp { it.accentText }, 12.5.sp)
             }
         }
@@ -321,8 +390,8 @@ private fun Agenda(context: Context, data: MonthData, heightDp: Float) {
 }
 
 @Composable
-private fun DayHead(data: MonthData, day: LocalDate, gap: Boolean) {
-    Row(GlanceModifier.fillMaxWidth().padding(start = 4.dp, top = if (gap) 6.dp else 0.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun DayHead(context: Context, data: MonthData, day: LocalDate, gap: Boolean) {
+    Row(GlanceModifier.fillMaxWidth().padding(start = 4.dp, top = if (gap) 6.dp else 0.dp, bottom = 2.dp).clickable(openCalendar(context, day)), verticalAlignment = Alignment.CenterVertically) {
         val stickers = data.marks.stickersOn(day).joinToString("")
         val name = when (day) {
             data.today -> tr("วันนี้ ", "Today ") + MonthGrid.dayMonth(day)
@@ -343,12 +412,12 @@ private fun DayHead(data: MonthData, day: LocalDate, gap: Boolean) {
 }
 
 @Composable
-private fun AgendaLine(context: Context, item: MonthData.Item) {
+private fun AgendaLine(context: Context, day: LocalDate, item: MonthData.Item) {
     Row(GlanceModifier.fillMaxWidth().height(30.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         when (item) {
             is MonthData.Item.Event -> {
                 Box(GlanceModifier.width(3.dp).height(16.dp).cornerRadius(2.dp).background(cp { it.teal })) {}
-                Label(item.title, cp { it.text }, 13.5.sp, modifier = GlanceModifier.defaultWeight().padding(start = 10.dp).clickable(open(context)))
+                Label(item.title, cp { it.text }, 13.5.sp, modifier = GlanceModifier.defaultWeight().padding(start = 10.dp).clickable(openCalendar(context, day)))
                 Label(item.time, cp { it.muted }, 11.5.sp)
             }
             is MonthData.Item.Todo -> {
@@ -358,7 +427,7 @@ private fun AgendaLine(context: Context, item: MonthData.Item) {
                 ) {
                     Image(ImageProvider(R.drawable.ic_w_ring), tr("ติ๊กเสร็จ", "Mark done"), GlanceModifier.size(17.dp), colorFilter = ColorFilter.tint(if (item.late > 0) cp { it.red } else cp { it.faint }))
                 }
-                Label(item.task.title, cp { it.text }, 13.5.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp).clickable(open(context)))
+                Label(item.task.title, cp { it.text }, 13.5.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp).clickable(openCalendar(context, day)))
                 if (item.late > 0) Label(tr("เลย ${item.late} วัน", "${item.late} days late"), cp { it.red }, 11.5.sp)
             }
         }

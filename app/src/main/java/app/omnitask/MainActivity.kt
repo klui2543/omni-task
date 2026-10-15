@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
             ACTION_VOICE -> viewModel.requestQuickAdd(QuickAddRequest(voice = true))
             ACTION_ASSISTANT -> viewModel.requestQuickAdd(QuickAddRequest(assistant = true))
             ACTION_STUCK -> viewModel.requestStuck(true)
+            ACTION_CALENDAR -> viewModel.requestCalendar(
+                intent.getStringExtra(EXTRA_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now(),
+            )
             ACTION_MONTH -> viewModel.requestMonth(
                 MonthRequest(
                     intent.getStringExtra(EXTRA_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now(),
@@ -101,6 +104,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_STUCK = "stuck"
         /** From the month widget: the frames and emoji page, at [EXTRA_DAY], that day selected with [EXTRA_PICK]. */
         const val ACTION_MONTH = "month"
+        /** From the month widget: the Tasks tab's calendar at [EXTRA_DAY], that day's work listed. */
+        const val ACTION_CALENDAR = "calendar"
         const val EXTRA_DAY = "app.omnitask.DAY"
         const val EXTRA_PICK = "app.omnitask.PICK"
     }

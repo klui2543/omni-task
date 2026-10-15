@@ -132,6 +132,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
 
+    // The month widget asked for the calendar: go to the Tasks tab, whose calendar takes the day.
+    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) screen = Screen.TASKS }
+
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(it)
