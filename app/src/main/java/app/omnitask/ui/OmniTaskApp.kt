@@ -337,15 +337,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         )
     }
     adding?.let { r ->
-        if (r.event) {
-            EventSheet(state, vm, r.text, r.day) { adding = null }
-        } else {
-            QuickAddSheet(
-                state, vm, r.voice, r.status, r.text, r.link,
-                onAskAssistant = { vm.ask(it); screen = Screen.AI },
-                onEvent = { adding = QuickAddRequest(event = true, text = it) },
-            ) { adding = null }
-        }
+        QuickAddSheet(state, vm, r.voice, r.status, r.text, r.link, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
     }
 }
 

@@ -179,15 +179,6 @@ private fun openMonth(context: Context, day: LocalDate, pick: Boolean) = actionS
         .setData(android.net.Uri.parse("omnitask://widget/month/$day/${if (pick) 1 else 0}")),
 )
 
-/** Opens the new-event sheet in the app, on [day]. */
-private fun openEvent(context: Context, day: LocalDate) = actionStartActivity(
-    Intent(context, MainActivity::class.java)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        .putExtra(MainActivity.EXTRA_ACTION, MainActivity.ACTION_EVENT)
-        .putExtra(MainActivity.EXTRA_DAY, day.toString())
-        .setData(android.net.Uri.parse("omnitask://widget/event/$day")),
-)
-
 /** Opens the app's calendar at [day], with that day's work listed. */
 internal fun openCalendar(context: Context, day: LocalDate) = actionStartActivity(
     Intent(context, MainActivity::class.java)
@@ -355,8 +346,6 @@ private fun Header(context: Context, data: MonthData) {
         IconButton(R.drawable.ic_w_pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), cp { it.accentText },
             // The pencil is the way into frames and emoji; a day picked on the widget comes along chosen.
             data.selected?.let { openMonth(context, it, pick = true) } ?: openMonth(context, data.month, pick = false))
-        // A new event lands on the day picked on the widget, or today.
-        IconButton(R.drawable.ic_w_event, tr("เพิ่มนัดลงปฏิทิน", "New calendar event"), cp { it.accentText }, openEvent(context, data.selected ?: data.today))
         Spacer(GlanceModifier.width(4.dp))
         Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 30)
     }

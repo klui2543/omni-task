@@ -259,9 +259,6 @@ data class QuickAddRequest(
     /** Text shared from another app, and its link, which goes into the task's details. */
     val text: String = "",
     val link: String? = null,
-    /** A calendar event instead of a task, on [day] (today when null). */
-    val event: Boolean = false,
-    val day: LocalDate? = null,
 )
 
 /** One entry in the assistant conversation. */

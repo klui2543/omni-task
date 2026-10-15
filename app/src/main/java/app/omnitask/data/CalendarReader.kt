@@ -29,6 +29,15 @@ object CalendarReader {
      */
     const val KEY_HIDDEN = "calendars.hidden"
 
+    /** The calendar the last event typed in quick add went to, picked first next time; per phone like [KEY_HIDDEN]. */
+    const val KEY_ADD_TO = "calendar.addTo"
+
+    fun addTo(context: Context): Long? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_ADD_TO, -1L).takeIf { it >= 0 }
+
+    fun setAddTo(context: Context, id: Long) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_ADD_TO, id).apply()
+
     /** Whether [id] is switched off in [hidden]. */
     fun isHidden(id: Long, hidden: Set<Long>) = id in hidden
 

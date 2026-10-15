@@ -79,7 +79,6 @@ object Ic {
     val folder = icon("folder", "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z")
     val spark = icon("spark", "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z")
     val plus = icon("plus", "M12 5v14M5 12h14", width = 2.2f)
-    val event = icon("event", "M4.5 6.5h15v13h-15Z", "M4.5 10.5h15M8.5 4v4M15.5 4v4", "M12 13v4.5M9.75 15.25h4.5")
     val search = icon("search", "M11 4.5a6.5 6.5 0 1 0 0.01 0Z", "M16 16l4 4")
     val sort = icon("sort", "M8 5v14M8 19l-3-3M8 19l3-3", "M16 19V5M16 5l-3 3M16 5l3 3")
     val filter = icon("filter", "M4 5h16l-6 7.5V19l-4-2v-4.5Z")

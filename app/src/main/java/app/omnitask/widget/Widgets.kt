@@ -137,8 +137,6 @@ class QuickAddWidget : GlanceAppWidget() {
                     tr("เพิ่มงาน เช่น ส่งรายงาน พรุ่งนี้", "Add a task, e.g. report tomorrow"), cp { it.muted }, 14.sp,
                     modifier = GlanceModifier.defaultWeight().clickable(open(context, MainActivity.ACTION_ADD)),
                 )
-                Circle(context, R.drawable.ic_w_event, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_EVENT)
-                Spacer(GlanceModifier.width(6.dp))
                 Circle(context, R.drawable.ic_w_mic, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_VOICE)
                 Spacer(GlanceModifier.width(6.dp))
                 Circle(context, R.drawable.ic_w_spark, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ASSISTANT)
@@ -204,8 +202,6 @@ class TodayWidget : GlanceAppWidget() {
                             cp { it.muted }, 12.sp,
                         )
                     }
-                    Circle(context, R.drawable.ic_w_event, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_EVENT, size = 34)
-                    Spacer(GlanceModifier.width(6.dp))
                     Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 34)
                 }
                 Spacer(GlanceModifier.height(6.dp))

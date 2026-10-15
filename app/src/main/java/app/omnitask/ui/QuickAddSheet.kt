@@ -1,5 +1,6 @@
 package app.omnitask.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -41,11 +42,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import app.omnitask.data.CalendarReader
 import app.omnitask.model.Lang
 import app.omnitask.model.fetchTitle
 import app.omnitask.model.Priority
@@ -58,11 +61,21 @@ import app.omnitask.time.*
 /** Add a task in one line; day words, times, #tags and ! marks are read out of the sentence. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, initial: String = "", link: String? = null, onAskAssistant: (String) -> Unit, onEvent: (String) -> Unit = {}, onDismiss: () -> Unit) {
+fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Status = Status.TODO, initial: String = "", link: String? = null, onAskAssistant: (String) -> Unit, onDismiss: () -> Unit) {
     var field by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     val text = field.text
     fun setText(value: String) { field = TextFieldValue(value, TextRange(value.length)) }
     val draft = QuickAdd.parse(text, state.today)
+    val context = LocalContext.current
+    // "ลงปฏิทิน": the same sentence goes to a calendar as an event instead of the vault as a task.
+    var toCalendar by remember { mutableStateOf(false) }
+    var minutes by remember { mutableStateOf(60) }
+    val calendars = state.calendars.filter { it.writable && it.visible }
+    var chosen by remember { mutableStateOf(CalendarReader.addTo(context)) }
+    val calendar = calendars.firstOrNull { it.id == chosen } ?: calendars.firstOrNull { it.isGoogle && it.name == it.account }
+        ?: calendars.firstOrNull { it.isGoogle } ?: calendars.firstOrNull()
+    val canWrite = CalendarReader.canWrite(context)
+    val allow = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.calendarChanged() }
     // "#" can send the item to a list note (and one of its categories) instead of TaskForge.
     var target by remember { mutableStateOf<QuickAdd.HashPick.ToList?>(null) }
     val token = QuickAdd.hashToken(text)
@@ -89,6 +102,15 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     }
     fun add() {
         if (draft.title.isBlank()) return
+        if (toCalendar) {
+            val c = calendar ?: return
+            if (!canWrite) return
+            CalendarReader.setAddTo(context, c.id)
+            // No time typed: an all-day event.
+            vm.addEvent(c.id, draft.title, draft.due ?: state.today, draft.time, minutes)
+            onDismiss()
+            return
+        }
         val t = target
         if (t != null) vm.addListItem(t.list, draft.title, t.category, link) else vm.quickAdd(draft, status, link)
         onDismiss()
@@ -113,13 +135,8 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
 
     SheetFrame(onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("เพิ่มงาน", "New task"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = C.text)
-            // The same sentence as a calendar event instead: day words and the time carry over.
-            Text(
-                tr("ลงปฏิทินแทน", "Calendar event instead"),
-                Modifier.clip(RoundedCornerShape(16.dp)).background(C.raised).clickable { onEvent(text.trim()) }.padding(horizontal = 12.dp, vertical = 7.dp),
-                color = C.accentText, fontSize = TS.body, maxLines = 1,
-            )
+            Text(if (toCalendar) tr("เพิ่มนัด", "New event") else tr("เพิ่มงาน", "New task"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = C.text)
+            Chip(tr("ลงปฏิทิน", "To calendar"), toCalendar, { toCalendar = !toCalendar; if (toCalendar) target = null })
         }
         BasicTextField(
             value = field,
@@ -139,7 +156,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         )
 
         // Lists, their categories and known tags for the "#word" being typed.
-        if (picks.isNotEmpty()) {
+        if (picks.isNotEmpty() && !toCalendar) {
             Row(Modifier.padding(top = 10.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 picks.forEach { p ->
                     val label = when (p) {
@@ -185,9 +202,14 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         link?.let { Text(tr("ลิงก์ในรายละเอียด: ", "Link in details: ") + it, Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
 
         // What the sentence was read as, so a wrong guess is visible before saving.
-        val chips = if (target != null) emptyList() else buildList {
+        fun hm(t: kotlinx.datetime.LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+        val chips = if (target != null) emptyList() else if (toCalendar) buildList {
+            val day = draft.due ?: state.today
+            add(if (day == state.today) tr("วันนี้", "Today") else day.format(SHORT_DATE))
+            add(draft.time?.let { hm(it) + tr(" ถึง ", " to ") + hm(it.plusMinutes(minutes.toLong())) } ?: tr("ทั้งวัน", "All day"))
+        } else buildList {
             draft.due?.let { add(if (it == state.today) tr("วันนี้", "Today") else it.format(SHORT_DATE)) }
-            draft.time?.let { add(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute)) }
+            draft.time?.let { add(tr("เตือน ", "Remind ") + hm(it)) }
             draft.tags.forEach { add("#$it") }
             if (draft.priority != Priority.NONE) add(draft.priority.label)
         }
@@ -196,8 +218,29 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 chips.forEach { Pill(it, C.accentSoft, C.accentText) }
             }
         }
+        if (toCalendar) {
+            // How long, for an event with a time; which calendar it goes to.
+            if (draft.time != null) {
+                Row(Modifier.padding(top = 10.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(30, 60, 90, 120, 180).forEach { m -> Chip(length(m), minutes == m, { minutes = m }) }
+                }
+            }
+            when {
+                !canWrite -> Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(tr("ต้องอนุญาตให้แอปเขียนปฏิทินก่อน", "Allow the app to write to your calendars first"), Modifier.weight(1f), color = C.text2, fontSize = TS.body)
+                    GhostButton(tr("อนุญาต", "Allow"), { allow.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) })
+                }
+                calendars.isEmpty() -> Text(
+                    tr("ไม่พบปฏิทินที่เพิ่มนัดได้ในเครื่อง\nเปิดซิงค์ปฏิทินของบัญชี Google ในตั้งค่าเครื่อง", "No calendar on this phone takes new events.\nTurn on calendar sync for your Google account in the phone's settings."),
+                    Modifier.padding(top = 10.dp), color = C.text2, fontSize = TS.body,
+                )
+                calendars.size > 1 -> FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    calendars.forEach { c -> Chip(c.name.ifBlank { c.account }, c.id == calendar?.id, { chosen = c.id }) }
+                }
+            }
+        }
         // What tasks like this one usually came with before: tapping one adds its words to the sentence.
-        val hints = remember(draft, target) { if (target != null) emptyList() else vm.quickHints(draft) }
+        val hints = remember(draft, target, toCalendar) { if (target != null || toCalendar) emptyList() else vm.quickHints(draft) }
         if (hints.isNotEmpty()) {
             Text(tr("เคยใส่กับงานแบบนี้", "Usual for tasks like this"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
             FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -212,7 +255,8 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             }
         }
         Text(
-            tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
+            if (toCalendar) tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 14:00 ไม่ใส่เวลาจะลงเป็นทั้งวัน", "today, tomorrow, monday, 25/10, 14:00; no time makes it all day")
+            else tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
             Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,
         )
 
@@ -222,7 +266,14 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 if (text.isNotBlank()) { onAskAssistant(text.trim()); onDismiss() }
             }
             Box(Modifier.weight(1f))
-            PrimaryButton(if (target != null) tr("เพิ่มลง List", "Add to list") else tr("เพิ่มงาน", "Add task"), { add() })
+            PrimaryButton(
+                when {
+                    toCalendar -> tr("ลงปฏิทิน", "Add to calendar")
+                    target != null -> tr("เพิ่มลง List", "Add to list")
+                    else -> tr("เพิ่มงาน", "Add task")
+                },
+                { add() },
+            )
         }
     }
 }
@@ -232,4 +283,10 @@ private fun RoundIcon(icon: ImageVector, description: String, bg: Color, fg: Col
     Box(Modifier.size(44.dp).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(icon, description, tint = fg, modifier = Modifier.size(19.dp))
     }
+}
+
+private fun length(m: Int) = when {
+    m < 60 -> tr("$m นาที", "$m min")
+    m % 60 == 0 -> tr("${m / 60} ชม.", "${m / 60} h")
+    else -> tr("${m / 60} ชม. ${m % 60} นาที", "${m / 60} h ${m % 60} min")
 }

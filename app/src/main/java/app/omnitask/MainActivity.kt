@@ -79,9 +79,6 @@ class MainActivity : ComponentActivity() {
             ACTION_ADD -> viewModel.requestQuickAdd(QuickAddRequest())
             ACTION_VOICE -> viewModel.requestQuickAdd(QuickAddRequest(voice = true))
             ACTION_ASSISTANT -> viewModel.requestQuickAdd(QuickAddRequest(assistant = true))
-            ACTION_EVENT -> viewModel.requestQuickAdd(
-                QuickAddRequest(event = true, day = intent.getStringExtra(EXTRA_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }),
-            )
             ACTION_STUCK -> viewModel.requestStuck(true)
             ACTION_CALENDAR -> viewModel.requestCalendar(
                 intent.getStringExtra(EXTRA_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now(),
@@ -103,8 +100,6 @@ class MainActivity : ComponentActivity() {
         const val ACTION_ADD = "add"
         const val ACTION_VOICE = "voice"
         const val ACTION_ASSISTANT = "assistant"
-        /** New calendar event, on [EXTRA_DAY] when given. */
-        const val ACTION_EVENT = "event"
         /** From the weekly review: ask why each long-open task is still open. */
         const val ACTION_STUCK = "stuck"
         /** From the month widget: the frames and emoji page, at [EXTRA_DAY], that day selected with [EXTRA_PICK]. */
