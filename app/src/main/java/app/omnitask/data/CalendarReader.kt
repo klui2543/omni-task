@@ -167,7 +167,13 @@ object CalendarReader {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
             val only = (ids?.let { " AND " + CalendarContract.Instances.EVENT_ID + " IN (" + it.joinToString(",") + ")" } ?: "") +
                 (calendars?.let { " AND " + CalendarContract.Instances.CALENDAR_ID + " IN (" + it.joinToString(",") + ")" } ?: "")
-            context.contentResolver.query(uri, cols, CalendarContract.Instances.VISIBLE + " = 1" + only, null, CalendarContract.Instances.BEGIN)?.use { c ->
+            val where = CalendarContract.Instances.VISIBLE + " = 1" + only
+            // An event deleted on the phone keeps its row, marked deleted, until the next sync with Google; the
+            // calendar app already hides it, so skip it too. A provider without the column gets the plain query.
+            val cursor = runCatching {
+                context.contentResolver.query(uri, cols, where + " AND " + CalendarContract.Events.DELETED + " = 0", null, CalendarContract.Instances.BEGIN)
+            }.getOrNull() ?: context.contentResolver.query(uri, cols, where, null, CalendarContract.Instances.BEGIN)
+            cursor?.use { c ->
                 while (c.moveToNext()) {
                     if (calendars == null && isHidden(c.getLong(5), hidden)) continue
                     val allDay = c.getInt(4) == 1
@@ -202,6 +208,50 @@ object CalendarReader {
             }
         }
         return out
+    }
+
+    /** What the phone's calendar store holds for one event, to tell why it shows in Omni and not in the calendar app. */
+    data class EventInfo(
+        val id: Long,
+        val title: String,
+        val calendar: Calendar?,
+        val calendarId: Long,
+        val deleted: Boolean,
+        val dirty: Boolean,
+        val syncId: String?,
+        val recurring: Boolean,
+        val hiddenInOmni: Boolean,
+    )
+
+    /** Reads event [id] straight from the Events table, deleted rows included; null when the phone has no such row. */
+    fun inspect(context: Context, id: Long): EventInfo? {
+        if (!hasPermission(context)) return null
+        val cols = arrayOf(
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.DELETED,
+            CalendarContract.Events.DIRTY,
+            CalendarContract.Events._SYNC_ID,
+            CalendarContract.Events.RRULE,
+            CalendarContract.Events.ORIGINAL_ID,
+        )
+        return runCatching {
+            context.contentResolver.query(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), cols, null, null, null)?.use { c ->
+                if (!c.moveToFirst()) return@use null
+                val calendarId = c.getLong(1)
+                EventInfo(
+                    id = id,
+                    title = c.getString(0) ?: "",
+                    calendar = calendars(context).firstOrNull { it.id == calendarId },
+                    calendarId = calendarId,
+                    deleted = c.getInt(2) == 1,
+                    dirty = c.getInt(3) == 1,
+                    syncId = c.getString(4),
+                    recurring = !c.getString(5).isNullOrBlank() || !c.isNull(6),
+                    hiddenInOmni = isHidden(calendarId, hiddenIds(context)),
+                )
+            }
+        }.getOrNull()
     }
 
     fun month(context: Context, anyDay: LocalDate): List<CalendarEvent> {
