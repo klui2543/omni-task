@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -34,6 +35,7 @@ import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.runComposition
+import androidx.glance.appwidget.UnmanagedSessionReceiver
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.provideContent
@@ -124,6 +126,8 @@ class MonthWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetId = MonthLive.key(context, id)
+        WidgetLog.attach(context)
+        WidgetLog.add("provideGlance widget=$widgetId")
         val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
         val first = MonthSource.load(
             context, (MonthLive.navs[widgetId] ?: nav(prefs)).fresh(System.currentTimeMillis()).offset, maxOf(prefs[STAMP] ?: 0L, MonthLive.stamp.value),
@@ -175,26 +179,27 @@ class MonthWidget : GlanceAppWidget() {
             val current = MonthLive.navs[widgetId] ?: nav(getAppWidgetState(context, PreferencesGlanceStateDefinition, id))
             val next = change(current.fresh(now), now)
             MonthLive.show(context, id, next)
-            updateAppWidgetState(context, id) { p -> save(p, next) }
-            runCatching {
-                Scheduler.scheduleOneOff(
-                    context,
-                    PlannedAlarm(AlarmKind.RESCAN, LocalDateTime.now().plusSeconds(MonthNav.IDLE_MS / 1000 + 5), "month-widget-home"),
-                )
+            // The broadcast is done; saving and the alarm need not hold the next tap up.
+            val app = context.applicationContext
+            MonthLive.scope.launch {
+                runCatching { updateAppWidgetState(app, id) { p -> save(p, next) } }.onFailure { WidgetLog.add("save failed $it") }
+                MonthLive.armHome(app)
             }
         }
 
         /** Redraws every month widget with fresh data. */
         suspend fun refresh(context: Context) {
-            // One stamp for all of them, so they share one load; the compositions MonthLive keeps read it from memory.
+            // One stamp for all of them, so they share one load; a composition MonthLive keeps reads it from memory and
+            // loads again itself, so only a widget without one goes through Glance's own update.
             val stamp = System.currentTimeMillis()
             Snapshot.withMutableSnapshot { MonthLive.stamp.value = stamp }
             GlanceAppWidgetManager(context).getGlanceIds(MonthWidget::class.java).forEach { id ->
                 runCatching {
                     updateAppWidgetState(context, id) { it[STAMP] = stamp }
-                    MonthWidget().update(context, id)
+                    if (!MonthLive.poke(context, id)) MonthWidget().update(context, id)
                 }
             }
+            WidgetLog.add("refresh stamp=$stamp")
         }
     }
 }
@@ -208,8 +213,10 @@ class MonthWidget : GlanceAppWidget() {
  * five seconds with every later tap waiting behind it. Drawing the whole widget afresh for each tap took about half a
  * second, and the taps queued up behind each other. Here the composition runs in the app's own process (Glance's
  * [runComposition]), the tapped place is snapshot state it reads ([navs]), and each new picture goes straight to
- * [AppWidgetManager]. Glance ends such a composition 45 seconds after it starts; while the widget was tapped in the last
- * [KEEP_MS] it is started again in the background, so the next tap finds it ready.
+ * [AppWidgetManager]. Each tap is also sent to the session as an event, which keeps it alive while the widget is in
+ * use and has it draw at its quick rate; left alone it ends, and while the widget was tapped in the last [KEEP_MS] it
+ * is started again in the background, so the next tap finds it ready. The launcher's own requests (an update, a new
+ * size) are answered from here too, so only one composition draws this widget.
  */
 internal object MonthLive {
     /** Where each widget is, by app widget id; set by a tap, read while composing. */
@@ -218,12 +225,18 @@ internal object MonthLive {
     /** The data stamp [MonthWidget.refresh] set last, for compositions that started before it. */
     val stamp = mutableStateOf(0L)
 
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private const val KEEP_MS = 90_000L
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val running = HashMap<Int, Job>()
+    /** The picture each widget was given last, to give again when the launcher asks. */
+    private val lastViews = HashMap<Int, RemoteViews>()
 
     @Volatile
     private var lastTap = 0L
+
+    @Volatile
+    private var homeArmedAt = 0L
 
     fun key(context: Context, id: GlanceId): Int = runCatching { GlanceAppWidgetManager(context).getAppWidgetId(id) }.getOrDefault(-1)
 
@@ -234,10 +247,52 @@ internal object MonthLive {
     /** Shows [nav] on the widget: the kept composition redraws with it, or one is started for it. */
     fun show(context: Context, id: GlanceId, nav: MonthNav) {
         val widgetId = key(context, id)
+        val tapped = SystemClock.elapsedRealtime()
         lastTap = System.currentTimeMillis()
         set(widgetId, nav)
         val app = context.applicationContext
-        keep(app, id, widgetId, null) { views -> AppWidgetManager.getInstance(app).updateAppWidget(widgetId, views) }
+        val session = UnmanagedSessionReceiver.getSession(widgetId)
+        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null}")
+        val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views, tapped) }
+        if (session != null) scope.launch { runCatching { session.updateGlance() }.onFailure { WidgetLog.add("event failed $it") } }
+        else WidgetLog.add("no session, job active=${job.isActive}")
+    }
+
+    /** Tells a kept composition that its data changed; false when this widget has none. */
+    fun poke(context: Context, id: GlanceId): Boolean {
+        val session = UnmanagedSessionReceiver.getSession(key(context, id)) ?: return false
+        scope.launch { runCatching { session.updateGlance() } }
+        return true
+    }
+
+    /** Gives the launcher the last picture again and has the composition draw afresh; false when there is none yet. */
+    fun again(context: Context, widgetId: Int, options: Bundle?): Boolean {
+        val views = synchronized(running) { lastViews[widgetId] } ?: return false
+        WidgetLog.add("launcher asked widget=$widgetId options=${options != null}")
+        runCatching { AppWidgetManager.getInstance(context).updateAppWidget(widgetId, views) }
+        val session = UnmanagedSessionReceiver.getSession(widgetId) ?: return false
+        scope.launch { runCatching { if (options != null) session.updateAppWidgetOptions(options) else session.updateGlance() } }
+        return true
+    }
+
+    /** Sets the alarm that brings the widget back to today, at most once a while: it only needs to come after the taps. */
+    fun armHome(context: Context) {
+        val now = System.currentTimeMillis()
+        if (now - homeArmedAt < 30_000) return
+        homeArmedAt = now
+        runCatching {
+            Scheduler.scheduleOneOff(
+                context,
+                PlannedAlarm(AlarmKind.RESCAN, LocalDateTime.now().plusSeconds(MonthNav.IDLE_MS / 1000 + 5), "month-widget-home"),
+            )
+        }.onFailure { WidgetLog.add("alarm failed $it") }
+    }
+
+    private fun publish(context: Context, widgetId: Int, views: RemoteViews, tapped: Long) {
+        val began = SystemClock.elapsedRealtime()
+        synchronized(running) { lastViews[widgetId] = views }
+        val result = runCatching { AppWidgetManager.getInstance(context).updateAppWidget(widgetId, views) }
+        WidgetLog.add("drew widget=$widgetId ${WidgetLog.ms(tapped)} ms after the tap, handing over took ${WidgetLog.ms(began)} ms${result.exceptionOrNull()?.let { " failed $it" } ?: ""}")
     }
 
     /**
@@ -249,21 +304,24 @@ internal object MonthLive {
         running[widgetId]?.takeIf { it.isActive } ?: scope.launch {
             try {
                 do {
-                    val began = System.currentTimeMillis()
+                    val began = SystemClock.elapsedRealtime()
+                    WidgetLog.add("composition starts widget=$widgetId")
                     val state = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
                     val sizes = options ?: AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
-                    var drawn = false
-                    MonthWidget().runComposition(context, id, options = sizes, state = state).conflate().collect { publish(it); drawn = true }
+                    var drawn = 0
+                    MonthWidget().runComposition(context, id, options = sizes, state = state).conflate().collect { publish(it); drawn++ }
+                    WidgetLog.add("composition ended widget=$widgetId after ${WidgetLog.ms(began)} ms, $drawn pictures")
                     // Nothing drawn here: Glance's own update takes over. One that ends at once would only spin.
-                    if (!drawn) {
+                    if (drawn == 0) {
                         MonthWidget().update(context, id)
                         break
                     }
-                    if (System.currentTimeMillis() - began < 1_000) break
+                    if (WidgetLog.ms(began) < 1_000) break
                 } while (System.currentTimeMillis() - lastTap < KEEP_MS)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                WidgetLog.add("composition failed widget=$widgetId $e")
                 runCatching { MonthWidget().update(context, id) }
             }
         }.also { running[widgetId] = it }
@@ -272,6 +330,23 @@ internal object MonthLive {
 
 class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = MonthWidget()
+
+    override fun onReceive(context: Context, intent: Intent) {
+        WidgetLog.attach(context)
+        WidgetLog.add("receiver ${intent.action?.substringAfterLast('.')}")
+        super.onReceive(context, intent)
+    }
+
+    // The launcher asks for the widget again (its own schedule, or the stack it is in turned to it): a kept composition
+    // answers at once, and only a widget without one goes through Glance's own session.
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val left = appWidgetIds.filter { !MonthLive.again(context, it, null) }
+        if (left.isNotEmpty()) super.onUpdate(context, appWidgetManager, left.toIntArray())
+    }
+
+    override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) {
+        if (!MonthLive.again(context, appWidgetId, newOptions)) super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+    }
 }
 
 private val DELTA = ActionParameters.Key<Int>("delta")
@@ -377,6 +452,11 @@ internal class MonthSource(
         }
 
         private suspend fun read(context: Context, offset: Int, stamp: Long): MonthSource = withContext(Dispatchers.IO) {
+            val began = SystemClock.elapsedRealtime()
+            try { readNow(context, offset, stamp) } finally { WidgetLog.add("loaded the vault and the calendar in ${WidgetLog.ms(began)} ms") }
+        }
+
+        private fun readNow(context: Context, offset: Int, stamp: Long): MonthSource {
             Lang.load(context)
             Appearance.load(context)
             val today = LocalDate.now()
@@ -388,7 +468,7 @@ internal class MonthSource(
                 .filter { it.calendarId !in holidayIds }
             val holidays = runCatching { CalendarReader.holidays(context, from, to) }.getOrDefault(emptyMap())
             val tasks = Scheduler.loadVaultTasks(context).filter { it.isOpen }
-            MonthSource(today, stamp, from, to, MonthMarksStore.local(context), tasks, events, holidays, MonthMarksStore.cellStyle(context))
+            return MonthSource(today, stamp, from, to, MonthMarksStore.local(context), tasks, events, holidays, MonthMarksStore.cellStyle(context))
         }
     }
 }

@@ -183,6 +183,18 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                             tr("นัดที่มีเกือบทุกวัน เช่น ออกกำลังกาย ไม่นับในช่อง แต่ยังอยู่ในรายการของวัน", "An event on nearly every day, such as a workout, is left out of the cells but stays in the day's list."),
                             color = C.muted, fontSize = TS.caption,
                         )
+                        // For finding out why a tap on the widget was slow: what it did and when, to send along.
+                        Text(
+                            tr("แชร์บันทึกการทำงานของ widget", "Share the widget's log"),
+                            Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                                val text = app.omnitask.widget.WidgetLog.all(context).lines().takeLast(400).joinToString("\n")
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(android.content.Intent.EXTRA_SUBJECT, "Omni widget log")
+                                    .putExtra(android.content.Intent.EXTRA_TEXT, text.ifEmpty { "(empty)" })
+                                runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }
+                            }.padding(vertical = 4.dp),
+                            color = C.accentText, fontSize = TS.caption,
+                        )
                     }
                 }
             } else {
