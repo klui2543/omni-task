@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Month widget variants</title>
+<style>
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_semibold.ttf);font-weight:600}
+:root{--bg:#0e0e10;--card:#161618;--border:#26262a;--raised:#1e1e22;--line:#212125;--control:#34343a;
+--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;
+--lime:#7fae93;--red:#d9726c;--amber:#c4a56a;--sat:#8aa6d6;--violet:#a893c9}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,"Noto Sans Thai",sans-serif;padding:24px 16px 40px}
+.grid{display:flex;flex-wrap:wrap;gap:36px 32px;justify-content:center;max-width:1700px;margin:0 auto}
+.col{width:390px}
+h2{font-size:15px;font-weight:600;margin:0 0 4px}
+.what{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.55;min-height:58px}
+.note{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.65}
+.note b{color:var(--text2);font-weight:500}
+.home{background:linear-gradient(160deg,#1d2a33,#2b2233 60%,#1a1f2a);border-radius:24px;padding:22px 14px}
+.w{border-radius:24px;padding:16px 14px 14px;position:relative;background:#141416f0}
+.ib{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px}
+.mon{position:relative}
+.ink{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.wk{display:grid;grid-template-columns:repeat(7,1fr)}
+.c{position:relative}
+.n{display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
+
+/* A: airy */
+.A .hd{display:flex;align-items:baseline;gap:8px;padding:0 4px 14px}
+.A .hd b{font-size:22px;font-weight:600;letter-spacing:.2px}
+.A .hd span{font-size:13px;color:var(--muted);flex:1}
+.A .dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:11px;color:var(--faint);text-align:center;padding-bottom:6px}
+.A .c{height:52px;text-align:center;padding-top:4px}
+.A .n{width:28px;height:28px;font-size:13.5px;color:var(--text2)}
+.A .sun .n,.A .hol .n{color:var(--red)}
+.A .out .n{opacity:.25}
+.A .today .n{background:var(--accent);color:var(--onAccent);font-weight:600}
+.A .dots{display:flex;gap:3px;justify-content:center;margin-top:3px}
+.A .dots i{width:5px;height:5px;border-radius:50%}
+.A .st{position:absolute;top:-4px;right:4px;font-size:13px}
+.A .ft{display:flex;align-items:center;gap:10px;margin-top:12px;padding:12px 6px 0;border-top:1px solid var(--line);font-size:13px}
+.A .ft .g{flex:1;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.A .ft .m{width:3px;height:16px;border-radius:2px;background:var(--violet)}
+.A .ft small{color:var(--muted)}
+
+/* B: sticker diary */
+.B{background:#f3eee4!important;color:#2b2724}
+.B .hd{display:flex;align-items:center;padding:0 4px 12px}
+.B .hd b{font-size:20px;font-weight:600;flex:1;color:#2b2724}
+.B .hd .ib{color:#8b8378}
+.B .dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:11px;color:#9b9286;text-align:center;padding-bottom:4px}
+.B .c{height:56px;margin:2px;border-radius:12px;background:#fbf8f2;padding:4px 0 0 6px}
+.B .out{background:transparent}
+.B .n{font-size:11.5px;color:#5b544c;font-weight:500}
+.B .sun .n,.B .hol .n{color:#c0574f}
+.B .out .n{opacity:.3}
+.B .today{background:#2b2724}.B .today .n{color:#f3eee4}
+.B .st{position:absolute;inset:16px 0 0 0;display:flex;align-items:center;justify-content:center;font-size:22px}
+.B .ev{position:absolute;left:6px;right:6px;bottom:6px;height:4px;border-radius:2px}
+
+/* C: month plus agenda */
+.C .hd{display:flex;align-items:center;gap:4px;padding:0 2px 10px}
+.C .hd b{font-size:17px;font-weight:600;flex:1}
+.C .dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:10.5px;color:var(--faint);text-align:center;padding-bottom:4px}
+.C .c{height:38px;text-align:center}
+.C .n{width:26px;height:26px;font-size:12.5px;color:var(--text2)}
+.C .sun .n,.C .hol .n{color:var(--red)}
+.C .out .n{opacity:.25}
+.C .today .n{background:var(--accent);color:var(--onAccent);font-weight:600}
+.C .has::after{content:"";position:absolute;left:50%;bottom:1px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--lime)}
+.C .st{position:absolute;top:-6px;right:2px;font-size:11px}
+.C .ag{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.C .day{font-size:11.5px;color:var(--muted);padding:6px 4px 4px}
+.C .it{display:flex;align-items:center;gap:10px;padding:6px 4px;font-size:13.5px}
+.C .it .g{flex:1}
+.C .it small{color:var(--muted);font-size:12px}
+.C .m{width:3px;height:16px;border-radius:2px}
+.C .ck{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--faint)}
+
+/* D: clean bars, more space */
+.D .hd{display:flex;align-items:center;gap:6px;padding:0 4px 12px}
+.D .hd b{font-size:19px;font-weight:600;flex:1}
+.D .hd b small{font-size:13px;color:var(--muted);font-weight:400;margin-left:6px}
+.D .dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:11px;color:var(--faint);padding:0 0 6px 6px}
+.D .dow span:first-child{color:var(--red)}
+.D .wk{height:62px;position:relative}
+.D .c{padding:3px 0 0 4px}
+.D .n{width:22px;height:22px;font-size:12px;color:var(--text2)}
+.D .sun .n,.D .hol .n{color:var(--red)}
+.D .out .n{opacity:.25}
+.D .today .n{background:var(--accent);color:var(--onAccent);font-weight:600}
+.D .st{position:absolute;top:2px;right:6px;font-size:13px}
+.D .bar{position:absolute;height:15px;font-size:9.5px;line-height:15px;padding:0 6px;border-radius:8px;white-space:nowrap;overflow:hidden;font-weight:500}
+.D .td{position:absolute;left:28px;top:12px;width:5px;height:5px;border-radius:50%;background:var(--lime)}
+.D .more{position:absolute;font-size:9.5px;color:var(--muted)}
+</style></head><body>
+<div class="grid">
+
+<div class="col">
+<h2>A. โปร่ง เน้นตัวเลข</h2>
+<p class="what">ตัดเส้นตารางและชื่อ event ออกหมด เหลือจุดสีใต้วันที่ (สีตามปฏิทิน, เขียวคือ task) ด้านล่างโชว์สิ่งถัดไปบรรทัดเดียว</p>
+<div class="home"><div class="w A" id="A"></div></div>
+<p class="note"><b>เหมาะกับ</b> คนที่อยากเห็นภาพรวมเดือนแบบสบายตา ลายมือกับ Emoji เด่นชัดที่สุดเพราะพื้นว่าง<br><b>ข้อเสีย</b> ต้องแตะเข้าไปดูว่าวันนั้นมีอะไร</p>
+</div>
+
+<div class="col">
+<h2>B. สมุดสติกเกอร์</h2>
+<p class="what">พื้นสีกระดาษ แต่ละวันเป็นการ์ดมุมมน Emoji ตัวใหญ่กลางช่อง เส้นสีด้านล่างบอกว่ามี event อารมณ์แบบ diary</p>
+<div class="home"><div class="w B" id="B"></div></div>
+<p class="note"><b>เหมาะกับ</b> ใช้ Emoji บันทึกอารมณ์หรือเรื่องสำคัญรายวัน ใกล้ฟีล Samsung ที่สุดตอนติดสติกเกอร์<br><b>ข้อเสีย</b> สีสว่างต่างจากธีมมืดของแอป (ทำเวอร์ชันมืดได้)</p>
+</div>
+
+<div class="col">
+<h2>C. เดือนเล็ก กับรายการข้างล่าง</h2>
+<p class="what">ปฏิทินกะทัดรัดด้านบน ขีดเขียวใต้วันที่มีงาน ด้านล่างเป็นรายการวันนี้และพรุ่งนี้ ใช้ขนาด 4x5</p>
+<div class="home"><div class="w C" id="C"></div></div>
+<p class="note"><b>เหมาะกับ</b> ใช้งานจริงทุกวัน เห็นทั้งเดือนและสิ่งที่ต้องทำในที่เดียว แตะวงกลมเพื่อติ๊ก task ได้<br><b>ข้อเสีย</b> พื้นที่วาดเล็กลง ลายมือจะอยู่ในส่วนเดือนเท่านั้น</p>
+</div>
+
+<div class="col">
+<h2>D. แถบ event แบบโปร่ง</h2>
+<p class="what">ยังมีชื่อ event เหมือน Samsung แต่จำกัดวันละ 1 แถบ ที่เหลือเป็น +2 แถบมน ตัวอักษรใหญ่ขึ้น ไม่มีเส้นตาราง</p>
+<div class="home"><div class="w D" id="D"></div></div>
+<p class="note"><b>เหมาะกับ</b> คนที่อยากอ่านชื่อ event ได้จาก widget ทันที ใกล้แบบเดิมที่สุดแต่หายใจได้มากขึ้น<br><b>ข้อเสีย</b> ยังแน่นกว่า A กับ B เมื่อเดือนมีงานเยอะ</p>
+</div>
+
+</div>
+<script>
+// October 2026: the 1st is a Thursday; weeks start on Sunday.
+const holidays={13:1,23:1};
+const stickers={6:"🏥",15:"🎂",24:"✈️",31:"🎃",9:"💪",20:"😴"};
+const tasks={2:1,7:2,9:1,15:2,20:3,27:1,29:1};
+const events=[[5,5,"หมอฟัน","#7fae93"],[12,16,"อบรม Excel","#a893c9"],[15,15,"ประชุมทีม","#9db4d3"],
+ [21,21,"จ่ายค่าบ้าน","#c4a56a"],[24,26,"เชียงใหม่","#d9726c"],[30,30,"ส่งงาน","#9db4d3"],[13,13,"วันนวมินทร์",""],[23,23,"วันปิยมหาราช",""]];
+const evOn=d=>events.filter(e=>d>=e[0]&&d<=e[1]&&e[3]);
+const START=-3;
+function weeks(el,cell,after){
+  const mon=document.createElement("div");mon.className="mon";
+  for(let w=0;w<5;w++){
+    const wk=document.createElement("div");wk.className="wk";
+    for(let i=0;i<7;i++){
+      const d=START+w*7+i,out=d<1||d>31,shown=d<1?30+d:d>31?d-31:d;
+      const c=document.createElement("div");
+      c.className="c"+(i==0?" sun":"")+(out?" out":"")+(!out&&holidays[d]?" hol":"")+(!out&&d==15?" today":"");
+      c.innerHTML=`<span class="n">${shown}</span>`;
+      if(!out)cell(c,d);
+      wk.appendChild(c);
+    }
+    if(after)after(wk,START+w*7);
+    mon.appendChild(wk);
+  }
+  el.appendChild(mon);return mon;
+}
+const dow='<span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>';
+function ink(mon,color,paths){mon.insertAdjacentHTML("beforeend",`<svg class="ink" viewBox="0 0 100 100" preserveAspectRatio="none">${paths.replace(/C/g,"C")}</svg>`.replace(/STROKE/g,color));}
+const scribble=c=>`<path d="M60 86 C55 84 54 92 58 95 C64 99 76 97 78 92 C80 86 72 83 65 85" fill="none" stroke="${c}" stroke-width="2.2" vector-effect="non-scaling-stroke" stroke-linecap="round"/>
+<path d="M80 88 C86 82 92 74 96 66" fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round"/>`;
+
+// A
+(()=>{const el=document.getElementById("A");
+el.innerHTML=`<div class="hd"><b>ตุลาคม</b><span>2026</span><span class="ib">‹</span><span class="ib">›</span><span class="ib" style="color:var(--accentText)">✎</span></div><div class="dow">${dow}</div>`;
+const mon=weeks(el,(c,d)=>{
+  const cols=evOn(d).map(e=>e[3]).slice(0,2);if(tasks[d])cols.push("#7fae93");
+  c.insertAdjacentHTML("beforeend",`<div class="dots">${cols.map(x=>`<i style="background:${x}"></i>`).join("")}</div>`+(stickers[d]?`<span class="st">${stickers[d]}</span>`:""));
+});
+ink(mon,"",scribble("#e8d36a"));
+el.insertAdjacentHTML("beforeend",`<div class="ft"><span class="m"></span><span class="g">ประชุมทีม</span><small>10:00</small><small style="color:var(--lime)">+2 task</small></div>`);
+})();
+
+// B
+(()=>{const el=document.getElementById("B");
+el.innerHTML=`<div class="hd"><b>ตุลาคม 2026</b><span class="ib">‹</span><span class="ib">›</span><span class="ib">✎</span></div><div class="dow">${dow}</div>`;
+const mon=weeks(el,(c,d)=>{
+  const e=evOn(d)[0];
+  c.insertAdjacentHTML("beforeend",(stickers[d]?`<span class="st">${stickers[d]}</span>`:"")+(e?`<span class="ev" style="background:${e[3]}"></span>`:""));
+});
+ink(mon,"",`<path d="M16 41 Q40 37 66 41" fill="none" stroke="#e05a4f" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-linecap="round"/>`+scribble("#3b6ea8"));
+})();
+
+// C
+(()=>{const el=document.getElementById("C");
+el.innerHTML=`<div class="hd"><b>ตุลาคม 2026</b><span class="ib">‹</span><span class="ib">›</span><span class="ib" style="color:var(--accentText)">✎</span><span class="ib">+</span></div><div class="dow">${dow}</div>`;
+const mon=weeks(el,(c,d)=>{
+  if(tasks[d]||evOn(d).length)c.classList.add("has");
+  if(stickers[d])c.insertAdjacentHTML("beforeend",`<span class="st">${stickers[d]}</span>`);
+});
+ink(mon,"",scribble("#e8d36a"));
+el.insertAdjacentHTML("beforeend",`<div class="ag">
+<div class="day">วันนี้ 15 ต.ค. 🎂</div>
+<div class="it"><span class="m" style="background:var(--violet)"></span><span class="g">อบรม Excel</span><small>ทั้งวัน</small></div>
+<div class="it"><span class="m" style="background:var(--accent)"></span><span class="g">ประชุมทีม</span><small>10:00</small></div>
+<div class="it"><span class="ck"></span><span class="g">ส่งรายงานไตรมาส</span></div>
+<div class="day">พรุ่งนี้</div>
+<div class="it"><span class="ck"></span><span class="g">ซื้อเค้กวันเกิดแม่</span></div>
+</div>`);
+})();
+
+// D
+(()=>{const el=document.getElementById("D");
+el.innerHTML=`<div class="hd"><b>ตุลาคม<small>2026</small></b><span class="ib">‹</span><span class="ib">›</span><span class="ib" style="color:var(--accentText)">✎</span></div><div class="dow">${dow}</div>`;
+const mon=weeks(el,(c,d)=>{if(stickers[d])c.insertAdjacentHTML("beforeend",`<span class="st">${stickers[d]}</span>`);if(tasks[d])c.insertAdjacentHTML("beforeend",`<i class="td"></i>`);},
+ (wk,ws)=>{
+  const we=ws+6,used={};
+  events.filter(e=>e[3]).forEach(e=>{
+    const s=Math.max(e[0],ws,1),en=Math.min(e[1],we);if(s>en)return;
+    let free=true;for(let x=s;x<=en;x++)if(used[x])free=false;
+    if(!free){for(let x=s;x<=en;x++){used[x]++;}return;}
+    for(let x=s;x<=en;x++)used[x]=1;
+    wk.insertAdjacentHTML("beforeend",`<div class="bar" style="left:calc(${(s-ws)/7*100}% + 3px);width:calc(${(en-s+1)/7*100}% - 6px);top:28px;background:${e[3]}33;color:${e[3]}">${e[2]}</div>`);
+  });
+  for(const x in used)if(used[x]>1)wk.insertAdjacentHTML("beforeend",`<div class="more" style="left:calc(${(x-ws)/7*100}% + 7px);top:46px">+${used[x]-1}</div>`);
+ });
+ink(mon,"",scribble("#e8d36a"));
+})();
+</script>
+</body></html>

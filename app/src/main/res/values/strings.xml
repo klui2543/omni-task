@@ -5,4 +5,5 @@
     <string name="widget_next">ทำต่อเลย</string>
     <string name="widget_matrix">Eisenhower</string>
     <string name="widget_waiting">คนรอและงานอนาคต</string>
+    <string name="widget_month">ปฏิทินเดือน (กรอบและ Emoji)</string>
 </resources>
