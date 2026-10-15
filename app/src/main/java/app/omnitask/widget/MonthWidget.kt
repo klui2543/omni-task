@@ -234,6 +234,11 @@ internal object MonthLive {
     @Volatile
     private var lastTap = 0L
 
+    /** When the widget was last tapped, in elapsedRealtime, for the log and for WidgetWarm. */
+    @Volatile
+    var lastTapAt = 0L
+        private set
+
     @Volatile
     private var homeArmedAt = 0L
 
@@ -246,13 +251,14 @@ internal object MonthLive {
     /** Shows [nav] on the widget: the kept composition redraws with it, or one is started for it. */
     fun show(context: Context, id: GlanceId, nav: MonthNav) {
         val widgetId = key(context, id)
-        val tapped = SystemClock.elapsedRealtime()
+        lastTapAt = SystemClock.elapsedRealtime()
         lastTap = System.currentTimeMillis()
         set(widgetId, nav)
         val app = context.applicationContext
         val session = GlanceSessions.session(widgetId)
-        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null}")
-        val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views, tapped) }
+        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null} warm=${WidgetWarm.running}")
+        WidgetWarm.keep(app)
+        val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views) }
         if (session != null) scope.launch { runCatching { GlanceSessions.updateGlance(session) }.onFailure { WidgetLog.add("event failed $it") } }
         else WidgetLog.add("no session, job active=${job.isActive}")
     }
@@ -287,11 +293,11 @@ internal object MonthLive {
         }.onFailure { WidgetLog.add("alarm failed $it") }
     }
 
-    private fun publish(context: Context, widgetId: Int, views: RemoteViews, tapped: Long) {
+    private fun publish(context: Context, widgetId: Int, views: RemoteViews) {
         val began = SystemClock.elapsedRealtime()
         synchronized(running) { lastViews[widgetId] = views }
         val result = runCatching { AppWidgetManager.getInstance(context).updateAppWidget(widgetId, views) }
-        WidgetLog.add("drew widget=$widgetId ${WidgetLog.ms(tapped)} ms after the tap, handing over took ${WidgetLog.ms(began)} ms${result.exceptionOrNull()?.let { " failed $it" } ?: ""}")
+        WidgetLog.add("drew widget=$widgetId ${WidgetLog.ms(lastTapAt)} ms after the last tap, handing over took ${WidgetLog.ms(began)} ms${result.exceptionOrNull()?.let { " failed $it" } ?: ""}")
     }
 
     /**

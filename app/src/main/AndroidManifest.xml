@@ -65,6 +65,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Keeps the app out of the cached state while the month widget is being tapped (see WidgetWarm). -->
+        <service
+            android:name=".widget.WidgetWarmService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name=".widget.QuickAddWidgetReceiver"
             android:exported="true"
