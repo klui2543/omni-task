@@ -79,6 +79,14 @@ jobs:
           disable-animations: true
           script: bash ci/device-tests.sh
 
+      - name: Keep the widget pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-shots
+          path: app/build/widget-shots/
+          if-no-files-found: ignore
+
       - name: Keep the device test report
         if: failure()
         uses: actions/upload-artifact@v4

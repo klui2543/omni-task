@@ -35,7 +35,7 @@ class MonthWidgetTest {
             .withFrame((12..16).map(::d).toSet(), FrameColor.VIOLET, "อบรม Excel")
             .withFrame((23..26).map(::d).toSet(), FrameColor.AMBER, "")
             .withStickers(d(24), listOf("✈️", "🏖️", "📸", "🍜"))
-        val data = MonthData(d(15), d(1), 0, marks, mapOf(d(13) to "วันนวมินทรมหาราช"), setOf(d(15)), d(20), emptyList())
+        val data = MonthData(d(15), d(1), 0, marks, mapOf(d(13) to "วันนวมินทรมหาราช"), mapOf(d(15) to listOf(MonthData.Mark("ส่งรายงาน", false))), d(20), emptyList())
         val bmp = MonthPainter(context, Palettes.graphiteDark).draw(data, 320f, 42f, 5)
         val scale = minOf(context.resources.displayMetrics.density, 2.75f)
         check(bmp.width == (320f * scale).toInt()) { "width ${bmp.width}" }
@@ -56,6 +56,8 @@ class MonthWidgetTest {
         // The 22nd picked: only its own work, and it is ringed.
         val picked = source.view(0, d(22))
         check(picked.selected == d(22) && picked.agenda.single().second.size == 1)
+        // A tap leaves the grid's work equal, so the widget keeps its picture and only moves the box.
+        check(picked.work == now.work && picked.work[d(22)] == listOf(MonthData.Mark("ส่งแบบร่าง", false)))
         // Picking today is the same as picking nothing; a month away is covered by what was loaded.
         check(source.view(0, d(15)).selected == null)
         check(source.covers(1) && !source.covers(6))

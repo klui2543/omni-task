@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.MonthMarksStore
+import app.omnitask.model.CellStyle
 import app.omnitask.model.FrameColor
 import app.omnitask.model.MonthGrid
 import app.omnitask.model.MonthMarks
@@ -93,7 +94,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     var label by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<MonthMarks.Frame?>(null) }
     var holidays by remember { mutableStateOf(emptyMap<LocalDate, String>()) }
-    var eventDays by remember { mutableStateOf(emptySet<LocalDate>()) }
+    var events by remember { mutableStateOf(emptyList<app.omnitask.notify.CalendarEvent>()) }
+    var style by remember { mutableStateOf(MonthMarksStore.cellStyle(context)) }
 
     LaunchedEffect(request) {
         month = request.day.withDayOfMonth(1)
@@ -105,9 +107,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
         withContext(Dispatchers.IO) {
             holidays = runCatching { CalendarReader.holidays(context, days.first(), days.last()) }.getOrDefault(emptyMap())
             val holidayIds = runCatching { CalendarReader.calendars(context).filter { it.holiday }.map { it.id }.toSet() }.getOrDefault(emptySet())
-            val events = runCatching { CalendarReader.events(context, days.first().atStartOfDay(), days.last().plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+            events = runCatching { CalendarReader.events(context, days.first().atStartOfDay(), days.last().plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
                 .filter { it.calendarId !in holidayIds }
-            eventDays = days.filter { d -> events.any { MonthData.onDay(it, d) } }.toSet()
         }
     }
 
@@ -122,8 +123,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
 
     val current = marks
     val days = MonthGrid.days(month)
-    val busy = remember(state.tasks, eventDays, month) {
-        days.filter { d -> d in eventDays || state.tasks.any { it.isOpen && (it.due ?: it.scheduled) == d } }.toSet()
+    val work = remember(state.tasks, events, month) {
+        MonthData.work(days, month, { d -> state.tasks.filter { (it.due ?: it.scheduled) == d } }, { d -> events.filter { MonthData.onDay(it, d) } })
     }
 
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
@@ -143,7 +144,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         }
                     }
                     Grid(
-                        context, month, days, state.today, current, holidays, busy, selection,
+                        context, month, days, state.today, current, holidays, work, selection,
                         onTap = { d ->
                             selection = if (d in selection) selection - d else selection + d
                             if (selection.isEmpty()) editing = null
@@ -163,6 +164,27 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     onPick = { f -> selection = f.days.toSet(); color = f.color; label = f.label; editing = f },
                     onDelete = { f -> commit(current.without(f)) },
                 )
+                Card {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(tr("งานในช่องวัน (widget และปฏิทินในแอป)", "Work in the day cells (widget and the app's calendar)"), color = C.text, fontSize = TS.body)
+                        Segmented(
+                            listOf(CellStyle.TINT to tr("สีตามความแน่น", "Shade by load"), CellStyle.BARS to tr("ชื่องาน", "Titles")),
+                            style,
+                            { next ->
+                                style = next
+                                scope.launch(Dispatchers.IO) {
+                                    MonthMarksStore.setCellStyle(context, next)
+                                    runCatching { OmniWidgets.refresh(context) }
+                                }
+                            },
+                            Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            tr("นัดที่มีเกือบทุกวัน เช่น ออกกำลังกาย ไม่นับในช่อง แต่ยังอยู่ในรายการของวัน", "An event on nearly every day, such as a workout, is left out of the cells but stays in the day's list."),
+                            color = C.muted, fontSize = TS.caption,
+                        )
+                    }
+                }
             } else {
                 FrameEditor(
                     selection, color, label, editing != null,
@@ -196,7 +218,7 @@ private fun Grid(
     today: LocalDate,
     marks: MonthMarks,
     holidays: Map<LocalDate, String>,
-    busy: Set<LocalDate>,
+    work: Map<LocalDate, List<MonthData.Mark>>,
     selection: Set<LocalDate>,
     onTap: (LocalDate) -> Unit,
     onLongPress: (LocalDate) -> Unit,
@@ -206,8 +228,8 @@ private fun Grid(
     BoxWithConstraints(Modifier.fillMaxWidth().height((TAG_INSET + rows * CELL).dp)) {
         val widthDp = maxWidth.value
         val palette = Palettes.current
-        val bitmap = remember(month, marks, holidays, busy, widthDp, palette, today) {
-            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, busy, null, emptyList()), widthDp, CELL, rows).asImageBitmap()
+        val bitmap = remember(month, marks, holidays, work, widthDp, palette, today) {
+            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, work, null, emptyList()), widthDp, CELL, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val chosen by rememberUpdatedState(selection)
