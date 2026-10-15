@@ -78,6 +78,7 @@ private enum class Sheet { FILTER, SORT }
 fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val q = state.query
     var layout by rememberSaveable { mutableStateOf<Mode?>(null) }
+    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) layout = Mode.CALENDAR }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var searching by remember { mutableStateOf(q.text.isNotEmpty()) }
     // Opening search puts the cursor in the field, so finding a task is one tap and then typing.

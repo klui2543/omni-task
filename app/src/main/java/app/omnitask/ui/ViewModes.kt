@@ -62,6 +62,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import app.omnitask.data.CalendarReader
+import app.omnitask.data.MonthMarksStore
+import app.omnitask.model.MonthGrid
+import app.omnitask.widget.MonthData
+import app.omnitask.widget.MonthPainter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.omnitask.model.Projects
 import app.omnitask.model.Quadrant
 import app.omnitask.model.GroupBy
@@ -266,6 +280,7 @@ private enum class CalendarSpan(val days: Int, private val th: String, private v
 @Composable
 private fun CalendarViews(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var span by rememberSaveable { mutableStateOf(CalendarSpan.MONTH) }
+    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) span = CalendarSpan.MONTH }
     Column(Modifier.fillMaxSize()) {
         Segmented(CalendarSpan.entries.map { it to it.label }, span, { span = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
         if (span == CalendarSpan.MONTH) {
@@ -278,21 +293,40 @@ private fun CalendarViews(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+    val context = LocalContext.current
     var selected by rememberSaveable { mutableStateOf(state.today.toString()) }
     val sel = LocalDate.parse(selected)
     var shown by rememberSaveable { mutableStateOf(state.today.yearMonth.toString()) }
     val month = YearMonth.parse(shown)
     LaunchedEffect(month) { vm.loadMonth(month.firstDay()) }
+    // The month widget sent a day: show its month with it chosen.
+    LaunchedEffect(state.calendarDay) {
+        state.calendarDay?.let { d ->
+            selected = d.toString()
+            shown = d.yearMonth.toString()
+            vm.requestCalendar(null)
+        }
+    }
     fun go(delta: Long) {
         val next = month.plusMonths(delta)
         shown = next.toString()
         selected = (if (next == state.today.yearMonth) state.today else next.firstDay()).toString()
     }
-    val firstCell = month.firstDay().let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
+    val first = month.firstDay()
+    val days = MonthGrid.days(first)
+    val holidayIds = state.calendars.filter { it.holiday }.map { it.id }.toSet()
     fun tasksOn(d: LocalDate) = pool.filter { it.status != Status.CANCELLED && (it.due == d || it.scheduled == d) }
-    fun eventsOn(d: LocalDate) = state.events.filter { it.begin.toLocalDate() <= d && (it.end.toLocalDate() > d || it.begin.toLocalDate() == d) }
+    fun eventsOn(d: LocalDate) = state.events.filter { it.calendarId !in holidayIds && MonthData.onDay(it, d) }
+    // The frames and emoji, read again when the page for them closes.
+    val marks = remember(state.month) { MonthMarksStore.local(context) }
+    var holidays by remember { mutableStateOf(emptyMap<LocalDate, String>()) }
+    LaunchedEffect(month) {
+        holidays = withContext(Dispatchers.IO) { runCatching { CalendarReader.holidays(context, days.first(), days.last()) }.getOrDefault(emptyMap()) }
+    }
+    val busy = days.filter { d -> tasksOn(d).any { it.isOpen } || eventsOn(d).isNotEmpty() }.toSet()
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -303,63 +337,56 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
         item {
             Card {
                 Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(month.firstDay().format(DateTimeFormatter.ofPattern("MMMM yyyy", TH)), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
+                    Text(MonthGrid.title(first), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
                     TodayButton({ shown = state.today.yearMonth.toString(); selected = state.today.toString() }, Modifier.padding(end = 6.dp))
+                    SquareButton(Ic.pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), { vm.requestMonth(MonthRequest(sel, pick = true)) })
+                    Box(Modifier.width(6.dp))
                     SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { go(-1) })
                     Box(Modifier.width(6.dp))
                     SquareButton(Ic.next, tr("เดือนถัดไป", "Next month"), { go(1) })
                 }
-                Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                    DayOfWeek.entries.forEach { Text(it.short(), Modifier.weight(1f), color = C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-                }
-                for (week in 0 until 6) {
-                    val rowStart = firstCell.plusDays(week * 7L)
-                    if (week == 5 && rowStart.month != month.month) continue
-                    Row(Modifier.padding(horizontal = 8.dp)) {
-                        for (i in 0 until 7) {
-                            val d = rowStart.plusDays(i.toLong())
-                            val inMonth = d.month == month.month
-                            val tasks = tasksOn(d)
-                            val dots = buildList {
-                                if (tasks.any { it.isOpen && it.due != null && it.due!! < state.today }) add(C.red)
-                                if (tasks.isNotEmpty()) add(C.accent)
-                                if (eventsOn(d).isNotEmpty()) add(C.teal)
-                            }
-                            Column(
-                                Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(12.dp))
-                                    .background(if (d == sel && d != state.today) C.raised else Color.Transparent)
-                                    .clickable { selected = d.toString() },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text(
-                                    "${d.dayOfMonth}",
-                                    Modifier.padding(top = 5.dp).size(26.dp).clip(CircleShape).background(if (d == state.today) C.accent else Color.Transparent).padding(top = 3.dp),
-                                    color = when {
-                                        d == state.today -> C.onAccent
-                                        !inMonth -> C.faint
-                                        else -> C.text
-                                    },
-                                    fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                )
-                                Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    dots.forEach { Box(Modifier.size(5.dp).clip(CircleShape).background(it)) }
-                                }
-                            }
-                        }
+                Row(Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)) {
+                    MonthGrid.heads.forEachIndexed { i, h ->
+                        Text(h, Modifier.weight(1f), color = if (i == 0) C.red else C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     }
                 }
-                Box(Modifier.height(8.dp))
+                Box(Modifier.padding(horizontal = 8.dp)) {
+                    MonthPicture(
+                        MonthData(state.today, first, 0, marks, holidays, busy, sel, emptyList()),
+                        onTap = { d -> selected = d.toString(); if (d.yearMonth != month) shown = d.yearMonth.toString() },
+                    )
+                }
+                Box(Modifier.height(10.dp))
             }
         }
         item {
             Card {
-                Text(
-                    (if (sel == state.today) tr("วันนี้, ", "Today, ") else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)),
-                    Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), color = C.text2, style = MaterialTheme.typography.titleSmall,
-                )
+                val stickers = marks.stickersOn(sel).joinToString("")
+                FlowRow(
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        (if (sel == state.today) tr("วันนี้, ", "Today, ") else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)) +
+                            if (stickers.isEmpty()) "" else " $stickers",
+                        color = C.text2, style = MaterialTheme.typography.titleSmall,
+                    )
+                    marks.frameOn(sel)?.takeIf { it.label.isNotEmpty() }?.let { f ->
+                        val color = Color(f.color.argb)
+                        val (n, of) = f.position(sel) ?: (1 to 1)
+                        Text(
+                            if (of == 1) f.label else tr("${f.label} วันที่ $n จาก $of", "${f.label}, day $n of $of"),
+                            Modifier.clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.2f)).padding(horizontal = 8.dp, vertical = 1.dp),
+                            color = color, fontSize = TS.caption,
+                        )
+                    }
+                }
+                holidays[sel]?.let { Text(it, Modifier.padding(start = 16.dp, bottom = 4.dp), color = C.red, fontSize = TS.caption) }
                 val eventActions = rememberEventActions(vm)
                 val ev: List<CalendarEvent> = eventsOn(sel)
-                val ts = tasksOn(sel)
+                // Today also lists the work past its deadline after its own, as the widget and Focus do.
+                val ts = tasksOn(sel) + if (sel == state.today) pool.filter { it.isOpen && it.due?.let { d -> d < state.today } == true }.sortedBy { it.due } else emptyList()
                 if (ev.isEmpty() && ts.isEmpty()) Text(tr("ว่างทั้งวัน", "Free all day"), Modifier.padding(16.dp), color = C.muted)
                 ev.forEach { e ->
                     Row(
@@ -376,6 +403,37 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                 }
                 ts.forEach { t -> TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) }, compact = true) }
                 Box(Modifier.height(6.dp))
+            }
+        }
+    }
+}
+
+/**
+ * The month as the widget draws it (frames, emoji, holidays, the ring on the chosen day), one picture with a tap
+ * layer over it.
+ */
+@Composable
+private fun MonthPicture(data: MonthData, onTap: (LocalDate) -> Unit) {
+    val context = LocalContext.current
+    val days = MonthGrid.days(data.month)
+    val rows = days.size / 7
+    val cell = 46f
+    val inset = 8f
+    BoxWithConstraints(Modifier.fillMaxWidth().height((inset + rows * cell).dp)) {
+        val widthDp = maxWidth.value
+        val palette = Palettes.current
+        val bitmap = remember(data.month, data.marks, data.holidays, data.busy, data.selected, data.today, widthDp, palette) {
+            MonthPainter(context, palette).draw(data, widthDp, cell, rows).asImageBitmap()
+        }
+        Image(bitmap, MonthGrid.title(data.month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+        Column(Modifier.fillMaxSize().padding(top = inset.dp)) {
+            for (w in 0 until rows) {
+                Row(Modifier.fillMaxWidth().weight(1f)) {
+                    for (i in 0 until 7) {
+                        val d = days[w * 7 + i]
+                        Box(Modifier.weight(1f).fillMaxSize().clickable { onTap(d) })
+                    }
+                }
             }
         }
     }

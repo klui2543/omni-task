@@ -85,6 +85,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.glance:glance-appwidget:1.1.1")
+    // The month widget keeps which month and day it shows in its Glance state (Preferences keys).
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     // Google sign-in for Drive, and HTTP for Drive's API (the Omni folder, see DriveLink).
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     // The wake alarm goes to the watch app (see WatchAlarm and the wear module).

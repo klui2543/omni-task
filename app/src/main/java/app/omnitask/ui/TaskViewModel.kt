@@ -145,6 +145,8 @@ data class UiState(
     val askStuck: Boolean = false,
     /** The month widget asked for the frames and emoji page, at this day. */
     val month: MonthRequest? = null,
+    /** The month widget asked for the calendar at this day; the calendar takes it and clears it. */
+    val calendarDay: LocalDate? = null,
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
@@ -1392,6 +1394,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun requestStuck(on: Boolean) = _state.update { it.copy(askStuck = on) }
 
     fun requestMonth(request: MonthRequest?) = _state.update { it.copy(month = request) }
+
+    fun requestCalendar(day: LocalDate?) = _state.update { it.copy(calendarDay = day) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
     fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {

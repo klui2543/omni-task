@@ -42,6 +42,25 @@ class MonthWidgetTest {
     }
 
     @Test
+    fun aTappedDayIsListedFromWhatIsLoaded() {
+        val tasks = listOf(
+            app.omnitask.data.TaskLine.parse("- [ ] ส่งแบบร่าง 📅 2026-10-22")!!,
+            app.omnitask.data.TaskLine.parse("- [ ] ต่อภาษีรถ 📅 2026-10-12")!!,
+        )
+        val source = MonthSource(d(15), 0, LocalDate(2026, 9, 1), LocalDate(2026, 12, 31), MonthMarks(), tasks, emptyList(), emptyMap())
+        // Nothing picked: today with the overdue task, then tomorrow.
+        val now = source.view(0, null)
+        check(now.agenda.map { it.first } == listOf(d(15), d(16))) { "listed ${now.agenda.map { it.first }}" }
+        check(now.agenda[0].second.size == 1 && (now.agenda[0].second[0] as MonthData.Item.Todo).late == 3L)
+        // The 22nd picked: only its own work, and it is ringed.
+        val picked = source.view(0, d(22))
+        check(picked.selected == d(22) && picked.agenda.single().second.size == 1)
+        // Picking today is the same as picking nothing; a month away is covered by what was loaded.
+        check(source.view(0, d(15)).selected == null)
+        check(source.covers(1) && !source.covers(6))
+    }
+
+    @Test
     fun aSaveIsReadBackWithoutAVault() {
         context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).edit().remove("vault").commit()
         val saved = MonthMarksStore.save(context, MonthMarks().withStickers(d(15), listOf("🎂")))
