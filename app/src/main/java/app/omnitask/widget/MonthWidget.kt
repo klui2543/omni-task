@@ -161,7 +161,8 @@ internal class MonthData(
 ) {
     sealed interface Item {
         class Event(val title: String, val time: String) : Item
-        class Todo(val task: Task) : Item
+        /** [late] is how many days past its deadline an overdue task is, listed under today. */
+        class Todo(val task: Task, val late: Long = 0) : Item
     }
 
     companion object {
@@ -186,7 +187,10 @@ internal class MonthData(
                 val events: List<Item> = eventsOn(d).sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map {
                     Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time))
                 }
-                d to events + tasksOn(d).map { Item.Todo(it) }
+                // Today also carries the work past its deadline, as on Focus and the Today widget, after today's own.
+                val overdue = if (d == today) tasks.filter { t -> t.due?.let { it < today } == true }.sortedBy { it.due }
+                    .map { Item.Todo(it, ChronoUnit.DAYS.between(it.due!!, today)) } else emptyList()
+                d to events + tasksOn(d).map { Item.Todo(it) } + overdue
             }
             MonthData(today, month, offset, MonthMarksStore.local(context), holidays, busy, selected?.takeIf { it != today }, agenda)
         }
@@ -335,9 +339,10 @@ private fun AgendaLine(context: Context, item: MonthData.Item) {
                     GlanceModifier.size(20.dp).clickable(actionRunCallback<TickAction>(actionParametersOf(RAW to item.task.raw))),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Image(ImageProvider(R.drawable.ic_w_ring), tr("ติ๊กเสร็จ", "Mark done"), GlanceModifier.size(17.dp), colorFilter = ColorFilter.tint(cp { it.faint }))
+                    Image(ImageProvider(R.drawable.ic_w_ring), tr("ติ๊กเสร็จ", "Mark done"), GlanceModifier.size(17.dp), colorFilter = ColorFilter.tint(if (item.late > 0) cp { it.red } else cp { it.faint }))
                 }
                 Label(item.task.title, cp { it.text }, 13.5.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp).clickable(open(context)))
+                if (item.late > 0) Label(tr("เลย ${item.late} วัน", "${item.late} days late"), cp { it.red }, 11.5.sp)
             }
         }
     }
