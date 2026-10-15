@@ -71,6 +71,11 @@ import app.omnitask.model.Appearance
 import app.omnitask.model.Lang
 import app.omnitask.model.MonthGrid
 import app.omnitask.model.MonthMarks
+import app.omnitask.model.MonthNav
+import app.omnitask.notify.AlarmKind
+import app.omnitask.notify.PlannedAlarm
+import androidx.datastore.preferences.core.MutablePreferences
+import kotlinx.datetime.LocalDateTime
 import app.omnitask.model.PaletteChoice
 import app.omnitask.model.Task
 import app.omnitask.model.ThemeMode
@@ -103,18 +108,18 @@ class MonthWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
-        val first = MonthSource.load(context, prefs[OFFSET] ?: 0, prefs[STAMP] ?: 0L)
+        val first = MonthSource.load(context, nav(prefs).fresh(System.currentTimeMillis()).offset, prefs[STAMP] ?: 0L)
         provideContent {
             val state = currentState<Preferences>()
-            val offset = state[OFFSET] ?: 0
+            // Left alone for ten minutes, the widget is back on today (an alarm redraws it then; see MonthPick).
+            val nav = nav(state).fresh(System.currentTimeMillis())
             val stamp = state[STAMP] ?: 0L
             var source by remember { mutableStateOf(first) }
             // Load again only when the data changed or the month moved past what is loaded.
-            LaunchedEffect(offset, stamp) {
-                if (stamp != source.stamp || !source.covers(offset)) source = MonthSource.load(context, offset, stamp)
+            LaunchedEffect(nav.offset, stamp) {
+                if (stamp != source.stamp || !source.covers(nav.offset)) source = MonthSource.load(context, nav.offset, stamp)
             }
-            val picked = state[DAY]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            MonthContent(context, source.view(offset, picked))
+            MonthContent(context, source.view(nav.offset, nav.listed(source.today)))
         }
     }
 
@@ -125,6 +130,33 @@ class MonthWidget : GlanceAppWidget() {
         internal val DAY = stringPreferencesKey("day")
         /** Changes when the vault or the calendar did, so the loaded work is read again. */
         internal val STAMP = longPreferencesKey("stamp")
+        /** When the widget was last tapped, for going back to today after a while. */
+        internal val TOUCHED = longPreferencesKey("touched")
+
+        internal fun nav(p: Preferences) = MonthNav(
+            offset = p[OFFSET] ?: 0,
+            picked = p[DAY]?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+            touchedAt = p[TOUCHED] ?: 0L,
+        )
+
+        internal fun save(p: MutablePreferences, nav: MonthNav) {
+            p[OFFSET] = nav.offset
+            if (nav.picked == null) p.remove(DAY) else p[DAY] = nav.picked.toString()
+            p[TOUCHED] = nav.touchedAt
+        }
+
+        /** Applies [change] to the widget's state, redraws it, and sets the alarm that brings it back to today. */
+        internal suspend fun act(context: Context, id: GlanceId, change: (MonthNav, Long) -> MonthNav) {
+            val now = System.currentTimeMillis()
+            updateAppWidgetState(context, id) { p -> save(p, change(nav(p).fresh(now), now)) }
+            MonthWidget().update(context, id)
+            runCatching {
+                Scheduler.scheduleOneOff(
+                    context,
+                    PlannedAlarm(AlarmKind.RESCAN, LocalDateTime.now().plusSeconds(MonthNav.IDLE_MS / 1000 + 5), "month-widget-home"),
+                )
+            }
+        }
 
         /** Redraws every month widget with fresh data. */
         suspend fun refresh(context: Context) {
@@ -145,26 +177,19 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 private val DELTA = ActionParameters.Key<Int>("delta")
 private val DAY_PARAM = ActionParameters.Key<String>("day")
 
-/** ‹ and › move the widget a month; a delta of 0 brings it back to this month and to today's list. */
+/** ‹ and › move the widget a month; a delta of 0 (the title) brings it back to this month and today's list. */
 class MonthShift : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val delta = parameters[DELTA] ?: 0
-        updateAppWidgetState(context, glanceId) { p ->
-            p[MonthWidget.OFFSET] = if (delta == 0) 0 else (p[MonthWidget.OFFSET] ?: 0) + delta
-            if (delta == 0) p.remove(MonthWidget.DAY)
-        }
-        MonthWidget().update(context, glanceId)
+        MonthWidget.act(context, glanceId) { nav, now -> if (delta == 0) nav.home(now) else nav.shift(delta, now) }
     }
 }
 
-/** A tap on a day lists that day's work under the grid; tapping it again, or today, goes back to today. */
+/** A tap on a day always lists that day's work (see [MonthNav] for the rules). */
 class MonthPick : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val day = parameters[DAY_PARAM] ?: return
-        updateAppWidgetState(context, glanceId) { p ->
-            if (p[MonthWidget.DAY] == day || day == LocalDate.now().toString()) p.remove(MonthWidget.DAY) else p[MonthWidget.DAY] = day
-        }
-        MonthWidget().update(context, glanceId)
+        val day = parameters[DAY_PARAM]?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return
+        MonthWidget.act(context, glanceId) { nav, now -> nav.tapDay(day, LocalDate.now(), now) }
     }
 }
 
@@ -308,7 +333,13 @@ private fun MonthContent(context: Context, data: MonthData) {
             }
         }
         Box(GlanceModifier.fillMaxWidth().height(gridHeight.dp)) {
-            val bitmap = MonthPainter(context, widgetPalette(context)).draw(data, gridWidth, cell, rows)
+            // The picture changes only with the month, the work or the size; a tap on a day keeps it and moves the ring,
+            // drawn on top, so the launcher gets a small update.
+            val palette = widgetPalette(context)
+            val bitmap = remember(data.month, data.today, data.marks, data.holidays, data.busy, gridWidth, cell, rows, palette) {
+                MonthPainter(context, palette, maxScale = 2f, background = palette.card.toArgb(), ring = false)
+                    .draw(data, gridWidth, cell, rows)
+            }
             Image(ImageProvider(bitmap), MonthGrid.title(data.month), GlanceModifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
             Column(GlanceModifier.fillMaxSize().padding(top = TAG_INSET.dp)) {
                 val days = MonthGrid.days(data.month)
@@ -318,7 +349,14 @@ private fun MonthContent(context: Context, data: MonthData) {
                             val d = days[w * 7 + i]
                             // With the list showing, a tap lists the day's work there; too small for a list, it opens the app.
                             val tap = if (showAgenda) actionRunCallback<MonthPick>(actionParametersOf(DAY_PARAM to d.toString())) else openCalendar(context, d)
-                            Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(tap)) {}
+                            Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(tap), contentAlignment = Alignment.TopCenter) {
+                                // The ring round the chosen day, where the painter puts the day number.
+                                if (d == data.selected) Image(
+                                    ImageProvider(R.drawable.ic_w_pick), null,
+                                    GlanceModifier.padding(top = (if (cell < 34f) 2 else 4).dp).size(24.dp),
+                                    colorFilter = ColorFilter.tint(cp { it.accent }),
+                                )
+                            }
                         }
                     }
                 }
@@ -438,10 +476,20 @@ private fun AgendaLine(context: Context, day: LocalDate, item: MonthData.Item) {
  * Draws the month grid with its frames: the lines between days, the frames (a light fill, an outline round the
  * outside only, a name tag on the top edge), day numbers, the dot for busy days and up to three emoji per day.
  */
-internal class MonthPainter(private val context: Context, private val p: Palette) {
+internal class MonthPainter(
+    private val context: Context,
+    private val p: Palette,
+    /** Pixels per dp at most; the widget keeps its picture small so each redraw sends little to the launcher. */
+    maxScale: Float = 2.75f,
+    /** Fills the picture with this colour and drops its transparency, which halves its size. */
+    private val background: Int? = null,
+    /** Draws the ring on the chosen day; the widget draws it as a separate piece so a tap needs no new picture. */
+    private val ring: Boolean = true,
+) {
     private val dm = context.resources.displayMetrics
-    // Sharp enough on any phone, and small enough to stay under the widget's picture limit.
-    private val scale = minOf(dm.density, 2.75f)
+    private val scale = minOf(dm.density, maxScale)
+    /** The density this painter draws at, for sizing the widget's picture and its tap layer alike. */
+    val pixelsPerDp get() = scale
     private fun dp(v: Float) = v * scale
     private fun sp(v: Float) = v * scale * (dm.scaledDensity / dm.density)
 
@@ -450,8 +498,12 @@ internal class MonthPainter(private val context: Context, private val p: Palette
         val cw = w / 7f
         val ch = dp(cellDp)
         val top = dp(TAG_INSET)
-        val bmp = Bitmap.createBitmap(w.toInt().coerceAtLeast(1), (top + ch * rows).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(
+            w.toInt().coerceAtLeast(1), (top + ch * rows).toInt().coerceAtLeast(1),
+            if (background != null) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888,
+        )
         val c = Canvas(bmp)
+        background?.let { c.drawColor(it) }
         val days = MonthGrid.days(data.month)
         fun rect(i: Int) = RectF((i % 7) * cw, top + (i / 7) * ch, (i % 7 + 1) * cw, top + (i / 7 + 1) * ch)
         val index = days.withIndex().associate { (i, d) -> d to i }
@@ -499,7 +551,7 @@ internal class MonthPainter(private val context: Context, private val p: Palette
         // Day numbers, dots and emoji.
         val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(12.5f); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT }
         val todayBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb() }
-        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb(); style = Paint.Style.STROKE; strokeWidth = dp(1.6f) }
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb(); style = Paint.Style.STROKE; strokeWidth = dp(1.6f) }
         val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.lime.toArgb() }
         val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(10f); textAlign = Paint.Align.RIGHT }
         val more = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(8.5f); textAlign = Paint.Align.RIGHT; color = p.muted.toArgb() }
@@ -508,7 +560,7 @@ internal class MonthPainter(private val context: Context, private val p: Palette
             val r = rect(i)
             val inMonth = d.monthNumber == data.month.monthNumber
             val cy = r.top + dp(if (small) 3f else 5f) + dp(11f)
-            if (d == data.selected) c.drawCircle(r.centerX(), cy, dp(11.5f), ring)
+            if (ring && d == data.selected) c.drawCircle(r.centerX(), cy, dp(11.5f), ringPaint)
             if (d == data.today) {
                 c.drawCircle(r.centerX(), cy, dp(11.5f), todayBg)
                 num.color = p.onAccent.toArgb(); num.typeface = Typeface.DEFAULT_BOLD
