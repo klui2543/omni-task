@@ -145,7 +145,7 @@ class WidgetShotsTest {
                 val start = System.nanoTime()
                 MonthLive.set(widgetId, app.omnitask.model.MonthNav(picked = LocalDate(today.year, today.monthNumber, day), touchedAt = System.currentTimeMillis()))
                 // As a tap does: the session hears of it and draws at its quick rate.
-                androidx.glance.appwidget.UnmanagedSessionReceiver.getSession(widgetId)?.updateGlance()
+                GlanceSessions.session(widgetId)?.let { GlanceSessions.updateGlance(it) }
                 (withTimeout(5_000) { drawn.receive() } - start) / 1_000_000
             }
             File(out, "timings.txt").appendText("kept composition, taps ${times.joinToString(" ")} ms\n")

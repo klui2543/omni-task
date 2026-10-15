@@ -35,7 +35,6 @@ import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.runComposition
-import androidx.glance.appwidget.UnmanagedSessionReceiver
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.provideContent
@@ -251,17 +250,17 @@ internal object MonthLive {
         lastTap = System.currentTimeMillis()
         set(widgetId, nav)
         val app = context.applicationContext
-        val session = UnmanagedSessionReceiver.getSession(widgetId)
+        val session = GlanceSessions.session(widgetId)
         WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null}")
         val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views, tapped) }
-        if (session != null) scope.launch { runCatching { session.updateGlance() }.onFailure { WidgetLog.add("event failed $it") } }
+        if (session != null) scope.launch { runCatching { GlanceSessions.updateGlance(session) }.onFailure { WidgetLog.add("event failed $it") } }
         else WidgetLog.add("no session, job active=${job.isActive}")
     }
 
     /** Tells a kept composition that its data changed; false when this widget has none. */
     fun poke(context: Context, id: GlanceId): Boolean {
-        val session = UnmanagedSessionReceiver.getSession(key(context, id)) ?: return false
-        scope.launch { runCatching { session.updateGlance() } }
+        val session = GlanceSessions.session(key(context, id)) ?: return false
+        scope.launch { runCatching { GlanceSessions.updateGlance(session) } }
         return true
     }
 
@@ -270,8 +269,8 @@ internal object MonthLive {
         val views = synchronized(running) { lastViews[widgetId] } ?: return false
         WidgetLog.add("launcher asked widget=$widgetId options=${options != null}")
         runCatching { AppWidgetManager.getInstance(context).updateAppWidget(widgetId, views) }
-        val session = UnmanagedSessionReceiver.getSession(widgetId) ?: return false
-        scope.launch { runCatching { if (options != null) session.updateAppWidgetOptions(options) else session.updateGlance() } }
+        val session = GlanceSessions.session(widgetId) ?: return false
+        scope.launch { runCatching { if (options != null) GlanceSessions.updateAppWidgetOptions(session, options) else GlanceSessions.updateGlance(session) } }
         return true
     }
 
