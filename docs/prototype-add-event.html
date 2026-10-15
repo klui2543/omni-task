@@ -53,7 +53,13 @@ input.field:focus{border-color:var(--accentLine)}
 .rnd{width:44px;height:44px;border-radius:50%;border:0;display:inline-flex;align-items:center;justify-content:center;background:var(--raised);color:var(--text2);cursor:pointer}
 .rnd svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .rnd.a{background:var(--accentSoft);color:var(--accentText)}
-.btn{height:44px;border-radius:12px;border:0;background:var(--accent);color:var(--onAccent);font:inherit;font-weight:500;font-size:14px;padding:0 18px;cursor:pointer;margin-left:auto}
+.btn{height:44px;border-radius:12px;border:0;background:var(--accent);color:var(--onAccent);font:inherit;font-weight:500;font-size:14px;padding:0 18px;cursor:pointer}
+.tick{margin-left:auto;display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 6px;font-size:13.5px;color:var(--text2);cursor:pointer;user-select:none}
+.tick input{position:absolute;opacity:0;width:0;height:0}
+.tick .box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--faint);display:inline-flex;align-items:center;justify-content:center}
+.tick input:checked + .box{background:var(--accent);border-color:var(--accent)}
+.tick input:checked + .box::after{content:"";width:5px;height:10px;border:solid var(--onAccent);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.tick input:focus-visible + .box{outline:2px solid var(--accentLine);outline-offset:2px}
 .btn[disabled]{opacity:.45;cursor:default}
 .ghost{height:44px;border-radius:12px;border:1px solid var(--control);background:transparent;color:var(--text2);font:inherit;font-size:14px;padding:0 16px;cursor:pointer}
 .perm{margin-top:14px;border-radius:12px;background:var(--raised);padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text2)}
@@ -69,7 +75,7 @@ input.field:focus{border-color:var(--accentLine)}
 </head><body>
 
 <div class="bar"><b>ลองกดได้: เพิ่มนัดจากช่องเพิ่มงาน</b>
-แตะ + หรือช่อง "เพิ่มงาน" บนหน้าจอ แล้วพิมพ์ชื่อ ลองพิมพ์ "พรุ่งนี้" หรือ "14:00" แล้วแตะ ลงปฏิทิน ข้อมูลเป็นตัวอย่าง ตัวจริงจะอ่านวันเวลาด้วยกฎเดิมของช่องเพิ่มงาน
+แตะ + หรือช่อง "เพิ่มงาน" บนหน้าจอ แล้วพิมพ์ชื่อ ลองพิมพ์ "พรุ่งนี้" หรือ "14:00" แล้วติ๊ก ลงปฏิทิน ข้างปุ่มล่าง ข้อมูลเป็นตัวอย่าง ตัวจริงจะอ่านวันเวลาด้วยกฎเดิมของช่องเพิ่มงาน
 <div class="ctl">
 <button class="tg on" id="permBtn" type="button">มีสิทธิ์เขียนปฏิทิน</button>
 <button class="tg" id="resetBtn" type="button">เริ่มใหม่</button>
@@ -102,7 +108,6 @@ input.field:focus{border-color:var(--accentLine)}
     <div class="handle"></div>
     <div class="row">
       <span class="title" id="sheetTitle">เพิ่มงาน</span>
-      <button class="chip flag" id="calChip" type="button">ลงปฏิทิน</button>
     </div>
     <input class="field" id="text" type="text" placeholder="เช่น ประชุมทีม พรุ่งนี้ 14:00" autocomplete="off">
 
@@ -130,6 +135,7 @@ input.field:focus{border-color:var(--accentLine)}
     <div class="foot">
       <button class="rnd" type="button" aria-label="พูด"><svg viewBox="0 0 24 24"><path d="M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
       <button class="rnd a" type="button" aria-label="ถามผู้ช่วย"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg></button>
+      <label class="tick" id="calTick"><input type="checkbox" id="calBox"><span class="box"></span>ลงปฏิทิน</label>
       <button class="btn" id="saveBtn" type="button">เพิ่มงาน</button>
     </div>
   </div>
@@ -137,7 +143,7 @@ input.field:focus{border-color:var(--accentLine)}
   <div class="snack" id="snack"></div>
 </div>
 
-<p class="note">ที่เห็นในหน้านี้: แตะชิป "ลงปฏิทิน" เพื่อสลับโหมด แถวระยะเวลาและปฏิทินจะโผล่มาเฉพาะโหมดนี้ ปุ่มล่างเปลี่ยนชื่อตามโหมด วันที่ที่อ่านได้ (วันนี้ พรุ่งนี้ 14:00) จะแสดงเป็นชิปก่อนบันทึก</p>
+<p class="note">ที่เห็นในหน้านี้: ติ๊ก "ลงปฏิทิน" ข้างปุ่มล่างเพื่อสลับโหมด แถวระยะเวลาและปฏิทินจะโผล่มาเฉพาะโหมดนี้ ปุ่มล่างเปลี่ยนชื่อตามโหมด วันที่ที่อ่านได้ (วันนี้ พรุ่งนี้ 14:00) จะแสดงเป็นชิปก่อนบันทึก</p>
 
 <script>
 const TODAY = new Date(2026, 9, 15); // 15 October 2026, like the rest of the mockups
@@ -171,10 +177,10 @@ function render() {
   const r = read($("text").value);
   const isCal = S.cal;
   $("sheetTitle").textContent = isCal ? "เพิ่มนัด" : "เพิ่มงาน";
-  $("calChip").classList.toggle("on", isCal);
+  $("calBox").checked = isCal;
   $("calOnly").style.display = isCal ? "block" : "none";
   $("durBlock").style.display = isCal && r.time ? "block" : "none";
-  $("saveBtn").textContent = isCal ? "ลงปฏิทิน" : "เพิ่มงาน";
+  $("saveBtn").textContent = isCal ? "เพิ่มนัด" : "เพิ่มงาน";
 
   // read chips
   const chips = [];
@@ -220,7 +226,7 @@ $("openQa").onkeydown = e => { if (e.key === "Enter") open(); };
 $("plusBtn").onclick = open;
 $("scrim").onclick = close;
 $("text").oninput = render;
-$("calChip").onclick = () => { S.cal = !S.cal; render(); };
+$("calBox").onchange = () => { S.cal = $("calBox").checked; render(); };
 $("allowBtn").onclick = () => { S.perm = true; render(); flash("ให้สิทธิ์แล้ว ลองกด ลงปฏิทิน อีกครั้ง"); };
 $("permBtn").onclick = () => {
   S.perm = !S.perm;
