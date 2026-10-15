@@ -124,7 +124,17 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
         inspecting = e to CalendarReader.inspect(context, e.id)
     }
     inspecting?.let { (e, info) ->
-        EventInfoDialog(e, info, onOpen = { inspecting = null; openEvent(e) }, onDismiss = { inspecting = null })
+        EventInfoDialog(
+            e, info,
+            canDelete = info != null && !info.deleted && CalendarReader.canWrite(context),
+            onOpen = { inspecting = null; openEvent(e) },
+            onDelete = {
+                inspecting = null
+                // The calendar observer reloads the events once the provider changes, so the bar goes by itself.
+                if (!CalendarReader.delete(context, e.id)) vm.showMessage(tr("ลบนัดไม่ได้", "Cannot delete the event"))
+            },
+            onDismiss = { inspecting = null },
+        )
     }
 
     // Dated tasks that are open, or were done within the range; a bar runs from start (or scheduled) to due.
@@ -470,7 +480,34 @@ private fun ganttEventDate(e: CalendarEvent, today: LocalDate): String {
 
 /** What the phone's calendar store says about [e]: which calendar it is in and whether it is deleted or waiting to sync. */
 @Composable
-private fun EventInfoDialog(e: CalendarEvent, info: CalendarReader.EventInfo?, onOpen: () -> Unit, onDismiss: () -> Unit) {
+private fun EventInfoDialog(
+    e: CalendarEvent,
+    info: CalendarReader.EventInfo?,
+    canDelete: Boolean,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var confirming by remember { mutableStateOf(false) }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            containerColor = C.raised,
+            title = { Text(tr("ลบนัดนี้ออกจากเครื่อง?", "Delete this event from the phone?")) },
+            text = {
+                Text(
+                    tr(
+                        "ใช้กับนัดที่ลบใน Google ไปแล้วแต่ยังค้างในเครื่อง\nถ้านัดนี้ยังอยู่ใน Google จะถูกลบที่ Google ด้วยตอน sync ครั้งหน้า",
+                        "For an event already deleted in Google that the phone kept.\nIf it is still in Google, the next sync deletes it there too.",
+                    ),
+                    color = C.text2,
+                )
+            },
+            confirmButton = { TextButton(onClick = { confirming = false; onDelete() }) { Text(tr("ลบ", "Delete"), color = C.red) } },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+        )
+        return
+    }
     fun yes(b: Boolean) = if (b) tr("ใช่", "Yes") else tr("ไม่", "No")
     val lines = if (info == null) {
         listOf(
@@ -496,7 +533,12 @@ private fun EventInfoDialog(e: CalendarEvent, info: CalendarReader.EventInfo?, o
         containerColor = C.raised,
         title = { Text(e.title.ifBlank { tr("ไม่มีชื่อ", "Untitled") }) },
         text = { Text(lines.joinToString("\n"), color = C.text2) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
+        confirmButton = {
+            Row {
+                if (canDelete) TextButton(onClick = { confirming = true }) { Text(tr("ลบ", "Delete"), color = C.red) }
+                TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) }
+            }
+        },
         dismissButton = { TextButton(onClick = onOpen) { Text(tr("เปิดในปฏิทิน", "Open in calendar"), color = C.text2) } },
     )
 }

@@ -424,6 +424,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setFilters(filters: Filters) = _state.update { it.copy(filters = filters) }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
+    fun showMessage(text: String) = _state.update { it.copy(message = text) }
 
     fun showCrash(report: String) = _state.update { it.copy(crash = report) }
 
