@@ -859,18 +859,20 @@ internal class MonthPainter(
         // Day numbers, title bars and emoji.
         // Bars need the room under the number, so the number stays small with them.
         val big = cellDp >= 46f && !bars
-        val radius = dp(if (big) 13f else 11.5f)
-        val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(if (big) 14f else 12.5f); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT }
+        // With title bars the number is smaller, and the bars shrink to fit two a day down to a cell of about 40dp.
+        val radius = dp(if (bars) 9f else if (big) 13f else 11.5f)
+        val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(if (bars) 11.5f else if (big) 14f else 12.5f); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT }
         val todayBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb() }
         val barBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        val barText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(9f); color = p.onAccent.toArgb() }
+        val barHeightDp = if (bars) ((cellDp - 23f) / 2f - 1f).coerceIn(8f, 12f) else 12f
+        val barText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(barHeightDp * 0.78f); color = p.onAccent.toArgb() }
         val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(10f); textAlign = Paint.Align.RIGHT }
         val more = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(8.5f); textAlign = Paint.Align.RIGHT; color = p.muted.toArgb() }
         val moreLeft = Paint(more).apply { textAlign = Paint.Align.LEFT; textSize = sp(9f) }
         val small = cellDp < 34f
         days.forEachIndexed { i, d ->
             val r = rect(i)
-            val cy = r.top + dp(if (small) 3f else 4f) + radius
+            val cy = r.top + dp(if (small || bars) 3f else 4f) + radius
             if (d == data.today) {
                 c.drawCircle(r.centerX(), cy, radius, todayBg)
                 num.color = p.onAccent.toArgb(); num.typeface = Typeface.DEFAULT_BOLD
@@ -889,9 +891,9 @@ internal class MonthPainter(
             if (bars) {
                 // As many bars as fit under the number; what is left over is counted as "+n" in the top corner.
                 val items = data.work[d].orEmpty()
-                val bh = dp(12f)
-                val step = bh + dp(1.5f)
-                var y = cy + radius + dp(2f)
+                val bh = dp(barHeightDp)
+                val step = bh + dp(1f)
+                var y = cy + radius + dp(1f)
                 val fit = ((r.bottom - dp(1f) - y + dp(1.5f)) / step).toInt().coerceAtLeast(0)
                 val shown = minOf(items.size, fit)
                 items.take(shown).forEach { m ->
