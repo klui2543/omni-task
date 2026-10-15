@@ -65,6 +65,9 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Taps on the month widget, on the foreground broadcast queue (see MonthTapReceiver). -->
+        <receiver android:name=".widget.MonthTapReceiver" android:exported="false" />
+
         <!-- Keeps the app out of the cached state while the month widget is being tapped (see WidgetWarm). -->
         <service
             android:name=".widget.WidgetWarmService"

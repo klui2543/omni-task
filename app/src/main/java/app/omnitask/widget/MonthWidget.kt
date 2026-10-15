@@ -1,6 +1,7 @@
 package app.omnitask.widget
 
 import android.appwidget.AppWidgetManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -18,21 +19,21 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
+import androidx.glance.LocalGlanceId
 import androidx.glance.ExperimentalGlanceApi
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
-import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.action.actionSendBroadcast
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.runComposition
 import androidx.glance.appwidget.cornerRadius
@@ -354,22 +355,50 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
     }
 }
 
-private val DELTA = ActionParameters.Key<Int>("delta")
-private val DAY_PARAM = ActionParameters.Key<String>("day")
+private const val EXTRA_WIDGET = "widget"
+private const val EXTRA_TAP_DAY = "day"
+private const val EXTRA_DELTA = "delta"
 
-/** ‹ and › move the widget a month; a delta of 0 (the title) brings it back to this month and today's list. */
-class MonthShift : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val delta = parameters[DELTA] ?: 0
-        MonthWidget.act(context, glanceId) { nav, now -> if (delta == 0) nav.home(now) else nav.shift(delta, now) }
-    }
-}
+/**
+ * A tap on the widget, sent to [MonthTapReceiver] on the foreground broadcast queue. Glance's own callbacks go on the
+ * background queue, where Android delivers to one app's receiver at a time: on the owner's phone the taps of several
+ * seconds waited there behind other apps' work and then arrived together. A day lists that day's work (see
+ * [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back to this month and today.
+ */
+private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionSendBroadcast(
+    Intent(context, MonthTapReceiver::class.java)
+        .setFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+        .putExtra(EXTRA_WIDGET, widgetId)
+        .apply {
+            if (day != null) putExtra(EXTRA_TAP_DAY, day.toString())
+            if (delta != null) putExtra(EXTRA_DELTA, delta)
+        }
+        // A distinct address per cell keeps each one's PendingIntent its own.
+        .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/${day ?: "shift$delta"}")),
+)
 
-/** A tap on a day always lists that day's work (see [MonthNav] for the rules). */
-class MonthPick : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val day = parameters[DAY_PARAM]?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return
-        MonthWidget.act(context, glanceId) { nav, now -> nav.tapDay(day, LocalDate.now(), now) }
+class MonthTapReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        WidgetLog.attach(context)
+        val widgetId = intent.getIntExtra(EXTRA_WIDGET, -1)
+        val day = intent.getStringExtra(EXTRA_TAP_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val delta = if (intent.hasExtra(EXTRA_DELTA)) intent.getIntExtra(EXTRA_DELTA, 0) else null
+        WidgetLog.add("tap received widget=$widgetId day=$day delta=$delta")
+        val id = runCatching { GlanceAppWidgetManager(context).getGlanceIdBy(widgetId) }.getOrNull() ?: return
+        val result = goAsync()
+        val app = context.applicationContext
+        MonthLive.scope.launch {
+            try {
+                when {
+                    day != null -> MonthWidget.act(app, id) { nav, now -> nav.tapDay(day, LocalDate.now(), now) }
+                    delta != null -> MonthWidget.act(app, id) { nav, now -> if (delta == 0) nav.home(now) else nav.shift(delta, now) }
+                }
+            } catch (e: Exception) {
+                WidgetLog.add("tap failed $e")
+            } finally {
+                result.finish()
+            }
+        }
     }
 }
 
@@ -564,6 +593,7 @@ private const val MIN_LIST = 86f
 
 @Composable
 private fun MonthContent(context: Context, data: MonthData) {
+    val widgetId = MonthLive.key(context, LocalGlanceId.current)
     val size = LocalSize.current
     val rows = MonthGrid.weeks(data.month)
     val gridWidth = size.width.value - 24f
@@ -603,7 +633,7 @@ private fun MonthContent(context: Context, data: MonthData) {
                         for (i in 0 until 7) {
                             val d = days[w * 7 + i]
                             // With the list showing, a tap lists the day's work there; too small for a list, it opens the app.
-                            val tap = if (showAgenda) actionRunCallback<MonthPick>(actionParametersOf(DAY_PARAM to d.toString())) else openCalendar(context, d)
+                            val tap = if (showAgenda) tap(context, widgetId, day = d) else openCalendar(context, d)
                             Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(tap)) {
                                 // The chosen day is boxed whole, so the tap is plainly on that day.
                                 if (d == data.selected) Image(
@@ -627,16 +657,17 @@ private fun MonthContent(context: Context, data: MonthData) {
 
 @Composable
 private fun Header(context: Context, data: MonthData) {
+    val widgetId = MonthLive.key(context, LocalGlanceId.current)
     Row(GlanceModifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
         val title = GlanceModifier.defaultWeight().padding(start = 2.dp)
         Text(
             MonthGrid.title(data.month),
-            if (data.offset != 0 || data.selected != null) title.clickable(actionRunCallback<MonthShift>(actionParametersOf(DELTA to 0))) else title.clickable(openCalendar(context, data.today)),
+            if (data.offset != 0 || data.selected != null) title.clickable(tap(context, widgetId, delta = 0)) else title.clickable(openCalendar(context, data.today)),
             style = TextStyle(color = cp { it.text }, fontSize = 17.sp, fontWeight = androidx.glance.text.FontWeight.Medium),
             maxLines = 1,
         )
-        IconButton(R.drawable.ic_w_back, tr("เดือนก่อน", "Previous month"), cp { it.muted }, actionRunCallback<MonthShift>(actionParametersOf(DELTA to -1)))
-        IconButton(R.drawable.ic_w_next, tr("เดือนถัดไป", "Next month"), cp { it.muted }, actionRunCallback<MonthShift>(actionParametersOf(DELTA to 1)))
+        IconButton(R.drawable.ic_w_back, tr("เดือนก่อน", "Previous month"), cp { it.muted }, tap(context, widgetId, delta = -1))
+        IconButton(R.drawable.ic_w_next, tr("เดือนถัดไป", "Next month"), cp { it.muted }, tap(context, widgetId, delta = 1))
         IconButton(R.drawable.ic_w_pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), cp { it.accentText },
             // The pencil is the way into frames and emoji; a day picked on the widget comes along chosen.
             data.selected?.let { openMonth(context, it, pick = true) } ?: openMonth(context, data.month, pick = false))
