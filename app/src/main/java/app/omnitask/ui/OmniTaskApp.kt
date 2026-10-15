@@ -47,9 +47,13 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarDuration
@@ -210,9 +214,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
                     Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
                     when (screen) {
-                        Screen.FOCUS -> FocusScreen(state, vm, open, menu)
-                        Screen.TASKS -> TasksScreen(state, vm, open)
-                        Screen.PROJECTS -> ProjectsScreen(state, vm, open)
+                        Screen.FOCUS -> PullToReload(state.loading, vm::pullRefresh) { FocusScreen(state, vm, open, menu) }
+                        Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }
+                        Screen.PROJECTS -> PullToReload(state.loading, vm::pullRefresh) { ProjectsScreen(state, vm, open) }
                         Screen.AI -> AssistantScreen(state, vm, open)
                         // The Settings tab: the settings, with the assistant, notifications, urgency and the vault around them.
                         Screen.MORE -> SettingsScreen(
@@ -619,3 +623,28 @@ private fun CrashDialog(report: String, onDismiss: () -> Unit) {
     )
 }
 
+
+/**
+ * Pulling the page down past its top reloads the vault and asks Google Calendar to sync, as in Apple's Calendar.
+ * The spinner shows only for a reload the owner pulled for, not for the ones the app starts on its own.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PullToReload(loading: Boolean, onRefresh: () -> Unit, content: @Composable () -> Unit) {
+    var pulled by remember { mutableStateOf(false) }
+    LaunchedEffect(loading) { if (!loading) pulled = false }
+    val refreshing = pulled && loading
+    val pull = rememberPullToRefreshState()
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { pulled = true; onRefresh() },
+        state = pull,
+        modifier = Modifier.fillMaxSize(),
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                state = pull, isRefreshing = refreshing, modifier = Modifier.align(Alignment.TopCenter),
+                containerColor = C.raised, color = C.accent,
+            )
+        },
+    ) { content() }
+}

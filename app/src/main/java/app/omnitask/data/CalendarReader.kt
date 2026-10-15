@@ -52,11 +52,12 @@ object CalendarReader {
 
     /**
      * Asks Android to pull Google Calendar now. Left to itself the sync runs every few hours, so an event made on
-     * another device took that long to show up here. At most once a minute; call it off the main thread.
+     * another device took that long to show up here. At most once a minute unless [force] (the owner pulled to
+     * refresh); call it off the main thread.
      */
-    fun requestSync(context: Context) {
+    fun requestSync(context: Context, force: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (!hasPermission(context) || now - lastSync < 60_000) return
+        if (!hasPermission(context) || (!force && now - lastSync < 60_000)) return
         lastSync = now
         val extras = Bundle().apply {
             putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)

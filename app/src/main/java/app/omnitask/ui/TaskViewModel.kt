@@ -426,6 +426,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(crash = null) }
     }
 
+    /** Pull to refresh: asks Google Calendar to sync now, past the once-a-minute limit, then reloads everything. */
+    fun pullRefresh() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { runCatching { CalendarReader.requestSync(app, force = true) } }
+        reload()
+    }
+
     fun reload() {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
