@@ -224,6 +224,15 @@ object CalendarReader {
         val hiddenInOmni: Boolean,
     )
 
+    /**
+     * Deletes event [id] the way a calendar app does: the provider marks it deleted and the next sync removes it from
+     * Google too. For an event the phone kept after it was deleted elsewhere. False when the calendar refused it.
+     */
+    fun delete(context: Context, id: Long): Boolean {
+        if (!canWrite(context)) return false
+        return runCatching { context.contentResolver.delete(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), null, null) > 0 }.getOrDefault(false)
+    }
+
     /** Reads event [id] straight from the Events table, deleted rows included; null when the phone has no such row. */
     fun inspect(context: Context, id: Long): EventInfo? {
         if (!hasPermission(context)) return null
