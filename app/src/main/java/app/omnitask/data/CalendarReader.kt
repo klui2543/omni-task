@@ -179,6 +179,50 @@ object CalendarReader {
         return CalendarEvent.distinct(out)
     }
 
+    /** What the phone's calendar store holds for one event, to tell why it shows in Omni and not in the calendar app. */
+    data class EventInfo(
+        val id: Long,
+        val title: String,
+        val calendar: Calendar?,
+        val calendarId: Long,
+        val deleted: Boolean,
+        val dirty: Boolean,
+        val syncId: String?,
+        val recurring: Boolean,
+        val hiddenInOmni: Boolean,
+    )
+
+    /** Reads event [id] straight from the Events table, deleted rows included; null when the phone has no such row. */
+    fun inspect(context: Context, id: Long): EventInfo? {
+        if (!hasPermission(context)) return null
+        val cols = arrayOf(
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.DELETED,
+            CalendarContract.Events.DIRTY,
+            CalendarContract.Events._SYNC_ID,
+            CalendarContract.Events.RRULE,
+            CalendarContract.Events.ORIGINAL_ID,
+        )
+        return runCatching {
+            context.contentResolver.query(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), cols, null, null, null)?.use { c ->
+                if (!c.moveToFirst()) return@use null
+                val calendarId = c.getLong(1)
+                EventInfo(
+                    id = id,
+                    title = c.getString(0) ?: "",
+                    calendar = calendars(context).firstOrNull { it.id == calendarId },
+                    calendarId = calendarId,
+                    deleted = c.getInt(2) == 1,
+                    dirty = c.getInt(3) == 1,
+                    syncId = c.getString(4),
+                    recurring = !c.getString(5).isNullOrBlank() || !c.isNull(6),
+                    hiddenInOmni = isHidden(calendarId, hiddenIds(context)),
+                )
+            }
+        }.getOrNull()
+    }
+
     fun month(context: Context, anyDay: LocalDate): List<CalendarEvent> {
         val first = anyDay.withDayOfMonth(1)
         return events(context, first.minusDays(7).atStartOfDay(), first.plusMonths(1).plusDays(7).atStartOfDay())
