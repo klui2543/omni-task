@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Month widget day tap</title>
+<style>
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_semibold.ttf);font-weight:600}
+:root{--card:#161618;--grid:#2e2e35;--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;--lime:#7fae93;--red:#d9726c;--teal:#7d8794}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,sans-serif;padding:24px 16px 40px}
+.grid{display:flex;flex-wrap:wrap;gap:36px 32px;justify-content:center}
+.col{width:390px;max-width:100%}
+h2{font-size:15px;font-weight:600;margin:0 0 4px}
+.what{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.55;min-height:40px}
+.note{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.65}.note b{color:var(--text2);font-weight:500}
+.home{background:linear-gradient(160deg,#2a2622,#3a2a26 60%,#1f1c1a);border-radius:24px;padding:22px 12px}
+.w{border-radius:24px;padding:14px 12px 10px;background:#141416f0}
+.hd{display:flex;align-items:center;gap:4px;padding:0 2px 8px}.hd b{font-size:19px;font-weight:500;flex:1}
+.ib{width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:17px}
+.plus{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--onAccent);display:flex;align-items:center;justify-content:center;font-size:18px;margin-left:4px}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:10.5px;color:var(--faint);text-align:center;padding-bottom:5px}.dow span:first-child{color:var(--red)}
+.mon{border-top:1px solid var(--grid);border-left:1px solid var(--grid)}
+.wk{display:grid;grid-template-columns:repeat(7,1fr)}
+.c{position:relative;height:42px;border-right:1px solid var(--grid);border-bottom:1px solid var(--grid);text-align:center;padding-top:5px}
+.n{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;width:24px;height:24px;font-size:12.5px;color:var(--text2)}
+.sun .n,.hol .n{color:var(--red)}.out .n{opacity:.3}
+.today .n{background:var(--accent);color:var(--onAccent);font-weight:600}
+.sel .n{box-shadow:0 0 0 1.6px var(--accent)}
+.has::after{content:"";position:absolute;left:6px;bottom:6px;width:5px;height:5px;border-radius:50%;background:var(--lime)}
+.ag{padding:8px 4px 0}
+.day{font-size:11.5px;color:var(--muted);padding:6px 0 2px}.day.on{color:var(--accentText);font-weight:500}
+.it{display:flex;align-items:center;gap:9px;height:30px;font-size:13.5px}.it .g{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it small{font-size:11.5px;color:var(--muted)}.it small.late{color:var(--red)}
+.m{width:3px;height:16px;border-radius:2px;background:var(--teal);margin:0 8px 0 0}
+.ck{width:15px;height:15px;border-radius:50%;border:1.6px solid var(--faint);margin:0 2px}.ck.late{border-color:var(--red)}
+.tap{position:absolute;inset:-6px;border:2px dashed #e8d36a;border-radius:8px}
+</style></head><body>
+<div class="grid">
+<div class="col">
+<h2>1. ปกติ: วันนี้ (รวมงานค้าง) และพรุ่งนี้</h2>
+<p class="what">งานที่ครบวันนี้ขึ้นก่อน ตามด้วยงานที่เลยกำหนด วงแดงพร้อม "เลย n วัน" ติ๊กเสร็จจาก widget ได้</p>
+<div class="home"><div class="w" id="A"></div></div>
+<p class="note"><b>แตะวันในตาราง</b> (เช่น 22 ที่มีกรอบเหลือง) รายการด้านล่างจะเปลี่ยนเป็นของวันนั้น ดูข้อ 2</p>
+</div>
+<div class="col">
+<h2>2. แตะวันที่ 22: รายการเป็นของวันนั้น</h2>
+<p class="what">วันที่เลือกมีวงรอบตัวเลข หัวรายการเป็นสีฟ้า แสดงเฉพาะนัดและงานของวันนั้น</p>
+<div class="home"><div class="w" id="B"></div></div>
+<p class="note"><b>แตะ 22 ซ้ำ, แตะวันนี้ หรือแตะ "ตุลาคม 2569"</b> กลับไปข้อ 1<br><b>✎</b> เปิดหน้ากรอบและ Emoji โดยเลือกวันที่ 22 ไว้ให้<br>แตะวันไม่เปิดหน้ากรอบอีกแล้ว</p>
+</div>
+</div>
+<script>
+const dow='<span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>';
+const has={2:1,6:1,8:1,9:1,10:1,11:1,12:1,13:1,14:1,16:1,17:1,18:1,19:1,20:1,22:1,24:1,26:1,28:1,31:1};
+function cal(el,sel,tapHint,agenda){
+  let h=`<div class="hd"><b>ตุลาคม 2569</b><span class="ib">‹</span><span class="ib">›</span><span class="ib" style="color:var(--accentText)">✎</span><span class="plus">+</span></div><div class="dow">${dow}</div><div class="mon">`;
+  for(let w=0;w<5;w++){h+='<div class="wk">';for(let i=0;i<7;i++){const d=-3+w*7+i,out=d<1||d>31,shown=d<1?30+d:d>31?d-31:d;
+    h+=`<div class="c${i==0?' sun':''}${out?' out':''}${!out&&(d==13||d==23)?' hol':''}${!out&&d==15?' today':''}${!out&&d==sel?' sel':''}${!out&&has[d]?' has':''}"><span class="n">${shown}</span>${tapHint&&d==22?'<span class="tap"></span>':''}</div>`;}h+='</div>';}
+  el.innerHTML=h+'</div><div class="ag">'+agenda+'</div>';
+}
+const ev=(t,time)=>`<div class="it"><span class="m"></span><span class="g">${t}</span><small>${time}</small></div>`;
+const task=(t,late)=>`<div class="it"><span class="ck${late?' late':''}"></span><span class="g">${t}</span>${late?`<small class="late">เลย ${late} วัน</small>`:''}</div>`;
+cal(document.getElementById("A"),0,true,
+ `<div class="day">วันนี้ 15 ต.ค.</div>${task("ส่งรายงานไตรมาส")}${task("ต่อภาษีรถ",3)}${task("ตอบอีเมลลูกค้า",9)}<div class="day">พรุ่งนี้ 16 ต.ค.</div>${ev("เพิ่มงาน ทดสอบ","ทั้งวัน")}`);
+cal(document.getElementById("B"),22,false,
+ `<div class="day on">พฤ 22 ต.ค.</div>${ev("ประชุมทีม","10:00")}${task("ส่งแบบร่างหน้าเว็บ")}${task("โทรหาช่างแอร์")}`);
+</script>
+</body></html>
