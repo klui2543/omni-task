@@ -151,6 +151,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
 
+    // The month widget opened the frames and emoji page.
+    state.month?.let { r ->
+        MonthScreen(r, state) { vm.requestMonth(null) }
+        return
+    }
+
     if (notifyOpen) {
         NotifySettingsScreen(state.notify, vm::setNotify, vm::calendarChanged) { notifyOpen = false }
         return

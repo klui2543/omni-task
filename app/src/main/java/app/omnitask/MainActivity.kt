@@ -21,8 +21,10 @@ import app.omnitask.model.load
 import app.omnitask.model.Shared
 import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme
+import app.omnitask.ui.MonthRequest
 import app.omnitask.ui.QuickAddRequest
 import app.omnitask.ui.TaskViewModel
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import app.omnitask.time.*
 
@@ -78,6 +80,12 @@ class MainActivity : ComponentActivity() {
             ACTION_VOICE -> viewModel.requestQuickAdd(QuickAddRequest(voice = true))
             ACTION_ASSISTANT -> viewModel.requestQuickAdd(QuickAddRequest(assistant = true))
             ACTION_STUCK -> viewModel.requestStuck(true)
+            ACTION_MONTH -> viewModel.requestMonth(
+                MonthRequest(
+                    intent.getStringExtra(EXTRA_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now(),
+                    intent.getBooleanExtra(EXTRA_PICK, false),
+                ),
+            )
             else -> return
         }
         intent.removeExtra(EXTRA_ACTION)
@@ -91,6 +99,10 @@ class MainActivity : ComponentActivity() {
         const val ACTION_ASSISTANT = "assistant"
         /** From the weekly review: ask why each long-open task is still open. */
         const val ACTION_STUCK = "stuck"
+        /** From the month widget: the frames and emoji page, at [EXTRA_DAY], that day selected with [EXTRA_PICK]. */
+        const val ACTION_MONTH = "month"
+        const val EXTRA_DAY = "app.omnitask.DAY"
+        const val EXTRA_PICK = "app.omnitask.PICK"
     }
 
     // Obsidian or the sync app may have changed files while the app was in the background.

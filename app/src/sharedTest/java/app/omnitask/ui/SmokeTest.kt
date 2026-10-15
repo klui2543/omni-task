@@ -48,6 +48,21 @@ class SmokeTest {
     }
 
     @Test
+    fun monthPageFramesAndAddsEmoji() {
+        val vm = vm()
+        vm.requestMonth(MonthRequest(kotlinx.datetime.LocalDate(2026, 10, 15), pick = true))
+        rule.setContent { OmniTheme { OmniTaskApp(vm) } }
+        rule.waitForIdle()
+        check(rule.onAllNodesWithText("ตุลาคม 2569").fetchSemanticsNodes().isNotEmpty()) { "the month page did not open" }
+        // One day comes chosen from the widget: the frame and the emoji panels both show.
+        rule.onAllNodesWithText("บันทึกกรอบ")[0].performClick()
+        rule.waitForIdle()
+        check(rule.onAllNodesWithText("กรอบเดือนนี้").fetchSemanticsNodes().isNotEmpty()) { "the frame was not saved" }
+        rule.onAllNodesWithText("ปิด")[0].performClick()
+        rule.waitForIdle()
+    }
+
+    @Test
     fun everyScreenRenders() {
         val vm = vm()
         rule.setContent { OmniTheme { OmniTaskApp(vm) } }

@@ -5,4 +5,5 @@
     <string name="widget_next">Up next</string>
     <string name="widget_matrix">Eisenhower</string>
     <string name="widget_waiting">Waiting and future</string>
+    <string name="widget_month">Month (frames and emoji)</string>
 </resources>

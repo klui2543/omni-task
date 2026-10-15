@@ -74,15 +74,15 @@ import app.omnitask.time.*
 object OmniWidgets {
     suspend fun refresh(context: Context) {
         CalendarWatch.armIfNeeded(context)
-        listOf(QuickAddWidget(), TodayWidget(), NextWidget(), MatrixWidget(), WaitingWidget()).forEach {
+        listOf(QuickAddWidget(), TodayWidget(), NextWidget(), MatrixWidget(), WaitingWidget(), MonthWidget()).forEach {
             runCatching { it.updateAll(context) }
         }
     }
 }
 
-private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+internal fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
 
-private fun open(context: Context, action: String? = null) = actionStartActivity(
+internal fun open(context: Context, action: String? = null) = actionStartActivity(
     Intent(context, MainActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         .also { if (action != null) it.putExtra(MainActivity.EXTRA_ACTION, action) }
@@ -94,7 +94,7 @@ private fun open(context: Context, action: String? = null) = actionStartActivity
  * A colour from the app's palette for widgets: the chosen palette, and with "follow the system" a pair the
  * launcher switches between in light and dark mode.
  */
-private fun cp(pick: (Palette) -> Color): ColorProvider = when {
+internal fun cp(pick: (Palette) -> Color): ColorProvider = when {
     Appearance.palette == PaletteChoice.MIDNIGHT -> ColorProvider(pick(Palettes.midnight))
     Appearance.themeMode == ThemeMode.LIGHT -> ColorProvider(pick(Palettes.graphiteLight))
     Appearance.themeMode == ThemeMode.DARK -> ColorProvider(pick(Palettes.graphiteDark))
@@ -102,7 +102,7 @@ private fun cp(pick: (Palette) -> Color): ColorProvider = when {
 }
 
 @Composable
-private fun Label(text: String, color: ColorProvider = cp { it.muted }, size: TextUnit = 12.sp, bold: Boolean = false, maxLines: Int = 1, modifier: GlanceModifier = GlanceModifier, strike: Boolean = false) {
+internal fun Label(text: String, color: ColorProvider = cp { it.muted }, size: TextUnit = 12.sp, bold: Boolean = false, maxLines: Int = 1, modifier: GlanceModifier = GlanceModifier, strike: Boolean = false) {
     Text(
         text, modifier,
         style = TextStyle(
@@ -144,7 +144,7 @@ class QuickAddWidget : GlanceAppWidget() {
 }
 
 @Composable
-private fun Circle(context: Context, icon: Int, bg: ColorProvider, fg: ColorProvider, action: String, size: Int = 40) {
+internal fun Circle(context: Context, icon: Int, bg: ColorProvider, fg: ColorProvider, action: String, size: Int = 40) {
     Box(
         GlanceModifier.size(size.dp).cornerRadius((size / 2).dp).background(bg).clickable(open(context, action)),
         contentAlignment = Alignment.Center,
@@ -157,7 +157,7 @@ class QuickAddWidgetReceiver : GlanceAppWidgetReceiver() {
 
 // ---- 4×2 today, tickable ----
 
-private val RAW = ActionParameters.Key<String>("raw")
+internal val RAW = ActionParameters.Key<String>("raw")
 
 /** Ticks a task from the widget, repeating tasks included, then redraws the widgets and the alarms. */
 class TickAction : ActionCallback {

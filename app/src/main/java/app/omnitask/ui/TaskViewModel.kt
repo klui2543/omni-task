@@ -19,6 +19,7 @@ import app.omnitask.data.DriveLink
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.BehaviorLog
 import app.omnitask.data.SettingsSync
+import app.omnitask.data.MonthMarksStore
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
@@ -142,6 +143,8 @@ data class UiState(
     val quickAdd: QuickAddRequest? = null,
     /** Set when the weekly notification is opened: ask why each long-open task is still open. */
     val askStuck: Boolean = false,
+    /** The month widget asked for the frames and emoji page, at this day. */
+    val month: MonthRequest? = null,
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
@@ -244,6 +247,9 @@ data class DriveUi(
 )
 
 /** Opens the quick-add sheet, typing or listening first; [assistant] jumps to the assistant instead. */
+/** Opens the month page at [day]; with [pick], that day comes selected. */
+data class MonthRequest(val day: LocalDate, val pick: Boolean)
+
 data class QuickAddRequest(
     val voice: Boolean = false,
     val assistant: Boolean = false,
@@ -440,6 +446,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }.getOrDefault(false)
             }
+            // The month widget's frames and emoji, saved on another phone or before the app was cleared.
+            withContext(Dispatchers.IO) { runCatching { MonthMarksStore.sync(getApplication(), repo, vault) } }
             if (imported) {
                 Lang.load(getApplication())
                 Appearance.load(getApplication())
@@ -1374,6 +1382,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
 
     fun requestStuck(on: Boolean) = _state.update { it.copy(askStuck = on) }
+
+    fun requestMonth(request: MonthRequest?) = _state.update { it.copy(month = request) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
     fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {

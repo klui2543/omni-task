@@ -67,8 +67,15 @@ object CalendarReader {
         }
     }
 
-    /** One calendar on the phone. Google accounts show up with [isGoogle] once calendar sync is on. */
-    data class Calendar(val id: Long, val name: String, val account: String, val isGoogle: Boolean, val visible: Boolean, val writable: Boolean)
+    /**
+     * One calendar on the phone. Google accounts show up with [isGoogle] once calendar sync is on. [holiday] marks a
+     * public-holiday calendar (Google's "Holidays in Thailand" and the like), whose days the month widget colours red.
+     */
+    data class Calendar(val id: Long, val name: String, val account: String, val isGoogle: Boolean, val visible: Boolean, val writable: Boolean, val holiday: Boolean = false)
+
+    /** Google's holiday calendars are owned by an address like `th.th#holiday@group.v.calendar.google.com`. */
+    fun isHolidayCalendar(name: String, owner: String) =
+        "#holiday@" in owner || Regex("holiday|วันหยุด", RegexOption.IGNORE_CASE).containsMatchIn(name)
 
     fun calendars(context: Context): List<Calendar> {
         if (!hasPermission(context)) return emptyList()
@@ -79,6 +86,7 @@ object CalendarReader {
             CalendarContract.Calendars.ACCOUNT_TYPE,
             CalendarContract.Calendars.VISIBLE,
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+            CalendarContract.Calendars.OWNER_ACCOUNT,
         )
         val out = ArrayList<Calendar>()
         runCatching {
@@ -91,6 +99,7 @@ object CalendarReader {
                         isGoogle = c.getString(3) == "com.google",
                         visible = c.getInt(4) == 1,
                         writable = c.getInt(5) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR,
+                        holiday = isHolidayCalendar(c.getString(1) ?: "", c.getString(6) ?: ""),
                     )
                 }
             }
@@ -134,9 +143,10 @@ object CalendarReader {
 
     /**
      * Events overlapping [from, to). All-day events come back starting at midnight with [CalendarEvent.allDay] set.
-     * With [ids], only those events (the countdown's pinned ones).
+     * With [ids], only those events (the countdown's pinned ones). With [calendars], only those calendars, shown in
+     * Omni or not (the holidays).
      */
-    fun events(context: Context, from: LocalDateTime, to: LocalDateTime, ids: Collection<Long>? = null): List<CalendarEvent> {
+    fun events(context: Context, from: LocalDateTime, to: LocalDateTime, ids: Collection<Long>? = null, calendars: Collection<Long>? = null): List<CalendarEvent> {
         if (!hasPermission(context)) return emptyList()
         val zone = ZoneId.systemDefault()
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
@@ -155,10 +165,11 @@ object CalendarReader {
         val out = ArrayList<CalendarEvent>()
         runCatching {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
-            val only = ids?.let { " AND " + CalendarContract.Instances.EVENT_ID + " IN (" + it.joinToString(",") + ")" } ?: ""
+            val only = (ids?.let { " AND " + CalendarContract.Instances.EVENT_ID + " IN (" + it.joinToString(",") + ")" } ?: "") +
+                (calendars?.let { " AND " + CalendarContract.Instances.CALENDAR_ID + " IN (" + it.joinToString(",") + ")" } ?: "")
             context.contentResolver.query(uri, cols, CalendarContract.Instances.VISIBLE + " = 1" + only, null, CalendarContract.Instances.BEGIN)?.use { c ->
                 while (c.moveToNext()) {
-                    if (isHidden(c.getLong(5), hidden)) continue
+                    if (calendars == null && isHidden(c.getLong(5), hidden)) continue
                     val allDay = c.getInt(4) == 1
                     // All-day instances are stored in UTC midnights; read them as local dates.
                     fun at(ms: Long) = if (allDay) {
@@ -171,6 +182,26 @@ object CalendarReader {
             }
         }
         return CalendarEvent.distinct(out)
+    }
+
+    /**
+     * Public holidays from [from] to [to] (both included), by day, from the holiday calendars on the phone, whether or
+     * not they are switched off in Omni: the month widget colours them even when Focus leaves them out.
+     */
+    fun holidays(context: Context, from: LocalDate, to: LocalDate): Map<LocalDate, String> {
+        val ids = calendars(context).filter { it.holiday }.map { it.id }
+        if (ids.isEmpty()) return emptyMap()
+        val out = HashMap<LocalDate, String>()
+        events(context, from.atStartOfDay(), to.plusDays(1).atStartOfDay(), calendars = ids).forEach { e ->
+            var d = e.begin.date
+            // An all-day event ends at the next midnight; a timed one still counts on the day it starts.
+            val end = if (e.allDay) e.end.date.minusDays(1) else e.begin.date
+            while (d <= end) {
+                if (d >= from && d <= to) out.putIfAbsent(d, e.title)
+                d = d.plusDays(1)
+            }
+        }
+        return out
     }
 
     fun month(context: Context, anyDay: LocalDate): List<CalendarEvent> {
