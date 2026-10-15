@@ -156,7 +156,13 @@ object CalendarReader {
         runCatching {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
             val only = ids?.let { " AND " + CalendarContract.Instances.EVENT_ID + " IN (" + it.joinToString(",") + ")" } ?: ""
-            context.contentResolver.query(uri, cols, CalendarContract.Instances.VISIBLE + " = 1" + only, null, CalendarContract.Instances.BEGIN)?.use { c ->
+            val where = CalendarContract.Instances.VISIBLE + " = 1" + only
+            // An event deleted on the phone keeps its row, marked deleted, until the next sync with Google; the
+            // calendar app already hides it, so skip it too. A provider without the column gets the plain query.
+            val cursor = runCatching {
+                context.contentResolver.query(uri, cols, where + " AND " + CalendarContract.Events.DELETED + " = 0", null, CalendarContract.Instances.BEGIN)
+            }.getOrNull() ?: context.contentResolver.query(uri, cols, where, null, CalendarContract.Instances.BEGIN)
+            cursor?.use { c ->
                 while (c.moveToNext()) {
                     if (isHidden(c.getLong(5), hidden)) continue
                     val allDay = c.getInt(4) == 1
