@@ -34,7 +34,7 @@ class MonthWidgetTest {
             .withFrame((12..16).map(::d).toSet(), FrameColor.VIOLET, "อบรม Excel")
             .withFrame((23..26).map(::d).toSet(), FrameColor.AMBER, "")
             .withStickers(d(24), listOf("✈️", "🏖️", "📸", "🍜"))
-        val data = MonthData(d(15), d(1), 0, marks, mapOf(d(13) to "วันนวมินทรมหาราช"), setOf(d(15)), emptyList())
+        val data = MonthData(d(15), d(1), 0, marks, mapOf(d(13) to "วันนวมินทรมหาราช"), setOf(d(15)), d(20), emptyList())
         val bmp = MonthPainter(context, Palettes.graphiteDark).draw(data, 320f, 42f, 5)
         val scale = minOf(context.resources.displayMetrics.density, 2.75f)
         check(bmp.width == (320f * scale).toInt()) { "width ${bmp.width}" }

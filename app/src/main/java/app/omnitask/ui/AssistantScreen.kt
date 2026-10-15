@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.omnitask.ui
 
 import android.Manifest
@@ -8,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,6 +109,7 @@ private val EXAMPLES: List<String>
 @Composable
 fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val context = LocalContext.current
+    val eventActions = rememberEventActions(vm)
     var input by rememberSaveable { mutableStateOf("") }
     var typing by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -224,7 +228,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     is Chat.Today -> TodayCard(item.tasks, state, onOpen)
                     is Chat.Review -> ReviewCard(item)
                     is Chat.Duration -> DurationCard(item) { vm.answerDuration(index, it) }
-                    is Chat.Agenda -> AgendaCard(item, state, onOpen)
+                    is Chat.Agenda -> AgendaCard(item, state, onOpen, eventActions)
                     is Chat.RangePlan -> RangePlanCard(item, state, onOpen, { vm.toggleRangeCalendar(index) }) { which ->
                         if (item.toCalendar && !CalendarReader.canWrite(context)) {
                             calendarAsk.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
@@ -407,7 +411,7 @@ private fun DurationCard(item: Chat.Duration, onAnswer: (Int) -> Unit) {
 }
 
 @Composable
-private fun AgendaCard(item: Chat.Agenda, state: UiState, onOpen: (Task) -> Unit) {
+private fun AgendaCard(item: Chat.Agenda, state: UiState, onOpen: (Task) -> Unit, events: EventActions) {
     val dayFmt = java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", TH)
     val hm = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
     Card {
@@ -425,6 +429,7 @@ private fun AgendaCard(item: Chat.Agenda, state: UiState, onOpen: (Task) -> Unit
                         d.events.forEach { e ->
                             Text(
                                 (if (e.allDay) tr("ทั้งวัน ", "All day ") else e.begin.format(hm) + " ") + e.title,
+                                Modifier.combinedClickable(onClick = { events.open(e) }, onLongClick = { events.inspect(e) }),
                                 color = C.tealText, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                         }
