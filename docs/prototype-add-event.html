@@ -64,6 +64,16 @@ input.field:focus{border-color:var(--accentLine)}
 .ghost{height:44px;border-radius:12px;border:1px solid var(--control);background:transparent;color:var(--text2);font:inherit;font-size:14px;padding:0 16px;cursor:pointer}
 .perm{margin-top:14px;border-radius:12px;background:var(--raised);padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text2)}
 .perm span{flex:1}
+.opt{display:flex;align-items:center;gap:8px;width:100%;margin-top:14px;padding:10px 12px;border-radius:12px;border:0;background:var(--raised);color:var(--muted);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+.opt span{flex:1}.opt b{color:var(--accentText);font-weight:500}
+.pop{display:none;margin-top:8px;padding:12px;border-radius:14px;background:var(--sunken);border:1px solid var(--border)}
+.pop.on{display:block}
+.ghost2{margin-left:auto;height:44px;border-radius:12px;border:1px solid var(--accentLine);background:var(--accentSoft);color:var(--accentText);font:inherit;font-size:14px;padding:0 14px;cursor:pointer}
+.ghost2[disabled]{opacity:.45;cursor:default}
+.dlg{position:absolute;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:24px;z-index:5}
+.dlg.on{display:flex}
+.dlgBox{background:#2a2a2f;border-radius:24px;padding:22px;width:100%;max-width:320px;text-align:center}
+.dlgBtn{display:block;width:100%;height:44px;margin-top:8px;border-radius:22px;border:0;background:#3a3a40;color:var(--text);font:inherit;font-size:14px;cursor:pointer}
 .snack{position:absolute;left:14px;right:14px;bottom:18px;background:#2a2a2f;border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none}
 .snack.on{opacity:1;transform:none}
 .sec{position:absolute;inset:0;padding:54px 14px 14px;background:var(--bg)}
@@ -75,9 +85,9 @@ input.field:focus{border-color:var(--accentLine)}
 </head><body>
 
 <div class="bar"><b>ลองกดได้: เพิ่มนัดจากช่องเพิ่มงาน</b>
-แตะ + หรือช่อง "เพิ่มงาน" บนหน้าจอ แล้วพิมพ์ชื่อ ลองพิมพ์ "พรุ่งนี้" หรือ "14:00" แล้วติ๊ก ลงปฏิทิน ข้างปุ่มล่าง ข้อมูลเป็นตัวอย่าง ตัวจริงจะอ่านวันเวลาด้วยกฎเดิมของช่องเพิ่มงาน
+แตะ + หรือช่อง "เพิ่มงาน" บนหน้าจอ แล้วพิมพ์ชื่อ ลองพิมพ์ "พรุ่งนี้" หรือ "14:00" แล้วกดปุ่ม ลงปฏิทิน หรือ เพิ่มงาน ปุ่มใดปุ่มหนึ่งได้เลย ข้อมูลเป็นตัวอย่าง ตัวจริงจะอ่านวันเวลาด้วยกฎเดิมของช่องเพิ่มงาน
 <div class="ctl">
-<button class="tg on" id="permBtn" type="button">มีสิทธิ์เขียนปฏิทิน</button>
+<button class="tg on" id="permBtn" type="button">มีสิทธิ์เขียนปฏิทินแล้ว</button>
 <button class="tg" id="resetBtn" type="button">เริ่มใหม่</button>
 </div>
 </div>
@@ -112,38 +122,39 @@ input.field:focus{border-color:var(--accentLine)}
     <input class="field" id="text" type="text" placeholder="เช่น ประชุมทีม พรุ่งนี้ 14:00" autocomplete="off">
 
     <div class="row" style="margin-top:10px" id="readRow"></div>
+    <div class="hintt">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 หรือ 14:00-16:00 #tag ! !! !!!</div>
 
-    <!-- calendar-only parts -->
-    <div id="calOnly" style="display:none">
-      <div id="durBlock">
-        <div class="lbl">นานเท่าไร</div>
-        <div class="chips" id="durs"></div>
-      </div>
-      <div id="calBlock">
-        <div class="lbl">ปฏิทิน</div>
-        <div class="chips" id="cals"></div>
-      </div>
-      <div class="perm" id="permBox" style="display:none">
-        <span>ต้องอนุญาตให้แอปเขียนปฏิทินก่อน</span>
-        <button class="ghost" id="allowBtn" type="button">อนุญาต</button>
-      </div>
-      <div class="hintt">ไม่ใส่เวลา จะลงเป็นนัดทั้งวัน</div>
+    <!-- what the event would be, right above the buttons; tap to change -->
+    <button class="opt" id="opt" type="button"></button>
+    <div class="pop" id="pop">
+      <div class="lbl" style="margin-top:0">นานเท่าไร (ถ้าไม่ได้พิมพ์เวลาจบ)</div>
+      <div class="chips" id="durs"></div>
+      <div class="lbl">ปฏิทิน</div>
+      <div class="chips" id="cals"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="ghost" id="popDone" type="button">เสร็จ</button></div>
     </div>
-
-    <div class="sum" id="sum"></div>
 
     <div class="foot">
       <button class="rnd" type="button" aria-label="พูด"><svg viewBox="0 0 24 24"><path d="M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
       <button class="rnd a" type="button" aria-label="ถามผู้ช่วย"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg></button>
-      <label class="tick" id="calTick"><input type="checkbox" id="calBox"><span class="box"></span>ลงปฏิทิน</label>
+      <button class="ghost2" id="calBtn" type="button">ลงปฏิทิน</button>
       <button class="btn" id="saveBtn" type="button">เพิ่มงาน</button>
+    </div>
+  </div>
+
+  <!-- the phone's own permission dialog, the first time only -->
+  <div class="dlg" id="dlg">
+    <div class="dlgBox">
+      <div style="font-size:15px;margin-bottom:16px">อนุญาตให้ Omni Task เข้าถึงปฏิทินของคุณไหม</div>
+      <button class="dlgBtn" id="dlgYes" type="button">อนุญาต</button>
+      <button class="dlgBtn" id="dlgNo" type="button">ไม่อนุญาต</button>
     </div>
   </div>
 
   <div class="snack" id="snack"></div>
 </div>
 
-<p class="note">ที่เห็นในหน้านี้: ติ๊ก "ลงปฏิทิน" ข้างปุ่มล่างเพื่อสลับโหมด แถวระยะเวลาและปฏิทินจะโผล่มาเฉพาะโหมดนี้ ปุ่มล่างเปลี่ยนชื่อตามโหมด วันที่ที่อ่านได้ (วันนี้ พรุ่งนี้ 14:00) จะแสดงเป็นชิปก่อนบันทึก</p>
+<p class="note">พิมพ์เสร็จ นิ้วโป้งอยู่ด้านล่างแล้ว กดปุ่มเดียวจบ: <b>เพิ่มงาน</b> ลง Omni note หรือ <b>ลงปฏิทิน</b> เป็นนัด แถบเทาเหนือปุ่มบอกว่านัดจะออกมาแบบไหน (ปกติไม่ต้องแตะ ใช้ระยะเวลาและปฏิทินครั้งล่าสุด) พิมพ์เวลาจบในประโยคได้ เช่น 14:00-16:00 ครั้งแรกที่กดลงปฏิทิน เครื่องจะถามสิทธิ์</p>
 
 <script>
 const TODAY = new Date(2026, 9, 15); // 15 October 2026, like the rest of the mockups
@@ -156,7 +167,7 @@ const CALS = [
   { id: "f", name: "ครอบครัว", google: true },
 ];
 
-const S = { cal: false, dur: 60, calId: "g", perm: true, day: null, time: null };
+const S = { dur: 60, calId: "g", perm: true };
 const $ = id => document.getElementById(id);
 const hm = (h, m) => String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
 const addMin = (t, m) => { const [h, mm] = t.split(":").map(Number); const x = h * 60 + mm + m; return hm(Math.floor(x / 60) % 24, x % 60); };
@@ -167,43 +178,32 @@ function read(text) {
   let rest = text, day = null, time = null;
   if (/พรุ่งนี้/.test(rest)) { day = new Date(TODAY.getTime() + 864e5); rest = rest.replace("พรุ่งนี้", " "); }
   else if (/วันนี้/.test(rest)) { day = new Date(TODAY); rest = rest.replace("วันนี้", " "); }
-  const t = rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
+  let end = null;
+  const range = rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)\s*(?:-|ถึง)\s*([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
+  if (range) { time = hm(+range[1], +range[2]); end = hm(+range[3], +range[4]); rest = rest.replace(range[0], " "); }
+  const t = time ? null : rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
   if (t) { time = hm(+t[1], +t[2]); rest = rest.replace(t[0], " "); }
   const title = rest.replace(/\s+/g, " ").trim();
-  return { title, day, time };
+  return { title, day, time, end };
 }
 
 function render() {
   const r = read($("text").value);
-  const isCal = S.cal;
-  $("sheetTitle").textContent = isCal ? "เพิ่มนัด" : "เพิ่มงาน";
-  $("calBox").checked = isCal;
-  $("calOnly").style.display = isCal ? "block" : "none";
-  $("durBlock").style.display = isCal && r.time ? "block" : "none";
-  $("saveBtn").textContent = isCal ? "เพิ่มนัด" : "เพิ่มงาน";
-
-  // read chips
-  const chips = [];
   const day = r.day || TODAY;
-  if (isCal) {
-    chips.push(dateLabel(day));
-    chips.push(r.time ? r.time + " ถึง " + addMin(r.time, S.dur) : "ทั้งวัน");
-  } else {
-    if (r.day) chips.push(dateLabel(r.day));
-    if (r.time) chips.push("เตือน " + r.time);
-  }
+  const chips = [];
+  if (r.day) chips.push(dateLabel(r.day));
+  if (r.time) chips.push("เตือน " + r.time);
   $("readRow").innerHTML = chips.map(c => `<span class="pill">${c}</span>`).join("");
 
-  // durations
+  const dur = r.end ? null : S.dur;
+  const end = r.time ? (r.end || addMin(r.time, S.dur)) : null;
+  const cal = CALS.find(c => c.id === S.calId).name;
+  $("opt").style.display = r.title ? "flex" : "none";
+  $("opt").innerHTML = `<span>ถ้าลงปฏิทิน: ${dateLabel(day)} ${r.time ? r.time + " ถึง " + end : "ทั้งวัน"}, ${cal}</span><b>เปลี่ยน</b>`;
   $("durs").innerHTML = DURS.map(m => `<button class="chip ${S.dur === m ? "on" : ""}" data-dur="${m}" type="button">${lenLabel(m)}</button>`).join("");
-  // calendars
   $("cals").innerHTML = CALS.map(c => `<button class="chip ${S.calId === c.id ? "on" : ""}" data-cal="${c.id}" type="button">${c.name}</button>`).join("");
-  $("permBox").style.display = S.perm ? "none" : "flex";
-  $("calBlock").style.display = S.perm ? "block" : "none";
-  $("saveBtn").disabled = !r.title || (isCal && !S.perm);
-
-  const when = isCal ? (r.time ? dateLabel(day) + " " + r.time + " ถึง " + addMin(r.time, S.dur) : dateLabel(day) + " ทั้งวัน") : "";
-  $("sum").textContent = isCal ? (r.title ? "จะลง: " + r.title + ", " + when : "พิมพ์ชื่อนัดก่อน") : "";
+  $("saveBtn").disabled = !r.title;
+  $("calBtn").disabled = !r.title;
   document.querySelectorAll("[data-dur]").forEach(b => b.onclick = () => { S.dur = +b.dataset.dur; render(); });
   document.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => { S.calId = b.dataset.cal; render(); });
 }
@@ -226,38 +226,47 @@ $("openQa").onkeydown = e => { if (e.key === "Enter") open(); };
 $("plusBtn").onclick = open;
 $("scrim").onclick = close;
 $("text").oninput = render;
-$("calBox").onchange = () => { S.cal = $("calBox").checked; render(); };
-$("allowBtn").onclick = () => { S.perm = true; render(); flash("ให้สิทธิ์แล้ว ลองกด ลงปฏิทิน อีกครั้ง"); };
+$("opt").onclick = () => $("pop").classList.toggle("on");
+$("popDone").onclick = () => $("pop").classList.remove("on");
 $("permBtn").onclick = () => {
   S.perm = !S.perm;
   $("permBtn").classList.toggle("on", S.perm);
-  $("permBtn").textContent = S.perm ? "มีสิทธิ์เขียนปฏิทิน" : "ยังไม่มีสิทธิ์เขียนปฏิทิน";
-  render();
+  $("permBtn").textContent = S.perm ? "มีสิทธิ์เขียนปฏิทินแล้ว" : "ยังไม่มีสิทธิ์เขียนปฏิทิน";
 };
 $("resetBtn").onclick = () => location.reload();
+
+function done() { $("text").value = ""; $("pop").classList.remove("on"); close(); render(); }
 
 $("saveBtn").onclick = () => {
   const r = read($("text").value);
   if (!r.title) return;
-  if (S.cal) {
-    if (!S.perm) return;
-    const day = r.day || TODAY;
-    const cal = CALS.find(c => c.id === S.calId).name;
-    const when = r.time ? r.time + " ถึง " + addMin(r.time, S.dur) : "ทั้งวัน";
-    $("eventRow").style.display = "flex";
-    $("evTime").textContent = r.time || "ทั้งวัน";
-    $("evTitle").textContent = r.title + (day.getTime() !== TODAY.getTime() ? " (" + dateLabel(day) + ")" : "");
-    flash("ลงปฏิทินแล้ว: " + r.title + ", " + dateLabel(day) + " " + when + " ใน " + cal);
-  } else {
-    $("taskRow").style.display = "flex";
-    $("taskTitle").textContent = r.title;
-    flash("เพิ่มงานแล้ว: " + r.title);
-  }
-  $("text").value = "";
-  S.cal = false;
-  close();
-  render();
+  $("taskRow").style.display = "flex";
+  $("taskTitle").textContent = r.title;
+  flash("เพิ่มงานแล้ว: " + r.title);
+  done();
 };
+
+function addEvent() {
+  const r = read($("text").value);
+  const day = r.day || TODAY;
+  const cal = CALS.find(c => c.id === S.calId).name;
+  const when = r.time ? r.time + " ถึง " + (r.end || addMin(r.time, S.dur)) : "ทั้งวัน";
+  $("eventRow").style.display = "flex";
+  $("evTime").textContent = r.time || "ทั้งวัน";
+  $("evTitle").textContent = r.title + (day.getTime() !== TODAY.getTime() ? " (" + dateLabel(day) + ")" : "");
+  flash("ลงปฏิทินแล้ว: " + r.title + ", " + dateLabel(day) + " " + when + " ใน " + cal);
+  done();
+}
+$("calBtn").onclick = () => {
+  if (!read($("text").value).title) return;
+  if (S.perm) addEvent(); else $("dlg").classList.add("on");
+};
+$("dlgYes").onclick = () => {
+  $("dlg").classList.remove("on"); S.perm = true;
+  $("permBtn").classList.add("on"); $("permBtn").textContent = "มีสิทธิ์เขียนปฏิทินแล้ว";
+  addEvent();
+};
+$("dlgNo").onclick = () => { $("dlg").classList.remove("on"); flash("ลงปฏิทินไม่ได้ ยังไม่ได้อนุญาต"); };
 
 document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
 render();
