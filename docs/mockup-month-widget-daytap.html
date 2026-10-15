@@ -8,7 +8,7 @@
 :root{--card:#161618;--grid:#2e2e35;--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;--lime:#7fae93;--red:#d9726c;--teal:#7d8794}
 *{box-sizing:border-box}
 body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,sans-serif;padding:24px 16px 40px}
-.grid{display:flex;flex-wrap:wrap;gap:36px 32px;justify-content:center}
+.grid{display:flex;flex-wrap:wrap;gap:36px 32px;justify-content:center;max-width:1300px;margin:0 auto}
 .col{width:390px;max-width:100%}
 h2{font-size:15px;font-weight:600;margin:0 0 4px}
 .what{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.55;min-height:40px}
@@ -34,6 +34,7 @@ h2{font-size:15px;font-weight:600;margin:0 0 4px}
 .m{width:3px;height:16px;border-radius:2px;background:var(--teal);margin:0 8px 0 0}
 .ck{width:15px;height:15px;border-radius:50%;border:1.6px solid var(--faint);margin:0 2px}.ck.late{border-color:var(--red)}
 .more{font-size:12.5px;color:var(--accentText);height:28px;display:flex;align-items:center}
+.back{float:right;font-size:11.5px;color:var(--accentText);border:1px solid #2f3a4e;border-radius:10px;padding:0 8px;line-height:18px}
 .tap{position:absolute;inset:-6px;border:2px dashed #e8d36a;border-radius:8px}
 </style></head><body>
 <div class="grid">
@@ -49,6 +50,12 @@ h2{font-size:15px;font-weight:600;margin:0 0 4px}
 <div class="home"><div class="w" id="B"></div></div>
 <p class="note"><b>แตะ 22 ซ้ำ, แตะวันนี้ หรือแตะ "ตุลาคม 2569"</b> กลับไปข้อ 1<br><b>✎</b> เปิดหน้ากรอบและ Emoji โดยเลือกวันที่ 22 ไว้ให้<br>แตะวันไม่เปิดหน้ากรอบอีกแล้ว</p>
 </div>
+<div class="col">
+<h2>3. ตัวเลือก: ปุ่ม "✕ กลับวันนี้"</h2>
+<p class="what">เหมือนข้อ 2 แต่หัวรายการมีปุ่มให้กลับวันนี้ เห็นชัดว่าต้องแตะตรงไหน (ยังไม่ได้ทำในโค้ด)</p>
+<div class="home"><div class="w" id="C"></div></div>
+<p class="note">วิธีเดิม (แตะวันซ้ำ, แตะวันนี้, แตะชื่อเดือน) ยังใช้ได้ทั้งหมด</p>
+</div>
 </div>
 <script>
 const dow='<span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>';
@@ -63,6 +70,8 @@ const ev=(t,time)=>`<div class="it"><span class="m"></span><span class="g">${t}<
 const task=(t,late)=>`<div class="it"><span class="ck${late?' late':''}"></span><span class="g">${t}</span>${late?`<small class="late">เลย ${late} วัน</small>`:''}</div>`;
 cal(document.getElementById("A"),0,true,
  `<div class="day">วันนี้ 15 ต.ค.</div>${task("ส่งรายงานไตรมาส")}${task("ต่อภาษีรถ",3)}${task("ตอบอีเมลลูกค้า",9)}<div class="more">อีก 4 รายการ, เปิดในแอป</div>`);
+cal(document.getElementById("C"),22,false,
+ `<div class="day on">พฤ 22 ต.ค.<span class="back">✕ กลับวันนี้</span></div>${ev("ประชุมทีม","10:00")}${task("ส่งแบบร่างหน้าเว็บ")}${task("โทรหาช่างแอร์")}`);
 cal(document.getElementById("B"),22,false,
  `<div class="day on">พฤ 22 ต.ค.</div>${ev("ประชุมทีม","10:00")}${task("ส่งแบบร่างหน้าเว็บ")}${task("โทรหาช่างแอร์")}`);
 </script>
