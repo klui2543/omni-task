@@ -606,7 +606,8 @@ internal class MonthPainter(
         }
 
         // Day numbers, title bars and emoji.
-        val big = cellDp >= 46f
+        // Bars need the room under the number, so the number stays small with them.
+        val big = cellDp >= 46f && !bars
         val radius = dp(if (big) 13f else 11.5f)
         val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(if (big) 14f else 12.5f); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT }
         val todayBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb() }
@@ -635,13 +636,13 @@ internal class MonthPainter(
             if (!inMonth(d)) return@forEachIndexed
             val stickers = data.marks.stickersOn(d)
             if (bars) {
-                // As many bars as fit under the number, the last place going to "+n" when some are left over.
+                // As many bars as fit under the number; what is left over is counted as "+n" in the top corner.
                 val items = data.work[d].orEmpty()
                 val bh = dp(12f)
                 val step = bh + dp(1.5f)
                 var y = cy + radius + dp(2f)
                 val fit = ((r.bottom - dp(1f) - y + dp(1.5f)) / step).toInt().coerceAtLeast(0)
-                val shown = if (items.size > fit) (fit - 1).coerceAtLeast(0) else items.size
+                val shown = minOf(items.size, fit)
                 items.take(shown).forEach { m ->
                     barBg.color = if (m.event) p.accent.toArgb() else p.lime.toArgb()
                     val box = RectF(r.left + dp(2f), y, r.right - dp(2f), y + bh)
@@ -651,7 +652,7 @@ internal class MonthPainter(
                     c.restore()
                     y += step
                 }
-                if (items.size > shown) c.drawText("+${items.size - shown}", r.left + dp(4f), y + bh - dp(3f), moreLeft)
+                if (items.size > shown) c.drawText("+${items.size - shown}", r.left + dp(3f), r.top + dp(11f), moreLeft)
                 // Emoji go up by the number, out of the bars' way.
                 if (stickers.isNotEmpty() && !small) c.drawText(stickers.first(), r.right - dp(2f), r.top + dp(12f), emoji)
             } else if (stickers.isNotEmpty() && !small) {
