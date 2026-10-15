@@ -15,7 +15,7 @@ body{margin:0;background:#08080a;color:var(--text);font-family:"IBM Plex Sans Th
 h2{font-size:14px;font-weight:600;margin:0 0 10px;color:var(--text2)}
 .home{background:linear-gradient(160deg,#2a2622,#3a2a26 60%,#1f1c1a);border-radius:24px;padding:22px 12px}
 .w{border-radius:24px;padding:14px 12px 10px;background:#141416f0;transition:opacity .15s}
-.w.busy{opacity:.55}
+.w.busy{opacity:.85}
 .hd{display:flex;align-items:center;gap:4px;padding:0 2px 8px}
 .hd b{font-size:19px;font-weight:500;flex:1;cursor:pointer}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
@@ -68,7 +68,7 @@ button:focus-visible,.c:focus-visible{outline:2px solid var(--accent);outline-of
 </style>
 
 <div class="top"><b>ลองกดได้: widget เดือน และหน้าปฏิทินในแอป</b>
-แตะวันใน widget เพื่อดูงานของวันนั้น (รายการเปลี่ยนหลังแตะราวครึ่งวินาที เหมือนบนมือถือ) ข้อมูลในภาพเป็นตัวอย่าง</div>
+แตะวันใน widget เพื่อดูงานของวันนั้น (รายการเปลี่ยนแทบทันที ตามที่จะทำในแอปจริง) ข้อมูลในภาพเป็นตัวอย่าง</div>
 <div class="grid">
 <div class="col">
 <h2>Widget บนหน้าจอหลัก</h2>
@@ -179,7 +179,7 @@ function line(x,cls){
   return `<div class="${cls}"><button class="ck${x.late?" late":""}" data-tick="${x.t}" aria-label="ติ๊กเสร็จ ${x.t}"></button><span class="g">${x.t}</span>${late}</div>`;
 }
 // A widget redraws a moment after a tap, as on the phone.
-function widgetAct(change){const w=document.getElementById("W");w.classList.add("busy");setTimeout(()=>{change();drawWidget();w.classList.remove("busy")},450);}
+function widgetAct(change){const w=document.getElementById("W");w.classList.add("busy");setTimeout(()=>{change();drawWidget();w.classList.remove("busy")},150);}
 function tick(t){done.add(t);log(`ติ๊ก "${t}" เสร็จแล้ว`);drawWidget();drawApp();}
 
 // ---- app calendar ----
