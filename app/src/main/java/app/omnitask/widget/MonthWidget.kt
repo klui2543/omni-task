@@ -257,7 +257,7 @@ private fun MonthContent(context: Context, data: MonthData) {
         }
         if (showAgenda) {
             Spacer(GlanceModifier.height(8.dp))
-            Agenda(context, data)
+            Agenda(context, data, room - rows * cell - 8f)
         }
     }
 }
@@ -290,15 +290,32 @@ private fun IconButton(icon: Int, description: String, tint: ColorProvider, acti
 }
 
 @Composable
-private fun Agenda(context: Context, data: MonthData) {
+private fun Agenda(context: Context, data: MonthData, heightDp: Float) {
+    // A widget in a stack cannot scroll: the list shows what fits, and the last line says how much is left and opens
+    // the app. Heights are what each row takes, a little generous so nothing is cut at the bottom.
+    class Line(val height: Float, val entry: Boolean, val content: @Composable () -> Unit)
+    val lines = ArrayList<Line>()
+    data.agenda.forEachIndexed { index, (day, items) ->
+        lines += Line(if (index > 0) 26f else 20f, false) { DayHead(data, day, index > 0) }
+        data.holidays[day]?.let { name -> lines += Line(20f, false) { Label(name, cp { it.red }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 2.dp)) } }
+        if (items.isEmpty() && data.holidays[day] == null) {
+            lines += Line(22f, false) { Label(tr("ว่าง", "Nothing planned"), cp { it.faint }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 4.dp)) }
+        }
+        items.forEach { entry -> lines += Line(30f, true) { AgendaLine(context, entry) } }
+    }
+    // Everything fits, or as much as fits above the "more" line.
+    val budget = if (lines.sumOf { it.height.toDouble() } <= heightDp) heightDp else heightDp - 28f
+    var used = 0f
+    var shownLines = lines.takeWhile { used += it.height; used <= budget }
+    // A day's heading with nothing shown under it goes too; the "more" line covers it.
+    if (shownLines.size < lines.size) shownLines = shownLines.dropLastWhile { !it.entry }
+    val left = lines.count { it.entry } - shownLines.count { it.entry }
     LazyColumn(GlanceModifier.fillMaxSize()) {
-        data.agenda.forEachIndexed { index, (day, items) ->
-            item { DayHead(data, day, index > 0) }
-            data.holidays[day]?.let { name -> item { Label(name, cp { it.red }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 2.dp)) } }
-            if (items.isEmpty() && data.holidays[day] == null) {
-                item { Label(tr("ว่าง", "Nothing planned"), cp { it.faint }, 12.5.sp, modifier = GlanceModifier.padding(start = 4.dp, bottom = 4.dp)) }
+        shownLines.forEach { line -> item { line.content() } }
+        if (left > 0) item {
+            Row(GlanceModifier.fillMaxWidth().height(28.dp).padding(horizontal = 4.dp).clickable(open(context)), verticalAlignment = Alignment.CenterVertically) {
+                Label(tr("อีก $left รายการ, เปิดในแอป", "$left more, open the app"), cp { it.accentText }, 12.5.sp)
             }
-            items.forEach { entry -> item { AgendaLine(context, entry) } }
         }
     }
 }

@@ -33,6 +33,7 @@ h2{font-size:15px;font-weight:600;margin:0 0 4px}
 .it small{font-size:11.5px;color:var(--muted)}.it small.late{color:var(--red)}
 .m{width:3px;height:16px;border-radius:2px;background:var(--teal);margin:0 8px 0 0}
 .ck{width:15px;height:15px;border-radius:50%;border:1.6px solid var(--faint);margin:0 2px}.ck.late{border-color:var(--red)}
+.more{font-size:12.5px;color:var(--accentText);height:28px;display:flex;align-items:center}
 .tap{position:absolute;inset:-6px;border:2px dashed #e8d36a;border-radius:8px}
 </style></head><body>
 <div class="grid">
@@ -40,7 +41,7 @@ h2{font-size:15px;font-weight:600;margin:0 0 4px}
 <h2>1. ปกติ: วันนี้ (รวมงานค้าง) และพรุ่งนี้</h2>
 <p class="what">งานที่ครบวันนี้ขึ้นก่อน ตามด้วยงานที่เลยกำหนด วงแดงพร้อม "เลย n วัน" ติ๊กเสร็จจาก widget ได้</p>
 <div class="home"><div class="w" id="A"></div></div>
-<p class="note"><b>แตะวันในตาราง</b> (เช่น 22 ที่มีกรอบเหลือง) รายการด้านล่างจะเปลี่ยนเป็นของวันนั้น ดูข้อ 2</p>
+<p class="note"><b>รายการเกินที่</b> (widget ใน stack เลื่อนไม่ได้): แสดงเท่าที่พอดี บรรทัดสุดท้ายบอกว่าเหลืออีกกี่รายการ แตะแล้วเปิดแอป<br><b>แตะวันในตาราง</b> (เช่น 22 ที่มีกรอบเหลือง) รายการด้านล่างจะเปลี่ยนเป็นของวันนั้น ดูข้อ 2</p>
 </div>
 <div class="col">
 <h2>2. แตะวันที่ 22: รายการเป็นของวันนั้น</h2>
@@ -61,7 +62,7 @@ function cal(el,sel,tapHint,agenda){
 const ev=(t,time)=>`<div class="it"><span class="m"></span><span class="g">${t}</span><small>${time}</small></div>`;
 const task=(t,late)=>`<div class="it"><span class="ck${late?' late':''}"></span><span class="g">${t}</span>${late?`<small class="late">เลย ${late} วัน</small>`:''}</div>`;
 cal(document.getElementById("A"),0,true,
- `<div class="day">วันนี้ 15 ต.ค.</div>${task("ส่งรายงานไตรมาส")}${task("ต่อภาษีรถ",3)}${task("ตอบอีเมลลูกค้า",9)}<div class="day">พรุ่งนี้ 16 ต.ค.</div>${ev("เพิ่มงาน ทดสอบ","ทั้งวัน")}`);
+ `<div class="day">วันนี้ 15 ต.ค.</div>${task("ส่งรายงานไตรมาส")}${task("ต่อภาษีรถ",3)}${task("ตอบอีเมลลูกค้า",9)}<div class="more">อีก 4 รายการ, เปิดในแอป</div>`);
 cal(document.getElementById("B"),22,false,
  `<div class="day on">พฤ 22 ต.ค.</div>${ev("ประชุมทีม","10:00")}${task("ส่งแบบร่างหน้าเว็บ")}${task("โทรหาช่างแอร์")}`);
 </script>
