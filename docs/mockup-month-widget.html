@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Month widget</title>
+<style>
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_semibold.ttf);font-weight:600}
+:root{--bg:#0e0e10;--card:#161618;--border:#26262a;--raised:#1e1e22;--line:#212125;--control:#34343a;
+--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentText:#b4c6df;--onAccent:#0e1118;
+--lime:#7fae93;--red:#d9726c;--amber:#c4a56a;--teal:#7d8794;--sat:#8aa6d6;--violet:#a893c9}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,"Noto Sans Thai",sans-serif;padding:20px 16px 40px}
+.grid{display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.col{width:380px}
+h2{font-size:15px;font-weight:600;margin:0 0 4px}
+.what{font-size:12.5px;color:var(--muted);margin:0 0 10px;line-height:1.55}
+.note{font-size:12.5px;color:var(--faint);margin-top:10px;line-height:1.6}
+.note b{color:var(--text2);font-weight:500}
+.home{background:linear-gradient(160deg,#1d2a33,#2b2233 60%,#1a1f2a);border-radius:22px;padding:18px 12px}
+.phone{background:var(--bg);border-radius:22px;padding:12px 12px 14px;border:1px solid #1b1b1f}
+.w{background:#161618ee;border-radius:20px;padding:10px 8px 8px;position:relative}
+.wh{display:flex;align-items:center;gap:6px;padding:0 6px 6px}
+.wh .m{font-size:16px;font-weight:600;flex:1}
+.wh .m small{font-size:12px;color:var(--muted);font-weight:400;margin-left:4px}
+.ib{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:14px}
+.ib.on{background:var(--accent);color:var(--onAccent)}
+.chip{font-size:11px;border:1px solid var(--control);border-radius:12px;padding:2px 9px;color:var(--text2)}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:10.5px;color:var(--muted);text-align:center;padding-bottom:3px}
+.dow span:first-child{color:var(--red)}.dow span:last-child{color:var(--sat)}
+.mon{position:relative}
+.wk{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--line);position:relative}
+.c{height:var(--ch,58px);padding:2px 2px 0;position:relative;overflow:hidden}
+.n{font-size:11px;font-weight:500;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;display:inline-block}
+.c.sun .n,.c.hol .n{color:var(--red)}.c.sat .n{color:var(--sat)}
+.c.out .n{opacity:.35}
+.c.today .n{background:var(--accent);color:var(--onAccent)}
+.st{position:absolute;top:1px;right:2px;font-size:var(--sts,15px);line-height:1}
+.dot{position:absolute;left:4px;bottom:3px;display:flex;gap:2px}
+.dot i{width:4px;height:4px;border-radius:50%;background:var(--lime)}
+.bar{position:absolute;height:13px;font-size:8.5px;line-height:13px;padding:0 4px;border-radius:3px;white-space:nowrap;overflow:hidden;color:#0e0e10;font-weight:500}
+.bar.hb{color:var(--red);background:none;padding-left:2px;font-weight:400}
+.ink{position:absolute;inset:0;pointer-events:none}
+.tools{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:8px 10px;margin-top:10px}
+.tool{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--text2)}
+.tool.on{background:var(--raised);outline:1.5px solid var(--accent)}
+.sw{width:20px;height:20px;border-radius:50%}
+.sw.on{outline:2px solid var(--text);outline-offset:2px}
+.sep{width:1px;height:24px;background:var(--line)}
+.top{display:flex;align-items:center;gap:10px;padding:2px 4px 10px}
+.top .t{flex:1;font-size:16px;font-weight:600}
+.btn{background:var(--accent);color:var(--onAccent);border-radius:18px;padding:6px 14px;font-size:13px;font-weight:600}
+.ghost{color:var(--accentText);font-size:13px}
+.sheet{background:var(--card);border:1px solid var(--border);border-radius:18px 18px 12px 12px;padding:12px 14px 14px;margin-top:10px}
+.sheet h3{font-size:14px;margin:0 0 2px;font-weight:600}
+.sheet .sub{font-size:12px;color:var(--muted);margin-bottom:10px}
+.lbl{font-size:11.5px;color:var(--muted);margin:10px 0 6px}
+.emo{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;font-size:22px;text-align:center}
+.emo span{border-radius:10px;padding:3px 0}
+.emo span.on{background:var(--raised);outline:1.5px solid var(--accent)}
+.tabs{display:flex;gap:6px;margin-bottom:4px}
+.tabs span{font-size:12px;padding:4px 10px;border-radius:14px;background:var(--raised);color:var(--text2)}
+.tabs span.on{background:var(--accent);color:var(--onAccent);font-weight:500}
+.row{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;border-top:1px solid var(--line)}
+.row .g{flex:1}
+.mk{width:3px;height:14px;border-radius:1px}
+.ck{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--faint)}
+.data{font-family:ui-monospace,monospace;font-size:11px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text2);white-space:pre;overflow:hidden;line-height:1.5}
+</style></head><body>
+<div class="grid">
+
+<div class="col">
+<h2>1. Widget บนหน้าจอหลัก (4x4)</h2>
+<p class="what">หน้าตาตาม Samsung Calendar: อาทิตย์และวันหยุดสีแดง เสาร์สีฟ้า แถบ event ยาวข้ามวันได้ จุดเขียวคือจำนวน task ที่ครบกำหนด Emoji อยู่มุมขวาบนของวัน และลายมือวาดทับทั้งเดือน</p>
+<div class="home"><div class="w" id="w1"></div></div>
+<p class="note"><b>แตะวัน</b> เปิดรายการของวันนั้นในแอป<br><b>แตะ ✎</b> เปิดหน้าวาดของเดือนนี้<br><b>‹ ›</b> เลื่อนเดือนบน widget ได้เลย, <b>วันนี้</b> กลับมาเดือนปัจจุบัน<br>ขนาดเล็กลง (4x3) จะซ่อนชื่อ event เหลือแค่จุดสี</p>
+</div>
+
+<div class="col">
+<h2>2. หน้าวาดทั้งเดือน (ในแอป)</h2>
+<p class="what">ตารางเดือนเดียวกับ widget มีผืนผ้าใบวางทับ วาดด้วยนิ้วหรือปากกา S Pen ได้ ปากกาแรงกดได้ถ้าเครื่องรองรับ</p>
+<div class="phone">
+<div class="top"><span class="ghost">ยกเลิก</span><span class="t" style="text-align:center">ตุลาคม 2026</span><span class="btn">บันทึก</span></div>
+<div class="w" id="w2" style="background:var(--card)"></div>
+<div class="tools">
+<span class="tool on">✎</span><span class="tool">🖍</span><span class="tool">⌫</span><span class="sep"></span>
+<span class="sw on" style="background:#e8d36a"></span><span class="sw" style="background:#d9726c"></span><span class="sw" style="background:#9db4d3"></span><span class="sw" style="background:#7fae93"></span><span class="sw" style="background:#ececee"></span>
+<span class="sep"></span><span class="tool">↶</span><span class="tool">↷</span>
+</div>
+<div class="tools" style="margin-top:6px">
+<span style="font-size:12px;color:var(--muted)">ขนาดเส้น</span>
+<span style="flex:1;height:4px;background:var(--control);border-radius:2px;position:relative"><i style="position:absolute;left:0;top:0;bottom:0;width:35%;background:var(--accent);border-radius:2px"></i><i style="position:absolute;left:33%;top:-5px;width:14px;height:14px;border-radius:50%;background:var(--text)"></i></span>
+<span class="tool" style="font-size:20px">😀</span>
+</div>
+</div>
+<p class="note"><b>✎</b> ปากกา <b>🖍</b> ไฮไลต์โปร่งแสง <b>⌫</b> ยางลบลบทีละเส้น<br><b>😀</b> โหมดติด Emoji: แตะวันไหนก็ติดลงวันนั้น (ข้อ 3)<br>เก็บเส้นแบบเวกเตอร์ แก้หรือลบทีหลังได้ทุกเส้น</p>
+</div>
+
+<div class="col">
+<h2>3. ติด Emoji ลงวัน</h2>
+<p class="what">แตะวันในแอปแล้วเลือก Emoji ได้สูงสุด 3 ตัวต่อวัน (widget แสดงตัวแรกตัวเดียว ถ้าช่องแคบ)</p>
+<div class="phone">
+<div class="sheet" style="margin-top:0">
+<h3>พฤหัสบดี 15 ตุลาคม</h3>
+<div class="sub">วันนี้, 2 task, 1 event</div>
+<div class="tabs"><span class="on">ใช้ล่าสุด</span><span>อารมณ์</span><span>งาน</span><span>เดินทาง</span><span>อาหาร</span></div>
+<div class="emo">
+<span class="on">🎂</span><span>✈️</span><span>💪</span><span>🏥</span><span>💰</span><span>📌</span><span>🎉</span><span>😴</span>
+<span>❤️</span><span>⭐</span><span>📚</span><span>🍜</span><span>☕</span><span>🎬</span><span>🏖️</span><span>🙏</span>
+</div>
+<div class="lbl">ติดอยู่ตอนนี้</div>
+<div style="display:flex;gap:8px;font-size:22px"><span>🎂</span><span style="font-size:13px;color:var(--faint);align-self:center">แตะค้างเพื่อเอาออก</span></div>
+<div class="lbl">ของวันนี้</div>
+<div class="row"><span class="mk" style="background:var(--violet)"></span><span class="g">ประชุมทีม</span><span style="color:var(--muted);font-size:12px">10:00</span></div>
+<div class="row"><span class="ck"></span><span class="g">ส่งรายงานไตรมาส</span><span style="color:var(--muted);font-size:12px">📅</span></div>
+<div class="row"><span class="ck"></span><span class="g">ซื้อเค้กวันเกิดแม่</span><span style="color:var(--muted);font-size:12px">📅</span></div>
+</div>
+</div>
+<p class="note"><b>เก็บใน vault</b> ที่ <b>Omni/omni-calendar.json</b> (เส้นและ Emoji) ส่วนภาพลายมือของแต่ละเดือนบันทึกเป็น WebP ใน Attachments ด้วย เปิดดูใน Obsidian ได้</p>
+<div class="data">{
+  "stickers": { "2026-10-15": ["🎂"], "2026-10-24": ["✈️"] },
+  "ink": { "2026-10": { "strokes": [...],
+           "image": "Omni ink 2026-10.webp" } }
+}</div>
+</div>
+
+</div>
+<script>
+// October 2026: the 1st is a Thursday; the grid starts on Sunday like Samsung Calendar.
+const holidays={13:"วันนวมินทร์",23:"วันปิยมหาราช"};
+const stickers={6:"🏥",15:"🎂",24:"✈️",31:"🎃"};
+const tasks={2:1,7:2,9:1,15:2,20:3,27:1,29:1};
+const events=[ // [startDay,endDay,title,color]; holidays first so they take the top row
+ [13,13,"วันนวมินทร์",""],[23,23,"วันปิยมหาราช",""],
+ [5,5,"หมอฟัน","#7fae93"],[12,16,"อบรม Excel","#a893c9"],[15,15,"ประชุมทีม","#9db4d3"],
+ [21,21,"จ่ายค่าบ้าน","#c4a56a"],[24,26,"เชียงใหม่","#d9726c"],[30,30,"ส่งงาน","#9db4d3"]];
+function build(el,opts){
+  const ch=opts.ch||58;
+  el.style.setProperty("--ch",ch+"px");
+  el.innerHTML=`<div class="wh"><span class="ib">‹</span><span class="m">ตุลาคม<small>2026</small></span><span class="ib">›</span>${opts.edit?"":'<span class="chip">วันนี้</span><span class="ib on">✎</span><span class="ib">+</span>'}</div>
+  <div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div><div class="mon"></div>`;
+  const mon=el.querySelector(".mon");
+  const start=-4+1; // day number of the first cell (Sun 27 Sep)
+  for(let w=0;w<5;w++){
+    const wk=document.createElement("div");wk.className="wk";
+    for(let i=0;i<7;i++){
+      let d=start+w*7+i;const out=d<1||d>31;const shown=d<1?30+d:d>31?d-31:d;
+      const c=document.createElement("div");
+      c.className="c"+(i==0?" sun":"")+(i==6?" sat":"")+(out?" out":"")+(!out&&holidays[d]?" hol":"")+(!out&&d==15?" today":"");
+      c.innerHTML=`<span class="n">${shown}</span>`+
+        (!out&&stickers[d]?`<span class="st">${stickers[d]}</span>`:"")+
+        (!out&&tasks[d]?`<span class="dot">${"<i></i>".repeat(tasks[d])}</span>`:"");
+      wk.appendChild(c);
+    }
+    // event bars, a row per overlapping event
+    const rows=[];
+    events.forEach(e=>{
+      const ws=start+w*7,we=ws+6;
+      const s=Math.max(e[0],ws),en=Math.min(e[1],we);if(s>en)return;
+      let r=0;while(rows[r]&&rows[r].some(x=>!(en<x[0]||s>x[1])))r++;
+      (rows[r]=rows[r]||[]).push([s,en]);
+      const b=document.createElement("div");b.className="bar"+(e[3]?"":" hb");
+      const top=22+r*15;
+      b.style.cssText=`left:calc(${(s-ws)/7*100}% + 2px);width:calc(${(en-s+1)/7*100}% - 4px);top:${top}px;background:${e[3]}`;
+      b.textContent=e[2];wk.appendChild(b);
+    });
+    mon.appendChild(wk);
+  }
+  // handwriting layer over the whole month
+  mon.insertAdjacentHTML("beforeend",`<svg class="ink" viewBox="0 0 356 290" preserveAspectRatio="none">
+   <path d="M246 237 C232 233 226 247 236 256 C250 266 280 262 288 250 C296 236 276 228 258 232" fill="none" stroke="#e8d36a" stroke-width="2.4" stroke-linecap="round"/>
+   <path d="M300 240 C316 228 330 214 340 198" fill="none" stroke="#e8d36a" stroke-width="2.2" stroke-linecap="round"/>
+   <path d="M333 200 L341 196 L342 205" fill="none" stroke="#e8d36a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+   <text x="300" y="186" fill="#e8d36a" font-size="13" font-family="'Comic Sans MS','Chalkboard',cursive" transform="rotate(-6 300 186)">เที่ยว!</text>
+   <path d="M156 150 Q190 143 226 150" fill="none" stroke="#d9726c" stroke-width="5" stroke-opacity=".45" stroke-linecap="round"/>
+   <path d="M60 280 C90 274 120 284 150 276" fill="none" stroke="#9db4d3" stroke-width="2" stroke-linecap="round"/>
+  </svg>`);
+}
+build(document.getElementById("w1"),{});
+build(document.getElementById("w2"),{edit:true,ch:62});
+</script>
+</body></html>
