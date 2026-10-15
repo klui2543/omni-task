@@ -28,7 +28,7 @@ object SettingsSync {
      * Device-specific or derived keys that must not travel: the folder grant, the scheduled alarm ids, the calendar ids
      * (they differ per phone) and whether this phone reaches the Omni folder through Drive.
      */
-    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
+    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, CalendarReader.KEY_HIDDEN, CalendarReader.KEY_ADD_TO, DriveLink.KEY_ON)
 
     private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

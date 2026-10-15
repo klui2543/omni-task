@@ -1624,6 +1624,27 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Adds an event to calendar [calendarId]: all day when [start] is null, else [minutes] long from [start]. */
+    fun addEvent(calendarId: Long, title: String, day: LocalDate, start: kotlinx.datetime.LocalTime?, minutes: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                val id = if (start == null) {
+                    CalendarReader.insertAllDay(app, calendarId, title, day)
+                } else {
+                    CalendarReader.insert(app, calendarId, title, day.atTime(start), day.atTime(start).plusMinutes(minutes.toLong()))
+                }
+                if (id != null) {
+                    // Up to Google at once, so the event shows on the owner's other devices too.
+                    CalendarReader.requestSync(app, force = true)
+                    runCatching { OmniWidgets.refresh(app) }
+                }
+                id
+            }
+            _state.update { it.copy(message = if (id != null) tr("ลงปฏิทินแล้ว: $title", "Added to calendar: $title") else tr("ลงปฏิทินไม่ได้", "Cannot add the event")) }
+        }
+    }
+
     fun answerInsight(yes: Boolean) {
         val ask = _state.value.insight ?: return
         if (yes) {

@@ -1,5 +1,6 @@
 package app.omnitask.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,11 +44,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import app.omnitask.data.CalendarReader
 import app.omnitask.model.Lang
 import app.omnitask.model.fetchTitle
 import app.omnitask.model.Priority
@@ -63,6 +68,19 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     val text = field.text
     fun setText(value: String) { field = TextFieldValue(value, TextRange(value.length)) }
     val draft = QuickAdd.parse(text, state.today)
+    val context = LocalContext.current
+    // "ลงปฏิทิน" beside "เพิ่มงาน": the same sentence goes to a calendar as an event. Both sit where the thumb
+    // already is after typing; the length and the calendar keep their last choice and only open when asked.
+    var minutes by remember { mutableStateOf(60) }
+    var eventOptions by remember { mutableStateOf(false) }
+    var chosen by remember { mutableStateOf(CalendarReader.addTo(context)) }
+    fun pickCalendar(all: List<CalendarReader.Calendar>): CalendarReader.Calendar? {
+        val calendars = all.filter { it.writable && it.visible }
+        return calendars.firstOrNull { it.id == chosen } ?: calendars.firstOrNull { it.isGoogle && it.name == it.account }
+            ?: calendars.firstOrNull { it.isGoogle } ?: calendars.firstOrNull()
+    }
+    val calendars = state.calendars.filter { it.writable && it.visible }
+    val calendar = pickCalendar(state.calendars)
     // "#" can send the item to a list note (and one of its categories) instead of TaskForge.
     var target by remember { mutableStateOf<QuickAdd.HashPick.ToList?>(null) }
     val token = QuickAdd.hashToken(text)
@@ -86,6 +104,28 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (Lang.english) "en-US" else "th-TH")
             .putExtra(RecognizerIntent.EXTRA_PROMPT, tr("พูดงานที่จะเพิ่ม", "Say the task to add"))
         try { listen.launch(intent) } catch (_: ActivityNotFoundException) { }
+    }
+    fun addEvent(c: CalendarReader.Calendar?) {
+        if (draft.title.isBlank()) return
+        if (c == null) {
+            vm.showMessage(tr("ไม่พบปฏิทินที่เพิ่มนัดได้ในเครื่อง เปิดซิงค์ปฏิทินของบัญชี Google ในตั้งค่าเครื่อง", "No calendar on this phone takes new events: turn on calendar sync for your Google account"))
+            return
+        }
+        CalendarReader.setAddTo(context, c.id)
+        // No time typed: an all-day event.
+        vm.addEvent(c.id, draft.title, draft.due ?: state.today, draft.time, minutes)
+        onDismiss()
+    }
+    // The first time, the phone asks for calendar access; once given, the event goes in without a second tap.
+    val allow = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        vm.calendarChanged()
+        if (CalendarReader.canWrite(context)) addEvent(pickCalendar(CalendarReader.calendars(context)))
+        else vm.showMessage(tr("ลงปฏิทินไม่ได้ ยังไม่ได้อนุญาตให้เข้าถึงปฏิทิน", "Cannot add the event: calendar access was not allowed"))
+    }
+    fun toCalendar() {
+        if (draft.title.isBlank()) return
+        if (CalendarReader.canWrite(context)) addEvent(calendar ?: pickCalendar(CalendarReader.calendars(context)))
+        else allow.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
     }
     fun add() {
         if (draft.title.isBlank()) return
@@ -177,9 +217,10 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         link?.let { Text(tr("ลิงก์ในรายละเอียด: ", "Link in details: ") + it, Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
 
         // What the sentence was read as, so a wrong guess is visible before saving.
+        fun hm(t: kotlinx.datetime.LocalTime) = "%02d:%02d".format(t.hour, t.minute)
         val chips = if (target != null) emptyList() else buildList {
             draft.due?.let { add(if (it == state.today) tr("วันนี้", "Today") else it.format(SHORT_DATE)) }
-            draft.time?.let { add(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute)) }
+            draft.time?.let { add(tr("เตือน ", "Remind ") + hm(it)) }
             draft.tags.forEach { add("#$it") }
             if (draft.priority != Priority.NONE) add(draft.priority.label)
         }
@@ -208,12 +249,55 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,
         )
 
+        // What "ลงปฏิทิน" would make, right above the buttons; a tap opens the length and the calendar.
+        if (target == null && draft.title.isNotBlank()) {
+            val day = draft.due ?: state.today
+            val time = draft.time
+            val whenText = (if (day == state.today) tr("วันนี้", "today") else day.format(SHORT_DATE)) + " " +
+                (if (time != null) hm(time) + tr(" ถึง ", " to ") + hm(time.plusMinutes(minutes.toLong())) else tr("ทั้งวัน", "all day"))
+            Row(
+                Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.raised)
+                    .clickable { eventOptions = !eventOptions }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    tr("ถ้าลงปฏิทิน: ", "As an event: ") + whenText + (calendar?.let { ", " + it.name.ifBlank { it.account } } ?: ""),
+                    Modifier.weight(1f), color = C.muted, fontSize = TS.caption,
+                )
+                Text(tr("เปลี่ยน", "Change"), Modifier.padding(start = 8.dp), color = C.accentText, fontSize = TS.caption)
+            }
+            if (eventOptions) {
+                if (time != null) {
+                    Text(tr("นานเท่าไร", "How long"), Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(30, 60, 90, 120, 180).forEach { m -> Chip(length(m), minutes == m, { minutes = m }) }
+                    }
+                }
+                if (calendars.size > 1) {
+                    Text(tr("ปฏิทิน", "Calendar"), Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        calendars.forEach { c -> Chip(c.name.ifBlank { c.account }, c.id == calendar?.id, { chosen = c.id }) }
+                    }
+                }
+                if (time == null && calendars.size <= 1) {
+                    Text(tr("ไม่ใส่เวลา จะลงเป็นนัดทั้งวัน", "No time typed: it goes in as an all-day event"), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
+                }
+            }
+        }
+
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIcon(Ic.mic, tr("พูด", "Speak"), C.raised, C.text2) { startListening() }
             RoundIcon(Ic.spark, tr("ถามผู้ช่วยว่าควรทำตอนไหน", "Ask the assistant when to do it"), C.accentSoft, C.accentText) {
                 if (text.isNotBlank()) { onAskAssistant(text.trim()); onDismiss() }
             }
             Box(Modifier.weight(1f))
+            if (target == null) {
+                Box(
+                    Modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft)
+                        .border(1.dp, C.accentLine, RoundedCornerShape(12.dp)).clickable { toCalendar() }.padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(tr("ลงปฏิทิน", "To calendar"), color = C.accentText, fontSize = TS.body) }
+            }
             PrimaryButton(if (target != null) tr("เพิ่มลง List", "Add to list") else tr("เพิ่มงาน", "Add task"), { add() })
         }
     }
@@ -224,4 +308,10 @@ private fun RoundIcon(icon: ImageVector, description: String, bg: Color, fg: Col
     Box(Modifier.size(44.dp).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(icon, description, tint = fg, modifier = Modifier.size(19.dp))
     }
+}
+
+private fun length(m: Int) = when {
+    m < 60 -> tr("$m นาที", "$m min")
+    m % 60 == 0 -> tr("${m / 60} ชม.", "${m / 60} h")
+    else -> tr("${m / 60} ชม. ${m % 60} นาที", "${m / 60} h ${m % 60} min")
 }

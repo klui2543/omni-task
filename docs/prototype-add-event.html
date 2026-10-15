@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototype: add event from quick add</title>
+<style>
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../app/src/main/res/font/plex_thai_looped_semibold.ttf);font-weight:600}
+:root{--bg:#0e0e10;--card:#161618;--border:#26262a;--raised:#1e1e22;--sunken:#121214;--control:#34343a;
+--text:#ececee;--text2:#c4c4c9;--muted:#8e8e96;--faint:#7a7a83;--accent:#9db4d3;--accentSoft:#1d2330;--accentLine:#2f3a4e;--accentText:#b4c6df;--onAccent:#0e1118;--lime:#7fae93;--red:#d9726c;--amber:#c4a56a}
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:var(--text);font-family:Plex,system-ui,"Noto Sans Thai",sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 12px 40px}
+.bar{width:100%;max-width:420px;font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px}
+.bar b{color:var(--text);font-size:15px;font-weight:600;display:block;margin-bottom:2px}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.tg{height:30px;border-radius:15px;border:1px solid var(--control);background:transparent;color:var(--text2);font:inherit;font-size:12px;padding:0 12px;cursor:pointer}
+.tg.on{background:var(--accentSoft);border-color:var(--accent);color:var(--text)}
+.phone{width:100%;max-width:420px;height:820px;border-radius:30px;border:1px solid #1b1b1f;background:var(--bg);position:relative;overflow:hidden;box-shadow:0 10px 40px #0008}
+.home{position:absolute;inset:0;padding:54px 14px 14px;background:linear-gradient(160deg,#1d2a33,#2b2233 60%,#1a1f2a);display:flex;flex-direction:column;gap:14px}
+.w{border-radius:22px;background:#161618f0;padding:12px 14px}
+.qa{border-radius:26px;display:flex;align-items:center;gap:6px;padding:8px 6px 8px 18px;background:#161618f0;cursor:pointer}
+.qa .ph{flex:1;font-size:14px;color:var(--muted)}
+.c{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--raised);color:var(--text2);flex:none;cursor:pointer;border:0;font:inherit}
+.c.a{background:var(--accent);color:var(--onAccent)}
+.c svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hd{font-size:15px;font-weight:600;margin-bottom:8px}
+.li{display:flex;align-items:center;gap:10px;font-size:13.5px;padding:6px 0}
+.li small{color:var(--muted);font-size:12px;width:44px}
+.bar2{width:3px;height:16px;border-radius:2px;background:var(--accent)}
+.bar2.g{background:var(--lime)}
+.ring{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--faint)}
+.hint{font-size:12px;color:var(--muted);margin-top:auto}
+/* scrim + sheet */
+.scrim{position:absolute;inset:0;background:#000a;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:22px 22px 0 0;border-top:1px solid var(--border);padding:10px 18px 22px;transform:translateY(105%);transition:transform .25s ease;max-height:90%;overflow:auto}
+.sheet.on{transform:translateY(0)}
+.handle{width:36px;height:4px;border-radius:2px;background:var(--control);margin:0 auto 14px}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.title{font-size:16px;font-weight:600;flex:1}
+input.field{width:100%;margin-top:12px;background:var(--sunken);border:1px solid transparent;border-radius:14px;padding:14px;font:inherit;font-size:15px;color:var(--text);outline:none}
+input.field:focus{border-color:var(--accentLine)}
+.pill{border-radius:16px;padding:6px 12px;font-size:13px;background:var(--accentSoft);color:var(--accentText)}
+.pill.dim{background:var(--raised);color:var(--muted)}
+.lbl{font-size:12.5px;color:var(--muted);margin:16px 0 8px}
+.chip{height:34px;border-radius:17px;border:1px solid var(--control);background:transparent;color:var(--text2);font:inherit;font-size:13.5px;padding:0 13px;white-space:nowrap;cursor:pointer}
+.chip.on{background:var(--accentSoft);border-color:var(--accent);color:var(--text)}
+.chip.flag{border-color:var(--accentLine);color:var(--accentText)}
+.chip.flag.on{background:var(--accent);color:var(--onAccent);border-color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.hintt{font-size:12px;color:var(--faint);margin-top:10px;line-height:1.6}
+.sum{font-size:12.5px;color:var(--muted);margin-top:14px;min-height:18px}
+.foot{display:flex;align-items:center;gap:8px;margin-top:14px}
+.rnd{width:44px;height:44px;border-radius:50%;border:0;display:inline-flex;align-items:center;justify-content:center;background:var(--raised);color:var(--text2);cursor:pointer}
+.rnd svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rnd.a{background:var(--accentSoft);color:var(--accentText)}
+.btn{height:44px;border-radius:12px;border:0;background:var(--accent);color:var(--onAccent);font:inherit;font-weight:500;font-size:14px;padding:0 18px;cursor:pointer}
+.tick{margin-left:auto;display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 6px;font-size:13.5px;color:var(--text2);cursor:pointer;user-select:none}
+.tick input{position:absolute;opacity:0;width:0;height:0}
+.tick .box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--faint);display:inline-flex;align-items:center;justify-content:center}
+.tick input:checked + .box{background:var(--accent);border-color:var(--accent)}
+.tick input:checked + .box::after{content:"";width:5px;height:10px;border:solid var(--onAccent);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.tick input:focus-visible + .box{outline:2px solid var(--accentLine);outline-offset:2px}
+.btn[disabled]{opacity:.45;cursor:default}
+.ghost{height:44px;border-radius:12px;border:1px solid var(--control);background:transparent;color:var(--text2);font:inherit;font-size:14px;padding:0 16px;cursor:pointer}
+.perm{margin-top:14px;border-radius:12px;background:var(--raised);padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text2)}
+.perm span{flex:1}
+.opt{display:flex;align-items:center;gap:8px;width:100%;margin-top:14px;padding:10px 12px;border-radius:12px;border:0;background:var(--raised);color:var(--muted);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+.opt span{flex:1}.opt b{color:var(--accentText);font-weight:500}
+.pop{display:none;margin-top:8px;padding:12px;border-radius:14px;background:var(--sunken);border:1px solid var(--border)}
+.pop.on{display:block}
+.ghost2{margin-left:auto;height:44px;border-radius:12px;border:1px solid var(--accentLine);background:var(--accentSoft);color:var(--accentText);font:inherit;font-size:14px;padding:0 14px;cursor:pointer}
+.ghost2[disabled]{opacity:.45;cursor:default}
+.dlg{position:absolute;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:24px;z-index:5}
+.dlg.on{display:flex}
+.dlgBox{background:#2a2a2f;border-radius:24px;padding:22px;width:100%;max-width:320px;text-align:center}
+.dlgBtn{display:block;width:100%;height:44px;margin-top:8px;border-radius:22px;border:0;background:#3a3a40;color:var(--text);font:inherit;font-size:14px;cursor:pointer}
+.snack{position:absolute;left:14px;right:14px;bottom:18px;background:#2a2a2f;border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none}
+.snack.on{opacity:1;transform:none}
+.sec{position:absolute;inset:0;padding:54px 14px 14px;background:var(--bg)}
+.tabs{display:flex;gap:6px;font-size:12px;color:var(--muted);margin-bottom:10px}
+.tabs span{padding:5px 10px;border-radius:14px;background:var(--raised)}
+.tabs .on{background:var(--accent);color:var(--onAccent)}
+.note{font-size:12px;color:var(--faint);max-width:420px;width:100%;margin-top:12px;line-height:1.6}
+</style>
+</head><body>
+
+<div class="bar"><b>ลองกดได้: เพิ่มนัดจากช่องเพิ่มงาน</b>
+แตะ + หรือช่อง "เพิ่มงาน" บนหน้าจอ แล้วพิมพ์ชื่อ ลองพิมพ์ "พรุ่งนี้" หรือ "14:00" แล้วกดปุ่ม ลงปฏิทิน หรือ เพิ่มงาน ปุ่มใดปุ่มหนึ่งได้เลย ข้อมูลเป็นตัวอย่าง ตัวจริงจะอ่านวันเวลาด้วยกฎเดิมของช่องเพิ่มงาน
+<div class="ctl">
+<button class="tg on" id="permBtn" type="button">มีสิทธิ์เขียนปฏิทินแล้ว</button>
+<button class="tg" id="resetBtn" type="button">เริ่มใหม่</button>
+</div>
+</div>
+
+<div class="phone" id="phone">
+  <!-- home -->
+  <div class="home">
+    <div class="w" style="padding-bottom:14px">
+      <div class="hd">วันนี้</div>
+      <div class="li"><small>10:00</small><span class="bar2"></span>ประชุมทีม</div>
+      <div class="li" id="eventRow" style="display:none"><small id="evTime"></small><span class="bar2 g"></span><span id="evTitle"></span></div>
+      <div class="li"><small></small><span class="ring"></span>ส่งรายงานไตรมาส</div>
+      <div class="li" id="taskRow" style="display:none"><small></small><span class="ring"></span><span id="taskTitle"></span></div>
+    </div>
+    <div class="qa" id="openQa" role="button" tabindex="0">
+      <span class="ph">เพิ่มงาน เช่น ส่งรายงาน พรุ่งนี้</span>
+      <button class="c" type="button" aria-label="ไมค์"><svg viewBox="0 0 24 24"><path d="M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+      <button class="c a" type="button" aria-label="ผู้ช่วย"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg></button>
+    </div>
+    <button class="c a" id="plusBtn" type="button" style="align-self:flex-end;width:52px;height:52px" aria-label="เพิ่มงาน"><svg viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M12 5v14M5 12h14"/></svg></button>
+    <div class="hint">แตะ + หรือช่องเพิ่มงานเพื่อเปิดหน้าเพิ่มงาน</div>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+
+  <!-- quick add sheet -->
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true">
+    <div class="handle"></div>
+    <div class="row">
+      <span class="title" id="sheetTitle">เพิ่มงาน</span>
+    </div>
+    <input class="field" id="text" type="text" placeholder="เช่น ประชุมทีม พรุ่งนี้ 14:00" autocomplete="off">
+
+    <div class="row" style="margin-top:10px" id="readRow"></div>
+    <div class="hintt">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!!</div>
+
+    <!-- what the event would be, right above the buttons; tap to change -->
+    <button class="opt" id="opt" type="button"></button>
+    <div class="pop" id="pop">
+      <div class="lbl" style="margin-top:0">นานเท่าไร</div>
+      <div class="chips" id="durs"></div>
+      <div class="lbl">ปฏิทิน</div>
+      <div class="chips" id="cals"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="ghost" id="popDone" type="button">เสร็จ</button></div>
+    </div>
+
+    <div class="foot">
+      <button class="rnd" type="button" aria-label="พูด"><svg viewBox="0 0 24 24"><path d="M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+      <button class="rnd a" type="button" aria-label="ถามผู้ช่วย"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg></button>
+      <button class="ghost2" id="calBtn" type="button">ลงปฏิทิน</button>
+      <button class="btn" id="saveBtn" type="button">เพิ่มงาน</button>
+    </div>
+  </div>
+
+  <!-- the phone's own permission dialog, the first time only -->
+  <div class="dlg" id="dlg">
+    <div class="dlgBox">
+      <div style="font-size:15px;margin-bottom:16px">อนุญาตให้ Omni Task เข้าถึงปฏิทินของคุณไหม</div>
+      <button class="dlgBtn" id="dlgYes" type="button">อนุญาต</button>
+      <button class="dlgBtn" id="dlgNo" type="button">ไม่อนุญาต</button>
+    </div>
+  </div>
+
+  <div class="snack" id="snack"></div>
+</div>
+
+<p class="note">พิมพ์เสร็จ นิ้วโป้งอยู่ด้านล่างแล้ว กดปุ่มเดียวจบ: <b>เพิ่มงาน</b> ลง Omni note หรือ <b>ลงปฏิทิน</b> เป็นนัด แถบเทาเหนือปุ่มบอกว่านัดจะออกมาแบบไหน (ปกติไม่ต้องแตะ ใช้ระยะเวลาและปฏิทินครั้งล่าสุด) ครั้งแรกที่กดลงปฏิทิน เครื่องจะถามสิทธิ์</p>
+
+<script>
+const TODAY = new Date(2026, 9, 15); // 15 October 2026, like the rest of the mockups
+const TH_DL = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
+const TH_S = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const DURS = [30, 60, 90, 120, 180];
+const CALS = [
+  { id: "g", name: "norapol.uttho@gmail.com", google: true },
+  { id: "w", name: "งาน", google: true },
+  { id: "f", name: "ครอบครัว", google: true },
+];
+
+const S = { dur: 60, calId: "g", perm: true };
+const $ = id => document.getElementById(id);
+const hm = (h, m) => String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+const addMin = (t, m) => { const [h, mm] = t.split(":").map(Number); const x = h * 60 + mm + m; return hm(Math.floor(x / 60) % 24, x % 60); };
+const dateLabel = d => d.getTime() === TODAY.getTime() ? "วันนี้" : d.getDate() + " " + TH_S[d.getMonth()];
+
+// Reads the day and time words the same way the real quick add does, in simplified form.
+function read(text) {
+  let rest = text, day = null, time = null;
+  if (/พรุ่งนี้/.test(rest)) { day = new Date(TODAY.getTime() + 864e5); rest = rest.replace("พรุ่งนี้", " "); }
+  else if (/วันนี้/.test(rest)) { day = new Date(TODAY); rest = rest.replace("วันนี้", " "); }
+  let end = null;
+  const t = rest.match(/(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])/);
+  if (t) { time = hm(+t[1], +t[2]); rest = rest.replace(t[0], " "); }
+  const title = rest.replace(/\s+/g, " ").trim();
+  return { title, day, time, end };
+}
+
+function render() {
+  const r = read($("text").value);
+  const day = r.day || TODAY;
+  const chips = [];
+  if (r.day) chips.push(dateLabel(r.day));
+  if (r.time) chips.push("เตือน " + r.time);
+  $("readRow").innerHTML = chips.map(c => `<span class="pill">${c}</span>`).join("");
+
+  const dur = r.end ? null : S.dur;
+  const end = r.time ? (r.end || addMin(r.time, S.dur)) : null;
+  const cal = CALS.find(c => c.id === S.calId).name;
+  $("opt").style.display = r.title ? "flex" : "none";
+  $("opt").innerHTML = `<span>ถ้าลงปฏิทิน: ${dateLabel(day)} ${r.time ? r.time + " ถึง " + end : "ทั้งวัน"}, ${cal}</span><b>เปลี่ยน</b>`;
+  $("durs").innerHTML = DURS.map(m => `<button class="chip ${S.dur === m ? "on" : ""}" data-dur="${m}" type="button">${lenLabel(m)}</button>`).join("");
+  $("cals").innerHTML = CALS.map(c => `<button class="chip ${S.calId === c.id ? "on" : ""}" data-cal="${c.id}" type="button">${c.name}</button>`).join("");
+  $("saveBtn").disabled = !r.title;
+  $("calBtn").disabled = !r.title;
+  document.querySelectorAll("[data-dur]").forEach(b => b.onclick = () => { S.dur = +b.dataset.dur; render(); });
+  document.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => { S.calId = b.dataset.cal; render(); });
+}
+
+function lenLabel(m) {
+  if (m < 60) return m + " นาที";
+  if (m % 60 === 0) return (m / 60) + " ชม.";
+  return Math.floor(m / 60) + " ชม. " + (m % 60) + " นาที";
+}
+
+function open() { $("scrim").classList.add("on"); $("sheet").classList.add("on"); setTimeout(() => $("text").focus(), 280); render(); }
+function close() { $("scrim").classList.remove("on"); $("sheet").classList.remove("on"); $("text").blur(); }
+function flash(msg) {
+  const s = $("snack"); s.textContent = msg; s.classList.add("on");
+  clearTimeout(flash.t); flash.t = setTimeout(() => s.classList.remove("on"), 2200);
+}
+
+$("openQa").onclick = open;
+$("openQa").onkeydown = e => { if (e.key === "Enter") open(); };
+$("plusBtn").onclick = open;
+$("scrim").onclick = close;
+$("text").oninput = render;
+$("opt").onclick = () => $("pop").classList.toggle("on");
+$("popDone").onclick = () => $("pop").classList.remove("on");
+$("permBtn").onclick = () => {
+  S.perm = !S.perm;
+  $("permBtn").classList.toggle("on", S.perm);
+  $("permBtn").textContent = S.perm ? "มีสิทธิ์เขียนปฏิทินแล้ว" : "ยังไม่มีสิทธิ์เขียนปฏิทิน";
+};
+$("resetBtn").onclick = () => location.reload();
+
+function done() { $("text").value = ""; $("pop").classList.remove("on"); close(); render(); }
+
+$("saveBtn").onclick = () => {
+  const r = read($("text").value);
+  if (!r.title) return;
+  $("taskRow").style.display = "flex";
+  $("taskTitle").textContent = r.title;
+  flash("เพิ่มงานแล้ว: " + r.title);
+  done();
+};
+
+function addEvent() {
+  const r = read($("text").value);
+  const day = r.day || TODAY;
+  const cal = CALS.find(c => c.id === S.calId).name;
+  const when = r.time ? r.time + " ถึง " + (r.end || addMin(r.time, S.dur)) : "ทั้งวัน";
+  $("eventRow").style.display = "flex";
+  $("evTime").textContent = r.time || "ทั้งวัน";
+  $("evTitle").textContent = r.title + (day.getTime() !== TODAY.getTime() ? " (" + dateLabel(day) + ")" : "");
+  flash("ลงปฏิทินแล้ว: " + r.title + ", " + dateLabel(day) + " " + when + " ใน " + cal);
+  done();
+}
+$("calBtn").onclick = () => {
+  if (!read($("text").value).title) return;
+  if (S.perm) addEvent(); else $("dlg").classList.add("on");
+};
+$("dlgYes").onclick = () => {
+  $("dlg").classList.remove("on"); S.perm = true;
+  $("permBtn").classList.add("on"); $("permBtn").textContent = "มีสิทธิ์เขียนปฏิทินแล้ว";
+  addEvent();
+};
+$("dlgNo").onclick = () => { $("dlg").classList.remove("on"); flash("ลงปฏิทินไม่ได้ ยังไม่ได้อนุญาต"); };
+
+document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+render();
+</script>
+</body></html>
