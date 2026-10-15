@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -55,7 +56,8 @@ class SmokeTest {
         rule.waitForIdle()
         check(rule.onAllNodesWithText("ตุลาคม 2569").fetchSemanticsNodes().isNotEmpty()) { "the month page did not open" }
         // One day comes chosen from the widget: the frame and the emoji panels both show.
-        rule.onAllNodesWithText("บันทึกกรอบ")[0].performClick()
+        // The button sits below the grid, past the bottom of a small test screen: scroll to it first.
+        rule.onAllNodesWithText("บันทึกกรอบ")[0].performScrollTo().performClick()
         rule.waitForIdle()
         check(rule.onAllNodesWithText("กรอบเดือนนี้").fetchSemanticsNodes().isNotEmpty()) { "the frame was not saved" }
         rule.onAllNodesWithText("ปิด")[0].performClick()
