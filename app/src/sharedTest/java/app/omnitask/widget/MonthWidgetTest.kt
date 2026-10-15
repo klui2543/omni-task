@@ -10,6 +10,7 @@ import app.omnitask.model.FrameColor
 import app.omnitask.model.MonthMarks
 import app.omnitask.ui.Palettes
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -58,6 +59,33 @@ class MonthWidgetTest {
         // Picking today is the same as picking nothing; a month away is covered by what was loaded.
         check(source.view(0, d(15)).selected == null)
         check(source.covers(1) && !source.covers(6))
+    }
+
+    /**
+     * W3 and W6 from the tap plan: with 2,000 open tasks and 300 events, picking out a day must stay quick, and the
+     * widget's picture must stay small enough that a redraw sends little to the launcher. Runs on the JVM and on the
+     * emulator; the limits leave room for a slow emulator.
+     */
+    @Test
+    fun aTapStaysQuickWithALotOfWork() {
+        val tasks = (0 until 2000).map { i ->
+            app.omnitask.data.TaskLine.parse("- [ ] งาน $i 📅 ${LocalDate(2026, 9, 1).plus(i % 120, kotlinx.datetime.DateTimeUnit.DAY)}")!!
+        }
+        val events = (0 until 300).map { i ->
+            val at = kotlinx.datetime.LocalDateTime(LocalDate(2026, 9, 1).plus(i % 120, kotlinx.datetime.DateTimeUnit.DAY), kotlinx.datetime.LocalTime(9, 0))
+            app.omnitask.notify.CalendarEvent(i.toLong(), "นัด $i", at, at, false, 1)
+        }
+        val source = MonthSource(d(15), 0, LocalDate(2026, 7, 1), LocalDate(2027, 1, 31), MonthMarks(), tasks, events, emptyMap())
+        source.view(0, d(20)) // warm up
+        val start = System.nanoTime()
+        repeat(10) { source.view(0, d(1 + it * 3)) }
+        val perTap = (System.nanoTime() - start) / 10 / 1_000_000
+        check(perTap < 150) { "picking out a day took $perTap ms" }
+
+        val palette = Palettes.graphiteDark
+        val painter = MonthPainter(context, palette, maxScale = 2f, background = android.graphics.Color.BLACK, ring = false)
+        val bmp = painter.draw(source.view(0, null), 336f, 42f, 6)
+        check(bmp.byteCount < 1_000_000) { "the widget's picture is ${bmp.byteCount} bytes" }
     }
 
     @Test
