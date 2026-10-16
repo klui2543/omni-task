@@ -29,6 +29,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -299,14 +311,25 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     var shown by rememberSaveable { mutableStateOf(state.today.yearMonth.toString()) }
     val month = YearMonth.parse(shown)
     LaunchedEffect(month) { vm.loadMonth(month.firstDay()) }
-    // The month widget sent a day: show its month with it chosen.
+    val listState = rememberLazyListState()
+    // The month widget sent a day: show its month with it chosen, and bring that day's list up, which sits below the
+    // fold under the month.
     LaunchedEffect(state.calendarDay) {
         state.calendarDay?.let { d ->
             selected = d.toString()
             shown = d.yearMonth.toString()
             vm.requestCalendar(null)
+            withFrameNanos { }
+            listState.animateScrollToItem(DAY_LIST_ITEM)
         }
     }
+    // Where each row of the day's list ends on screen, so the page can say how many are still under the nav.
+    val rowBottoms = remember { mutableStateMapOf<Int, Float>() }
+    var viewBottom by remember { mutableFloatStateOf(Float.MAX_VALUE) }
+    // The list's card leaves the composition when it is scrolled out of reach; then all its rows count as below.
+    var listShown by remember { mutableStateOf(true) }
+    var dayCount by remember { mutableIntStateOf(0) }
+    val clearance = with(LocalDensity.current) { NavClearance.toPx() }
     fun go(delta: Long) {
         val next = month.plusMonths(delta)
         shown = next.toString()
@@ -332,85 +355,118 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
         marks.shown(state.tasks.filter { it.isOpen }.mapNotNull { t -> (t.due ?: t.scheduled)?.let { it to t.title } }.groupBy({ it.first }, { it.second }))
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = NavClearance),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item { CalendarConnect(state, vm) }
-        item {
-            Card {
-                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(MonthGrid.title(first), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
-                    TodayButton({ shown = state.today.yearMonth.toString(); selected = state.today.toString() }, Modifier.padding(end = 6.dp))
-                    SquareButton(Ic.pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), { vm.requestMonth(MonthRequest(sel, pick = true)) })
-                    Box(Modifier.width(6.dp))
-                    SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { go(-1) })
-                    Box(Modifier.width(6.dp))
-                    SquareButton(Ic.next, tr("เดือนถัดไป", "Next month"), { go(1) })
-                }
-                Row(Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)) {
-                    MonthGrid.heads.forEachIndexed { i, h ->
-                        Text(h, Modifier.weight(1f), color = if (i == 0) C.red else C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize().onGloballyPositioned { viewBottom = it.boundsInWindow().bottom },
+            state = listState,
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = NavClearance),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item { CalendarConnect(state, vm) }
+            item {
+                Card {
+                    Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(MonthGrid.title(first), Modifier.weight(1f), color = C.text, style = MaterialTheme.typography.titleSmall)
+                        TodayButton({ shown = state.today.yearMonth.toString(); selected = state.today.toString() }, Modifier.padding(end = 6.dp))
+                        SquareButton(Ic.pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), { vm.requestMonth(MonthRequest(sel, pick = true)) })
+                        Box(Modifier.width(6.dp))
+                        SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { go(-1) })
+                        Box(Modifier.width(6.dp))
+                        SquareButton(Ic.next, tr("เดือนถัดไป", "Next month"), { go(1) })
                     }
-                }
-                Box(Modifier.padding(horizontal = 8.dp)) {
-                    MonthPicture(
-                        MonthData(state.today, first, 0, framed, holidays, work, sel, emptyList(), style, emojiSize),
-                        onTap = { d -> selected = d.toString(); if (d.yearMonth != month) shown = d.yearMonth.toString() },
-                    )
-                }
-                Box(Modifier.height(10.dp))
-            }
-        }
-        item {
-            Card {
-                val stickers = marks.stickersOn(sel).joinToString("")
-                FlowRow(
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        (if (sel == state.today) tr("วันนี้, ", "Today, ") else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)) +
-                            if (stickers.isEmpty()) "" else " $stickers",
-                        color = C.text2, style = MaterialTheme.typography.titleSmall,
-                    )
-                    framed.frameOn(sel)?.takeIf { it.label.isNotEmpty() }?.let { f ->
-                        val color = Color(f.color.argb)
-                        val (n, of) = f.position(sel) ?: (1 to 1)
-                        Text(
-                            if (of == 1) f.label else tr("${f.label} วันที่ $n จาก $of", "${f.label}, day $n of $of"),
-                            Modifier.clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.2f)).padding(horizontal = 8.dp, vertical = 1.dp),
-                            color = color, fontSize = TS.caption,
-                        )
-                    }
-                }
-                holidays[sel]?.let { Text(it, Modifier.padding(start = 16.dp, bottom = 4.dp), color = C.red, fontSize = TS.caption) }
-                val eventActions = rememberEventActions(vm)
-                val ev: List<CalendarEvent> = eventsOn(sel)
-                // Today also lists the work past its deadline after its own, as the widget and Focus do.
-                val ts = tasksOn(sel) + if (sel == state.today) pool.filter { it.isOpen && it.due?.let { d -> d < state.today } == true }.sortedBy { it.due } else emptyList()
-                if (ev.isEmpty() && ts.isEmpty()) Text(tr("ว่างทั้งวัน", "Free all day"), Modifier.padding(16.dp), color = C.muted)
-                ev.forEach { e ->
-                    Row(
-                        Modifier.fillMaxWidth().combinedClickable(onClick = { eventActions.open(e) }, onLongClick = { eventActions.inspect(e) })
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
-                        Column(Modifier.padding(start = 12.dp)) {
-                            Text(e.title, color = C.text, fontSize = TS.body)
-                            Text(if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", "${e.begin.toLocalTime()} to ${e.end.toLocalTime()}"), color = C.tealText, fontSize = TS.caption)
+                    Row(Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)) {
+                        MonthGrid.heads.forEachIndexed { i, h ->
+                            Text(h, Modifier.weight(1f), color = if (i == 0) C.red else C.faint, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         }
                     }
+                    Box(Modifier.padding(horizontal = 8.dp)) {
+                        MonthPicture(
+                            MonthData(state.today, first, 0, framed, holidays, work, sel, emptyList(), style, emojiSize),
+                            onTap = { d -> selected = d.toString(); if (d.yearMonth != month) shown = d.yearMonth.toString() },
+                        )
+                    }
+                    Box(Modifier.height(10.dp))
                 }
-                ts.forEach { t -> TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) }, compact = true) }
-                Box(Modifier.height(6.dp))
             }
+            item {
+                Card {
+                    val stickers = marks.stickersOn(sel).joinToString("")
+                    val eventActions = rememberEventActions(vm)
+                    val ev: List<CalendarEvent> = eventsOn(sel)
+                    // Today also lists the work past its deadline after its own, as the widget and Focus do.
+                    val ts = tasksOn(sel) + if (sel == state.today) pool.filter { it.isOpen && it.due?.let { d -> d < state.today } == true }.sortedBy { it.due } else emptyList()
+                    val count = ev.size + ts.size
+                    // Rows from another day must not count.
+                    LaunchedEffect(sel, count) { rowBottoms.keys.retainAll { it < count } }
+                    SideEffect { dayCount = count }
+                    DisposableEffect(Unit) {
+                        listShown = true
+                        onDispose { listShown = false; rowBottoms.clear() }
+                    }
+                    fun Modifier.row(i: Int) = onGloballyPositioned { rowBottoms[i] = it.boundsInWindow().bottom }
+                    FlowRow(
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            (if (sel == state.today) tr("วันนี้, ", "Today, ") else "") + sel.format(DateTimeFormatter.ofPattern("EEEE d MMMM", TH)) +
+                                if (stickers.isEmpty()) "" else " $stickers",
+                            color = C.text2, style = MaterialTheme.typography.titleSmall,
+                        )
+                        // How many the day holds, so it is plain whether the list below shows them all.
+                        if (count > 0) Text(
+                            tr("$count รายการ", if (count == 1) "1 item" else "$count items"),
+                            Modifier.align(Alignment.CenterVertically).clip(RoundedCornerShape(10.dp)).background(C.accent.copy(alpha = 0.22f))
+                                .padding(horizontal = 9.dp, vertical = 1.dp),
+                            color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold,
+                        )
+                        framed.frameOn(sel)?.takeIf { it.label.isNotEmpty() }?.let { f ->
+                            val color = Color(f.color.argb)
+                            val (n, of) = f.position(sel) ?: (1 to 1)
+                            Text(
+                                if (of == 1) f.label else tr("${f.label} วันที่ $n จาก $of", "${f.label}, day $n of $of"),
+                                Modifier.clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.2f)).padding(horizontal = 8.dp, vertical = 1.dp),
+                                color = color, fontSize = TS.caption,
+                            )
+                        }
+                    }
+                    holidays[sel]?.let { Text(it, Modifier.padding(start = 16.dp, bottom = 4.dp), color = C.red, fontSize = TS.caption) }
+                    if (ev.isEmpty() && ts.isEmpty()) Text(tr("ว่างทั้งวัน", "Free all day"), Modifier.padding(16.dp), color = C.muted)
+                    ev.forEachIndexed { i, e ->
+                        Row(
+                            Modifier.fillMaxWidth().row(i).combinedClickable(onClick = { eventActions.open(e) }, onLongClick = { eventActions.inspect(e) })
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(e.title, color = C.text, fontSize = TS.body)
+                                Text(if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", "${e.begin.toLocalTime()} to ${e.end.toLocalTime()}"), color = C.tealText, fontSize = TS.caption)
+                            }
+                        }
+                    }
+                    ts.forEachIndexed { i, t -> Box(Modifier.row(ev.size + i)) { TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) }, compact = true) } }
+                    Box(Modifier.height(6.dp))
+                }
+            }
+        }
+        // The rows still under the nav (or below the screen), as a button that brings the list up.
+        val below = if (listShown) rowBottoms.values.count { it > viewBottom - clearance + 2f } else dayCount
+        if (below > 0) {
+            val scope = rememberCoroutineScope()
+            Text(
+                tr("ดูอีก $below รายการ \u2193", "$below more \u2193"),
+                Modifier.align(Alignment.BottomCenter).padding(bottom = NavClearance + 8.dp).clip(RoundedCornerShape(18.dp)).background(C.accent)
+                    .clickable { scope.launch { listState.animateScrollToItem(DAY_LIST_ITEM) } }.padding(horizontal = 16.dp, vertical = 7.dp),
+                color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
+
+/** Where the chosen day's list sits in the month page: after the calendar card and the month. */
+private const val DAY_LIST_ITEM = 2
 
 /**
  * The month as the widget draws it (frames, emoji, holidays, each day's work, the box round the chosen day), one
