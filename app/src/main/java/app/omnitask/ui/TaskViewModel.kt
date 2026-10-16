@@ -402,7 +402,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned) }
-            runCatching { OmniWidgets.refresh(app) }
+            // A sync that changed nothing leaves the widgets as they are.
+            runCatching { withContext(Dispatchers.IO) { app.omnitask.widget.CalendarPrint.refreshIfChanged(app, "app saw the calendar") } }
         }
     }
 

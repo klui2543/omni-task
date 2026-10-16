@@ -143,7 +143,7 @@ class MonthWidget : GlanceAppWidget() {
             LaunchedEffect(nav.offset, stamp) {
                 if (stamp != source.stamp || !source.covers(nav.offset)) source = MonthSource.load(context, nav.offset, stamp)
             }
-            MonthContent(context, source.view(nav.offset, nav.listed(source.today)))
+            MonthContent(context, source.view(nav.offset, nav.picked))
         }
     }
 
@@ -357,6 +357,7 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 
 private const val EXTRA_WIDGET = "widget"
 private const val EXTRA_TAP_DAY = "day"
+private const val EXTRA_RELOAD = "reload"
 private const val EXTRA_DELTA = "delta"
 
 /**
@@ -384,6 +385,22 @@ class MonthTapReceiver : BroadcastReceiver() {
         val day = intent.getStringExtra(EXTRA_TAP_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         val delta = if (intent.hasExtra(EXTRA_DELTA)) intent.getIntExtra(EXTRA_DELTA, 0) else null
         WidgetLog.add("tap received widget=$widgetId day=$day delta=$delta")
+        if (intent.getBooleanExtra(EXTRA_RELOAD, false)) {
+            val result = goAsync()
+            val app = context.applicationContext
+            MonthLive.scope.launch {
+                try {
+                    withContext(Dispatchers.IO) { runCatching { CalendarReader.requestSync(app, force = true) } }
+                    OmniWidgets.refresh(app)
+                    WidgetLog.add("reload asked on the widget")
+                } catch (e: Exception) {
+                    WidgetLog.add("reload failed $e")
+                } finally {
+                    result.finish()
+                }
+            }
+            return
+        }
         val id = runCatching { GlanceAppWidgetManager(context).getGlanceIdBy(widgetId) }.getOrNull() ?: return
         val result = goAsync()
         val app = context.applicationContext
@@ -401,6 +418,15 @@ class MonthTapReceiver : BroadcastReceiver() {
         }
     }
 }
+
+/** The refresh button: pulls Google Calendar and reads the vault and the calendar again for every widget. */
+private fun reload(context: Context, widgetId: Int) = actionSendBroadcast(
+    Intent(context, MonthTapReceiver::class.java)
+        .setFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+        .putExtra(EXTRA_WIDGET, widgetId)
+        .putExtra(EXTRA_RELOAD, true)
+        .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/reload")),
+)
 
 /** Opens the month page in the app at [day]; with [pick], that day comes selected. */
 private fun openMonth(context: Context, day: LocalDate, pick: Boolean) = actionStartActivity(
@@ -444,8 +470,9 @@ internal class MonthSource(
     fun view(offset: Int, picked: LocalDate?): MonthData {
         val month = month(offset)
         val days = MonthGrid.days(month)
-        val selected = picked?.takeIf { it != today && it >= from && it <= to }
-        val listed = if (selected == null) listOf(today, today.plusDays(1)) else listOf(selected)
+        // Today tapped is boxed like any day, and lists today and tomorrow as the untouched widget does.
+        val selected = picked?.takeIf { it >= from && it <= to }
+        val listed = if (selected == null || selected == today) listOf(today, today.plusDays(1)) else listOf(selected)
         fun tasksOn(d: LocalDate) = tasks.filter { (it.due ?: it.scheduled) == d }
         fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
         val work = MonthData.work(days, month, ::tasksOn, ::eventsOn)
@@ -515,7 +542,7 @@ internal class MonthData(
     val holidays: Map<LocalDate, String>,
     /** What each day holds that the grid shows: events first, then open work; a daily routine is left out. */
     val work: Map<LocalDate, List<Mark>>,
-    /** The day tapped, boxed on the grid; null when the list shows today and tomorrow. */
+    /** The day tapped, boxed on the grid (today too); null when nothing is tapped. */
     val selected: LocalDate?,
     val agenda: List<Pair<LocalDate, List<Item>>>,
     val style: CellStyle = CellStyle.TINT,
@@ -668,6 +695,7 @@ private fun Header(context: Context, data: MonthData) {
         )
         IconButton(R.drawable.ic_w_back, tr("เดือนก่อน", "Previous month"), cp { it.muted }, tap(context, widgetId, delta = -1))
         IconButton(R.drawable.ic_w_next, tr("เดือนถัดไป", "Next month"), cp { it.muted }, tap(context, widgetId, delta = 1))
+        IconButton(R.drawable.ic_w_refresh, tr("โหลดใหม่", "Reload"), cp { it.muted }, reload(context, widgetId))
         IconButton(R.drawable.ic_w_pen, tr("ใส่กรอบและ Emoji", "Frames and emoji"), cp { it.accentText },
             // The pencil is the way into frames and emoji; a day picked on the widget comes along chosen.
             data.selected?.let { openMonth(context, it, pick = true) } ?: openMonth(context, data.month, pick = false))
