@@ -475,7 +475,7 @@ internal class MonthSource(
         val listed = if (selected == null || selected == today) listOf(today, today.plusDays(1)) else listOf(selected)
         fun tasksOn(d: LocalDate) = tasks.filter { (it.due ?: it.scheduled) == d }
         fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
-        val work = MonthData.work(days, month, ::tasksOn, ::eventsOn)
+        val work = MonthData.work(days, month, ::tasksOn, ::eventsOn, today)
         val agenda = listed.map { d ->
             val events: List<MonthData.Item> = eventsOn(d).sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map {
                 MonthData.Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time))
@@ -547,8 +547,11 @@ internal class MonthData(
     val agenda: List<Pair<LocalDate, List<Item>>>,
     val style: CellStyle = CellStyle.TINT,
 ) {
-    /** Compared by value, so the widget keeps its picture when a tap leaves the work as it was. */
-    data class Mark(val title: String, val event: Boolean)
+    /**
+     * Compared by value, so the widget keeps its picture when a tap leaves the work as it was. [late] is open work on a
+     * day already gone, drawn red.
+     */
+    data class Mark(val title: String, val event: Boolean, val late: Boolean = false)
 
     sealed interface Item {
         class Event(val title: String, val time: String) : Item
@@ -567,6 +570,8 @@ internal class MonthData(
             month: LocalDate,
             tasksOn: (LocalDate) -> List<Task>,
             eventsOn: (LocalDate) -> List<CalendarEvent>,
+            /** Open work on a day before this one is marked late. */
+            today: LocalDate? = null,
         ): Map<LocalDate, List<Mark>> {
             val events = days.associateWith(eventsOn)
             val inMonth = days.filter { it.monthNumber == month.monthNumber }
@@ -574,7 +579,7 @@ internal class MonthData(
             return days.associateWith { d ->
                 events[d].orEmpty().filter { it.title.trim() !in routine }
                     .sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map { Mark(it.title, true) } +
-                    tasksOn(d).filter { it.isOpen }.map { Mark(it.title, false) }
+                    tasksOn(d).filter { it.isOpen }.map { Mark(it.title, false, late = today != null && d < today) }
             }.filterValues { it.isNotEmpty() }
         }
     }
@@ -893,10 +898,11 @@ internal class MonthPainter(
         val todayBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.accent.toArgb() }
         val barBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val barHeightDp = if (bars) ((cellDp - 23f) / 2f - 1f).coerceIn(8f, 12f) else 12f
-        val barText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(barHeightDp * 0.78f); color = p.onAccent.toArgb() }
+        val barText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(barHeightDp * 0.78f); color = p.text.toArgb() }
         val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(10f); textAlign = Paint.Align.RIGHT }
         val more = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(8.5f); textAlign = Paint.Align.RIGHT; color = p.muted.toArgb() }
-        val moreLeft = Paint(more).apply { textAlign = Paint.Align.LEFT; textSize = sp(9f) }
+        val moreRight = Paint(more).apply { textSize = sp(9f) }
+        val emojiLeft = Paint(emoji).apply { textAlign = Paint.Align.LEFT }
         val small = cellDp < 34f
         days.forEachIndexed { i, d ->
             val r = rect(i)
@@ -917,15 +923,21 @@ internal class MonthPainter(
             if (!inMonth(d)) return@forEachIndexed
             val stickers = data.marks.stickersOn(d)
             if (bars) {
-                // As many bars as fit under the number; what is left over is counted as "+n" in the top corner.
-                val items = data.work[d].orEmpty()
+                // As many bars as fit under the number; what is left over is counted as "+n" in the top right corner.
+                // A public holiday comes first, as a red bar with its name. Events are blue, work green, late work red,
+                // each a soft fill with the page's own text, as in Samsung Calendar.
+                val items = data.holidays[d]?.let { listOf(MonthData.Mark(it, event = true, late = true)) }.orEmpty() + data.work[d].orEmpty()
                 val bh = dp(barHeightDp)
                 val step = bh + dp(1f)
                 var y = cy + radius + dp(1f)
                 val fit = ((r.bottom - dp(1f) - y + dp(1.5f)) / step).toInt().coerceAtLeast(0)
                 val shown = minOf(items.size, fit)
                 items.take(shown).forEach { m ->
-                    barBg.color = if (m.event) p.accent.toArgb() else p.lime.toArgb()
+                    when {
+                        m.late -> { barBg.color = p.red.toArgb(); barBg.alpha = 92 }
+                        m.event -> { barBg.color = p.accent.toArgb(); barBg.alpha = 80 }
+                        else -> { barBg.color = p.lime.toArgb(); barBg.alpha = 74 }
+                    }
                     val box = RectF(r.left + dp(2f), y, r.right - dp(2f), y + bh)
                     c.drawRoundRect(box, dp(3f), dp(3f), barBg)
                     c.save(); c.clipRect(box)
@@ -933,9 +945,9 @@ internal class MonthPainter(
                     c.restore()
                     y += step
                 }
-                if (items.size > shown) c.drawText("+${items.size - shown}", r.left + dp(3f), r.top + dp(11f), moreLeft)
-                // Emoji go up by the number, out of the bars' way.
-                if (stickers.isNotEmpty() && !small) c.drawText(stickers.first(), r.right - dp(2f), r.top + dp(12f), emoji)
+                if (items.size > shown) c.drawText("+${items.size - shown}", r.right - dp(3f), r.top + dp(11f), moreRight)
+                // Emoji go up by the number, on the other side from "+n", out of the bars' way.
+                if (stickers.isNotEmpty() && !small) c.drawText(stickers.first(), r.left + dp(2f), r.top + dp(12f), emojiLeft)
             } else if (stickers.isNotEmpty() && !small) {
                 val extra = stickers.size - 3
                 var x = r.right - dp(3f)
