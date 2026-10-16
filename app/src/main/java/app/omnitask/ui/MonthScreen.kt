@@ -91,6 +91,9 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var month by remember { mutableStateOf(request.day.withDayOfMonth(1)) }
     var selection by remember { mutableStateOf(emptySet<LocalDate>()) }
+    // A tap picks one day by default; "select several" lets taps add and drop days (to frame them together).
+    var multi by remember { mutableStateOf(false) }
+    var lastDay by remember { mutableStateOf<LocalDate?>(null) }
     // A small file in the app's own storage, read once as the page opens.
     var marks by remember { mutableStateOf(MonthMarksStore.local(context)) }
     var color by remember { mutableStateOf(FrameColor.BLUE) }
@@ -103,6 +106,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     LaunchedEffect(request) {
         month = request.day.withDayOfMonth(1)
         selection = if (request.pick) setOf(request.day) else emptySet()
+        lastDay = request.day.takeIf { request.pick }
+        multi = false
         editing = null
     }
     LaunchedEffect(month) {
@@ -123,6 +128,17 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
         }
     }
     fun clear() { selection = emptySet(); editing = null; label = "" }
+    // After a frame is saved, removed or dropped, the page is back to one day at a time.
+    fun finish() { clear(); multi = false }
+    fun setMulti(on: Boolean) {
+        multi = on
+        // Leaving it with several days chosen keeps the one tapped last.
+        if (!on && selection.size > 1) {
+            selection = setOf(lastDay?.takeIf { it in selection } ?: selection.sorted().last())
+            editing = null
+            label = ""
+        }
+    }
 
     val current = marks
     val days = MonthGrid.days(month)
@@ -164,24 +180,38 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         }
                     }
                     Grid(
-                        context, month, days, state.today, current, holidays, work, style, selection,
+                        context, month, days, state.today, current, holidays, work, style, selection, multi,
                         onTap = { d ->
-                            selection = if (d in selection) selection - d else selection + d
+                            if (multi) {
+                                selection = if (d in selection) selection - d else selection + d
+                                if (d in selection) lastDay = d
+                            } else {
+                                selection = if (selection == setOf(d)) emptySet() else setOf(d)
+                                lastDay = d
+                                editing = null
+                            }
                             if (selection.isEmpty()) editing = null
                         },
-                        onLongPress = { d -> selection = setOf(d); editing = null },
-                        onDrag = { d, add -> selection = if (add) selection + d else selection - d },
+                        onLongPress = { d -> selection = setOf(d); lastDay = d; editing = null },
+                        // A drag across days always chooses several, starting afresh when it begins in one-day mode.
+                        onDragStart = { if (!multi) { multi = true; selection = emptySet(); editing = null } },
+                        onDrag = { d, add -> selection = if (add) selection + d else selection - d; if (add) lastDay = d },
                     )
                 }
             }
-            if (selection.isEmpty()) {
+            // Under the grid, so the thumb that picks days is next to the switch and the list that follows.
+            Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    tr("แตะวัน หรือลากนิ้วผ่านหลายวัน เพื่อใส่กรอบ\nแตะวันเดียวเพื่อดูงานและติด Emoji", "Tap days or drag across them to frame them.\nPick one day to see its work and add emoji."),
-                    Modifier.padding(horizontal = 6.dp), color = C.muted, fontSize = TS.caption,
+                    if (multi) tr("แตะวันเพื่อเพิ่มหรือเอาออก หรือลากนิ้วผ่านหลายวัน", "Tap days to add or drop them, or drag across days")
+                    else tr("แตะวันเพื่อดูงานและติด Emoji", "Tap a day to see its work and add emoji"),
+                    Modifier.weight(1f), color = C.muted, fontSize = TS.caption,
                 )
+                Chip(tr("เลือกหลายวัน", "Select several"), multi, { setMulti(!multi) })
+            }
+            if (selection.isEmpty()) {
                 FrameList(
                     current, month,
-                    onPick = { f -> selection = f.days.toSet(); color = f.color; label = f.label; editing = f },
+                    onPick = { f -> multi = true; selection = f.days.toSet(); lastDay = f.days.lastOrNull(); color = f.color; label = f.label; editing = f },
                     onDelete = { f -> commit(current.without(f)) },
                 )
                 Card {
@@ -258,13 +288,13 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     onLabel = { label = it },
                     onRemove = {
                         commit((editing?.let { current.without(it) } ?: current).withoutFrames(selection))
-                        clear()
+                        finish()
                     },
                     onSave = {
                         commit((editing?.let { current.without(it) } ?: current).withFrame(selection, color, label))
-                        clear()
+                        finish()
                     },
-                    onClear = { clear() },
+                    onClear = { finish() },
                 )
             }
             Box(Modifier.height(24.dp))
@@ -283,8 +313,10 @@ private fun Grid(
     work: Map<LocalDate, List<MonthData.Mark>>,
     style: CellStyle,
     selection: Set<LocalDate>,
+    multi: Boolean,
     onTap: (LocalDate) -> Unit,
     onLongPress: (LocalDate) -> Unit,
+    onDragStart: (LocalDate) -> Unit,
     onDrag: (LocalDate, Boolean) -> Unit,
 ) {
     val rows = days.size / 7
@@ -298,6 +330,8 @@ private fun Grid(
         }
         Image(bitmap, MonthGrid.title(month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val chosen by rememberUpdatedState(selection)
+        val several by rememberUpdatedState(multi)
+        val dragBegins by rememberUpdatedState(onDragStart)
         val tap by rememberUpdatedState(onTap)
         val press by rememberUpdatedState(onLongPress)
         val drag by rememberUpdatedState(onDrag)
@@ -318,7 +352,15 @@ private fun Grid(
                     var adding = true
                     var last: LocalDate? = null
                     detectDragGestures(
-                        onDragStart = { o -> dayAt(o)?.let { d -> adding = d !in chosen; last = d; drag(d, adding) } },
+                        onDragStart = { o ->
+                            dayAt(o)?.let { d ->
+                                // In one-day mode a drag starts a new choice; with several on, it adds or drops as before.
+                                adding = !several || d !in chosen
+                                last = d
+                                dragBegins(d)
+                                drag(d, adding)
+                            }
+                        },
                         onDrag = { change, _ -> dayAt(change.position)?.takeIf { it != last }?.let { d -> last = d; drag(d, adding) } },
                     )
                 },
