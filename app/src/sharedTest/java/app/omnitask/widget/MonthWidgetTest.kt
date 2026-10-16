@@ -58,8 +58,9 @@ class MonthWidgetTest {
         check(picked.selected == d(22) && picked.agenda.single().second.size == 1)
         // A tap leaves the grid's work equal, so the widget keeps its picture and only moves the box.
         check(picked.work == now.work && picked.work[d(22)] == listOf(MonthData.Mark("ส่งแบบร่าง", false)))
-        // Picking today is the same as picking nothing; a month away is covered by what was loaded.
-        check(source.view(0, d(15)).selected == null)
+        // Picking today boxes it and lists today and tomorrow, as nothing picked does; a month away is covered by what was loaded.
+        val todayPicked = source.view(0, d(15))
+        check(todayPicked.selected == d(15) && todayPicked.agenda.map { it.first } == listOf(d(15), d(16)))
         check(source.covers(1) && !source.covers(6))
     }
 

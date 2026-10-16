@@ -64,6 +64,7 @@ import app.omnitask.model.MonthMarks
 import app.omnitask.model.tr
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.omnitask.widget.AppRestriction
+import app.omnitask.model.DayWork
 import app.omnitask.widget.MonthData
 import app.omnitask.widget.MonthPainter
 import app.omnitask.widget.OmniWidgets
@@ -125,8 +126,25 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
 
     val current = marks
     val days = MonthGrid.days(month)
-    val work = remember(state.tasks, events, month) {
-        MonthData.work(days, month, { d -> state.tasks.filter { (it.due ?: it.scheduled) == d } }, { d -> events.filter { MonthData.onDay(it, d) } })
+    fun tasksOn(d: LocalDate) = state.tasks.filter { it.isOpen && (it.due ?: it.scheduled) == d }
+    fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
+    val work = remember(state.tasks, events, month, state.today) { MonthData.work(days, month, ::tasksOn, ::eventsOn, state.today) }
+    // Events on most days of the month (a workout): left out of the cells, listed faint under a day.
+    val routine = remember(events, month) {
+        val inMonth = days.filter { it.monthNumber == month.monthNumber }
+        DayWork.routine(inMonth.associateWith { d -> eventsOn(d).map { it.title } }, inMonth)
+    }
+    fun dayLines(d: LocalDate): List<DayLine> = buildList {
+        holidays[d]?.let { add(DayLine("", it, DayLine.Kind.LATE)) }
+        eventsOn(d).sortedWith(compareBy<app.omnitask.notify.CalendarEvent>({ !it.allDay }, { it.begin })).forEach { e ->
+            val time = if (e.allDay || e.begin.date != d) tr("ทั้งวัน", "All day") else "%02d:%02d".format(e.begin.hour, e.begin.minute)
+            add(DayLine(time, e.title, if (e.title.trim() in routine) DayLine.Kind.ROUTINE else DayLine.Kind.EVENT))
+        }
+        tasksOn(d).forEach { add(DayLine(tr("งาน", "Task"), it.title, if (d < state.today) DayLine.Kind.LATE else DayLine.Kind.TASK)) }
+        // Today also carries the work past its deadline, as the widget and Focus do.
+        if (d == state.today) state.tasks.filter { t -> t.isOpen && t.due?.let { it < d } == true }.sortedBy { it.due }.forEach {
+            add(DayLine(tr("เลย", "Late"), it.title, DayLine.Kind.LATE))
+        }
     }
 
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
@@ -146,7 +164,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         }
                     }
                     Grid(
-                        context, month, days, state.today, current, holidays, work, selection,
+                        context, month, days, state.today, current, holidays, work, style, selection,
                         onTap = { d ->
                             selection = if (d in selection) selection - d else selection + d
                             if (selection.isEmpty()) editing = null
@@ -158,7 +176,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
             }
             if (selection.isEmpty()) {
                 Text(
-                    tr("แตะวัน หรือลากนิ้วผ่านหลายวัน เพื่อใส่กรอบ\nแตะวันเดียวเพื่อติด Emoji", "Tap days or drag across them to frame them.\nPick one day to add emoji."),
+                    tr("แตะวัน หรือลากนิ้วผ่านหลายวัน เพื่อใส่กรอบ\nแตะวันเดียวเพื่อดูงานและติด Emoji", "Tap days or drag across them to frame them.\nPick one day to see its work and add emoji."),
                     Modifier.padding(horizontal = 6.dp), color = C.muted, fontSize = TS.caption,
                 )
                 FrameList(
@@ -219,6 +237,21 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     }
                 }
             } else {
+                if (selection.size == 1) {
+                    val d = selection.first()
+                    DayCard(d, dayLines(d), short = false)
+                    StickerEditor(context, d, current.stickersOn(d)) { commit(current.withStickers(d, it)) }
+                } else {
+                    Card {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(tr("เลือก ${selection.size} วัน", "${selection.size} days chosen"), Modifier.weight(1f), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                                Text(tr("แตะช่องเดิมเพื่อเอาออก", "Tap a day again to drop it"), color = C.muted, fontSize = TS.caption)
+                            }
+                            selection.sorted().forEach { d -> DayLines(d, dayLines(d), short = true) }
+                        }
+                    }
+                }
                 FrameEditor(
                     selection, color, label, editing != null,
                     onColor = { color = it },
@@ -233,10 +266,6 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     },
                     onClear = { clear() },
                 )
-                if (selection.size == 1) {
-                    val d = selection.first()
-                    StickerEditor(context, d, current.stickersOn(d)) { commit(current.withStickers(d, it)) }
-                }
             }
             Box(Modifier.height(24.dp))
         }
@@ -252,17 +281,20 @@ private fun Grid(
     marks: MonthMarks,
     holidays: Map<LocalDate, String>,
     work: Map<LocalDate, List<MonthData.Mark>>,
+    style: CellStyle,
     selection: Set<LocalDate>,
     onTap: (LocalDate) -> Unit,
     onLongPress: (LocalDate) -> Unit,
     onDrag: (LocalDate, Boolean) -> Unit,
 ) {
     val rows = days.size / 7
-    BoxWithConstraints(Modifier.fillMaxWidth().height((TAG_INSET + rows * CELL).dp)) {
+    // Taller days with title bars, as in the app's calendar, so two fit under the number.
+    val cell = if (style == CellStyle.BARS) 60f else CELL
+    BoxWithConstraints(Modifier.fillMaxWidth().height((TAG_INSET + rows * cell).dp)) {
         val widthDp = maxWidth.value
         val palette = Palettes.current
-        val bitmap = remember(month, marks, holidays, work, widthDp, palette, today) {
-            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, work, null, emptyList()), widthDp, CELL, rows).asImageBitmap()
+        val bitmap = remember(month, marks, holidays, work, style, widthDp, palette, today) {
+            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, work, null, emptyList(), style), widthDp, cell, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val chosen by rememberUpdatedState(selection)
@@ -271,7 +303,7 @@ private fun Grid(
         val drag by rememberUpdatedState(onDrag)
         val density = LocalDensity.current
         val cellW = with(density) { maxWidth.toPx() } / 7f
-        val cellH = with(density) { CELL.dp.toPx() }
+        val cellH = with(density) { cell.dp.toPx() }
         val top = with(density) { TAG_INSET.dp.toPx() }
         fun dayAt(o: Offset): LocalDate? {
             val col = (o.x / cellW).toInt()
@@ -477,4 +509,58 @@ private fun TextBox(value: String, hint: String, onChange: (String) -> Unit) {
             }
         },
     )
+}
+
+/** One line of a day's list on this page: when, what, and the colour of its bar in the cells. */
+private data class DayLine(val time: String, val title: String, val kind: Kind) {
+    enum class Kind { EVENT, TASK, LATE, ROUTINE }
+}
+
+private fun dayName(d: LocalDate) = MonthGrid.heads[(d.dayOfWeek.ordinal + 1) % 7] + " " + MonthGrid.dayMonth(d)
+
+/** The day tapped: everything on it, so the owner sees what the day holds before framing it. */
+@Composable
+private fun DayCard(day: LocalDate, lines: List<DayLine>, short: Boolean) {
+    Card {
+        Column(Modifier.padding(14.dp)) { DayLines(day, lines, short) }
+    }
+}
+
+/**
+ * A day's heading and its lines, in time order. [short] (several days chosen) shows the first two besides the daily
+ * routine and counts the rest.
+ */
+@Composable
+private fun DayLines(day: LocalDate, lines: List<DayLine>, short: Boolean) {
+    val counted = lines.filter { it.kind != DayLine.Kind.ROUTINE }
+    val shown = if (short) counted.take(2) else lines
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(dayName(day), Modifier.weight(1f), color = if (short) C.accentText else C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+            if (!short) Text(if (counted.isEmpty()) tr("ว่าง", "Free") else tr("${counted.size} รายการ", "${counted.size} items"), color = C.muted, fontSize = TS.caption)
+        }
+        if (shown.isEmpty()) Text(tr("ว่าง", "Nothing planned"), color = C.faint, fontSize = TS.caption)
+        shown.forEach { line ->
+            val routine = line.kind == DayLine.Kind.ROUTINE
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(line.time, Modifier.width(48.dp), color = C.muted, fontSize = TS.caption, maxLines = 1)
+                Box(
+                    Modifier.width(4.dp).height(18.dp).clip(RoundedCornerShape(2.dp)).background(
+                        when (line.kind) {
+                            DayLine.Kind.EVENT -> C.accent
+                            DayLine.Kind.TASK -> C.lime
+                            DayLine.Kind.LATE -> C.red
+                            DayLine.Kind.ROUTINE -> C.faint
+                        },
+                    ),
+                )
+                Text(
+                    line.title + if (routine) tr(" (ทุกวัน)", " (daily)") else "",
+                    Modifier.weight(1f).padding(start = 8.dp),
+                    color = if (routine) C.faint else C.text, fontSize = TS.body, maxLines = 2,
+                )
+            }
+        }
+        if (short && counted.size > shown.size) Text(tr("อีก ${counted.size - shown.size} รายการ", "${counted.size - shown.size} more"), color = C.muted, fontSize = TS.caption)
+    }
 }

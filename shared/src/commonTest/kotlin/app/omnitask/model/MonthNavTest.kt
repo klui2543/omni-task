@@ -34,6 +34,8 @@ class MonthNavTest {
         val away = MonthNav().tapDay(d(28), today, t0).shift(2, t0 + 500)
         val viaToday = away.tapDay(today, today, t0 + 1000)
         assertNull(viaToday.listed(today))
+        // Still picked, so the widget boxes today as it does any day tapped.
+        assertEquals(today, viaToday.picked)
         assertEquals(0, viaToday.offset)
         val viaTitle = away.home(t0 + 1000)
         assertEquals(MonthNav(touchedAt = t0 + 1000), viaTitle)

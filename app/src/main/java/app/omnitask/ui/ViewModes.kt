@@ -325,7 +325,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     }
     // How days show their work, set on the frames and emoji page; read again when that page closes.
     val style = remember(state.month) { MonthMarksStore.cellStyle(context) }
-    val work = MonthData.work(days, first, ::tasksOn, ::eventsOn)
+    val work = MonthData.work(days, first, ::tasksOn, ::eventsOn, state.today)
 
     LazyColumn(
         Modifier.fillMaxSize(),

@@ -63,6 +63,7 @@ import app.omnitask.model.quadrant
 import app.omnitask.model.tr
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
+import app.omnitask.widget.CalendarPrint
 import app.omnitask.widget.OmniWidgets
 import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -402,7 +403,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned) }
-            runCatching { OmniWidgets.refresh(app) }
+            // A sync that changed nothing leaves the widgets as they are.
+            runCatching { withContext<Unit>(Dispatchers.IO) { CalendarPrint.refreshIfChanged(app, "app saw the calendar") } }
         }
     }
 
