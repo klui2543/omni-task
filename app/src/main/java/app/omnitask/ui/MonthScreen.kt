@@ -6,8 +6,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +52,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -196,7 +201,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                             if (selection.isEmpty()) editing = null
                         },
                         onLongPress = { d -> selection = setOf(d); lastDay = d; editing = null },
-                        // A drag across days always chooses several, starting afresh when it begins in one-day mode.
+                        // A long press carried across days chooses several, starting afresh from one-day mode.
                         onDragStart = { if (!multi) { multi = true; selection = emptySet(); editing = null } },
                         onDrag = { d, add -> selection = if (add) selection + d else selection - d; if (add) lastDay = d },
                     )
@@ -360,7 +365,7 @@ private fun Grid(
         val dragBegins by rememberUpdatedState(onDragStart)
         val tap by rememberUpdatedState(onTap)
         val press by rememberUpdatedState(onLongPress)
-        val drag by rememberUpdatedState(onDrag)
+        val mark by rememberUpdatedState(onDrag)
         val density = LocalDensity.current
         val cellW = with(density) { maxWidth.toPx() } / 7f
         val cellH = with(density) { cell.dp.toPx() }
@@ -373,22 +378,45 @@ private fun Grid(
         }
         Column(
             Modifier.fillMaxSize().padding(top = TAG_INSET.dp)
-                .pointerInput(days, cellW) { detectTapGestures(onTap = { o -> dayAt(o)?.let(tap) }, onLongPress = { o -> dayAt(o)?.let(press) }) }
+                // While choosing several, a long press puts the choice back to that one day.
+                .pointerInput(days, cellW, multi) {
+                    if (multi) detectTapGestures(onTap = { o -> dayAt(o)?.let(tap) }, onLongPress = { o -> dayAt(o)?.let(press) })
+                    else detectTapGestures(onTap = { o -> dayAt(o)?.let(tap) })
+                }
                 .pointerInput(days, cellW) {
-                    var adding = true
-                    var last: LocalDate? = null
-                    detectDragGestures(
-                        onDragStart = { o ->
-                            dayAt(o)?.let { d ->
-                                // In one-day mode a drag starts a new choice; with several on, it adds or drops as before.
-                                adding = !several || d !in chosen
-                                last = d
-                                dragBegins(d)
-                                drag(d, adding)
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val first = dayAt(down.position) ?: return@awaitEachGesture
+                        // Taken as the gesture begins: a long press carried across days turns several on part way.
+                        val severalAtStart = several
+                        val start = (
+                            if (severalAtStart) {
+                                // Choosing several: a drag adds or drops days as soon as the finger moves.
+                                awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                            } else {
+                                // One day at a time: a drag scrolls the page, so a finger that slips while scrolling or
+                                // tapping does not turn several on. A long press picks the day; carried on across other
+                                // days, it chooses several from there.
+                                awaitLongPressOrCancellation(down.id)?.also { press(first) }
                             }
-                        },
-                        onDrag = { change, _ -> dayAt(change.position)?.takeIf { it != last }?.let { d -> last = d; drag(d, adding) } },
-                    )
+                        ) ?: return@awaitEachGesture
+                        val adding = !severalAtStart || first !in chosen
+                        var last = first
+                        var begun = severalAtStart
+                        fun over(change: PointerInputChange) {
+                            val d = dayAt(change.position) ?: return
+                            if (d == last) return
+                            if (!begun) { begun = true; dragBegins(first); mark(first, true) }
+                            last = d
+                            mark(d, adding)
+                        }
+                        if (severalAtStart) mark(first, adding)
+                        start.consume()
+                        over(start)
+                        drag(start.id) { it.consume(); over(it) }
+                        // Lifting the finger after a long press is not a tap as well.
+                        currentEvent.changes.forEach { it.consume() }
+                    }
                 },
         ) {
             for (w in 0 until rows) {

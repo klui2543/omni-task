@@ -1,0 +1,265 @@
+<title>Emoji frame rules</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: page chrome follows the viewer's theme; the phone panels show the app as it draws in graphite dark. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --rule: #d9dde4; --pick: #3d4f6e; --pickSoft: #e3e8f0;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  /* the app, graphite dark (Theme.kt) */
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --raised: #1e1e22; --line: #212125; --grid: #2e2e35; --control: #34343a;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83; --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118;
+  --red: #d9726c; --amber: #c4a56a; --green: #7fae93; --blue: #8aa6d6; --violet: #a893c9; --lime: #7fae93;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --pickSoft: #1d2330; color-scheme: dark }
+}
+:root[data-theme="dark"] { --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --pickSoft: #1d2330; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px }
+.wrap { max-width: 1260px; margin: 0 auto; display: grid; gap: 28px }
+header h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+header p { margin: 0; color: var(--ink2); max-width: 70ch; font-size: 14px }
+.cols { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start }
+.col { flex: 1 1 360px; max-width: 400px; min-width: 0; display: grid; gap: 10px }
+.col h2 { font-size: 15px; font-weight: 600; margin: 0 }
+.col .what { font-size: 13px; color: var(--ink2); margin: 0 }
+.badge { display: inline-block; font-size: 11px; letter-spacing: .04em; font-weight: 600; color: var(--pick); background: var(--pickSoft); border-radius: 6px; padding: 1px 8px; margin-right: 6px; vertical-align: 1px }
+
+/* phone */
+.phone { background: var(--bg); border-radius: 26px; padding: 14px 12px 16px; border: 1px solid #1d1d22; color: var(--text); font-size: 13px }
+.home { background: linear-gradient(160deg, #1d2a33, #2b2233 60%, #1a1f2a); border-radius: 26px; padding: 22px 12px }
+.w { background: #141416f2; border-radius: 24px; padding: 12px 12px 8px; color: var(--text) }
+.hd { display: flex; align-items: center; gap: 2px; padding: 0 2px 8px }
+.hd b { font-size: 17px; font-weight: 500; flex: 1 }
+.ib { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px }
+.plus { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--onAccent); display: flex; align-items: center; justify-content: center; font-weight: 600; margin-left: 4px }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 10.5px; color: var(--faint); text-align: center; padding-bottom: 4px }
+.dow span:first-child { color: var(--red) }
+.mon { position: relative; margin-top: 8px; display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--grid); border-left: 1px solid var(--grid) }
+.c { position: relative; height: 46px; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); text-align: center; padding-top: 4px }
+.n { position: relative; z-index: 2; display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums }
+.sun .n, .hol .n { color: var(--red) }
+.out .n { opacity: .3 }
+.today .n { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.pickd { position: absolute; inset: 1px; border: 1.5px solid var(--accent); background: #9db4d326; z-index: 1 }
+.st { position: absolute; right: 3px; bottom: 2px; font-size: 10.5px; line-height: 13px; z-index: 3; letter-spacing: -1px; white-space: nowrap }
+.fr { position: absolute; inset: 0; z-index: 1; border: 0 solid var(--fc) }
+.fr::before { content: ""; position: absolute; inset: 0; background: var(--fc); opacity: .11 }
+.tag { position: absolute; left: 1px; top: -7px; z-index: 4; font-size: 9px; line-height: 13px; font-weight: 600; padding: 0 5px; border-radius: 4px; color: #0e0e10; white-space: nowrap }
+.tag i { font-style: normal; margin-right: 2px }
+.ag { padding: 10px 2px 2px }
+.day { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--accentText); font-weight: 600; padding: 0 2px 4px }
+.chip { font-size: 10.5px; border-radius: 9px; padding: 0 7px; line-height: 17px; font-weight: 400 }
+.it { display: flex; align-items: center; gap: 10px; padding: 5px 2px; font-size: 13.5px }
+.it .g { flex: 1; min-width: 0 }
+.it small { color: var(--muted); font-size: 11.5px }
+.bar { width: 3px; height: 16px; border-radius: 2px; background: #7d8794 }
+.ring { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--faint) }
+
+/* app page pieces */
+.top { display: flex; align-items: center; gap: 10px; padding: 0 4px 10px }
+.top .t { flex: 1; text-align: center; font-size: 16px; font-weight: 600 }
+.top .x { color: var(--accentText); font-size: 13px }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: grid; gap: 10px }
+.card + .card { margin-top: 10px }
+.card h3 { margin: 0; font-size: 15px; font-weight: 600 }
+.sub { font-size: 12px; color: var(--muted); margin-top: -6px }
+.rule { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line) }
+.rule:first-of-type { border-top: 0 }
+.em { width: 36px; height: 36px; border-radius: 10px; background: var(--raised); display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none }
+.box { width: 18px; height: 14px; border-radius: 3px; border: 2px solid; flex: none }
+.rule .g { flex: 1; min-width: 0 }
+.rule .g small { display: block; color: var(--muted); font-size: 11.5px }
+.rule .chev { color: var(--faint) }
+.addrow { display: flex; align-items: center; gap: 8px; color: var(--accentText); font-size: 13px; padding-top: 2px }
+.addrow span { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed var(--accentText); display: flex; align-items: center; justify-content: center; font-size: 13px }
+.tg { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px }
+.tg .g { flex: 1; min-width: 0; font-size: 13px }
+.tg .g small { display: block; color: var(--muted); font-size: 11.5px }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: var(--control); position: relative; flex: none }
+.sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--text2) }
+.sw.on { background: var(--accent) }
+.sw.on::after { left: 19px; background: var(--onAccent) }
+.lbl { font-size: 11.5px; color: var(--muted) }
+.sws { display: flex; gap: 12px; align-items: center; flex-wrap: wrap }
+.dot { width: 28px; height: 28px; border-radius: 50%; flex: none }
+.dot.on { outline: 2px solid var(--text); outline-offset: 3px }
+.dot.none { border: 1.5px dashed var(--faint); display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 12px }
+.inp { background: var(--raised); border-radius: 10px; padding: 9px 12px; font-size: 13px }
+.inp span { color: var(--faint) }
+.btns { display: flex; gap: 10px }
+.btn { flex: 1; text-align: center; border-radius: 20px; padding: 8px; font-size: 13px; font-weight: 600 }
+.btn.p { background: var(--accent); color: var(--onAccent) }
+.btn.s { border: 1px solid var(--control); color: var(--text2) }
+.picker { display: flex; flex-wrap: wrap; gap: 4px }
+.picker b { position: relative; width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 400 }
+.picker b.chosen { background: var(--raised); box-shadow: inset 0 0 0 1.5px var(--accent) }
+.picker b i { position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--card) }
+.tabs { display: flex; gap: 6px; overflow-x: auto }
+.tabs span { font-size: 12px; border-radius: 14px; padding: 3px 10px; border: 1px solid var(--control); color: var(--text2); white-space: nowrap }
+.tabs span.on { background: var(--accent); color: var(--onAccent); border-color: var(--accent) }
+.onday { display: flex; gap: 6px }
+.onday .em { width: 42px; height: 42px; font-size: 22px; position: relative }
+.onday .em i { position: absolute; inset: 0; border-radius: 10px; border: 2px solid }
+.ruleline { background: var(--raised); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px }
+.ruleline p { margin: 0; font-size: 12.5px }
+
+/* notes */
+.notes { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) }
+.notes section { border-top: 2px solid var(--rule); padding-top: 10px; min-width: 0 }
+.notes h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600 }
+.notes ul, .notes ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--ink2); display: grid; gap: 4px }
+.notes b { color: var(--ink); font-weight: 600 }
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Emoji ที่ใส่กรอบสีให้เอง</h1>
+  <p>ตั้งไว้ครั้งเดียวว่า Emoji ตัวไหนคือกรอบสีอะไร พอติด Emoji ตัวนั้นให้วันไหน วันนั้นได้กรอบสีนั้นทันที เหมือนติด Hashtag วันที่ติดกันรวมเป็นกรอบเดียว ชื่อกฎขึ้นเป็นป้ายบนขอบกรอบ เอา Emoji ออก กรอบก็หายเอง</p>
+</header>
+
+<div class="cols">
+  <div class="col">
+    <h2>ผลบน widget</h2>
+    <p class="what">🏖️ = เขียว เที่ยว, 🏥 = แดง หมอ, 📚 = ม่วง สอบ. กรอบสีฟ้า "ส่งงาน" (7 ถึง 9) คือกรอบที่วาดเองแบบเดิม ไว้เทียบ</p>
+    <div class="home"><div class="w">
+      <div class="hd"><b>ตุลาคม 2569</b><span class="ib">‹</span><span class="ib">›</span><span class="ib">⟳</span><span class="ib">✎</span><span class="plus">+</span></div>
+      <div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
+      <div class="mon" id="mon"></div>
+      <div class="ag">
+        <div class="day">ศ 23 ต.ค. 🏖️ <span class="chip" style="background:#7fae9333;color:var(--green)">เที่ยว วันที่ 1 จาก 3</span></div>
+        <div class="it"><span class="bar"></span><span class="g">วันปิยมหาราช</span><small>ทั้งวัน</small></div>
+        <div class="it"><span class="ring"></span><span class="g">จองที่พักหัวหิน</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="col">
+    <h2><span class="badge">ก</span>การ์ดของตัวเองในหน้ากรอบและ Emoji</h2>
+    <p class="what">อยู่ใต้การ์ดเลือกแบบช่องวัน แตะกฎเพื่อแก้สีหรือชื่อ กดเพิ่มเพื่อเลือก Emoji ใหม่ ตั้งครั้งเดียวใช้ทุกวัน</p>
+    <div class="phone">
+      <div class="top"><span class="x">ปิด</span><span class="t">ตุลาคม 2569</span><span class="ib">‹</span><span class="ib">›</span></div>
+      <div class="card">
+        <h3>Emoji ที่ใส่กรอบให้เอง</h3>
+        <div class="sub">ติด Emoji นี้ให้วันไหน วันนั้นได้กรอบสีนี้</div>
+        <div>
+          <div class="rule"><span class="em">🏖️</span><span class="box" style="border-color:var(--green)"></span><span class="g">เที่ยว<small>เดือนนี้ 3 วัน</small></span><span class="chev">›</span></div>
+          <div class="rule"><span class="em">🏥</span><span class="box" style="border-color:var(--red)"></span><span class="g">หมอ<small>เดือนนี้ 1 วัน</small></span><span class="chev">›</span></div>
+          <div class="rule"><span class="em">📚</span><span class="box" style="border-color:var(--violet)"></span><span class="g">สอบ<small>เดือนนี้ 3 วัน</small></span><span class="chev">›</span></div>
+        </div>
+        <div class="addrow"><span>+</span>เพิ่ม Emoji</div>
+        <div class="tg"><span class="g">นับ Emoji ในชื่องานด้วย<small>งานที่ชื่อมี 🏥 ใส่กรอบแดงให้วันครบกำหนด</small></span><span class="sw"></span></div>
+      </div>
+      <div class="card">
+        <h3>เพิ่ม Emoji</h3>
+        <div class="tabs"><span class="on">ใช้ล่าสุด</span><span>งาน</span><span>เดินทาง</span><span>อื่นๆ</span></div>
+        <div class="picker"><b class="chosen">✈️</b><b>🏖️<i style="background:var(--green)"></i></b><b>🏥<i style="background:var(--red)"></i></b><b>📚<i style="background:var(--violet)"></i></b><b>🎂</b><b>💼</b><b>🦷</b><b>🎉</b></div>
+        <div class="lbl">สีกรอบ</div>
+        <div class="sws"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--amber)"></span><span class="dot" style="background:var(--green)"></span><span class="dot on" style="background:var(--blue)"></span><span class="dot" style="background:var(--violet)"></span></div>
+        <div class="lbl">ชื่อบนป้าย (ไม่ใส่ก็ได้)</div>
+        <div class="inp">บิน</div>
+        <div class="btns"><span class="btn s">ยกเลิก</span><span class="btn p">บันทึก</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h2><span class="badge">ข</span>ตั้งตอนติด Emoji ให้วัน</h2>
+    <p class="what">ไม่มีการ์ดแยก แตะ Emoji ที่ติดอยู่บนวันเพื่อตั้งสี จุดสีมุมล่างบอกว่าตัวไหนมีกรอบแล้ว ส่วนการเอา Emoji ออกย้ายไปที่ปุ่มลบในแถวเดียวกัน</p>
+    <div class="phone">
+      <div class="top"><span class="x">ปิด</span><span class="t">ตุลาคม 2569</span><span class="ib">‹</span><span class="ib">›</span></div>
+      <div class="card">
+        <h3>Emoji ของวันที่ 23 ต.ค.</h3>
+        <div class="sub">แตะ Emoji เพื่อตั้งกรอบหรือเอาออก</div>
+        <div class="onday"><span class="em">🏖️<i style="border-color:var(--green)"></i></span><span class="em">🍜</span></div>
+        <div class="ruleline">
+          <p>ทุกวันที่ติด 🏖️ ใส่กรอบสี</p>
+          <div class="sws"><span class="dot none">ไม่</span><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--amber)"></span><span class="dot on" style="background:var(--green)"></span><span class="dot" style="background:var(--blue)"></span><span class="dot" style="background:var(--violet)"></span></div>
+          <div class="inp">เที่ยว</div>
+          <div class="btns"><span class="btn s">เอา 🏖️ ออกจากวันนี้</span></div>
+        </div>
+        <div class="tabs"><span class="on">ใช้ล่าสุด</span><span>อารมณ์</span><span>งาน</span><span>เดินทาง</span></div>
+        <div class="picker"><b>🏖️<i style="background:var(--green)"></i></b><b>🏥<i style="background:var(--red)"></i></b><b>📚<i style="background:var(--violet)"></i></b><b>🍜</b><b>🎂</b><b>💼</b><b>🦷</b><b>🎉</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <section>
+    <h3>ทำงานแบบนี้ทั้งสองทางเลือก</h3>
+    <ul>
+      <li>เปลี่ยนสีหรือชื่อในกฎ ทุกวันที่มี Emoji นั้นเปลี่ยนตามทันที</li>
+      <li>วันที่ติดกัน (ศ ส อา, หรือวันเดียวกันของสัปดาห์ถัดไป) รวมเป็นกรอบเดียว เหมือนกรอบที่วาดเอง</li>
+      <li>วันไหนมีกรอบที่วาดเองอยู่แล้ว กรอบที่วาดเองชนะ</li>
+      <li>วันเดียวมี Emoji ที่มีสีหลายตัว ใช้ตัวที่ติดก่อน</li>
+      <li>กฎเก็บใน omni-calendar.json ใน vault เหมือนกรอบเดิม มือถือเครื่องอื่นได้ด้วย</li>
+    </ul>
+  </section>
+  <section>
+    <h3>อยากให้เลือก</h3>
+    <ol>
+      <li><b>ก หรือ ข</b> (หรือทั้งสอง: ข ไว้ตั้งเร็ว, ก ไว้ดูรวม)</li>
+      <li><b>นับ Emoji ในชื่องานด้วยไหม</b> เช่นงาน "🏥 หมอฟัน 📅 22 ต.ค." แล้ววันที่ 22 ได้กรอบแดงเอง</li>
+      <li><b>ถ้าชนกับกรอบที่วาดเอง</b> ให้กรอบวาดเองชนะ (ที่เสนอ) หรือ Emoji ชนะ</li>
+    </ol>
+  </section>
+</div>
+</div>
+
+<script>
+// October 2026, from Sunday 27 September: 5 weeks.
+(function () {
+  const mon = document.getElementById('mon');
+  const start = new Date(2026, 8, 27);
+  const days = [];
+  for (let i = 0; i < 35; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d); }
+  const key = d => d.getMonth() * 100 + d.getDate();
+  const k = (m, d) => (m - 1) * 100 + d;
+  const today = k(10, 16), picked = k(10, 23);
+  const holidays = new Set([k(10, 13), k(10, 23)]);
+  const stickers = { [k(10, 23)]: '🏖️🍜', [k(10, 24)]: '🏖️', [k(10, 25)]: '🏖️', [k(10, 20)]: '🏥', [k(10, 27)]: '📚', [k(10, 28)]: '📚', [k(10, 29)]: '📚', [k(10, 8)]: '💼', [k(10, 16)]: '🎂' };
+  const frames = [
+    { days: [k(10, 7), k(10, 8), k(10, 9)], color: 'var(--blue)', label: 'ส่งงาน' },
+    { days: [k(10, 23), k(10, 24), k(10, 25)], color: 'var(--green)', label: 'เที่ยว', emoji: '🏖️' },
+    { days: [k(10, 20)], color: 'var(--red)', label: 'หมอ', emoji: '🏥' },
+    { days: [k(10, 27), k(10, 28), k(10, 29)], color: 'var(--violet)', label: 'สอบ', emoji: '📚' },
+  ];
+  const shift = (x, n) => { const d = new Date(2026, Math.floor(x / 100), x % 100); d.setDate(d.getDate() + n); return key(d); };
+  days.forEach((d, i) => {
+    const c = document.createElement('div');
+    const x = key(d);
+    c.className = 'c' + (d.getDay() === 0 ? ' sun' : '') + (holidays.has(x) ? ' hol' : '') + (d.getMonth() !== 9 ? ' out' : '') + (x === today ? ' today' : '');
+    frames.forEach(f => {
+      if (!f.days.includes(x)) return;
+      const set = new Set(f.days);
+      const fr = document.createElement('div');
+      fr.className = 'fr';
+      fr.style.setProperty('--fc', f.color);
+      const w = '1.4px';
+      if (!set.has(shift(x, -7))) fr.style.borderTopWidth = w;
+      if (!set.has(shift(x, 7))) fr.style.borderBottomWidth = w;
+      if (!set.has(shift(x, -1))) fr.style.borderLeftWidth = w;
+      if (!set.has(shift(x, 1))) fr.style.borderRightWidth = w;
+      c.appendChild(fr);
+      if (f.days[0] === x) {
+        const t = document.createElement('span');
+        t.className = 'tag';
+        t.style.background = f.color;
+        t.innerHTML = (f.emoji ? '<i>' + f.emoji + '</i>' : '') + f.label;
+        c.appendChild(t);
+      }
+    });
+    if (x === picked) { const p = document.createElement('div'); p.className = 'pickd'; c.appendChild(p); }
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = d.getDate();
+    c.appendChild(n);
+    if (stickers[x] && d.getMonth() === 9) { const s = document.createElement('span'); s.className = 'st'; s.textContent = stickers[x]; c.appendChild(s); }
+    mon.appendChild(c);
+  });
+})();
+</script>
