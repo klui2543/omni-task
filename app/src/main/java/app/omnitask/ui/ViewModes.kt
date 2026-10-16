@@ -313,15 +313,21 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     LaunchedEffect(month) { vm.loadMonth(month.firstDay()) }
     val listState = rememberLazyListState()
     // The month widget sent a day: show its month with it chosen, and bring that day's list up, which sits below the
-    // fold under the month.
+    // fold under the month. The scroll runs on its own key: clearing the request restarts the effect keyed by it, which
+    // would cancel a scroll started there.
+    var reveal by remember { mutableIntStateOf(0) }
     LaunchedEffect(state.calendarDay) {
         state.calendarDay?.let { d ->
             selected = d.toString()
             shown = d.yearMonth.toString()
+            reveal++
             vm.requestCalendar(null)
-            withFrameNanos { }
-            listState.animateScrollToItem(DAY_LIST_ITEM)
         }
+    }
+    LaunchedEffect(reveal) {
+        if (reveal == 0) return@LaunchedEffect
+        withFrameNanos { }
+        listState.animateScrollToItem(DAY_LIST_ITEM)
     }
     // Where each row of the day's list ends on screen, so the page can say how many are still under the nav.
     val rowBottoms = remember { mutableStateMapOf<Int, Float>() }
