@@ -855,7 +855,7 @@ internal class MonthPainter(
         val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(10f); textAlign = Paint.Align.RIGHT }
         val more = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(8.5f); textAlign = Paint.Align.RIGHT; color = p.muted.toArgb() }
         val moreRight = Paint(more).apply { textSize = sp(9f) }
-        val emojiLeft = Paint(emoji).apply { textAlign = Paint.Align.LEFT }
+        val patchBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.card.toArgb(); alpha = 226 }
         val small = cellDp < 34f
         days.forEachIndexed { i, d ->
             val r = rect(i)
@@ -899,14 +899,21 @@ internal class MonthPainter(
                     y += step
                 }
                 if (items.size > shown) c.drawText("+${items.size - shown}", r.right - dp(3f), r.top + dp(11f), moreRight)
-                // Emoji go up by the number, on the other side from "+n", out of the bars' way.
-                if (stickers.isNotEmpty() && !small) c.drawText(stickers.first(), r.left + dp(2f), r.top + dp(12f), emojiLeft)
-            } else if (stickers.isNotEmpty() && !small) {
+            }
+            // Up to three emoji in the lower right corner, with "+n" for the rest. Over title bars they sit on a soft
+            // patch, so they read over a bar's end.
+            if (stickers.isNotEmpty() && !small) {
                 val extra = stickers.size - 3
-                var x = r.right - dp(3f)
+                val text = stickers.take(3).joinToString("")
                 val y = r.bottom - dp(4f)
+                val width = emoji.measureText(text) + if (extra > 0) more.measureText("+$extra") + dp(1f) else 0f
+                if (bars) {
+                    val patch = RectF(r.right - dp(3f) - width - dp(2f), y + emoji.ascent() - dp(1f), r.right - dp(1f), y + emoji.descent() + dp(1f))
+                    c.drawRoundRect(patch, dp(4f), dp(4f), patchBg)
+                }
+                var x = r.right - dp(3f)
                 if (extra > 0) { c.drawText("+$extra", x, y, more); x -= more.measureText("+$extra") + dp(1f) }
-                c.drawText(stickers.take(3).joinToString(""), x, y, emoji)
+                c.drawText(text, x, y, emoji)
             }
         }
         return bmp
