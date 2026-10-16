@@ -32,11 +32,11 @@ import app.omnitask.time.now
  * a moment, and the taps of those seconds then arrived together: the phone freezes an app in the background and holds
  * what is sent to it. It did so with the app unrestricted, and it stopped the job meant to keep the app awake five
  * seconds after it began (reason 11). A tap on a widget may start a foreground service, which the phone starts at
- * once and does not freeze while it runs. It stays [LINGER_MS] after the last tap, so the drawing and saving finish,
- * then ends; the next tap starts it again.
+ * once and does not freeze while it runs. It stays [LINGER_MS] after the last tap, so the app is not frozen between
+ * taps while the widget is in use (the owner asked for a minute), then ends; the next tap starts it again.
  *
- * Android shows a foreground service's notification only once it has run for ten seconds, so a few quick taps show
- * none. A longer stretch of taps, or taps again soon after, shows a silent one in the shade until the service ends.
+ * Android shows a foreground service's notification once it has run for ten seconds, so a silent one shows in the
+ * shade while the widget is in use and goes when the service ends.
  */
 class MonthTapService : Service() {
     private val main = Handler(Looper.getMainLooper())
@@ -144,7 +144,7 @@ class MonthTapService : Service() {
 
     companion object {
         /** How long the service stays after the last tap. */
-        private const val LINGER_MS = 3_000L
+        private const val LINGER_MS = 60_000L
         private const val CHANNEL = "month-widget"
         private const val NOTE_ID = 4203
 
