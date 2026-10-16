@@ -273,8 +273,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         if (restricted) {
                             Text(
                                 tr(
-                                    "แอปถูกจำกัดการทำงานเบื้องหลัง widget จะค้างเป็นช่วงแล้วกระโดด\nแตะเพื่อเปิดตั้งค่าแอป เลือก แบตเตอรี่ แล้วเลือก ไม่จำกัด (Samsung: เอาออกจากแอปที่หลับด้วย)",
-                                    "The phone restricts this app in the background, so the widget freezes and then jumps.\nTap to open the app's settings, choose Battery, then Unrestricted (Samsung: also remove it from the sleeping apps).",
+                                    "แอปถูกจำกัดการทำงานเบื้องหลัง widget จะค้างเป็นช่วงแล้วกระโดด\nแตะเพื่อเปิดตั้งค่าแอป เลือก แบตเตอรี่ แล้วเลือก ไม่จำกัด (OPPO: เปิด อนุญาตกิจกรรมเบื้องหลัง ด้วย)",
+                                    "The phone restricts this app in the background, so the widget freezes and then jumps.\nTap to open the app's settings, choose Battery, then Unrestricted (OPPO: also turn on Allow background activity).",
                                 ),
                                 Modifier.clip(RoundedCornerShape(8.dp)).background(C.amberSoft).clickable {
                                     runCatching { context.startActivity(AppRestriction.settingsIntent(context)) }

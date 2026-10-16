@@ -256,7 +256,7 @@ internal object MonthLive {
         set(widgetId, nav)
         val app = context.applicationContext
         val session = GlanceSessions.session(widgetId)
-        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null} front=${MonthTapService.front}")
+        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null}")
         Stalls.watch(app)
         val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views) }
         if (session != null) scope.launch { runCatching { GlanceSessions.updateGlance(session) }.onFailure { WidgetLog.add("event failed $it") } }
@@ -355,13 +355,15 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 /**
- * A tap on the widget, taken by [MonthTapService], which a tap may start in the foreground: the phone starts it at
- * once, where a broadcast to the app waited seconds whenever the phone had frozen the app (see the service). A day
- * lists that day's work (see [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back
- * to this month and today.
+ * A tap on the widget, taken by [MonthTapActivity]: the phone starts an activity at once, where a broadcast or a
+ * service start to the app waited seconds whenever the phone had frozen the app (see the activity). A day lists that
+ * day's work (see [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back to this
+ * month and today.
  */
-private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartService(
-    Intent(context, MonthTapService::class.java)
+private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartActivity(
+    Intent(context, MonthTapActivity::class.java)
+        // A task of its own, so the app's task is not brought up, and no animation for an activity never seen.
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
         .apply {
             if (day != null) putExtra(MonthTapService.EXTRA_TAP_DAY, day.toString())
@@ -369,7 +371,6 @@ private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: 
         }
         // A distinct address per cell keeps each one's PendingIntent its own.
         .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/${day ?: "shift$delta"}")),
-    isForegroundService = true,
 )
 
 /** The refresh button: pulls Google Calendar and reads the vault and the calendar again for every widget. */

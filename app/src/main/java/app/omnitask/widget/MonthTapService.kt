@@ -26,17 +26,12 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.time.now
 
 /**
- * Takes the month widget's taps, as a short foreground service.
+ * The month widget's reload button, as a short foreground service: pulling Google Calendar and reading the vault again
+ * can take seconds, and a foreground service is not frozen while it runs. Day and month taps go through
+ * [MonthTapActivity] instead (see there for why); one sent here is still taken.
  *
- * On the owner's Samsung phone a tap sent as a broadcast waited about five seconds whenever the app had sat still for
- * a moment, and the taps of those seconds then arrived together: the phone freezes an app in the background and holds
- * what is sent to it. It did so with the app unrestricted, and it stopped the job meant to keep the app awake five
- * seconds after it began (reason 11). A tap on a widget may start a foreground service, which the phone starts at
- * once and does not freeze while it runs. It stays [LINGER_MS] after the last tap, so the app is not frozen between
- * taps while the widget is in use (the owner asked for a minute), then ends; the next tap starts it again.
- *
- * Android shows a foreground service's notification once it has run for ten seconds, so a silent one shows in the
- * shade while the widget is in use and goes when the service ends.
+ * The service stays [LINGER_MS] after the last start, then ends. Android shows a foreground service's notification
+ * once it has run for ten seconds, so a silent one shows in the shade while it runs.
  */
 class MonthTapService : Service() {
     private val main = Handler(Looper.getMainLooper())
@@ -61,10 +56,7 @@ class MonthTapService : Service() {
     }
 
     private fun take(intent: Intent) {
-        val widgetId = intent.getIntExtra(EXTRA_WIDGET, -1)
-        val day = intent.getStringExtra(EXTRA_TAP_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        val delta = if (intent.hasExtra(EXTRA_DELTA)) intent.getIntExtra(EXTRA_DELTA, 0) else null
-        WidgetLog.add("tap received widget=$widgetId day=$day delta=$delta")
+        WidgetLog.add("service started widget=${intent.getIntExtra(EXTRA_WIDGET, -1)} reload=${intent.getBooleanExtra(EXTRA_RELOAD, false)}")
         val app = applicationContext
         if (intent.getBooleanExtra(EXTRA_RELOAD, false)) {
             busy++
@@ -81,20 +73,10 @@ class MonthTapService : Service() {
             }
             return
         }
-        MonthLive.scope.launch {
-            try {
-                val id = GlanceAppWidgetManager(app).getGlanceIdBy(widgetId)
-                when {
-                    day != null -> MonthWidget.act(app, id) { nav, now -> nav.tapDay(day, LocalDate.now(), now) }
-                    delta != null -> MonthWidget.act(app, id) { nav, now -> if (delta == 0) nav.home(now) else nav.shift(delta, now) }
-                }
-            } catch (e: Exception) {
-                WidgetLog.add("tap failed $e")
-            }
-        }
+        tapNow(app, intent)
     }
 
-    /** Ends the service [LINGER_MS] from now, unless another tap comes first. */
+    /** Ends the service [LINGER_MS] from now, unless it is started again first. */
     private fun later() {
         main.removeCallbacks(stop)
         main.postDelayed(stop, LINGER_MS)
@@ -110,7 +92,7 @@ class MonthTapService : Service() {
             )
             val note = NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notify)
-                .setContentTitle(tr("กำลังเปิดวันที่แตะบนปฏิทิน", "Showing the day tapped on the calendar"))
+                .setContentTitle(tr("กำลังโหลดปฏิทินใหม่", "Reloading the calendar"))
                 .setSilent(true)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_MIN)
@@ -143,8 +125,26 @@ class MonthTapService : Service() {
     }
 
     companion object {
-        /** How long the service stays after the last tap. */
-        private const val LINGER_MS = 60_000L
+        /** Shows a day or month tap from [intent] on the widget; a tap's own work runs off the main thread. */
+        internal fun tapNow(app: android.content.Context, intent: Intent) {
+            val widgetId = intent.getIntExtra(EXTRA_WIDGET, -1)
+            val day = intent.getStringExtra(EXTRA_TAP_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            val delta = if (intent.hasExtra(EXTRA_DELTA)) intent.getIntExtra(EXTRA_DELTA, 0) else null
+            MonthLive.scope.launch {
+                try {
+                    val id = GlanceAppWidgetManager(app).getGlanceIdBy(widgetId)
+                    when {
+                        day != null -> MonthWidget.act(app, id) { nav, now -> nav.tapDay(day, LocalDate.now(), now) }
+                        delta != null -> MonthWidget.act(app, id) { nav, now -> if (delta == 0) nav.home(now) else nav.shift(delta, now) }
+                    }
+                } catch (e: Exception) {
+                    WidgetLog.add("tap failed $e")
+                }
+            }
+        }
+
+        /** How long the service stays after the last start; a reload's own work keeps it longer. */
+        private const val LINGER_MS = 3_000L
         private const val CHANNEL = "month-widget"
         private const val NOTE_ID = 4203
 
