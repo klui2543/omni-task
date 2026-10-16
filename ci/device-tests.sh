@@ -4,8 +4,14 @@
 set -uo pipefail
 
 adb logcat -c || true
-gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace
+# The app stays installed after the run, so the widget pictures can be copied out of it below.
+gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true
 status=$?
+
+# Pictures of the month widget drawn by WidgetShotsTest, kept as a build artifact to look at.
+mkdir -p app/build/widget-shots
+adb exec-out run-as app.omnitask tar -c -C files widget-shots 2>/dev/null | tar -x -C app/build/ 2>/dev/null || true
+ls app/build/widget-shots || true
 
 if [ "$status" -ne 0 ]; then
   mkdir -p app/build/device

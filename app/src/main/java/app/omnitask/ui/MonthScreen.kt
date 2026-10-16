@@ -57,10 +57,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.data.MonthMarksStore
+import app.omnitask.model.CellStyle
 import app.omnitask.model.FrameColor
 import app.omnitask.model.MonthGrid
 import app.omnitask.model.MonthMarks
 import app.omnitask.model.tr
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import app.omnitask.widget.AppRestriction
 import app.omnitask.widget.MonthData
 import app.omnitask.widget.MonthPainter
 import app.omnitask.widget.OmniWidgets
@@ -93,7 +96,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     var label by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<MonthMarks.Frame?>(null) }
     var holidays by remember { mutableStateOf(emptyMap<LocalDate, String>()) }
-    var eventDays by remember { mutableStateOf(emptySet<LocalDate>()) }
+    var events by remember { mutableStateOf(emptyList<app.omnitask.notify.CalendarEvent>()) }
+    var style by remember { mutableStateOf(MonthMarksStore.cellStyle(context)) }
 
     LaunchedEffect(request) {
         month = request.day.withDayOfMonth(1)
@@ -105,9 +109,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
         withContext(Dispatchers.IO) {
             holidays = runCatching { CalendarReader.holidays(context, days.first(), days.last()) }.getOrDefault(emptyMap())
             val holidayIds = runCatching { CalendarReader.calendars(context).filter { it.holiday }.map { it.id }.toSet() }.getOrDefault(emptySet())
-            val events = runCatching { CalendarReader.events(context, days.first().atStartOfDay(), days.last().plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+            events = runCatching { CalendarReader.events(context, days.first().atStartOfDay(), days.last().plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
                 .filter { it.calendarId !in holidayIds }
-            eventDays = days.filter { d -> events.any { MonthData.onDay(it, d) } }.toSet()
         }
     }
 
@@ -122,8 +125,8 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
 
     val current = marks
     val days = MonthGrid.days(month)
-    val busy = remember(state.tasks, eventDays, month) {
-        days.filter { d -> d in eventDays || state.tasks.any { it.isOpen && (it.due ?: it.scheduled) == d } }.toSet()
+    val work = remember(state.tasks, events, month) {
+        MonthData.work(days, month, { d -> state.tasks.filter { (it.due ?: it.scheduled) == d } }, { d -> events.filter { MonthData.onDay(it, d) } })
     }
 
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
@@ -143,7 +146,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         }
                     }
                     Grid(
-                        context, month, days, state.today, current, holidays, busy, selection,
+                        context, month, days, state.today, current, holidays, work, selection,
                         onTap = { d ->
                             selection = if (d in selection) selection - d else selection + d
                             if (selection.isEmpty()) editing = null
@@ -163,6 +166,58 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     onPick = { f -> selection = f.days.toSet(); color = f.color; label = f.label; editing = f },
                     onDelete = { f -> commit(current.without(f)) },
                 )
+                Card {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(tr("งานในช่องวัน (widget และปฏิทินในแอป)", "Work in the day cells (widget and the app's calendar)"), color = C.text, fontSize = TS.body)
+                        Segmented(
+                            listOf(CellStyle.TINT to tr("สีตามความแน่น", "Shade by load"), CellStyle.BARS to tr("ชื่องาน", "Titles")),
+                            style,
+                            { next ->
+                                style = next
+                                scope.launch(Dispatchers.IO) {
+                                    MonthMarksStore.setCellStyle(context, next)
+                                    runCatching { OmniWidgets.refresh(context) }
+                                }
+                            },
+                            Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            tr("นัดที่มีเกือบทุกวัน เช่น ออกกำลังกาย ไม่นับในช่อง แต่ยังอยู่ในรายการของวัน", "An event on nearly every day, such as a workout, is left out of the cells but stays in the day's list."),
+                            color = C.muted, fontSize = TS.caption,
+                        )
+                        // A restricted app has its taps on the widget held back by the phone for seconds. Checked again
+                        // each time the page comes back, as from the settings page the row opens.
+                        var restricted by remember { mutableStateOf(AppRestriction.restricted(context)) }
+                        LifecycleResumeEffect(Unit) {
+                            restricted = AppRestriction.restricted(context)
+                            onPauseOrDispose { }
+                        }
+                        if (restricted) {
+                            Text(
+                                tr(
+                                    "แอปถูกจำกัดการทำงานเบื้องหลัง widget จะค้างเป็นช่วงแล้วกระโดด\nแตะเพื่อเปิดตั้งค่าแอป เลือก แบตเตอรี่ แล้วเลือก ไม่จำกัด (Samsung: เอาออกจากแอปที่หลับด้วย)",
+                                    "The phone restricts this app in the background, so the widget freezes and then jumps.\nTap to open the app's settings, choose Battery, then Unrestricted (Samsung: also remove it from the sleeping apps).",
+                                ),
+                                Modifier.clip(RoundedCornerShape(8.dp)).background(C.amberSoft).clickable {
+                                    runCatching { context.startActivity(AppRestriction.settingsIntent(context)) }
+                                }.padding(10.dp).fillMaxWidth(),
+                                color = C.text, fontSize = TS.caption,
+                            )
+                        }
+                        // For finding out why a tap on the widget was slow: what it did and when, to send along.
+                        Text(
+                            tr("แชร์บันทึกการทำงานของ widget", "Share the widget's log"),
+                            Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                                val text = app.omnitask.widget.WidgetLog.all(context).lines().takeLast(400).joinToString("\n")
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(android.content.Intent.EXTRA_SUBJECT, "Omni widget log")
+                                    .putExtra(android.content.Intent.EXTRA_TEXT, text.ifEmpty { "(empty)" })
+                                runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }
+                            }.padding(vertical = 4.dp),
+                            color = C.accentText, fontSize = TS.caption,
+                        )
+                    }
+                }
             } else {
                 FrameEditor(
                     selection, color, label, editing != null,
@@ -196,7 +251,7 @@ private fun Grid(
     today: LocalDate,
     marks: MonthMarks,
     holidays: Map<LocalDate, String>,
-    busy: Set<LocalDate>,
+    work: Map<LocalDate, List<MonthData.Mark>>,
     selection: Set<LocalDate>,
     onTap: (LocalDate) -> Unit,
     onLongPress: (LocalDate) -> Unit,
@@ -206,8 +261,8 @@ private fun Grid(
     BoxWithConstraints(Modifier.fillMaxWidth().height((TAG_INSET + rows * CELL).dp)) {
         val widthDp = maxWidth.value
         val palette = Palettes.current
-        val bitmap = remember(month, marks, holidays, busy, widthDp, palette, today) {
-            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, busy, null, emptyList()), widthDp, CELL, rows).asImageBitmap()
+        val bitmap = remember(month, marks, holidays, work, widthDp, palette, today) {
+            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, work, null, emptyList()), widthDp, CELL, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val chosen by rememberUpdatedState(selection)

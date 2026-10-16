@@ -323,7 +323,9 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     LaunchedEffect(month) {
         holidays = withContext(Dispatchers.IO) { runCatching { CalendarReader.holidays(context, days.first(), days.last()) }.getOrDefault(emptyMap()) }
     }
-    val busy = days.filter { d -> tasksOn(d).any { it.isOpen } || eventsOn(d).isNotEmpty() }.toSet()
+    // How days show their work, set on the frames and emoji page; read again when that page closes.
+    val style = remember(state.month) { MonthMarksStore.cellStyle(context) }
+    val work = MonthData.work(days, first, ::tasksOn, ::eventsOn)
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -349,7 +351,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                 }
                 Box(Modifier.padding(horizontal = 8.dp)) {
                     MonthPicture(
-                        MonthData(state.today, first, 0, marks, holidays, busy, sel, emptyList()),
+                        MonthData(state.today, first, 0, marks, holidays, work, sel, emptyList(), style),
                         onTap = { d -> selected = d.toString(); if (d.yearMonth != month) shown = d.yearMonth.toString() },
                     )
                 }
@@ -406,20 +408,20 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
 }
 
 /**
- * The month as the widget draws it (frames, emoji, holidays, the ring on the chosen day), one picture with a tap
- * layer over it.
+ * The month as the widget draws it (frames, emoji, holidays, each day's work, the box round the chosen day), one
+ * picture with a tap layer over it.
  */
 @Composable
 private fun MonthPicture(data: MonthData, onTap: (LocalDate) -> Unit) {
     val context = LocalContext.current
     val days = MonthGrid.days(data.month)
     val rows = days.size / 7
-    val cell = 46f
+    val cell = if (data.style == app.omnitask.model.CellStyle.BARS) 60f else 52f
     val inset = 8f
     BoxWithConstraints(Modifier.fillMaxWidth().height((inset + rows * cell).dp)) {
         val widthDp = maxWidth.value
         val palette = Palettes.current
-        val bitmap = remember(data.month, data.marks, data.holidays, data.busy, data.selected, data.today, widthDp, palette) {
+        val bitmap = remember(data.month, data.marks, data.holidays, data.work, data.style, data.selected, data.today, widthDp, palette) {
             MonthPainter(context, palette).draw(data, widthDp, cell, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(data.month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)

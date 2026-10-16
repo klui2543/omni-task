@@ -214,3 +214,38 @@ data class MonthNav(val offset: Int = 0, val picked: LocalDate? = null, val touc
         fun monthsBetween(from: LocalDate, to: LocalDate) = (to.year - from.year) * 12 + (to.monthNumber - from.monthNumber)
     }
 }
+
+/** How the month grid shows what is on a day. */
+enum class CellStyle(val key: String) {
+    /** The day's background deepens as it fills up. */
+    TINT("tint"),
+    /** Short coloured bars with the titles, as many as fit, then +n. */
+    BARS("bars"),
+    ;
+
+    companion object {
+        fun of(key: String?): CellStyle = entries.firstOrNull { it.key == key } ?: TINT
+    }
+}
+
+/** What the month grid counts on a day. */
+object DayWork {
+    /**
+     * Titles that come on most days of [days] (a daily routine such as a workout): marking them would mark every day,
+     * so the grid leaves them out. The day's list still shows them.
+     */
+    fun routine(titles: Map<LocalDate, List<String>>, days: Collection<LocalDate>): Set<String> {
+        if (days.size < 14) return emptySet()
+        val counts = HashMap<String, Int>()
+        days.forEach { d -> titles[d].orEmpty().map { it.trim() }.toSet().forEach { counts[it] = (counts[it] ?: 0) + 1 } }
+        return counts.filterValues { it * 10 >= days.size * 6 }.keys
+    }
+
+    /** 0 for a free day, then 1 to 3 as it fills: one or two things, three or four, five or more. */
+    fun level(count: Int): Int = when {
+        count <= 0 -> 0
+        count <= 2 -> 1
+        count <= 4 -> 2
+        else -> 3
+    }
+}

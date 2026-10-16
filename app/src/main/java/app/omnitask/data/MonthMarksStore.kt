@@ -2,6 +2,7 @@ package app.omnitask.data
 
 import android.content.Context
 import android.net.Uri
+import app.omnitask.model.CellStyle
 import app.omnitask.model.MonthMarks
 import app.omnitask.notify.Scheduler
 import java.io.File
@@ -14,6 +15,15 @@ import java.io.File
 object MonthMarksStore {
 
     private fun cache(context: Context) = File(context.filesDir, "omni-calendar.json")
+
+    /** How the month grid shows each day's work, on the widget and in the app alike. */
+    fun cellStyle(context: Context): CellStyle = CellStyle.of(Scheduler.prefs(context).getString(KEY_CELLS, null))
+
+    fun setCellStyle(context: Context, style: CellStyle) {
+        Scheduler.prefs(context).edit().putString(KEY_CELLS, style.key).apply()
+    }
+
+    private const val KEY_CELLS = "monthCells"
 
     private fun vault(context: Context): Uri? = Scheduler.prefs(context).getString("vault", null)?.let(Uri::parse)
 

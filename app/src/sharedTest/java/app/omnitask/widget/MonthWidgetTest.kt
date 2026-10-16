@@ -35,7 +35,7 @@ class MonthWidgetTest {
             .withFrame((12..16).map(::d).toSet(), FrameColor.VIOLET, "อบรม Excel")
             .withFrame((23..26).map(::d).toSet(), FrameColor.AMBER, "")
             .withStickers(d(24), listOf("✈️", "🏖️", "📸", "🍜"))
-        val data = MonthData(d(15), d(1), 0, marks, mapOf(d(13) to "วันนวมินทรมหาราช"), setOf(d(15)), d(20), emptyList())
+        val data = MonthData(d(15), d(1), 0, marks, mapOf(d(13) to "วันนวมินทรมหาราช"), mapOf(d(15) to listOf(MonthData.Mark("ส่งรายงาน", false))), d(20), emptyList())
         val bmp = MonthPainter(context, Palettes.graphiteDark).draw(data, 320f, 42f, 5)
         val scale = minOf(context.resources.displayMetrics.density, 2.75f)
         check(bmp.width == (320f * scale).toInt()) { "width ${bmp.width}" }
@@ -56,6 +56,8 @@ class MonthWidgetTest {
         // The 22nd picked: only its own work, and it is ringed.
         val picked = source.view(0, d(22))
         check(picked.selected == d(22) && picked.agenda.single().second.size == 1)
+        // A tap leaves the grid's work equal, so the widget keeps its picture and only moves the box.
+        check(picked.work == now.work && picked.work[d(22)] == listOf(MonthData.Mark("ส่งแบบร่าง", false)))
         // Picking today is the same as picking nothing; a month away is covered by what was loaded.
         check(source.view(0, d(15)).selected == null)
         check(source.covers(1) && !source.covers(6))
@@ -86,6 +88,18 @@ class MonthWidgetTest {
         val painter = MonthPainter(context, palette, maxScale = 2f, background = android.graphics.Color.BLACK, ring = false)
         val bmp = painter.draw(source.view(0, null), 336f, 42f, 6)
         check(bmp.byteCount < 1_000_000) { "the widget's picture is ${bmp.byteCount} bytes" }
+    }
+
+    @Test
+    fun aNewSessionReusesTheMonthsLoadedBefore() {
+        val source = MonthSource(d(15), 7, LocalDate(2026, 7, 1), LocalDate(2027, 1, 31), MonthMarks(), emptyList(), emptyList(), emptyMap())
+        check(MonthSource.reusable(source, 7, 0, d(15)))
+        check(MonthSource.reusable(source, 7, 2, d(15)))
+        // The vault or the calendar changed, the day turned, or the month is past what was loaded: read again.
+        check(!MonthSource.reusable(source, 8, 0, d(15)))
+        check(!MonthSource.reusable(source, 7, 0, d(16)))
+        check(!MonthSource.reusable(source, 7, 5, d(15)))
+        check(!MonthSource.reusable(null, 7, 0, d(15)))
     }
 
     @Test
