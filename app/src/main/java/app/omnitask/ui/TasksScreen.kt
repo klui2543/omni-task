@@ -41,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -77,8 +76,9 @@ private enum class Sheet { FILTER, SORT }
 @Composable
 fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val q = state.query
-    var layout by rememberSaveable { mutableStateOf<Mode?>(null) }
-    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) layout = Mode.CALENDAR }
+    // The view last used stays while the app is open, kept by the view model as the tab comes and goes.
+    val layout = state.tasksLayout
+    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) vm.setTasksLayout(Mode.CALENDAR) }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var searching by remember { mutableStateOf(q.text.isNotEmpty()) }
     // Opening search puts the cursor in the field, so finding a task is one tap and then typing.
@@ -112,7 +112,7 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter) { sheet = Sheet.FILTER }
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (listOf<Pair<Mode?, String>>(null to tr("รายการ", "List")) + Mode.entries.map { it to it.label }).forEach { (m, label) ->
-                        Chip(label, m == layout, { layout = m })
+                        Chip(label, m == layout, { vm.setTasksLayout(m) })
                     }
                 }
                 // Sorting and grouping apply to the list and to Kanban's columns only.

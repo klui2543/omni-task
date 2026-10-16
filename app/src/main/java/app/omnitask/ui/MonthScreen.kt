@@ -92,8 +92,7 @@ private const val CELL = 46f
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
-    BackHandler(onBack = onClose)
+fun MonthScreen(request: MonthRequest, state: UiState, onClose: (LocalDate) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var month by remember { mutableStateOf(request.day.withDayOfMonth(1)) }
@@ -110,6 +109,9 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     var events by remember { mutableStateOf(emptyList<app.omnitask.notify.CalendarEvent>()) }
     var style by remember { mutableStateOf(MonthMarksStore.cellStyle(context)) }
     var emojiSize by remember { mutableStateOf(MonthMarksStore.emojiSize(context)) }
+    // Closing goes to the Tasks tab's month calendar, at the one day chosen, else at the month on show.
+    val close = { onClose(selection.singleOrNull() ?: if (month == request.day.withDayOfMonth(1)) request.day else month) }
+    BackHandler(onBack = close)
 
     LaunchedEffect(request) {
         month = request.day.withDayOfMonth(1)
@@ -177,7 +179,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
 
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("ปิด", "Close"), Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClose).padding(6.dp), color = C.accentText, fontSize = TS.body)
+            Text(tr("ปิด", "Close"), Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = close).padding(6.dp), color = C.accentText, fontSize = TS.body)
             Text(MonthGrid.title(month), Modifier.weight(1f), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
             SquareButton(Ic.back, tr("เดือนก่อน", "Previous month"), { month = month.minusMonths(1); clear() })
             Box(Modifier.width(6.dp))

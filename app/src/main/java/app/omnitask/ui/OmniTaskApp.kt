@@ -158,9 +158,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
 
-    // The month widget opened the frames and emoji page.
+    // The frames and emoji page, from the month widget or the calendar's pencil; closing it lands on the calendar.
     state.month?.let { r ->
-        MonthScreen(r, state) { vm.requestMonth(null) }
+        MonthScreen(r, state) { day -> vm.requestCalendar(day); vm.requestMonth(null) }
         return
     }
 
