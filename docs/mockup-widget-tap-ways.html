@@ -1,0 +1,240 @@
+<title>Widget tap ways</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: one widget on a home screen, a switch for the way a tap works, and a log of how long each tap took to show. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --rule: #d9dde4; --pick: #3d4f6e; --segBg: #e1e5eb; --warn: #9a6a12;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --raised: #1e1e22; --grid: #2e2e35; --control: #34343a;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83; --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118;
+  --red: #d9726c; --green: #7fae93; --event: #7d8794;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --segBg: #17181c; --warn: #c4a56a; color-scheme: dark }
+}
+:root[data-theme="dark"] { --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --segBg: #17181c; --warn: #c4a56a; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 880px; margin: 0 auto; display: grid; gap: 20px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+header p { margin: 0 0 12px; color: var(--ink2); max-width: 68ch; font-size: 14px }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; background: var(--segBg); padding: 4px; border-radius: 12px }
+.seg button { font-size: 13.5px; padding: 6px 12px; border-radius: 9px; color: var(--ink2) }
+.seg button.on { background: var(--pick); color: var(--page); font-weight: 600 }
+.seg b { margin-right: 4px }
+.stage { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start }
+.col { flex: 1 1 340px; max-width: 420px; min-width: 0; display: grid; gap: 10px }
+.about { font-size: 13.5px; color: var(--ink2); display: grid; gap: 6px }
+.about h2 { font-size: 16px; color: var(--ink); margin: 0; font-weight: 600 }
+.about .pro, .about .con { padding-left: 14px; position: relative }
+.about .pro::before { content: "+"; position: absolute; left: 0; color: var(--green); font-weight: 600 }
+.about .con::before { content: "-"; position: absolute; left: 0; color: var(--red); font-weight: 600 }
+.tog { display: flex; align-items: center; gap: 10px; font-size: 13.5px; width: 100% }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: var(--rule); position: relative; flex: none; transition: background .15s }
+.sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--page); transition: left .15s }
+.sw.on { background: var(--pick) }
+.sw.on::after { left: 19px }
+.log { font-size: 12.5px; border-top: 2px solid var(--rule); padding-top: 8px; display: grid; gap: 3px; font-variant-numeric: tabular-nums; min-height: 120px }
+.log h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 600 }
+.log .slow { color: var(--red); font-weight: 600 }
+.log .fast { color: var(--green); font-weight: 600 }
+.log .wait { color: var(--warn) }
+
+.home { position: relative; background: linear-gradient(160deg, #1d2a33, #2b2233 60%, #1a1f2a); border-radius: 26px; padding: 20px 12px 70px; overflow: hidden }
+.dock { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center; gap: 22px }
+.dock span { width: 40px; height: 40px; border-radius: 12px; background: #ffffff1f }
+.w { background: #141416f2; border-radius: 24px; padding: 12px 12px 8px; color: var(--text) }
+.hd { display: flex; align-items: center; gap: 2px; padding: 0 2px 8px }
+.hd .ttl { font-size: 17px; font-weight: 500; flex: 1 }
+.ib { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px }
+.plus { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--onAccent); display: flex; align-items: center; justify-content: center; font-weight: 600; margin-left: 4px }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 10.5px; color: var(--faint); text-align: center; padding-bottom: 4px }
+.dow span:first-child { color: var(--red) }
+.mon { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--grid); border-left: 1px solid var(--grid) }
+.c { position: relative; height: 44px; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); text-align: center; padding-top: 4px; display: block; width: 100% }
+.n { position: relative; z-index: 2; display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums }
+.sun .n, .hol .n { color: var(--red) }
+.out .n { opacity: .3 }
+.today .n { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.has::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--green) }
+.pickd { position: absolute; inset: 1px; border: 1.5px solid var(--accent); background: #9db4d326; z-index: 1 }
+.ag { padding: 10px 2px 2px; display: grid; gap: 2px; min-height: 112px }
+.dh { font-size: 11.5px; color: var(--accentText); font-weight: 600; padding: 2px 2px }
+.dh.plain { color: var(--muted); font-weight: 400 }
+.it { display: flex; align-items: center; gap: 10px; padding: 4px 2px; font-size: 13.5px }
+.it .g { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.it small { color: var(--muted); font-size: 11.5px }
+.bar { width: 3px; height: 16px; border-radius: 2px; background: var(--event); flex: none }
+.ring { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--faint); flex: none }
+.free { font-size: 12.5px; color: var(--faint); padding: 2px 4px }
+
+.flash { position: absolute; inset: 0; background: #0e0e10; opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 8 }
+.flash.on { opacity: .55 }
+.scrim { position: absolute; inset: 0; background: #00000080; z-index: 9; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; pointer-events: none; transition: opacity .15s }
+.scrim.on { opacity: 1; pointer-events: auto }
+.pop { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 16px; width: 100%; max-width: 330px; color: var(--text); transform: translateY(10px) scale(.97); transition: transform .18s }
+.scrim.on .pop { transform: none }
+.pop h4 { margin: 0 0 8px; font-size: 16px; font-weight: 600 }
+.pop .btns { display: flex; gap: 10px; margin-top: 12px }
+.pop .btns span { flex: 1; text-align: center; border-radius: 20px; padding: 8px; font-size: 13px; font-weight: 600 }
+.pop .p { background: var(--accent); color: var(--onAccent) }
+.pop .s { border: 1px solid var(--control); color: var(--text2) }
+.badge { position: absolute; left: 12px; top: 8px; z-index: 7; font-size: 11px; color: #ffffffcc; background: #00000066; border-radius: 8px; padding: 1px 8px }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<div class="wrap">
+<header>
+  <h1>แตะวันบน widget แบบไหนดี</h1>
+  <p>เลือกวิธีด้านล่าง แล้วแตะวันบน widget รัวๆ หรือรอสักพักค่อยแตะ ใต้ widget จะบอกว่าแต่ละการแตะใช้เวลากี่มิลลิวินาทีกว่าจะขึ้นจอ ความหน่วงเป็นค่าประมาณจากการค้นคว้า ยังไม่ได้วัดบน Find N6</p>
+  <div class="seg" role="group" aria-label="วิธี">
+    <button data-mode="now"><b>0</b>แบบตอนนี้</button>
+    <button data-mode="popup"><b>1</b>ป๊อปอัปงานของวัน</button>
+    <button data-mode="tramp"><b>2</b>activity ล่องหน</button>
+    <button data-mode="instant"><b>3</b>กรอบทันที + ล่องหน</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="col">
+    <div class="home" id="home">
+      <span class="badge">หน้าจอหลัก</span>
+      <div class="w" id="w"></div>
+      <div class="flash" id="flash"></div>
+      <div class="scrim" id="scrim"><div class="pop" id="pop"></div></div>
+      <div class="dock"><span></span><span></span><span></span><span></span></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="about" id="about"></div>
+    <button class="tog" id="freeze" role="switch"><span class="sw on" id="freeze-sw"></span><span>จำลอง ColorOS แช่แข็งแอปหลังว่าง 3 วินาที</span></button>
+    <div class="log" id="log"><h3>เวลาจากแตะถึงขึ้นจอ</h3></div>
+  </div>
+</div>
+</div>
+
+<script>
+(function () {
+  const TODAY = 16;
+  const HOL = { 13: 'วันนวมินทรมหาราช', 23: 'วันปิยมหาราช' };
+  const ITEMS = {
+    16: [['e', 'ประชุมทีม', '10:00'], ['t', 'ซื้อของขวัญวันเกิดแม่']],
+    17: [['t', 'จ่ายค่าไฟ']],
+    8: [['t', 'ส่งรายงานไตรมาส']],
+    20: [['e', 'หมอฟัน', '14:30']],
+    22: [['e', 'กินข้าวกับทีม', '19:00'], ['t', 'จองร้าน']],
+    23: [['t', 'จองที่พักหัวหิน']],
+    24: [['e', 'เช็กอินโรงแรม', '14:00']],
+    28: [['t', 'อ่านบทที่ 5'], ['e', 'สอบย่อย', '09:00']],
+    2: [['e', 'ตัดผม', '17:30']], 10: [['t', 'ล้างแอร์']], 30: [['e', 'ดูหนัง', '20:00']],
+  };
+  const DOW = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  const ABOUT = {
+    now: ['แบบตอนนี้', 'แตะแล้วเริ่ม service ในแอป แอปวาด widget ใหม่ทั้งรูป', [], ['ถ้า ColorOS แช่แข็งแอปอยู่ การแตะค้างประมาณ 5 วินาที แล้วการแตะที่ค้างมาถึงพร้อมกัน', 'ตั้งแอปเป็นไม่จำกัดแล้วก็ยังเป็น']],
+    popup: ['1 ป๊อปอัปงานของวัน', 'แตะวันแล้วหน้าต่างเล็กลอยขึ้นบนหน้าจอหลัก บอกงานของวันนั้น แตะข้างนอกเพื่อปิด', ['การเปิดหน้าต่างปลุกแอปได้ทุกครั้ง ไม่ขึ้นกับการตั้งค่า', 'เห็นงานได้มากกว่าในตัว widget'], ['รายการใต้ตารางใน widget ไม่เปลี่ยนตามวันที่แตะแล้ว', 'ต้องแตะปิดหน้าต่างทุกครั้ง']],
+    tramp: ['2 activity ล่องหน', 'แตะวันแล้วแอปเปิดหน้าล่องหนแวบเดียวเพื่อตื่น วาด widget ใหม่ แล้วปิดตัว หน้าตาเหมือนเดิมทุกอย่าง', ['ปลุกแอปได้ทุกครั้งเหมือนข้อ 1', 'widget หน้าตาและการใช้งานเหมือนเดิม'], ['อาจเห็นจอมืดหรือแอนิเมชันเปิดแอปแวบหนึ่ง (จำลองไว้) ต้องลองบนเครื่องจริง']],
+    instant: ['3 กรอบทันที + ล่องหน', 'หน้าจอหลักย้ายกรอบเลือกวันเองทันทีโดยไม่ต้องรอแอป แล้วรายการงานตามมาด้วยวิธีข้อ 2', ['กรอบขึ้นทันทีแม้แอปถูกแช่แข็ง', 'รายการตามมาแน่นอนแบบข้อ 2'], ['กรอบวันเก่าค้างอยู่ด้วยแวบหนึ่ง จนแอปลบให้', 'ยังมีแวบมืดแบบข้อ 2 ได้', 'งานเยอะที่สุดในสามแบบ']],
+  };
+
+  let mode = 'now', freeze = true, picked = null, shown = null, ghost = null, lastWake = performance.now();
+  let queue = [], thawTimer = null, tapN = 0;
+
+  function cell(i) { const out = i < 4; return { out, d: out ? 27 + i : i - 3 }; }
+  function render() {
+    let g = '';
+    for (let i = 0; i < 35; i++) {
+      const { out, d } = cell(i);
+      const cls = ['c'];
+      if (i % 7 === 0) cls.push('sun');
+      if (!out && HOL[d]) cls.push('hol');
+      if (out) cls.push('out');
+      if (!out && d === TODAY) cls.push('today');
+      if (!out && ITEMS[d]) cls.push('has');
+      const box = !out && (d === picked || d === ghost) ? '<div class="pickd"></div>' : '';
+      g += '<button class="' + cls.join(' ') + '"' + (out ? ' disabled' : '') + ' data-d="' + d + '" aria-label="' + d + ' ต.ค.">' + box + '<span class="n">' + d + '</span></button>';
+    }
+    const days = shown && shown !== TODAY ? [shown] : [TODAY, TODAY + 1];
+    let ag = '';
+    days.forEach(d => { ag += '<div class="dh' + (d === shown ? '' : ' plain') + '">' + name(d) + '</div>' + lines(d, 2); });
+    document.getElementById('w').innerHTML = '<div class="hd"><button class="ttl" data-home="1">ตุลาคม 2569</button><span class="ib">‹</span><span class="ib">›</span><span class="ib">⟳</span><span class="ib">✎</span><span class="plus">+</span></div>'
+      + '<div class="dow">' + DOW.map(x => '<span>' + x + '</span>').join('') + '</div><div class="mon">' + g + '</div><div class="ag">' + ag + '</div>';
+  }
+  function name(d) { return d === TODAY ? 'วันนี้ 16 ต.ค.' : d === TODAY + 1 ? 'พรุ่งนี้ 17 ต.ค.' : DOW[(d + 3) % 7] + ' ' + d + ' ต.ค.'; }
+  function lines(d, max) {
+    const list = (HOL[d] ? [['h', HOL[d], 'ทั้งวัน']] : []).concat(ITEMS[d] || []);
+    if (!list.length) return '<div class="free">ว่าง</div>';
+    return list.slice(0, max).map(([k, t, time]) => k === 't'
+      ? '<div class="it"><span class="ring"></span><span class="g">' + t + '</span></div>'
+      : '<div class="it"><span class="bar"' + (k === 'h' ? ' style="background:var(--red)"' : '') + '></span><span class="g">' + t + '</span><small>' + time + '</small></div>').join('')
+      + (list.length > max ? '<div class="free">อีก ' + (list.length - max) + ' รายการ</div>' : '');
+  }
+  function about() {
+    const [t, what, pro, con] = ABOUT[mode];
+    document.getElementById('about').innerHTML = '<h2>' + t + '</h2><div>' + what + '</div>' + pro.map(x => '<div class="pro">' + x + '</div>').join('') + con.map(x => '<div class="con">' + x + '</div>').join('');
+    document.querySelectorAll('[data-mode]').forEach(b => b.className = b.dataset.mode === mode ? 'on' : '');
+  }
+  function log(n, d, ms, note) {
+    const el = document.getElementById('log');
+    const row = document.createElement('div');
+    const cls = ms >= 1000 ? 'slow' : 'fast';
+    row.innerHTML = 'แตะครั้งที่ ' + n + ' (' + d + ' ต.ค.): <span class="' + cls + '">' + Math.round(ms).toLocaleString('en-US') + ' ms</span>' + (note ? ' <span class="wait">' + note + '</span>' : '');
+    el.insertBefore(row, el.children[1] || null);
+    while (el.children.length > 12) el.removeChild(el.lastChild);
+  }
+  const frozen = () => freeze && performance.now() - lastWake > 3000;
+
+  function flash(then) {
+    const f = document.getElementById('flash');
+    f.classList.add('on');
+    setTimeout(() => { f.classList.remove('on'); then(); }, 180);
+  }
+
+  function tap(d) {
+    const n = ++tapN, at = performance.now();
+    if (mode === 'now') {
+      if (frozen() || thawTimer) {
+        queue.push({ n, d, at });
+        if (!thawTimer) thawTimer = setTimeout(() => {
+          thawTimer = null; lastWake = performance.now();
+          const last = queue[queue.length - 1];
+          picked = shown = last.d; render();
+          queue.forEach(q => log(q.n, q.d, performance.now() - q.at, q === last ? 'แอปถูกปลุก ทุกครั้งมาพร้อมกัน' : 'ค้างรอ'));
+          queue = [];
+        }, 4800 + Math.random() * 600);
+        return;
+      }
+      setTimeout(() => { lastWake = performance.now(); picked = shown = d; render(); log(n, d, performance.now() - at); }, 90 + Math.random() * 40);
+    } else if (mode === 'popup') {
+      setTimeout(() => {
+        lastWake = performance.now(); picked = d; render();
+        document.getElementById('pop').innerHTML = '<h4>' + name(d) + '</h4>' + lines(d, 6) + '<div class="btns"><span class="s">เพิ่มงาน</span><span class="p">เปิดในแอป</span></div>';
+        document.getElementById('scrim').classList.add('on');
+        log(n, d, performance.now() - at);
+      }, 220 + Math.random() * 120);
+    } else if (mode === 'tramp') {
+      flash(() => setTimeout(() => { lastWake = performance.now(); picked = shown = d; render(); log(n, d, performance.now() - at); }, 80 + Math.random() * 80));
+    } else {
+      ghost = picked; picked = d; render();
+      log(n, d, 16, 'กรอบ');
+      flash(() => setTimeout(() => { lastWake = performance.now(); ghost = null; shown = d; render(); log(n, d, performance.now() - at, 'รายการ'); }, 80 + Math.random() * 80));
+    }
+  }
+
+  document.addEventListener('click', ev => {
+    const m = ev.target.closest('[data-mode]');
+    if (m) { mode = m.dataset.mode; picked = shown = ghost = null; queue = []; clearTimeout(thawTimer); thawTimer = null; document.getElementById('scrim').classList.remove('on'); about(); render(); return; }
+    if (ev.target.closest('#scrim')) { if (!ev.target.closest('.pop') || ev.target.closest('.btns')) document.getElementById('scrim').classList.remove('on'); return; }
+    if (ev.target.closest('#freeze')) { freeze = !freeze; document.getElementById('freeze-sw').className = 'sw' + (freeze ? ' on' : ''); document.getElementById('freeze').setAttribute('aria-checked', freeze); return; }
+    if (ev.target.closest('[data-home]')) { picked = shown = ghost = null; render(); return; }
+    const c = ev.target.closest('.c');
+    if (c && !c.disabled) tap(+c.dataset.d);
+  });
+
+  document.getElementById('freeze').setAttribute('aria-checked', 'true');
+  about(); render();
+})();
+</script>

@@ -136,4 +136,64 @@ class MonthMarksTest {
         assertEquals("15 ต.ค.", MonthGrid.dayMonth(d(15)))
         assertEquals("อา", MonthGrid.heads.first())
     }
+
+    @Test
+    fun anEmojiWithARuleFramesItsDays() {
+        val m = MonthMarks()
+            .withStickers(d(23), listOf("🏖️", "🍜")).withStickers(d(24), listOf("🏖")).withStickers(d(25), listOf("🏖️"))
+            .withStickers(d(20), listOf("🏥"))
+            .withRule("🏖️", MonthMarks.Rule(FrameColor.GREEN, " เที่ยว "))
+            .withRule("🏥", MonthMarks.Rule(FrameColor.RED))
+        val shown = m.shown()
+        // Friday to Sunday touch, so one frame; the spelling without the variation selector counts too.
+        assertEquals(listOf(listOf(d(20)), range(23, 25).sorted()), shown.frames.map { it.days })
+        assertEquals("เที่ยว", shown.frameOn(d(24))?.label)
+        assertEquals("🏖️", shown.frameOn(d(24))?.emoji)
+        assertEquals(FrameColor.RED, shown.frameOn(d(20))?.color)
+        // Only drawn: what is saved keeps no such frame.
+        assertTrue(m.frames.isEmpty())
+        assertTrue(MonthMarks.decode(m.encode())!!.frames.isEmpty())
+    }
+
+    @Test
+    fun aFrameSetByHandWinsAndTheFirstRuledEmojiCounts() {
+        val m = MonthMarks()
+            .withFrame(days(8), FrameColor.BLUE, "ส่งงาน")
+            .withStickers(d(8), listOf("🏖️")).withStickers(d(10), listOf("🍜", "📚", "🏖️"))
+            .withRule("🏖️", MonthMarks.Rule(FrameColor.GREEN)).withRule("📚", MonthMarks.Rule(FrameColor.VIOLET, "สอบ"))
+        val shown = m.shown()
+        assertEquals("ส่งงาน", shown.frameOn(d(8))?.label)
+        assertEquals("สอบ", shown.frameOn(d(10))?.label)
+    }
+
+    @Test
+    fun taskTitlesCountOnlyWhenAskedFor() {
+        val titles = mapOf(d(22) to listOf("🏥 หมอฟัน"))
+        val m = MonthMarks().withRule("🏥", MonthMarks.Rule(FrameColor.RED, "หมอ"))
+        assertNull(m.shown(titles).frameOn(d(22)))
+        assertEquals("หมอ", m.copy(taskEmoji = true).shown(titles).frameOn(d(22))?.label)
+    }
+
+    @Test
+    fun rulesAreSavedAndReplacedUnderAnySpelling() {
+        val m = MonthMarks().withRule("🏖️", MonthMarks.Rule(FrameColor.GREEN, "เที่ยว")).withRule("🏖", MonthMarks.Rule(FrameColor.AMBER))
+        assertEquals(1, m.rules.size)
+        assertEquals(FrameColor.AMBER, m.ruleFor("🏖️")?.second?.color)
+        val back = MonthMarks.decode(m.copy(taskEmoji = true).encode())!!
+        assertEquals(m.rules, back.rules)
+        assertTrue(back.taskEmoji)
+        assertTrue(m.withoutRule("🏖️").rules.isEmpty())
+    }
+
+    @Test
+    fun stickersAndTitlesMatchTheSameWay() {
+        val m = MonthMarks(taskEmoji = true)
+            .withRule("👍", MonthMarks.Rule(FrameColor.GREEN, "ดี")).withRule("❤", MonthMarks.Rule(FrameColor.RED)).withRule("❤️‍🔥", MonthMarks.Rule(FrameColor.AMBER, "ไฟ"))
+            .withStickers(d(5), listOf("👍🏽")).withStickers(d(12), listOf("❤️‍🔥"))
+        val shown = m.shown(mapOf(d(20) to listOf("งานดี 👍🏽")))
+        assertEquals("ดี", shown.frameOn(d(5))?.label)
+        assertEquals("ดี", shown.frameOn(d(20))?.label)
+        // The longer emoji wins over the one inside it.
+        assertEquals("ไฟ", shown.frameOn(d(12))?.label)
+    }
 }

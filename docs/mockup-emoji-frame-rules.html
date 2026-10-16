@@ -1,0 +1,476 @@
+<title>Emoji frame rules</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: page chrome follows the viewer's theme; the phone panels show the app as it draws in graphite dark. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --rule: #d9dde4; --pick: #3d4f6e; --pickSoft: #e3e8f0; --segBg: #e1e5eb;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  /* the app, graphite dark (Theme.kt) */
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --raised: #1e1e22; --line: #212125; --grid: #2e2e35; --control: #34343a;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83; --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118;
+  --red: #d9726c; --amber: #c4a56a; --green: #7fae93; --blue: #8aa6d6; --violet: #a893c9; --event: #7d8794;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --pickSoft: #1d2330; --segBg: #17181c; color-scheme: dark }
+}
+:root[data-theme="dark"] { --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --pickSoft: #1d2330; --segBg: #17181c; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+button:disabled { cursor: default }
+.wrap { max-width: 880px; margin: 0 auto; display: grid; gap: 22px }
+header h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+header p { margin: 0 0 14px; color: var(--ink2); max-width: 68ch; font-size: 14px }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--segBg); padding: 4px; border-radius: 12px }
+.seg button { font-size: 13.5px; padding: 6px 12px; border-radius: 9px; color: var(--ink2) }
+.seg button.on { background: var(--pick); color: var(--page); font-weight: 600 }
+.seg b { font-weight: 600; margin-right: 4px }
+.reset { margin-left: 10px; font-size: 13px; color: var(--pick); text-decoration: underline; text-underline-offset: 3px }
+.stage { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start }
+.col { flex: 1 1 340px; max-width: 420px; min-width: 0; display: grid; gap: 8px }
+.cap { font-size: 13px; color: var(--ink2) }
+.cap b { color: var(--ink); font-weight: 600 }
+
+/* phone and widget */
+.phone { background: var(--bg); border-radius: 26px; padding: 14px 12px 16px; border: 1px solid #1d1d22; color: var(--text); font-size: 13px }
+.home { background: linear-gradient(160deg, #1d2a33, #2b2233 60%, #1a1f2a); border-radius: 26px; padding: 20px 12px }
+.w { background: #141416f2; border-radius: 24px; padding: 12px 12px 8px; color: var(--text) }
+.hd { display: flex; align-items: center; gap: 2px; padding: 0 2px 8px }
+.hd .ttl { font-size: 17px; font-weight: 500; flex: 1 }
+.ib { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px }
+.plus { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--onAccent); display: flex; align-items: center; justify-content: center; font-weight: 600; margin-left: 4px }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 10.5px; color: var(--faint); text-align: center; padding-bottom: 4px }
+.dow span:first-child { color: var(--red) }
+.mon { margin-top: 8px; display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--grid); border-left: 1px solid var(--grid) }
+.c { position: relative; height: 46px; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); text-align: center; padding-top: 4px; display: block; width: 100% }
+.c:not(:disabled):active { background: #ffffff0d }
+.n { position: relative; z-index: 2; display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums }
+.sun .n, .hol .n { color: var(--red) }
+.out .n { opacity: .3 }
+.today .n { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.pickd { position: absolute; inset: 1px; border: 1.5px solid var(--accent); background: #9db4d326; z-index: 1 }
+.st { position: absolute; right: 3px; bottom: 2px; font-size: 10.5px; line-height: 13px; z-index: 3; letter-spacing: -1px; white-space: nowrap }
+.st small { font-size: 8.5px; color: var(--muted); letter-spacing: 0; margin-left: 2px }
+.fr { position: absolute; inset: 0; z-index: 1; border: 0 solid var(--fc) }
+.fr::before { content: ""; position: absolute; inset: 0; background: var(--fc); opacity: .11 }
+.tag { position: absolute; left: 1px; top: -7px; z-index: 4; font-size: 9px; line-height: 13px; font-weight: 600; padding: 0 5px; border-radius: 4px; color: #0e0e10; white-space: nowrap; max-width: 300%; overflow: hidden; text-overflow: ellipsis }
+.tag i { font-style: normal; margin-right: 2px }
+.ag { padding: 10px 2px 2px; display: grid; gap: 2px }
+.dh { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); padding: 4px 2px 2px; flex-wrap: wrap }
+.dh.on { color: var(--accentText); font-weight: 600 }
+.chip { font-size: 10.5px; border-radius: 9px; padding: 0 7px; line-height: 17px; font-weight: 400 }
+.it { display: flex; align-items: center; gap: 10px; padding: 4px 2px; font-size: 13.5px }
+.it .g { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.it small { color: var(--muted); font-size: 11.5px }
+.bar { width: 3px; height: 16px; border-radius: 2px; background: var(--event); flex: none }
+.ring { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--faint); flex: none }
+.free { font-size: 12.5px; color: var(--faint); padding: 2px 4px 4px }
+
+/* app page */
+.top { display: flex; align-items: center; gap: 10px; padding: 0 4px 10px }
+.top .t { flex: 1; text-align: center; font-size: 16px; font-weight: 600 }
+.top .x { color: var(--accentText); font-size: 13px }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: grid; gap: 10px; margin-top: 10px }
+.card h3 { margin: 0; font-size: 15px; font-weight: 600 }
+.sub { font-size: 12px; color: var(--muted); margin-top: -6px }
+.under { display: flex; align-items: center; gap: 10px; padding: 10px 6px 0 }
+.under span { flex: 1; font-size: 12px; color: var(--muted) }
+.under em { font-style: normal; font-size: 12px; border: 1px solid var(--control); color: var(--text2); border-radius: 14px; padding: 3px 10px; white-space: nowrap }
+.rule { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); width: 100% }
+.rules > .rule:first-child { border-top: 0 }
+.em { width: 36px; height: 36px; border-radius: 10px; background: var(--raised); display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none; position: relative }
+.box { width: 18px; height: 14px; border-radius: 3px; border: 2px solid; flex: none }
+.rule .g { flex: 1; min-width: 0 }
+.rule .g small { display: block; color: var(--muted); font-size: 11.5px }
+.rule .chev { color: var(--faint); transition: transform .15s }
+.rule.open .chev { transform: rotate(90deg) }
+.edit { background: var(--raised); border-radius: 12px; padding: 12px; display: grid; gap: 10px; margin-bottom: 6px }
+.edit p { margin: 0; font-size: 12.5px }
+.addrow { display: flex; align-items: center; gap: 8px; color: var(--accentText); font-size: 13px; padding-top: 2px }
+.addrow span { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed var(--accentText); display: flex; align-items: center; justify-content: center; font-size: 13px }
+.tg { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; width: 100% }
+.tg .g { flex: 1; min-width: 0; font-size: 13px }
+.tg .g small { display: block; color: var(--muted); font-size: 11.5px }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: var(--control); position: relative; flex: none; transition: background .15s }
+.sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--text2); transition: left .15s }
+.sw.on { background: var(--accent) }
+.sw.on::after { left: 19px; background: var(--onAccent) }
+.lbl { font-size: 11.5px; color: var(--muted) }
+.sws { display: flex; gap: 12px; align-items: center; flex-wrap: wrap }
+.dot { width: 28px; height: 28px; border-radius: 50%; flex: none }
+.dot.on { outline: 2px solid var(--text); outline-offset: 3px }
+.dot.none { border: 1.5px dashed var(--faint); display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 11px }
+.inp { width: 100%; background: var(--sunk, #121214); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font: inherit; font-size: 13px; color: var(--text) }
+.inp::placeholder { color: var(--faint) }
+.btns { display: flex; gap: 10px }
+.btn { flex: 1; text-align: center; border-radius: 20px; padding: 8px; font-size: 13px; font-weight: 600 }
+.btn.p { background: var(--accent); color: var(--onAccent) }
+.btn.p:disabled { opacity: .4 }
+.btn.s { border: 1px solid var(--control); color: var(--text2) }
+.btn.d { border: 1px solid #d9726c66; color: var(--red) }
+.picker { display: flex; flex-wrap: wrap; gap: 4px }
+.picker button { position: relative; width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px }
+.picker button:disabled { opacity: .35 }
+.picker button.chosen { background: var(--raised); box-shadow: inset 0 0 0 1.5px var(--accent) }
+.picker i { position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--card) }
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px }
+.tabs button { font-size: 12px; border-radius: 14px; padding: 3px 10px; border: 1px solid var(--control); color: var(--text2); white-space: nowrap }
+.tabs button.on { background: var(--accent); color: var(--onAccent); border-color: var(--accent) }
+.onday { display: flex; gap: 6px; flex-wrap: wrap }
+.onday .em { width: 42px; height: 42px; font-size: 22px }
+.onday .em i { position: absolute; inset: 0; border-radius: 10px; border: 2px solid }
+.onday .em.focus { box-shadow: 0 0 0 2px var(--accent); }
+.lines { display: grid; gap: 6px }
+.ln { display: flex; align-items: center; gap: 8px; font-size: 13px }
+.ln small { width: 44px; color: var(--muted); font-size: 11.5px; flex: none }
+.ln .bar { height: 18px; width: 4px }
+.full { font-size: 12px; color: var(--amber) }
+
+/* notes */
+.notes { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) }
+.notes section { border-top: 2px solid var(--rule); padding-top: 10px; min-width: 0 }
+.notes h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600 }
+.notes ul, .notes ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--ink2); display: grid; gap: 4px }
+.notes b { color: var(--ink); font-weight: 600 }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Emoji ที่ใส่กรอบสีให้เอง</h1>
+  <p>ตั้งไว้ครั้งเดียวว่า Emoji ตัวไหนคือกรอบสีอะไร ติด Emoji ตัวนั้นให้วันไหน วันนั้นได้กรอบทันที เหมือนติด Hashtag ลองกดได้ทุกอย่าง: แตะวันในหน้าแอปเพื่อติดหรือเอา Emoji ออก ตั้งสี เปิดนับ Emoji ในชื่องาน แล้วดูกรอบบน widget เปลี่ยนตาม</p>
+  <div>
+    <span class="seg" role="group" aria-label="ทางเลือก">
+      <button data-act="opt" data-v="a" id="opt-a"><b>ก</b>การ์ดกฎในหน้ากรอบ</button>
+      <button data-act="opt" data-v="b" id="opt-b"><b>ข</b>ตั้งตอนติด Emoji ให้วัน</button>
+    </span>
+    <button class="reset" data-act="reset">เริ่มใหม่</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="col">
+    <div class="cap"><b>หน้ากรอบและ Emoji ในแอป</b> (แตะวัน แตะ Emoji แตะกฎ)</div>
+    <div class="phone">
+      <div class="top"><span class="x">ปิด</span><span class="t">ตุลาคม 2569</span><span class="ib">‹</span><span class="ib">›</span></div>
+      <div class="card" style="margin-top:0;padding:10px">
+        <div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
+        <div class="mon" id="appgrid"></div>
+      </div>
+      <div class="under"><span id="hint"></span><em>เลือกหลายวัน</em></div>
+      <div id="panel"></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="cap"><b>widget บนหน้าจอหลัก</b> (แตะวันเพื่อดูงานของวัน แตะชื่อเดือนเพื่อกลับวันนี้)</div>
+    <div class="home"><div class="w" id="widget"></div></div>
+  </div>
+</div>
+
+<div class="notes">
+  <section>
+    <h3>ทำงานแบบนี้ทั้งสองทางเลือก</h3>
+    <ul>
+      <li>เปลี่ยนสีหรือชื่อในกฎ ทุกวันที่มี Emoji นั้นเปลี่ยนตามทันที</li>
+      <li>วันที่ติดกัน (ศ ส อา, หรือวันเดียวกันของสัปดาห์ถัดไป) รวมเป็นกรอบเดียว</li>
+      <li>วันที่มีกรอบที่วาดเองอยู่แล้ว (ฟ้า "ส่งงาน" 7 ถึง 9) กรอบวาดเองชนะ ลองติด 💼 หรือ 🏖️ ที่วันที่ 8 ดู</li>
+      <li>วันเดียวมี Emoji ที่มีสีหลายตัว ใช้ตัวที่ติดก่อน</li>
+      <li>กฎเก็บใน omni-calendar.json ใน vault เหมือนกรอบเดิม</li>
+    </ul>
+  </section>
+  <section>
+    <h3>อยากให้เลือก</h3>
+    <ol>
+      <li><b>ก หรือ ข</b> (หรือทั้งสอง: ข ไว้ตั้งเร็ว, ก ไว้ดูรวม)</li>
+      <li><b>นับ Emoji ในชื่องานด้วยไหม</b> ลองเปิดสวิตช์ แล้วงาน "🏥 หมอฟัน" ทำให้วันที่ 22 ได้กรอบแดง</li>
+      <li><b>ถ้าชนกับกรอบที่วาดเอง</b> ให้กรอบวาดเองชนะ (ที่เสนอ) หรือ Emoji ชนะ</li>
+    </ol>
+  </section>
+</div>
+</div>
+
+<script>
+(function () {
+  const COLORS = { red: '#d9726c', amber: '#c4a56a', green: '#7fae93', blue: '#8aa6d6', violet: '#a893c9' };
+  const ORDER = ['red', 'amber', 'green', 'blue', 'violet'];
+  const DOW = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  const TODAY = 16;
+  const HOL = { 13: 'วันนวมินทรมหาราช', 23: 'วันปิยมหาราช' };
+  const EVENTS = { 16: [['ประชุมทีม', '10:00']], 24: [['เช็กอินโรงแรม', '14:00']], 2: [['ตัดผม', '17:30']] };
+  const TASKS = [
+    { title: 'ส่งรายงานไตรมาส', day: 8 },
+    { title: 'ซื้อของขวัญวันเกิดแม่', day: 16 },
+    { title: 'จ่ายค่าไฟ', day: 17 },
+    { title: '🏥 หมอฟัน', day: 22 },
+    { title: 'จองที่พักหัวหิน', day: 23 },
+    { title: '📚 อ่านบทที่ 5', day: 28 },
+  ];
+  const SETS = [
+    ['อารมณ์', '😀 😊 🥰 😍 😎 🤩 😴 😢 😭 😡 🤒 🤯 😌 🥳 😇 🫶'],
+    ['งาน', '📌 📝 💼 📊 💻 📞 📅 ⏰ ✅ ❗ 🔥 💡 📚 🎯 💰 🏦'],
+    ['เดินทาง', '✈️ 🚗 🚆 🏖️ 🏔️ 🏕️ 🗺️ 🧳 🏨 🚢 🛵 📸 🌏 🏝️ 🚌 ⛩️'],
+    ['อาหาร', '🍜 🍣 🍕 🍔 🍰 🎂 ☕ 🍺 🍷 🥗 🍱 🍲 🍦 🍩 🥤 🍳'],
+    ['กิจกรรม', '💪 🏃 🧘 🏊 🚴 ⚽ 🏸 🎮 🎬 🎵 🎤 🎨 🛍️ 🧹 🐶 🌱'],
+    ['อื่นๆ', '❤️ ⭐ 🎉 🎁 🎃 🎄 🏥 💊 🦷 💇 🙏 🕯️ 🌙 ☀️ 🌧️ 🔔'],
+  ].map(([n, l]) => [n, l.split(' ')]);
+  const MAX = 6;
+
+  let S = null;
+  function reset() {
+    S = {
+      opt: S ? S.opt : 'a',
+      rules: { '🏖️': { color: 'green', label: 'เที่ยว' }, '🏥': { color: 'red', label: 'หมอ' }, '📚': { color: 'violet', label: 'สอบ' } },
+      stickers: { 23: ['🏖️', '🍜'], 24: ['🏖️'], 25: ['🏖️'], 20: ['🏥'], 27: ['📚'], 28: ['📚'], 29: ['📚'], 8: ['💼'], 16: ['🎂'] },
+      manual: [{ days: [7, 8, 9], color: 'blue', label: 'ส่งงาน' }],
+      recent: ['🏖️', '🏥', '📚', '🍜', '🎂', '💼', '✈️', '🦷'],
+      countTasks: false, sel: null, wpick: null, focus: null, editRule: null, adding: null, tab: 0,
+    };
+  }
+  reset();
+
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const dowOf = d => DOW[(d + 3) % 7];
+  const dayName = d => d === TODAY ? 'วันนี้ ' + d + ' ต.ค.' : d === TODAY + 1 ? 'พรุ่งนี้ ' + d + ' ต.ค.' : dowOf(d) + ' ' + d + ' ต.ค.';
+
+  function pieces(days) {
+    const left = new Set(days), out = [];
+    while (left.size) {
+      const start = Math.min(...left); left.delete(start);
+      const g = [start];
+      for (let i = 0; i < g.length; i++) [g[i] - 1, g[i] + 1, g[i] - 7, g[i] + 7].forEach(n => { if (left.delete(n)) g.push(n); });
+      out.push(g.sort((a, b) => a - b));
+    }
+    return out;
+  }
+
+  // Hand-made frames first; then each day takes the first emoji on it that has a rule; then, when counted, a task's emoji.
+  function frames() {
+    const out = S.manual.map(f => ({ ...f }));
+    const taken = new Set(S.manual.flatMap(f => f.days));
+    const by = {};
+    const put = (e, d) => { if (taken.has(d)) return; taken.add(d); (by[e] = by[e] || []).push(d); };
+    for (let d = 1; d <= 31; d++) { const e = (S.stickers[d] || []).find(x => S.rules[x]); if (e) put(e, d); }
+    if (S.countTasks) TASKS.forEach(t => { const e = Object.keys(S.rules).find(r => t.title.includes(r)); if (e) put(e, t.day); });
+    Object.keys(by).forEach(e => pieces(by[e]).forEach(p => out.push({ days: p, color: S.rules[e].color, label: S.rules[e].label, emoji: e })));
+    return out;
+  }
+  const frameOn = (fs, d) => fs.find(f => f.days.includes(d));
+
+  function grid(kind) {
+    const fs = frames();
+    let h = '';
+    for (let i = 0; i < 35; i++) {
+      const out = i < 4, d = out ? 27 + i : i - 3;
+      const cls = ['c'];
+      if (i % 7 === 0) cls.push('sun');
+      if (!out && HOL[d]) cls.push('hol');
+      if (out) cls.push('out');
+      if (!out && d === TODAY) cls.push('today');
+      let inner = '';
+      if (!out) fs.forEach(f => {
+        if (!f.days.includes(d)) return;
+        const set = new Set(f.days);
+        const bw = [!set.has(d - 7), !set.has(d + 1), !set.has(d + 7), !set.has(d - 1)].map(b => b ? '1.4px' : '0').join(' ');
+        inner += '<div class="fr" style="--fc:' + COLORS[f.color] + ';border-width:' + bw + '"></div>';
+        if (f.days[0] === d && f.label) inner += '<span class="tag" style="background:' + COLORS[f.color] + '">' + (f.emoji ? '<i>' + f.emoji + '</i>' : '') + esc(f.label) + '</span>';
+      });
+      const picked = kind === 'app' ? S.sel === d : S.wpick === d;
+      if (!out && picked) inner += '<div class="pickd"></div>';
+      inner += '<span class="n">' + d + '</span>';
+      const st = !out && S.stickers[d];
+      if (st && st.length) inner += '<span class="st">' + st.slice(0, 3).join('') + (st.length > 3 ? '<small>+' + (st.length - 3) + '</small>' : '') + '</span>';
+      h += '<button class="' + cls.join(' ') + '"' + (out ? ' disabled' : '') + ' data-act="' + (kind === 'app' ? 'day' : 'wday') + '" data-d="' + d + '" aria-label="' + d + (out ? ' ก.ย.' : ' ต.ค.') + '">' + inner + '</button>';
+    }
+    return h;
+  }
+
+  function chip(fs, d) {
+    const f = frameOn(fs, d);
+    if (!f) return '';
+    const n = f.days.indexOf(d) + 1, of = f.days.length, name = f.label || 'กรอบ';
+    return '<span class="chip" style="background:' + COLORS[f.color] + '33;color:' + COLORS[f.color] + '">' + esc(of === 1 ? name : name + ' วันที่ ' + n + ' จาก ' + of) + '</span>';
+  }
+
+  function itemsOn(d) {
+    const out = [];
+    if (HOL[d]) out.push({ kind: 'hol', title: HOL[d], time: 'ทั้งวัน' });
+    (EVENTS[d] || []).forEach(([t, time]) => out.push({ kind: 'event', title: t, time }));
+    TASKS.filter(t => t.day === d).forEach(t => out.push({ kind: 'task', title: t.title, time: d < TODAY ? 'เลย' : 'งาน' }));
+    return out;
+  }
+
+  function widget() {
+    const fs = frames();
+    const days = S.wpick && S.wpick !== TODAY ? [S.wpick] : [TODAY, TODAY + 1];
+    let ag = '';
+    days.forEach(d => {
+      const st = (S.stickers[d] || []).join('');
+      ag += '<div class="dh' + (d === S.wpick ? ' on' : '') + '">' + dayName(d) + (st ? ' ' + st : '') + ' ' + chip(fs, d) + '</div>';
+      const items = itemsOn(d);
+      if (!items.length) ag += '<div class="free">ว่าง</div>';
+      items.slice(0, 3).forEach(it => {
+        ag += it.kind === 'task'
+          ? '<div class="it"><span class="ring"></span><span class="g">' + esc(it.title) + '</span></div>'
+          : '<div class="it"><span class="bar" style="' + (it.kind === 'hol' ? 'background:var(--red)' : '') + '"></span><span class="g">' + esc(it.title) + '</span><small>' + it.time + '</small></div>';
+      });
+    });
+    return '<div class="hd"><button class="ttl" data-act="whome">ตุลาคม 2569</button><span class="ib">‹</span><span class="ib">›</span><span class="ib">⟳</span><span class="ib">✎</span><span class="plus">+</span></div>'
+      + '<div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>'
+      + '<div class="mon">' + grid('w') + '</div><div class="ag">' + ag + '</div>';
+  }
+
+  function swatches(act, current, withNone) {
+    let h = '<div class="sws">';
+    if (withNone) h += '<button class="dot none' + (current ? '' : ' on') + '" data-act="' + act + '" data-c="none" aria-label="ไม่ใส่กรอบ">ไม่</button>';
+    ORDER.forEach(c => { h += '<button class="dot' + (current === c ? ' on' : '') + '" style="background:' + COLORS[c] + '" data-act="' + act + '" data-c="' + c + '" aria-label="สี ' + c + '"></button>'; });
+    return h + '</div>';
+  }
+
+  function picker(act, chosen, disabled) {
+    const sets = [['ใช้ล่าสุด', S.recent]].concat(SETS);
+    const tab = Math.min(S.tab, sets.length - 1);
+    let h = '<div class="tabs">' + sets.map((s, i) => '<button class="' + (i === tab ? 'on' : '') + '" data-act="tab" data-i="' + i + '">' + s[0] + '</button>').join('') + '</div><div class="picker">';
+    sets[tab][1].forEach(e => {
+      const r = S.rules[e];
+      h += '<button data-act="' + act + '" data-e="' + e + '"' + (disabled ? ' disabled' : '') + (chosen === e ? ' class="chosen"' : '') + '>' + e + (r ? '<i style="background:' + COLORS[r.color] + '"></i>' : '') + '</button>';
+    });
+    return h + '</div>';
+  }
+
+  function rulesCard() {
+    const fs = frames();
+    let h = '<div class="card"><h3>Emoji ที่ใส่กรอบให้เอง</h3><div class="sub">ติด Emoji นี้ให้วันไหน วันนั้นได้กรอบสีนี้ แตะกฎเพื่อแก้</div><div class="rules">';
+    const keys = Object.keys(S.rules);
+    if (!keys.length) h += '<div class="free">ยังไม่มี กดเพิ่มด้านล่าง</div>';
+    keys.forEach(e => {
+      const r = S.rules[e], open = S.editRule === e;
+      const n = fs.filter(f => f.emoji === e).reduce((a, f) => a + f.days.length, 0);
+      h += '<button class="rule' + (open ? ' open' : '') + '" data-act="editrule" data-e="' + e + '"><span class="em">' + e + '</span><span class="box" style="border-color:' + COLORS[r.color] + '"></span><span class="g">' + (r.label ? esc(r.label) : '<span style="color:var(--muted)">ไม่มีชื่อ</span>') + '<small>เดือนนี้ ' + n + ' วัน</small></span><span class="chev">›</span></button>';
+      if (open) h += '<div class="edit"><div class="lbl">สีกรอบ</div>' + swatches('rulecolor', r.color, false)
+        + '<div class="lbl">ชื่อบนป้าย (ไม่ใส่ก็ได้)</div><input class="inp" id="rule-label" data-field="rulelabel" value="' + esc(r.label) + '" placeholder="เช่น เที่ยว">'
+        + '<div class="btns"><button class="btn d" data-act="delrule">ลบกฎ</button><button class="btn p" data-act="closerule">เสร็จ</button></div></div>';
+    });
+    h += '</div>';
+    if (S.adding) {
+      const a = S.adding;
+      h += '<div class="edit"><p>เลือก Emoji</p>' + picker('addpick', a.emoji, false)
+        + '<div class="lbl">สีกรอบ</div>' + swatches('addcolor', a.color, false)
+        + '<div class="lbl">ชื่อบนป้าย (ไม่ใส่ก็ได้)</div><input class="inp" id="add-label" data-field="addlabel" value="' + esc(a.label) + '" placeholder="เช่น บิน">'
+        + '<div class="btns"><button class="btn s" data-act="addcancel">ยกเลิก</button><button class="btn p" data-act="addsave"' + (a.emoji ? '' : ' disabled') + '>' + (a.emoji && S.rules[a.emoji] ? 'บันทึกทับ' : 'บันทึก') + '</button></div></div>';
+    } else h += '<button class="addrow" data-act="addopen"><span>+</span>เพิ่ม Emoji</button>';
+    h += toggle() + '</div>';
+    return h;
+  }
+
+  function toggle() {
+    return '<button class="tg" data-act="tasks" role="switch" aria-checked="' + S.countTasks + '"><span class="g">นับ Emoji ในชื่องานด้วย<small>งานที่ชื่อมี 🏥 ใส่กรอบแดงให้วันครบกำหนด</small></span><span class="sw' + (S.countTasks ? ' on' : '') + '"></span></button>';
+  }
+
+  function hintCard() {
+    const keys = Object.keys(S.rules);
+    return '<div class="card"><h3>Emoji ที่ใส่กรอบให้เอง</h3><div class="sub">ทางนี้ไม่มีหน้ารวมกฎ แตะวันในตาราง แล้วแตะ Emoji บนวันนั้นเพื่อตั้งสีกรอบ</div>'
+      + '<div style="font-size:13px">ตอนนี้มีกรอบ: ' + (keys.length ? keys.map(e => e + '<span class="box" style="display:inline-block;vertical-align:-2px;margin:0 8px 0 4px;border-color:' + COLORS[S.rules[e].color] + '"></span>').join('') : 'ยังไม่มี') + '</div>'
+      + toggle() + '</div>';
+  }
+
+  function dayCard(d) {
+    const fs = frames(), items = itemsOn(d);
+    let h = '<div class="card"><div class="dh on" style="font-size:14px;color:var(--text);padding:0">' + dowOf(d) + ' ' + d + ' ต.ค. ' + chip(fs, d) + '</div><div class="lines">';
+    if (!items.length) h += '<div class="free" style="padding:0">ว่าง</div>';
+    items.forEach(it => {
+      const col = it.kind === 'hol' || it.time === 'เลย' ? 'var(--red)' : it.kind === 'task' ? 'var(--green)' : 'var(--accent)';
+      h += '<div class="ln"><small>' + it.time + '</small><span class="bar" style="background:' + col + '"></span><span>' + esc(it.title) + '</span></div>';
+    });
+    return h + '</div></div>';
+  }
+
+  function stickerEditor(d) {
+    const list = S.stickers[d] || [], full = list.length >= MAX, b = S.opt === 'b';
+    let h = '<div class="card"><h3>Emoji ของวันที่ ' + d + ' ต.ค.</h3><div class="sub">'
+      + (list.length ? (b ? 'แตะ Emoji บนวันเพื่อตั้งกรอบหรือเอาออก' : 'แตะ Emoji เพื่อเอาออก') : 'ยังไม่มี เลือกจากด้านล่างได้หลายตัว') + '</div>';
+    if (list.length) {
+      h += '<div class="onday">' + list.map((e, i) => {
+        const r = S.rules[e];
+        return '<button class="em' + (b && S.focus === i ? ' focus' : '') + '" data-act="dayemoji" data-i="' + i + '" aria-label="' + (b ? 'ตั้งกรอบ ' : 'เอาออก ') + e + '">' + e + (r ? '<i style="border-color:' + COLORS[r.color] + '"></i>' : '') + '</button>';
+      }).join('') + '</div>';
+    }
+    if (b && S.focus != null && list[S.focus]) {
+      const e = list[S.focus], r = S.rules[e];
+      h += '<div class="edit"><p>ทุกวันที่ติด ' + e + ' ใส่กรอบสี</p>' + swatches('bcolor', r ? r.color : null, true)
+        + (r ? '<input class="inp" id="b-label" data-field="blabel" value="' + esc(r.label) + '" placeholder="ชื่อบนป้าย (ไม่ใส่ก็ได้)">' : '')
+        + '<div class="btns"><button class="btn s" data-act="bremove">เอา ' + e + ' ออกจากวันนี้</button></div></div>';
+    }
+    h += picker('stick', null, full);
+    if (full) h += '<div class="full">ครบ ' + MAX + ' ตัวแล้ว</div>';
+    return h + '</div>';
+  }
+
+  function renderGrids() {
+    document.getElementById('appgrid').innerHTML = grid('app');
+    document.getElementById('widget').innerHTML = widget();
+  }
+
+  function render() {
+    document.getElementById('opt-a').className = S.opt === 'a' ? 'on' : '';
+    document.getElementById('opt-b').className = S.opt === 'b' ? 'on' : '';
+    document.getElementById('hint').textContent = S.sel == null ? 'แตะวันเพื่อดูงานและติด Emoji' : 'แตะวันเดิมอีกครั้งเพื่อกลับ';
+    document.getElementById('panel').innerHTML = S.sel == null ? (S.opt === 'a' ? rulesCard() : hintCard()) : dayCard(S.sel) + stickerEditor(S.sel);
+    renderGrids();
+  }
+
+  const bump = e => { S.recent = [e].concat(S.recent.filter(x => x !== e)).slice(0, 16); };
+  const focused = () => (S.stickers[S.sel] || [])[S.focus];
+  function removeAt(i) {
+    const l = (S.stickers[S.sel] || []).slice();
+    l.splice(i, 1);
+    if (l.length) S.stickers[S.sel] = l; else delete S.stickers[S.sel];
+    S.focus = null;
+  }
+
+  document.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-act]');
+    if (!b || b.disabled) return;
+    const a = b.dataset.act, d = +b.dataset.d, e = b.dataset.e, c = b.dataset.c;
+    switch (a) {
+      case 'opt': S.opt = b.dataset.v; S.focus = null; S.editRule = null; S.adding = null; break;
+      case 'reset': reset(); break;
+      case 'day': S.sel = S.sel === d ? null : d; S.focus = null; S.editRule = null; S.adding = null; break;
+      case 'wday': S.wpick = d; break;
+      case 'whome': S.wpick = null; break;
+      case 'tab': S.tab = +b.dataset.i; break;
+      case 'stick': { const l = S.stickers[S.sel] || []; if (l.length < MAX) { S.stickers[S.sel] = l.concat(e); bump(e); } break; }
+      case 'dayemoji': { const i = +b.dataset.i; if (S.opt === 'a') removeAt(i); else S.focus = S.focus === i ? null : i; break; }
+      case 'bcolor': { const em = focused(); if (!em) break; if (c === 'none') delete S.rules[em]; else S.rules[em] = { color: c, label: S.rules[em] ? S.rules[em].label : '' }; break; }
+      case 'bremove': removeAt(S.focus); break;
+      case 'editrule': S.editRule = S.editRule === e ? null : e; S.adding = null; break;
+      case 'rulecolor': if (S.rules[S.editRule]) S.rules[S.editRule].color = c; break;
+      case 'delrule': delete S.rules[S.editRule]; S.editRule = null; break;
+      case 'closerule': S.editRule = null; break;
+      case 'addopen': S.adding = { emoji: null, color: 'blue', label: '' }; S.editRule = null; break;
+      case 'addpick': S.adding.emoji = e; if (S.rules[e]) { S.adding.color = S.rules[e].color; S.adding.label = S.rules[e].label; } break;
+      case 'addcolor': S.adding.color = c; break;
+      case 'addcancel': S.adding = null; break;
+      case 'addsave': if (S.adding.emoji) { S.rules[S.adding.emoji] = { color: S.adding.color, label: S.adding.label.trim() }; bump(S.adding.emoji); S.adding = null; } break;
+      case 'tasks': S.countTasks = !S.countTasks; break;
+    }
+    render();
+  });
+
+  // Typing a name updates the frames as you type, without redrawing the box being typed in.
+  document.addEventListener('input', ev => {
+    const f = ev.target.dataset && ev.target.dataset.field;
+    if (!f) return;
+    const v = ev.target.value;
+    if (f === 'rulelabel' && S.rules[S.editRule]) S.rules[S.editRule].label = v;
+    if (f === 'blabel') { const em = focused(); if (S.rules[em]) S.rules[em].label = v; }
+    if (f === 'addlabel' && S.adding) S.adding.label = v;
+    renderGrids();
+  });
+
+  render();
+})();
+</script>

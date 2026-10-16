@@ -256,7 +256,7 @@ internal object MonthLive {
         set(widgetId, nav)
         val app = context.applicationContext
         val session = GlanceSessions.session(widgetId)
-        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null} front=${MonthTapService.front}")
+        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null}")
         Stalls.watch(app)
         val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views) }
         if (session != null) scope.launch { runCatching { GlanceSessions.updateGlance(session) }.onFailure { WidgetLog.add("event failed $it") } }
@@ -355,13 +355,20 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 /**
- * A tap on the widget, taken by [MonthTapService], which a tap may start in the foreground: the phone starts it at
- * once, where a broadcast to the app waited seconds whenever the phone had frozen the app (see the service). A day
- * lists that day's work (see [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back
- * to this month and today.
+ * A tap on the widget, taken by [MonthTapActivity]: the phone starts an activity at once, where a broadcast or a
+ * service start to the app waited seconds whenever the phone had frozen the app (see the activity). A day lists that
+ * day's work (see [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back to this
+ * month and today.
  */
-private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartService(
-    Intent(context, MonthTapService::class.java)
+private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartActivity(
+    Intent(context, MonthTapActivity::class.java)
+        // A task of its own, so the app's task is not brought up, and no animation for an activity never seen. A new
+        // task every time: otherwise a second tap on the same cell, while the first one's activity is still starting
+        // (as when the phone has just woken the app), only brings that task up and is lost.
+        .addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
+        )
         .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
         .apply {
             if (day != null) putExtra(MonthTapService.EXTRA_TAP_DAY, day.toString())
@@ -369,7 +376,6 @@ private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: 
         }
         // A distinct address per cell keeps each one's PendingIntent its own.
         .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/${day ?: "shift$delta"}")),
-    isForegroundService = true,
 )
 
 /** The refresh button: pulls Google Calendar and reads the vault and the calendar again for every widget. */
@@ -419,6 +425,11 @@ internal class MonthSource(
 ) {
     private fun month(offset: Int) = today.withDayOfMonth(1).plusMonths(offset.toLong())
 
+    /** The frames as drawn: those set by hand and those the emoji rules make, from the stickers and the task titles. */
+    private val shown by lazy {
+        marks.shown(tasks.mapNotNull { t -> (t.due ?: t.scheduled)?.let { it to t.title } }.groupBy({ it.first }, { it.second }))
+    }
+
     fun covers(offset: Int): Boolean = MonthGrid.days(month(offset)).let { it.first() >= from && it.last() <= to }
 
     fun view(offset: Int, picked: LocalDate?): MonthData {
@@ -439,7 +450,7 @@ internal class MonthSource(
                 .map { MonthData.Item.Todo(it, ChronoUnit.DAYS.between(it.due!!, today)) } else emptyList()
             d to events + tasksOn(d).map { MonthData.Item.Todo(it) } + overdue
         }
-        return MonthData(today, month, offset, marks, holidays, work, selected, agenda, style, emoji)
+        return MonthData(today, month, offset, shown, holidays, work, selected, agenda, style, emoji)
     }
 
     companion object {
@@ -829,7 +840,8 @@ internal class MonthPainter(
         frames.filter { it.label.isNotEmpty() }.forEach { f ->
             val i = f.days.firstNotNullOfOrNull { index[it] } ?: return@forEach
             val r = rect(i)
-            val text = ellipsize(f.label, tagText, cw * 3f)
+            // A frame an emoji made carries the emoji in front of its name.
+            val text = ellipsize(if (f.emoji.isEmpty()) f.label else "${f.emoji} ${f.label}", tagText, cw * 3f)
             val tw = tagText.measureText(text) + dp(10f)
             val left = minOf(r.left + dp(1f), w - tw)
             val box = RectF(left, r.top - dp(7f), left + tw, r.top + dp(6f))

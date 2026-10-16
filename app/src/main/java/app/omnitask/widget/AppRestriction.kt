@@ -10,7 +10,7 @@ import android.provider.Settings
 
 /**
  * Whether the phone holds the app back in the background. With the app restricted (the Battery page of the app's
- * settings, or Samsung's sleeping apps), Android keeps the widget's taps for seconds and delivers them together, so
+ * settings, or the phone maker's own lists), Android keeps the widget's taps for seconds and delivers them together, so
  * the widget seems to freeze and then jump; the owner's phone did this until the setting was changed.
  */
 object AppRestriction {
