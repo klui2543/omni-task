@@ -15,6 +15,11 @@ Native Android app (Kotlin, Jetpack Compose) that reads and writes the checkbox 
 - The Obsidian plugin (Omni Ygdrasil, `obsidian/`) bundles the same shared code; `.github/workflows/obsidian.yml` builds it and publishes releases to the separate repository `klui2543/omni-ygdrasil` (secret `OMNI_PLUGIN_TOKEN`) for BRAT, so this repository's releases stay APK-only for Obtainium.
 - Release APKs are signed in CI from repository secrets (`OMNI_KEYSTORE_B64`, `OMNI_KEYSTORE_PASSWORD`, `OMNI_KEY_ALIAS`) and published as GitHub releases for Obtainium. Never commit a keystore.
 
+## The owner's phone
+
+- OPPO Find N6 (ColorOS), not Samsung. Older commits and comments that blame Samsung's freezer were a wrong guess.
+- Omni's battery use is already set to unrestricted, and the month widget's taps were still delayed after that.
+
 ## Vault facts
 
 - The app's own notes live in `📁 Folder/หลังบ้าน/Omni/`: the task note `Omni note.md` (live tasks, new tasks go here), its archive `Omni note Archive.md`, the profile `โปรไฟล์.md`, the list notes (Bucket list...) and `omni-settings.json` (Android). Before the move, the task note was `📁 Folder/หลังบ้าน/TaskForge/TaskForge.md` and the rest was in `Omni/` at the vault root; the apps still read those places until the owner moves them (Drive keeps a moved file's id, so nothing breaks).
