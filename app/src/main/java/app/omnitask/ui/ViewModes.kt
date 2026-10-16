@@ -268,7 +268,7 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
 }
 
 /** The calendar's own views: the month grid, or a timeline of 7, 3 or 1 days. */
-internal enum class CalendarSpan(val days: Int, private val th: String, private val en: String) {
+enum class CalendarSpan(val days: Int, private val th: String, private val en: String) {
     MONTH(0, "เดือน", "Month"), WEEK(7, "7 วัน", "7 days"), THREE(3, "3 วัน", "3 days"), DAY(1, "วัน", "Day");
 
     val label get() = tr(th, en)
