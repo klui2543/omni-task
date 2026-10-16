@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
             ACTION_STUCK -> viewModel.requestStuck(true)
             ACTION_CALENDAR -> viewModel.requestCalendar(
                 intent.getStringExtra(EXTRA_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now(),
+                reveal = true,
             )
             ACTION_MONTH -> viewModel.requestMonth(
                 MonthRequest(

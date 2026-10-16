@@ -313,14 +313,14 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     LaunchedEffect(month) { vm.loadMonth(month.firstDay()) }
     val listState = rememberLazyListState()
     // The month widget sent a day: show its month with it chosen, and bring that day's list up, which sits below the
-    // fold under the month. The scroll runs on its own key: clearing the request restarts the effect keyed by it, which
+    // fold under the month (not when the frames page closed back here). The scroll runs on its own key: clearing the request restarts the effect keyed by it, which
     // would cancel a scroll started there.
     var reveal by remember { mutableIntStateOf(0) }
     LaunchedEffect(state.calendarDay) {
         state.calendarDay?.let { d ->
             selected = d.toString()
             shown = d.yearMonth.toString()
-            reveal++
+            if (state.calendarReveal) reveal++
             vm.requestCalendar(null)
         }
     }
