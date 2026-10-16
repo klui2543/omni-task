@@ -101,6 +101,9 @@ class MonthWidgetTest {
         check(!MonthSource.reusable(source, 7, 0, d(16)))
         check(!MonthSource.reusable(source, 7, 5, d(15)))
         check(!MonthSource.reusable(null, 7, 0, d(15)))
+        // Ahead of ‹ ›, the two months either side must be loaded too.
+        check(MonthSource.reusable(source, 7, 0, d(15), ahead = true))
+        check(!MonthSource.reusable(source, 7, 2, d(15), ahead = true))
     }
 
     @Test
