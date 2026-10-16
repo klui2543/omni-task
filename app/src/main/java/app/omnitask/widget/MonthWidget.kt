@@ -415,6 +415,7 @@ internal class MonthSource(
     private val events: List<CalendarEvent>,
     private val holidays: Map<LocalDate, String>,
     private val style: CellStyle = CellStyle.TINT,
+    private val emoji: Float = MonthMarksStore.EMOJI_DEFAULT,
 ) {
     private fun month(offset: Int) = today.withDayOfMonth(1).plusMonths(offset.toLong())
 
@@ -438,7 +439,7 @@ internal class MonthSource(
                 .map { MonthData.Item.Todo(it, ChronoUnit.DAYS.between(it.due!!, today)) } else emptyList()
             d to events + tasksOn(d).map { MonthData.Item.Todo(it) } + overdue
         }
-        return MonthData(today, month, offset, marks, holidays, work, selected, agenda, style)
+        return MonthData(today, month, offset, marks, holidays, work, selected, agenda, style, emoji)
     }
 
     companion object {
@@ -482,7 +483,7 @@ internal class MonthSource(
                 .filter { it.calendarId !in holidayIds }
             val holidays = runCatching { CalendarReader.holidays(context, from, to) }.getOrDefault(emptyMap())
             val tasks = Scheduler.loadVaultTasks(context).filter { it.isOpen }
-            return MonthSource(today, stamp, from, to, MonthMarksStore.local(context), tasks, events, holidays, MonthMarksStore.cellStyle(context))
+            return MonthSource(today, stamp, from, to, MonthMarksStore.local(context), tasks, events, holidays, MonthMarksStore.cellStyle(context), MonthMarksStore.emojiSize(context))
         }
     }
 }
@@ -499,6 +500,8 @@ internal class MonthData(
     val selected: LocalDate?,
     val agenda: List<Pair<LocalDate, List<Item>>>,
     val style: CellStyle = CellStyle.TINT,
+    /** The emoji's size in sp, set on the frames and emoji page. */
+    val emoji: Float = MonthMarksStore.EMOJI_DEFAULT,
 ) {
     /**
      * Compared by value, so the widget keeps its picture when a tap leaves the work as it was. [late] is open work on a
@@ -561,7 +564,7 @@ private const val TAG_INSET = 8f
 private object Pictures {
     data class Key(
         val month: LocalDate, val today: LocalDate, val marks: MonthMarks, val holidays: Map<LocalDate, String>,
-        val work: Map<LocalDate, List<MonthData.Mark>>, val style: CellStyle, val width: Float, val cell: Float, val rows: Int,
+        val work: Map<LocalDate, List<MonthData.Mark>>, val style: CellStyle, val emoji: Float, val width: Float, val cell: Float, val rows: Int,
         val palette: Palette,
     )
 
@@ -606,7 +609,7 @@ private fun MonthContent(context: Context, data: MonthData) {
             // The picture changes only with the month, the work or the size; a tap on a day keeps it and moves the box,
             // drawn on top, so the launcher gets a small update.
             val palette = widgetPalette(context)
-            val bitmap = Pictures.get(Pictures.Key(data.month, data.today, data.marks, data.holidays, data.work, data.style, gridWidth, cell, rows, palette)) {
+            val bitmap = Pictures.get(Pictures.Key(data.month, data.today, data.marks, data.holidays, data.work, data.style, data.emoji, gridWidth, cell, rows, palette)) {
                 MonthPainter(context, palette, maxScale = 2f, background = palette.card.toArgb(), ring = false)
                     .draw(data, gridWidth, cell, rows)
             }
@@ -852,7 +855,7 @@ internal class MonthPainter(
         val barBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val barHeightDp = if (bars) ((cellDp - 23f) / 2f - 1f).coerceIn(8f, 12f) else 12f
         val barText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(barHeightDp * 0.78f); color = p.text.toArgb() }
-        val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(10f); textAlign = Paint.Align.RIGHT }
+        val emoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(data.emoji); textAlign = Paint.Align.RIGHT }
         val more = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(8.5f); textAlign = Paint.Align.RIGHT; color = p.muted.toArgb() }
         val moreRight = Paint(more).apply { textSize = sp(9f) }
         val patchBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.card.toArgb(); alpha = 226 }
@@ -903,8 +906,11 @@ internal class MonthPainter(
             // Up to three emoji in the lower right corner, with "+n" for the rest. Over title bars they sit on a soft
             // patch, so they read over a bar's end.
             if (stickers.isNotEmpty() && !small) {
-                val extra = stickers.size - 3
-                val text = stickers.take(3).joinToString("")
+                // Up to three that fit across the day, the rest counted.
+                var shown = minOf(3, stickers.size)
+                while (shown > 1 && emoji.measureText(stickers.take(shown).joinToString("")) > r.width() - dp(8f)) shown--
+                val extra = stickers.size - shown
+                val text = stickers.take(shown).joinToString("")
                 val y = r.bottom - dp(4f)
                 val width = emoji.measureText(text) + if (extra > 0) more.measureText("+$extra") + dp(1f) else 0f
                 if (bars) {
