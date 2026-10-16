@@ -5,6 +5,7 @@ import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import app.omnitask.time.*
 
@@ -24,9 +25,18 @@ data class MonthMarks(
     val frames: List<Frame> = emptyList(),
     /** Emoji per day, keyed by the ISO date, in the order they were added. */
     val stickers: Map<String, List<String>> = emptyMap(),
+    /** Emoji that frame the days they are on, like a hashtag with a colour: see [shown]. */
+    val rules: Map<String, Rule> = emptyMap(),
+    /** Whether an emoji with a rule in a task's title frames the task's day too. */
+    val taskEmoji: Boolean = false,
 ) {
+    /** The frame an emoji gives the days it is on. */
     @Serializable
-    data class Frame(val days: List<LocalDate>, val color: FrameColor, val label: String = "") {
+    data class Rule(val color: FrameColor, val label: String = "")
+
+    /** [emoji] is set on a frame an emoji's rule made, which is drawn but never saved. */
+    @Serializable
+    data class Frame(val days: List<LocalDate>, val color: FrameColor, val label: String = "", @Transient val emoji: String = "") {
         val first get() = days.first()
         val last get() = days.last()
 
@@ -69,6 +79,46 @@ data class MonthMarks(
         return copy(stickers = if (clean.isEmpty()) stickers - key else stickers + (key to clean))
     }
 
+    /** The rule for [emoji], matched with or without the emoji's variation selector; null when it has none. */
+    fun ruleFor(emoji: String): Pair<String, Rule>? = norm(emoji).let { e -> rules.entries.firstOrNull { norm(it.key) == e }?.toPair() }
+
+    /** Sets [emoji]'s rule, replacing one it had under another spelling. */
+    fun withRule(emoji: String, rule: Rule): MonthMarks {
+        val e = emoji.trim()
+        if (e.isEmpty()) return this
+        return copy(rules = rules.filterKeys { norm(it) != norm(e) } + (e to rule.copy(label = rule.label.trim())))
+    }
+
+    fun withoutRule(emoji: String): MonthMarks = copy(rules = rules.filterKeys { norm(it) != norm(emoji) })
+
+    /**
+     * These marks as the month is drawn: the frames set by hand, and a frame for the days each emoji with a rule is on.
+     * A day takes the first emoji on it that has a rule, then, with [taskEmoji] on, one in the title of a task due
+     * that day ([taskTitles]). Days of one emoji that touch on the grid make one frame, as days framed together do.
+     * A day framed by hand keeps that frame.
+     */
+    fun shown(taskTitles: Map<LocalDate, List<String>> = emptyMap()): MonthMarks {
+        if (rules.isEmpty()) return this
+        val taken = frames.flatMap { it.days }.toMutableSet()
+        val byEmoji = LinkedHashMap<String, MutableSet<LocalDate>>()
+        fun put(emoji: String, day: LocalDate) {
+            if (taken.add(day)) byEmoji.getOrPut(emoji) { mutableSetOf() } += day
+        }
+        stickers.entries.sortedBy { it.key }.forEach { (key, list) ->
+            val day = runCatching { LocalDate.parse(key) }.getOrNull() ?: return@forEach
+            list.firstNotNullOfOrNull { ruleFor(it)?.first }?.let { put(it, day) }
+        }
+        if (taskEmoji) taskTitles.entries.sortedBy { it.key }.forEach { (day, titles) ->
+            titles.firstNotNullOfOrNull { t -> norm(t).let { title -> rules.keys.firstOrNull { title.contains(norm(it)) } } }?.let { put(it, day) }
+        }
+        if (byEmoji.isEmpty()) return this
+        val added = byEmoji.flatMap { (emoji, days) ->
+            val rule = rules.getValue(emoji)
+            pieces(days).map { Frame(it, rule.color, rule.label, emoji) }
+        }
+        return copy(frames = (frames + added).sortedBy { it.first })
+    }
+
     fun encode(): String = json.encodeToString(serializer(), this)
 
     companion object {
@@ -78,6 +128,9 @@ data class MonthMarks(
         const val MAX_STICKERS = 6
 
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
+
+        /** An emoji without its variation selector, so 🏖 and 🏖️ are the same. */
+        private fun norm(s: String) = s.replace("\uFE0F", "")
 
         fun decode(text: String?): MonthMarks? = text?.let { runCatching { json.decodeFromString(serializer(), it) }.getOrNull() }
 

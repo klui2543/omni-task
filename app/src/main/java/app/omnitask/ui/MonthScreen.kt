@@ -149,6 +149,10 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     }
 
     val current = marks
+    // What the grid draws: the frames set by hand, and those the emoji rules make from the emoji and the task titles.
+    val shown = remember(current, state.tasks) {
+        current.shown(state.tasks.filter { it.isOpen }.mapNotNull { t -> (t.due ?: t.scheduled)?.let { it to t.title } }.groupBy({ it.first }, { it.second }))
+    }
     val days = MonthGrid.days(month)
     fun tasksOn(d: LocalDate) = state.tasks.filter { it.isOpen && (it.due ?: it.scheduled) == d }
     fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
@@ -188,7 +192,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         }
                     }
                     Grid(
-                        context, month, days, state.today, current, holidays, work, style, emojiSize, selection, multi,
+                        context, month, days, state.today, shown, holidays, work, style, emojiSize, selection, multi,
                         onTap = { d ->
                             if (multi) {
                                 selection = if (d in selection) selection - d else selection + d
@@ -222,6 +226,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     onPick = { f -> multi = true; selection = f.days.toSet(); lastDay = f.days.lastOrNull(); color = f.color; label = f.label; editing = f },
                     onDelete = { f -> commit(current.without(f)) },
                 )
+                EmojiRules(context, current, shown, month) { commit(it) }
                 Card {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(tr("งานในช่องวัน (widget และปฏิทินในแอป)", "Work in the day cells (widget and the app's calendar)"), color = C.text, fontSize = TS.body)
@@ -300,7 +305,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                 if (selection.size == 1) {
                     val d = selection.first()
                     DayCard(d, dayLines(d), short = false)
-                    StickerEditor(context, d, current.stickersOn(d)) { commit(current.withStickers(d, it)) }
+                    StickerEditor(context, current, d, current.stickersOn(d)) { commit(current.withStickers(d, it)) }
                 } else {
                     Card {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -464,13 +469,7 @@ private fun FrameEditor(
                 Modifier.padding(top = 2.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                FrameColor.entries.forEach { c ->
-                    val on = c == color
-                    Box(
-                        Modifier.size(30.dp).then(if (on) Modifier.border(2.dp, C.text, CircleShape).padding(4.dp) else Modifier)
-                            .clip(CircleShape).background(Color(c.argb)).clickable { onColor(c) },
-                    )
-                }
+                ColorDots(color, onColor)
                 Box(
                     Modifier.size(30.dp).clip(CircleShape).border(1.5.dp, C.faint, CircleShape).clickable(onClick = onRemove),
                     contentAlignment = Alignment.Center,
@@ -536,11 +535,9 @@ private const val KEY_RECENT = "month.recentEmoji"
 /** The emoji on one day: tap one to take it off, pick from the sets or type any other. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StickerEditor(context: Context, day: LocalDate, stickers: List<String>, onChange: (List<String>) -> Unit) {
+private fun StickerEditor(context: Context, marks: MonthMarks, day: LocalDate, stickers: List<String>, onChange: (List<String>) -> Unit) {
     val prefs = remember { context.getSharedPreferences("omnitask", Context.MODE_PRIVATE) }
     var recent by remember { mutableStateOf(prefs.getString(KEY_RECENT, null)?.split('\n')?.filter { it.isNotBlank() }.orEmpty()) }
-    val sets = (if (recent.isEmpty()) emptyList() else listOf(tr("ใช้ล่าสุด", "Recent") to recent)) + emojiSets()
-    var tab by remember { mutableStateOf(0) }
     var typed by remember(day) { mutableStateOf("") }
     val full = stickers.size >= MonthMarks.MAX_STICKERS
     fun add(e: String) {
@@ -561,30 +558,177 @@ private fun StickerEditor(context: Context, day: LocalDate, stickers: List<Strin
             if (stickers.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     stickers.forEachIndexed { i, e ->
+                        // An emoji with a rule is edged in its frame's colour.
+                        val rule = marks.ruleFor(e)?.second
                         Box(
-                            Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(C.raised).clickable { onChange(stickers.filterIndexed { j, _ -> j != i }) },
+                            Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(C.raised)
+                                .then(if (rule != null) Modifier.border(2.dp, Color(rule.color.argb), RoundedCornerShape(10.dp)) else Modifier)
+                                .clickable { onChange(stickers.filterIndexed { j, _ -> j != i }) },
                             contentAlignment = Alignment.Center,
                         ) { Text(e, fontSize = 22.sp) }
                     }
                 }
             }
-            Row(Modifier.padding(top = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                sets.forEachIndexed { i, (name, _) -> Chip(name, i == tab.coerceAtMost(sets.size - 1), { tab = i }) }
-            }
-            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                sets[tab.coerceAtMost(sets.size - 1)].second.forEach { e ->
-                    Box(
-                        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = !full) { add(e) },
-                        contentAlignment = Alignment.Center,
-                    ) { Text(e, fontSize = 22.sp, color = if (full) C.faint else Color.Unspecified) }
-                }
-            }
+            Box(Modifier.padding(top = 12.dp)) { EmojiPicker(marks, recent, chosen = null, enabled = !full) { add(it) } }
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { TextBox(typed, tr("หรือพิมพ์ Emoji อื่น", "Or type another emoji")) { typed = it } }
                 Box(Modifier.width(8.dp))
                 GhostButton(tr("เพิ่ม", "Add"), { add(typed); typed = "" })
             }
             if (full) Text(tr("ครบ ${MonthMarks.MAX_STICKERS} ตัวแล้ว", "That is ${MonthMarks.MAX_STICKERS}, the most a day keeps"), Modifier.padding(top = 8.dp), color = C.amber, fontSize = TS.caption)
+        }
+    }
+}
+
+/** The frame colours to pick from, the chosen one ringed. */
+@Composable
+private fun ColorDots(color: FrameColor?, onColor: (FrameColor) -> Unit) {
+    FrameColor.entries.forEach { c ->
+        val on = c == color
+        Box(
+            Modifier.size(30.dp).then(if (on) Modifier.border(2.dp, C.text, CircleShape).padding(4.dp) else Modifier)
+                .clip(CircleShape).background(Color(c.argb)).clickable { onColor(c) },
+        )
+    }
+}
+
+/** The emoji sets with their tabs; an emoji with a rule carries a dot in its frame's colour. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EmojiPicker(marks: MonthMarks, recent: List<String>, chosen: String?, enabled: Boolean, onPick: (String) -> Unit) {
+    val sets = (if (recent.isEmpty()) emptyList() else listOf(tr("ใช้ล่าสุด", "Recent") to recent)) + emojiSets()
+    var tab by remember { mutableStateOf(0) }
+    Column {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            sets.forEachIndexed { i, (name, _) -> Chip(name, i == tab.coerceAtMost(sets.size - 1), { tab = i }) }
+        }
+        FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            sets[tab.coerceAtMost(sets.size - 1)].second.forEach { e ->
+                val rule = marks.ruleFor(e)?.second
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+                        .then(if (e == chosen) Modifier.background(C.raised).border(1.5.dp, C.accent, RoundedCornerShape(10.dp)) else Modifier)
+                        .clickable(enabled = enabled) { onPick(e) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(e, fontSize = 22.sp, color = if (enabled) Color.Unspecified else C.faint)
+                    if (rule != null) Box(
+                        Modifier.align(Alignment.BottomEnd).padding(4.dp).size(9.dp).clip(CircleShape).background(C.card).padding(1.5.dp)
+                            .clip(CircleShape).background(Color(rule.color.argb)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Emoji that frame the days they are on, like a hashtag with a colour: each with its colour, name and how many days of
+ * this month it frames. Tap one to change or delete it; add one from the emoji sets. The switch has emoji in the titles
+ * of tasks frame their days too.
+ */
+@Composable
+private fun EmojiRules(context: Context, marks: MonthMarks, shown: MonthMarks, month: LocalDate, onChange: (MonthMarks) -> Unit) {
+    val recent = remember { context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).getString(KEY_RECENT, null)?.split('\n')?.filter { it.isNotBlank() }.orEmpty() }
+    var open by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var pick by remember { mutableStateOf<String?>(null) }
+    var color by remember { mutableStateOf(FrameColor.BLUE) }
+    var label by remember { mutableStateOf("") }
+    val last = month.plusMonths(1).minusDays(1)
+    Card {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Emoji ที่ใส่กรอบให้เอง", "Emoji that frame their days"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text(
+                tr("ติด Emoji นี้ให้วันไหน วันนั้นได้กรอบสีนี้ แตะกฎเพื่อแก้", "A day with one of these emoji gets its frame. Tap one to change it."),
+                color = C.muted, fontSize = TS.caption,
+            )
+            marks.rules.forEach { (e, rule) ->
+                val count = shown.frames.filter { it.emoji == e }.sumOf { f -> f.days.count { it >= month && it <= last } }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
+                        open = if (open == e) null else e
+                        adding = false
+                        label = rule.label
+                    }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(C.raised), contentAlignment = Alignment.Center) { Text(e, fontSize = 19.sp) }
+                    Box(Modifier.padding(start = 12.dp).size(width = 18.dp, height = 14.dp).border(2.dp, Color(rule.color.argb), RoundedCornerShape(3.dp)))
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(rule.label.ifEmpty { tr("ไม่มีชื่อ", "No name") }, color = if (rule.label.isEmpty()) C.muted else C.text, fontSize = TS.body)
+                        Text(tr("เดือนนี้ $count วัน", "$count days this month"), color = C.muted, fontSize = TS.caption)
+                    }
+                    Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(16.dp))
+                }
+                if (open == e) {
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.raised).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(tr("สีกรอบ", "Frame colour"), color = C.muted, fontSize = TS.caption)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { ColorDots(rule.color) { onChange(marks.withRule(e, rule.copy(color = it, label = label))) } }
+                        Text(tr("ชื่อบนป้าย (ไม่ใส่ก็ได้)", "Name on the tag (optional)"), color = C.muted, fontSize = TS.caption)
+                        TextBox(label, tr("เช่น เที่ยว", "e.g. Trip")) { label = it }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            GhostButton(tr("ลบกฎ", "Delete"), { onChange(marks.withoutRule(e)); open = null }, Modifier.weight(1f))
+                            PrimaryButton(tr("เสร็จ", "Done"), { onChange(marks.withRule(e, rule.copy(label = label))); open = null }, Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            if (adding) {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.raised).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(tr("เลือก Emoji", "Pick an emoji"), color = C.text, fontSize = TS.body)
+                    EmojiPicker(marks, recent, chosen = pick, enabled = true) { e ->
+                        pick = e
+                        marks.ruleFor(e)?.second?.let { color = it.color; label = it.label }
+                    }
+                    Text(tr("สีกรอบ", "Frame colour"), color = C.muted, fontSize = TS.caption)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { ColorDots(color) { color = it } }
+                    Text(tr("ชื่อบนป้าย (ไม่ใส่ก็ได้)", "Name on the tag (optional)"), color = C.muted, fontSize = TS.caption)
+                    TextBox(label, tr("เช่น บิน", "e.g. Flight")) { label = it }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GhostButton(tr("ยกเลิก", "Cancel"), { adding = false }, Modifier.weight(1f))
+                        val chosen = pick
+                        PrimaryButton(
+                            if (chosen != null && marks.ruleFor(chosen) != null) tr("บันทึกทับ", "Replace") else tr("บันทึก", "Save"),
+                            { if (chosen != null) { onChange(marks.withRule(chosen, MonthMarks.Rule(color, label))); adding = false } },
+                            Modifier.weight(1f),
+                            color = if (chosen != null) C.accent else C.control,
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                        adding = true; open = null; pick = null; color = FrameColor.BLUE; label = ""
+                    }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(22.dp).border(1.5.dp, C.accentText, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Ic.plus, null, tint = C.accentText, modifier = Modifier.size(13.dp))
+                    }
+                    Text(tr("เพิ่ม Emoji", "Add an emoji"), Modifier.padding(start = 8.dp), color = C.accentText, fontSize = TS.body)
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onChange(marks.copy(taskEmoji = !marks.taskEmoji)) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("นับ Emoji ในชื่องานด้วย", "Count emoji in task titles too"), color = C.text, fontSize = TS.body)
+                    Text(
+                        tr("งานที่ชื่อมี Emoji ข้างบน ใส่กรอบให้วันครบกำหนด", "A task whose title has one of these emoji frames its due day"),
+                        color = C.muted, fontSize = TS.caption,
+                    )
+                }
+                OnOff(marks.taskEmoji)
+            }
         }
     }
 }

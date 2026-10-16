@@ -420,6 +420,11 @@ internal class MonthSource(
 ) {
     private fun month(offset: Int) = today.withDayOfMonth(1).plusMonths(offset.toLong())
 
+    /** The frames as drawn: those set by hand and those the emoji rules make, from the stickers and the task titles. */
+    private val shown by lazy {
+        marks.shown(tasks.mapNotNull { t -> (t.due ?: t.scheduled)?.let { it to t.title } }.groupBy({ it.first }, { it.second }))
+    }
+
     fun covers(offset: Int): Boolean = MonthGrid.days(month(offset)).let { it.first() >= from && it.last() <= to }
 
     fun view(offset: Int, picked: LocalDate?): MonthData {
@@ -440,7 +445,7 @@ internal class MonthSource(
                 .map { MonthData.Item.Todo(it, ChronoUnit.DAYS.between(it.due!!, today)) } else emptyList()
             d to events + tasksOn(d).map { MonthData.Item.Todo(it) } + overdue
         }
-        return MonthData(today, month, offset, marks, holidays, work, selected, agenda, style, emoji)
+        return MonthData(today, month, offset, shown, holidays, work, selected, agenda, style, emoji)
     }
 
     companion object {
@@ -830,7 +835,8 @@ internal class MonthPainter(
         frames.filter { it.label.isNotEmpty() }.forEach { f ->
             val i = f.days.firstNotNullOfOrNull { index[it] } ?: return@forEach
             val r = rect(i)
-            val text = ellipsize(f.label, tagText, cw * 3f)
+            // A frame an emoji made carries the emoji in front of its name.
+            val text = ellipsize(if (f.emoji.isEmpty()) f.label else "${f.emoji} ${f.label}", tagText, cw * 3f)
             val tw = tagText.measureText(text) + dp(10f)
             val left = minOf(r.left + dp(1f), w - tw)
             val box = RectF(left, r.top - dp(7f), left + tw, r.top + dp(6f))
