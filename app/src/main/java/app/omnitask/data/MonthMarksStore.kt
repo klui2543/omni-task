@@ -25,6 +25,18 @@ object MonthMarksStore {
 
     private const val KEY_CELLS = "monthCells"
 
+    /** The emoji's size in the month grid, in sp, on the widget and in the app alike. */
+    fun emojiSize(context: Context): Float = Scheduler.prefs(context).getFloat(KEY_EMOJI, EMOJI_DEFAULT).coerceIn(EMOJI_MIN, EMOJI_MAX)
+
+    fun setEmojiSize(context: Context, sp: Float) {
+        Scheduler.prefs(context).edit().putFloat(KEY_EMOJI, sp.coerceIn(EMOJI_MIN, EMOJI_MAX)).apply()
+    }
+
+    private const val KEY_EMOJI = "monthEmoji"
+    const val EMOJI_MIN = 10f
+    const val EMOJI_MAX = 12f
+    const val EMOJI_DEFAULT = 11f
+
     private fun vault(context: Context): Uri? = Scheduler.prefs(context).getString("vault", null)?.let(Uri::parse)
 
     @Synchronized

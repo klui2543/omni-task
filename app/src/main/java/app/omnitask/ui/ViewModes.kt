@@ -325,6 +325,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     }
     // How days show their work, set on the frames and emoji page; read again when that page closes.
     val style = remember(state.month) { MonthMarksStore.cellStyle(context) }
+    val emojiSize = remember(state.month) { MonthMarksStore.emojiSize(context) }
     val work = MonthData.work(days, first, ::tasksOn, ::eventsOn, state.today)
 
     LazyColumn(
@@ -351,7 +352,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                 }
                 Box(Modifier.padding(horizontal = 8.dp)) {
                     MonthPicture(
-                        MonthData(state.today, first, 0, marks, holidays, work, sel, emptyList(), style),
+                        MonthData(state.today, first, 0, marks, holidays, work, sel, emptyList(), style, emojiSize),
                         onTap = { d -> selected = d.toString(); if (d.yearMonth != month) shown = d.yearMonth.toString() },
                     )
                 }
@@ -421,7 +422,7 @@ private fun MonthPicture(data: MonthData, onTap: (LocalDate) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth().height((inset + rows * cell).dp)) {
         val widthDp = maxWidth.value
         val palette = Palettes.current
-        val bitmap = remember(data.month, data.marks, data.holidays, data.work, data.style, data.selected, data.today, widthDp, palette) {
+        val bitmap = remember(data.month, data.marks, data.holidays, data.work, data.style, data.emoji, data.selected, data.today, widthDp, palette) {
             MonthPainter(context, palette).draw(data, widthDp, cell, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(data.month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)

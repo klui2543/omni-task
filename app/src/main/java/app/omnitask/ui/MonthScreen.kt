@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -102,6 +104,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
     var holidays by remember { mutableStateOf(emptyMap<LocalDate, String>()) }
     var events by remember { mutableStateOf(emptyList<app.omnitask.notify.CalendarEvent>()) }
     var style by remember { mutableStateOf(MonthMarksStore.cellStyle(context)) }
+    var emojiSize by remember { mutableStateOf(MonthMarksStore.emojiSize(context)) }
 
     LaunchedEffect(request) {
         month = request.day.withDayOfMonth(1)
@@ -180,7 +183,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         }
                     }
                     Grid(
-                        context, month, days, state.today, current, holidays, work, style, selection, multi,
+                        context, month, days, state.today, current, holidays, work, style, emojiSize, selection, multi,
                         onTap = { d ->
                             if (multi) {
                                 selection = if (d in selection) selection - d else selection + d
@@ -229,6 +232,28 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                             },
                             Modifier.fillMaxWidth(),
                         )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(tr("ขนาด Emoji", "Emoji size"), color = C.text, fontSize = TS.body)
+                            Slider(
+                                value = emojiSize,
+                                onValueChange = { emojiSize = it },
+                                onValueChangeFinished = {
+                                    val chosen = emojiSize
+                                    scope.launch(Dispatchers.IO) {
+                                        MonthMarksStore.setEmojiSize(context, chosen)
+                                        runCatching { OmniWidgets.refresh(context) }
+                                    }
+                                },
+                                valueRange = MonthMarksStore.EMOJI_MIN..MonthMarksStore.EMOJI_MAX,
+                                steps = 3,
+                                modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                                colors = SliderDefaults.colors(thumbColor = C.accent, activeTrackColor = C.accent, inactiveTrackColor = C.control, activeTickColor = C.onAccent, inactiveTickColor = C.faint),
+                            )
+                            Text(
+                                if (emojiSize % 1f == 0f) "${emojiSize.toInt()}" else "%.1f".format(emojiSize),
+                                Modifier.width(30.dp), color = C.muted, fontSize = TS.body, textAlign = TextAlign.End,
+                            )
+                        }
                         Text(
                             tr("นัดที่มีเกือบทุกวัน เช่น ออกกำลังกาย ไม่นับในช่อง แต่ยังอยู่ในรายการของวัน", "An event on nearly every day, such as a workout, is left out of the cells but stays in the day's list."),
                             color = C.muted, fontSize = TS.caption,
@@ -312,6 +337,7 @@ private fun Grid(
     holidays: Map<LocalDate, String>,
     work: Map<LocalDate, List<MonthData.Mark>>,
     style: CellStyle,
+    emojiSize: Float,
     selection: Set<LocalDate>,
     multi: Boolean,
     onTap: (LocalDate) -> Unit,
@@ -325,8 +351,8 @@ private fun Grid(
     BoxWithConstraints(Modifier.fillMaxWidth().height((TAG_INSET + rows * cell).dp)) {
         val widthDp = maxWidth.value
         val palette = Palettes.current
-        val bitmap = remember(month, marks, holidays, work, style, widthDp, palette, today) {
-            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, work, null, emptyList(), style), widthDp, cell, rows).asImageBitmap()
+        val bitmap = remember(month, marks, holidays, work, style, emojiSize, widthDp, palette, today) {
+            MonthPainter(context, palette).draw(MonthData(today, month, 0, marks, holidays, work, null, emptyList(), style, emojiSize), widthDp, cell, rows).asImageBitmap()
         }
         Image(bitmap, MonthGrid.title(month), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val chosen by rememberUpdatedState(selection)
