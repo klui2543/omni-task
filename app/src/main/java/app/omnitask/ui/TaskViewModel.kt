@@ -148,6 +148,9 @@ data class UiState(
     val month: MonthRequest? = null,
     /** The month widget asked for the calendar at this day; the calendar takes it and clears it. */
     val calendarDay: LocalDate? = null,
+    /** The Tasks tab's view (null: the list) and the calendar's span, kept while the app is open, not saved. */
+    val tasksLayout: Mode? = null,
+    val calendarSpan: CalendarSpan = CalendarSpan.MONTH,
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
@@ -1398,6 +1401,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun requestMonth(request: MonthRequest?) = _state.update { it.copy(month = request) }
 
     fun requestCalendar(day: LocalDate?) = _state.update { it.copy(calendarDay = day) }
+
+    fun setTasksLayout(mode: Mode?) = _state.update { it.copy(tasksLayout = mode) }
+
+    fun setCalendarSpan(span: CalendarSpan) = _state.update { it.copy(calendarSpan = span) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
     fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {

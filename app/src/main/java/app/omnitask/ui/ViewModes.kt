@@ -268,7 +268,7 @@ private fun QuadrantCard(q: Quadrant, tasks: List<Task>, today: LocalDate, onOpe
 }
 
 /** The calendar's own views: the month grid, or a timeline of 7, 3 or 1 days. */
-private enum class CalendarSpan(val days: Int, private val th: String, private val en: String) {
+enum class CalendarSpan(val days: Int, private val th: String, private val en: String) {
     MONTH(0, "เดือน", "Month"), WEEK(7, "7 วัน", "7 days"), THREE(3, "3 วัน", "3 days"), DAY(1, "วัน", "Day");
 
     val label get() = tr(th, en)
@@ -276,10 +276,10 @@ private enum class CalendarSpan(val days: Int, private val th: String, private v
 
 @Composable
 private fun CalendarViews(state: UiState, pool: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
-    var span by rememberSaveable { mutableStateOf(CalendarSpan.MONTH) }
-    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) span = CalendarSpan.MONTH }
+    val span = state.calendarSpan
+    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) vm.setCalendarSpan(CalendarSpan.MONTH) }
     Column(Modifier.fillMaxSize()) {
-        Segmented(CalendarSpan.entries.map { it to it.label }, span, { span = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
+        Segmented(CalendarSpan.entries.map { it to it.label }, span, vm::setCalendarSpan, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
         if (span == CalendarSpan.MONTH) {
             MonthCalendar(state, pool, vm, onOpen)
         } else {
@@ -327,6 +327,10 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     val style = remember(state.month) { MonthMarksStore.cellStyle(context) }
     val emojiSize = remember(state.month) { MonthMarksStore.emojiSize(context) }
     val work = MonthData.work(days, first, ::tasksOn, ::eventsOn, state.today)
+    // The frames as the widget draws them: those set by hand and those the emoji rules make from the emoji and the task titles.
+    val framed = remember(marks, state.tasks) {
+        marks.shown(state.tasks.filter { it.isOpen }.mapNotNull { t -> (t.due ?: t.scheduled)?.let { it to t.title } }.groupBy({ it.first }, { it.second }))
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -352,7 +356,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                 }
                 Box(Modifier.padding(horizontal = 8.dp)) {
                     MonthPicture(
-                        MonthData(state.today, first, 0, marks, holidays, work, sel, emptyList(), style, emojiSize),
+                        MonthData(state.today, first, 0, framed, holidays, work, sel, emptyList(), style, emojiSize),
                         onTap = { d -> selected = d.toString(); if (d.yearMonth != month) shown = d.yearMonth.toString() },
                     )
                 }
@@ -372,7 +376,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                             if (stickers.isEmpty()) "" else " $stickers",
                         color = C.text2, style = MaterialTheme.typography.titleSmall,
                     )
-                    marks.frameOn(sel)?.takeIf { it.label.isNotEmpty() }?.let { f ->
+                    framed.frameOn(sel)?.takeIf { it.label.isNotEmpty() }?.let { f ->
                         val color = Color(f.color.argb)
                         val (n, of) = f.position(sel) ?: (1 to 1)
                         Text(
