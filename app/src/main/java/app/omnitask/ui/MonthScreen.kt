@@ -226,7 +226,6 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     onPick = { f -> multi = true; selection = f.days.toSet(); lastDay = f.days.lastOrNull(); color = f.color; label = f.label; editing = f },
                     onDelete = { f -> commit(current.without(f)) },
                 )
-                EmojiRules(context, current, shown, month) { commit(it) }
                 Card {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(tr("งานในช่องวัน (widget และปฏิทินในแอป)", "Work in the day cells (widget and the app's calendar)"), color = C.text, fontSize = TS.body)
@@ -301,6 +300,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                         )
                     }
                 }
+                EmojiRules(context, current, shown, month) { commit(it) }
             } else {
                 if (selection.size == 1) {
                     val d = selection.first()
@@ -322,6 +322,13 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: () -> Unit) {
                     onColor = { color = it },
                     onLabel = { label = it },
                     onRemove = {
+                        // A frame an emoji made goes with the emoji, not from here: say so rather than do nothing.
+                        val byEmoji = selection.mapNotNull { d -> shown.frameOn(d)?.emoji?.takeIf { it.isNotEmpty() } }.distinct()
+                        if (byEmoji.isNotEmpty()) android.widget.Toast.makeText(
+                            context,
+                            tr("กรอบจาก ${byEmoji.joinToString(" ")} เอาออกได้โดยเอา Emoji ออกจากวัน", "A frame from ${byEmoji.joinToString(" ")} goes when the emoji is taken off the day"),
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
                         commit((editing?.let { current.without(it) } ?: current).withoutFrames(selection))
                         finish()
                     },
@@ -384,11 +391,11 @@ private fun Grid(
         Column(
             Modifier.fillMaxSize().padding(top = TAG_INSET.dp)
                 // While choosing several, a long press puts the choice back to that one day.
-                .pointerInput(days, cellW, multi) {
+                .pointerInput(days, cellW, cellH, multi) {
                     if (multi) detectTapGestures(onTap = { o -> dayAt(o)?.let(tap) }, onLongPress = { o -> dayAt(o)?.let(press) })
                     else detectTapGestures(onTap = { o -> dayAt(o)?.let(tap) })
                 }
-                .pointerInput(days, cellW) {
+                .pointerInput(days, cellW, cellH) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val first = dayAt(down.position) ?: return@awaitEachGesture
@@ -559,7 +566,7 @@ private fun StickerEditor(context: Context, marks: MonthMarks, day: LocalDate, s
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     stickers.forEachIndexed { i, e ->
                         // An emoji with a rule is edged in its frame's colour.
-                        val rule = marks.ruleFor(e)?.second
+                        val rule = marks.ruleIn(e)?.second
                         Box(
                             Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(C.raised)
                                 .then(if (rule != null) Modifier.border(2.dp, Color(rule.color.argb), RoundedCornerShape(10.dp)) else Modifier)
@@ -604,7 +611,7 @@ private fun EmojiPicker(marks: MonthMarks, recent: List<String>, chosen: String?
         }
         FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             sets[tab.coerceAtMost(sets.size - 1)].second.forEach { e ->
-                val rule = marks.ruleFor(e)?.second
+                val rule = marks.ruleIn(e)?.second
                 Box(
                     Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
                         .then(if (e == chosen) Modifier.background(C.raised).border(1.5.dp, C.accent, RoundedCornerShape(10.dp)) else Modifier)
@@ -647,6 +654,8 @@ private fun EmojiRules(context: Context, marks: MonthMarks, shown: MonthMarks, m
                 val count = shown.frames.filter { it.emoji == e }.sumOf { f -> f.days.count { it >= month && it <= last } }
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
+                        // Closing a rule, or opening another, keeps the name typed into the open one.
+                        open?.let { o -> marks.rules[o]?.let { r -> if (r.label != label.trim()) onChange(marks.withRule(o, r.copy(label = label))) } }
                         open = if (open == e) null else e
                         adding = false
                         label = rule.label

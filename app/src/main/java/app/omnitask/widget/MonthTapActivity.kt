@@ -25,12 +25,6 @@ class MonthTapActivity : Activity() {
         noTransition()
     }
 
-    // A tap that finds this activity still there comes here instead.
-    override fun onNewIntent(intent: android.content.Intent) {
-        super.onNewIntent(intent)
-        MonthTapService.tapNow(applicationContext, intent)
-    }
-
     @Suppress("DEPRECATION")
     private fun noTransition() {
         if (Build.VERSION.SDK_INT >= 34) {

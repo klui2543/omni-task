@@ -362,8 +362,13 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
  */
 private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartActivity(
     Intent(context, MonthTapActivity::class.java)
-        // A task of its own, so the app's task is not brought up, and no animation for an activity never seen.
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        // A task of its own, so the app's task is not brought up, and no animation for an activity never seen. A new
+        // task every time: otherwise a second tap on the same cell, while the first one's activity is still starting
+        // (as when the phone has just woken the app), only brings that task up and is lost.
+        .addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
+        )
         .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
         .apply {
             if (day != null) putExtra(MonthTapService.EXTRA_TAP_DAY, day.toString())

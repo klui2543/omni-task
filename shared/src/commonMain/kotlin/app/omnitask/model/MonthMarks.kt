@@ -82,6 +82,14 @@ data class MonthMarks(
     /** The rule for [emoji], matched with or without the emoji's variation selector; null when it has none. */
     fun ruleFor(emoji: String): Pair<String, Rule>? = norm(emoji).let { e -> rules.entries.firstOrNull { norm(it.key) == e }?.toPair() }
 
+    /**
+     * The rule for an emoji in [text]: a sticker such as 👍🏽 or a task's title. Matched as in the text, with or
+     * without variation selectors; of rules that both match (❤ in ❤️‍🔥), the longer emoji wins.
+     */
+    fun ruleIn(text: String): Pair<String, Rule>? = norm(text).let { t ->
+        rules.entries.filter { t.contains(norm(it.key)) }.maxByOrNull { norm(it.key).length }?.toPair()
+    }
+
     /** Sets [emoji]'s rule, replacing one it had under another spelling. */
     fun withRule(emoji: String, rule: Rule): MonthMarks {
         val e = emoji.trim()
@@ -106,10 +114,10 @@ data class MonthMarks(
         }
         stickers.entries.sortedBy { it.key }.forEach { (key, list) ->
             val day = runCatching { LocalDate.parse(key) }.getOrNull() ?: return@forEach
-            list.firstNotNullOfOrNull { ruleFor(it)?.first }?.let { put(it, day) }
+            list.firstNotNullOfOrNull { ruleIn(it)?.first }?.let { put(it, day) }
         }
         if (taskEmoji) taskTitles.entries.sortedBy { it.key }.forEach { (day, titles) ->
-            titles.firstNotNullOfOrNull { t -> norm(t).let { title -> rules.keys.firstOrNull { title.contains(norm(it)) } } }?.let { put(it, day) }
+            titles.firstNotNullOfOrNull { ruleIn(it)?.first }?.let { put(it, day) }
         }
         if (byEmoji.isEmpty()) return this
         val added = byEmoji.flatMap { (emoji, days) ->

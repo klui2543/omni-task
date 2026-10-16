@@ -184,4 +184,16 @@ class MonthMarksTest {
         assertTrue(back.taskEmoji)
         assertTrue(m.withoutRule("🏖️").rules.isEmpty())
     }
+
+    @Test
+    fun stickersAndTitlesMatchTheSameWay() {
+        val m = MonthMarks(taskEmoji = true)
+            .withRule("👍", MonthMarks.Rule(FrameColor.GREEN, "ดี")).withRule("❤", MonthMarks.Rule(FrameColor.RED)).withRule("❤️‍🔥", MonthMarks.Rule(FrameColor.AMBER, "ไฟ"))
+            .withStickers(d(5), listOf("👍🏽")).withStickers(d(12), listOf("❤️‍🔥"))
+        val shown = m.shown(mapOf(d(20) to listOf("งานดี 👍🏽")))
+        assertEquals("ดี", shown.frameOn(d(5))?.label)
+        assertEquals("ดี", shown.frameOn(d(20))?.label)
+        // The longer emoji wins over the one inside it.
+        assertEquals("ไฟ", shown.frameOn(d(12))?.label)
+    }
 }
