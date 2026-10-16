@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- The month widget's taps run in a short foreground service (see MonthTapService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <!-- Lets the app find ColorOS's auto-start screen on OPPO phones. -->
     <queries>
@@ -65,14 +67,11 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
-        <!-- Taps on the month widget, on the foreground broadcast queue (see MonthTapReceiver). -->
-        <receiver android:name=".widget.MonthTapReceiver" android:exported="false" />
-
-        <!-- Keeps the app out of the cached state while the month widget is being tapped (see WidgetWarm). -->
+        <!-- Taps on the month widget: started in the foreground, so the phone does not hold them (see MonthTapService). -->
         <service
-            android:name=".widget.WidgetWarmService"
+            android:name=".widget.MonthTapService"
             android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
+            android:foregroundServiceType="shortService" />
 
         <receiver
             android:name=".widget.QuickAddWidgetReceiver"

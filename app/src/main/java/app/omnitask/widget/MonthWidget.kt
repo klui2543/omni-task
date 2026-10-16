@@ -1,7 +1,6 @@
 package app.omnitask.widget
 
 import android.appwidget.AppWidgetManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -33,7 +32,7 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
-import androidx.glance.appwidget.action.actionSendBroadcast
+import androidx.glance.appwidget.action.actionStartService
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.runComposition
 import androidx.glance.appwidget.cornerRadius
@@ -235,7 +234,7 @@ internal object MonthLive {
     @Volatile
     private var lastTap = 0L
 
-    /** When the widget was last tapped, in elapsedRealtime, for the log and for WidgetWarm. */
+    /** When the widget was last tapped, in elapsedRealtime, for the log and for [Stalls]. */
     @Volatile
     var lastTapAt = 0L
         private set
@@ -257,8 +256,8 @@ internal object MonthLive {
         set(widgetId, nav)
         val app = context.applicationContext
         val session = GlanceSessions.session(widgetId)
-        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null} warm=${WidgetWarm.running}")
-        WidgetWarm.keep(app)
+        WidgetLog.add("tap widget=$widgetId day=${nav.picked} offset=${nav.offset} session=${session != null} front=${MonthTapService.front}")
+        Stalls.watch(app)
         val job = keep(app, id, widgetId, null) { views -> publish(app, widgetId, views) }
         if (session != null) scope.launch { runCatching { GlanceSessions.updateGlance(session) }.onFailure { WidgetLog.add("event failed $it") } }
         else WidgetLog.add("no session, job active=${job.isActive}")
@@ -355,77 +354,31 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
     }
 }
 
-private const val EXTRA_WIDGET = "widget"
-private const val EXTRA_TAP_DAY = "day"
-private const val EXTRA_RELOAD = "reload"
-private const val EXTRA_DELTA = "delta"
-
 /**
- * A tap on the widget, sent to [MonthTapReceiver] on the foreground broadcast queue. Glance's own callbacks go on the
- * background queue, where Android delivers to one app's receiver at a time: on the owner's phone the taps of several
- * seconds waited there behind other apps' work and then arrived together. A day lists that day's work (see
- * [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back to this month and today.
+ * A tap on the widget, taken by [MonthTapService], which a tap may start in the foreground: the phone starts it at
+ * once, where a broadcast to the app waited seconds whenever the phone had frozen the app (see the service). A day
+ * lists that day's work (see [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back
+ * to this month and today.
  */
-private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionSendBroadcast(
-    Intent(context, MonthTapReceiver::class.java)
-        .setFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-        .putExtra(EXTRA_WIDGET, widgetId)
+private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartService(
+    Intent(context, MonthTapService::class.java)
+        .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
         .apply {
-            if (day != null) putExtra(EXTRA_TAP_DAY, day.toString())
-            if (delta != null) putExtra(EXTRA_DELTA, delta)
+            if (day != null) putExtra(MonthTapService.EXTRA_TAP_DAY, day.toString())
+            if (delta != null) putExtra(MonthTapService.EXTRA_DELTA, delta)
         }
         // A distinct address per cell keeps each one's PendingIntent its own.
         .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/${day ?: "shift$delta"}")),
+    isForegroundService = true,
 )
 
-class MonthTapReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        WidgetLog.attach(context)
-        val widgetId = intent.getIntExtra(EXTRA_WIDGET, -1)
-        val day = intent.getStringExtra(EXTRA_TAP_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        val delta = if (intent.hasExtra(EXTRA_DELTA)) intent.getIntExtra(EXTRA_DELTA, 0) else null
-        WidgetLog.add("tap received widget=$widgetId day=$day delta=$delta")
-        if (intent.getBooleanExtra(EXTRA_RELOAD, false)) {
-            val result = goAsync()
-            val app = context.applicationContext
-            MonthLive.scope.launch {
-                try {
-                    withContext(Dispatchers.IO) { runCatching { CalendarReader.requestSync(app, force = true) } }
-                    OmniWidgets.refresh(app)
-                    WidgetLog.add("reload asked on the widget")
-                } catch (e: Exception) {
-                    WidgetLog.add("reload failed $e")
-                } finally {
-                    result.finish()
-                }
-            }
-            return
-        }
-        val id = runCatching { GlanceAppWidgetManager(context).getGlanceIdBy(widgetId) }.getOrNull() ?: return
-        val result = goAsync()
-        val app = context.applicationContext
-        MonthLive.scope.launch {
-            try {
-                when {
-                    day != null -> MonthWidget.act(app, id) { nav, now -> nav.tapDay(day, LocalDate.now(), now) }
-                    delta != null -> MonthWidget.act(app, id) { nav, now -> if (delta == 0) nav.home(now) else nav.shift(delta, now) }
-                }
-            } catch (e: Exception) {
-                WidgetLog.add("tap failed $e")
-            } finally {
-                result.finish()
-            }
-        }
-    }
-}
-
 /** The refresh button: pulls Google Calendar and reads the vault and the calendar again for every widget. */
-private fun reload(context: Context, widgetId: Int) = actionSendBroadcast(
-    Intent(context, MonthTapReceiver::class.java)
-        .setFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-        .putExtra(EXTRA_WIDGET, widgetId)
-        .putExtra(EXTRA_RELOAD, true)
+private fun reload(context: Context, widgetId: Int) = actionStartService(
+    Intent(context, MonthTapService::class.java)
+        .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
+        .putExtra(MonthTapService.EXTRA_RELOAD, true)
         .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/reload")),
+    isForegroundService = true,
 )
 
 /** Opens the month page in the app at [day]; with [pick], that day comes selected. */
