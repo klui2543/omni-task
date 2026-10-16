@@ -58,7 +58,7 @@ class WidgetWarmService : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onStartJob(params: JobParameters): Boolean {
-        WidgetLog.add("warm job started, expedited=${Build.VERSION.SDK_INT >= 31 && params.isExpeditedJob}")
+        WidgetLog.add("warm job started, expedited=${Build.VERSION.SDK_INT >= 31 && params.isExpeditedJob} ${AppRestriction.describe(this)}")
         scope.launch {
             WidgetWarm.hold()
             WidgetLog.add("warm job done")
@@ -68,7 +68,7 @@ class WidgetWarmService : JobService() {
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        WidgetLog.add("warm job stopped by the system, reason=${if (Build.VERSION.SDK_INT >= 31) params.stopReason else -1}")
+        WidgetLog.add("warm job stopped by the system, reason=${if (Build.VERSION.SDK_INT >= 31) params.stopReason else -1} ${AppRestriction.describe(this)}")
         // Asked for again by the next tap, since the job is not kept when the system stops it.
         return false
     }

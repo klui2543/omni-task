@@ -127,7 +127,7 @@ class MonthWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetId = MonthLive.key(context, id)
         WidgetLog.attach(context)
-        WidgetLog.add("provideGlance widget=$widgetId")
+        WidgetLog.add("provideGlance widget=$widgetId ${AppRestriction.describe(context)}")
         val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
         val first = MonthSource.load(
             context, (MonthLive.navs[widgetId] ?: nav(prefs)).fresh(System.currentTimeMillis()).offset, maxOf(prefs[STAMP] ?: 0L, MonthLive.stamp.value),
