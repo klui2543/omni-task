@@ -207,7 +207,10 @@ object CalendarReader {
      * With [ids], only those events (the countdown's pinned ones). With [calendars], only those calendars, shown in
      * Omni or not (the holidays).
      */
-    fun events(context: Context, from: LocalDateTime, to: LocalDateTime, ids: Collection<Long>? = null, calendars: Collection<Long>? = null): List<CalendarEvent> {
+    fun events(
+        context: Context, from: LocalDateTime, to: LocalDateTime, ids: Collection<Long>? = null, calendars: Collection<Long>? = null,
+        titleContains: String? = null,
+    ): List<CalendarEvent> {
         if (!hasPermission(context)) return emptyList()
         val zone = ZoneId.systemDefault()
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
@@ -230,15 +233,19 @@ object CalendarReader {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
             val only = (ids?.let { " AND " + CalendarContract.Instances.EVENT_ID + " IN (" + it.joinToString(",") + ")" } ?: "") +
                 (calendars?.let { " AND " + CalendarContract.Instances.CALENDAR_ID + " IN (" + it.joinToString(",") + ")" } ?: "")
-            val where = CalendarContract.Instances.VISIBLE + " = 1" + only
+            // A title search narrows the rows in the provider; Kotlin checks again below, as LIKE only folds ASCII case.
+            val like = titleContains?.let { " AND " + CalendarContract.Instances.TITLE + " LIKE ? ESCAPE '\\'" } ?: ""
+            val args = titleContains?.let { t -> arrayOf("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%") }
+            val where = CalendarContract.Instances.VISIBLE + " = 1" + only + like
             // An event deleted on the phone keeps its row, marked deleted, until the next sync with Google; the
             // calendar app already hides it, so skip it too. A provider without the column gets the plain query.
             val cursor = runCatching {
-                context.contentResolver.query(uri, cols, where + " AND " + CalendarContract.Events.DELETED + " = 0", null, CalendarContract.Instances.BEGIN)
-            }.getOrNull() ?: context.contentResolver.query(uri, cols, where, null, CalendarContract.Instances.BEGIN)
+                context.contentResolver.query(uri, cols, where + " AND " + CalendarContract.Events.DELETED + " = 0", args, CalendarContract.Instances.BEGIN)
+            }.getOrNull() ?: context.contentResolver.query(uri, cols, where, args, CalendarContract.Instances.BEGIN)
             cursor?.use { c ->
                 while (c.moveToNext()) {
                     if (calendars == null && isHidden(c.getLong(5), hidden)) continue
+                    if (titleContains != null && c.getString(1)?.contains(titleContains, ignoreCase = true) != true) continue
                     if (c.getLong(0) in gone) continue
                     val allDay = c.getInt(4) == 1
                     // All-day instances are stored in UTC midnights; read them as local dates.
@@ -325,6 +332,13 @@ object CalendarReader {
                 )
             }
         }.getOrNull()
+    }
+
+    /** Every event whose title holds [text], a year either side of [today], for the search in the Tasks tab. */
+    fun search(context: Context, text: String, today: LocalDate): List<CalendarEvent> {
+        val t = text.trim()
+        if (t.isEmpty()) return emptyList()
+        return events(context, today.minusYears(1).atStartOfDay(), today.plusYears(1).plusDays(1).atStartOfDay(), titleContains = t)
     }
 
     fun month(context: Context, anyDay: LocalDate): List<CalendarEvent> {
