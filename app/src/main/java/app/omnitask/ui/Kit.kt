@@ -99,6 +99,17 @@ object Ic {
     val down = icon("down", "M6 9l6 6 6-6", width = 2f)
     val mic = icon("mic", "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
     val gear = icon("gear", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z", "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8")
+    // The detailed add page's row icons: thin, and drawn without fill.
+    val clock = icon("clock", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 7.5V12l3 2", width = 1.6f)
+    val repeat = icon("repeat", "M4 11V9a3 3 0 0 1 3-3h11l-3-3", "M20 13v2a3 3 0 0 1-3 3H6l3 3", width = 1.6f)
+    val bell = icon("bell", "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z", "M10 20.5h4", width = 1.6f)
+    val flag = icon("flag", "M6 21V4", "M6 4h11l-2 4 2 4H6", width = 1.6f)
+    val tag = icon("tag", "M3.5 12.5V4.5h8l9 9-8 8Z", "M8 9h0.01", width = 1.6f)
+    val notes = icon("notes", "M5 6h14M5 11h14M5 16h9", width = 1.6f)
+    val checkbox = icon("checkbox", "M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z", "M8.5 12l2.5 2.5 4.5-5", width = 1.6f)
+    val pin = icon("pin", "M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11Z", "M12 7.7a2.3 2.3 0 1 0 0.01 0Z", width = 1.6f)
+    val calendar = icon("calendar", "M6 5h12a2.5 2.5 0 0 1 2.5 2.5v10A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-10A2.5 2.5 0 0 1 6 5Z", "M3.5 10h17M8 3v4M16 3v4", width = 1.6f)
+    val begin = icon("begin", "M4 12h11M11 7.5l4.5 4.5-4.5 4.5M19.5 5v14", width = 1.6f)
 }
 
 @Composable

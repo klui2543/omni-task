@@ -32,6 +32,40 @@ object QuickAdd {
         }
     }
 
+    /** A task written from the detailed add page: the line in TaskForge token order, then its notes and subtasks. */
+    data class Detail(
+        val title: String,
+        /** True when [date] is the ⏳ scheduled day (reminder on that day), false for the 📅 due day. */
+        val scheduled: Boolean = false,
+        val date: LocalDate? = null,
+        val time: LocalTime? = null,
+        val start: LocalDate? = null,
+        val rule: String? = null,
+        val tags: List<String> = emptyList(),
+        val priority: Priority = Priority.NONE,
+        val notes: List<String> = emptyList(),
+        val subtasks: List<String> = emptyList(),
+    ) {
+        fun line(today: LocalDate): String {
+            var line = "- [ ] $title"
+            tags.forEach { line = TaskLine.addTag(line, it) }
+            if (time != null) line = TaskLine.setReminder(line, time, if (scheduled) ReminderOn.SCHEDULED else ReminderOn.DUE)
+            if (priority != Priority.NONE) line = TaskLine.setPriority(line, priority)
+            if (rule != null) line = TaskLine.setRecurrence(line, rule)
+            line = TaskLine.setDate(line, DateField.CREATED, today)
+            if (start != null) line = TaskLine.setDate(line, DateField.START, start)
+            if (date != null) line = TaskLine.setDate(line, if (scheduled) DateField.SCHEDULED else DateField.DUE, date)
+            return line
+        }
+
+        /** The task line with its description lines and subtasks under it, as written to the note. */
+        fun block(today: LocalDate): String = buildList {
+            add(line(today))
+            notes.map { it.trim() }.filter { it.isNotEmpty() }.forEach { add("    - $it") }
+            subtasks.map { it.trim() }.filter { it.isNotEmpty() }.forEach { add("    - [ ] $it") }
+        }.joinToString("\n")
+    }
+
     private val TAG = Regex("""(?<!\S)#[^\s#]+""")
     private val TIME = Regex("""(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])(?:\s*น\.)?""")
     private val BANG = Regex("""(?<!\S)(!{1,3})(?!\S)""")

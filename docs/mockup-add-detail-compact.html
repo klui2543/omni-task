@@ -1,0 +1,352 @@
+<title>เพิ่มงานแบบกระชับ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: the add sheet as it is now beside the compact detailed sheet (A), both at the app's own sizes, then notes. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --rule: #d9dde4; --segBg: #e1e5eb; --warn: #9a6a12; --fast: #2f7a55; --slow: #b3443d;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --bg: #f2f3f5; --card: #ffffff; --border: #e1e3e8; --sunken: #ebedf0; --raised: #eceef1; --control: #cdd2da;
+  --text: #1b1e23; --text2: #3c424c; --muted: #667080; --faint: #6b7482;
+  --accent: #3d4f6e; --accentSoft: #e6eaf1; --accentText: #33445f; --accentLine: #c5ccd9; --onAccent: #ffffff;
+  --red: #bf4b47; --amber: #9a6a12; --amberSoft: #f5f1e6; --scrim: rgba(20,24,30,.38);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --segBg: #17181c; --warn: #c4a56a; --fast: #7fae93; --slow: #d9726c;
+    --bg: #0e0e10; --card: #161618; --border: #26262a; --sunken: #121214; --raised: #1e1e22; --control: #34343a;
+    --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+    --accent: #9db4d3; --accentSoft: #1d2330; --accentText: #b4c6df; --accentLine: #2f3a4e; --onAccent: #0e1118;
+    --red: #d9726c; --amber: #c4a56a; --amberSoft: #221f18; --scrim: rgba(0,0,0,.55); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --segBg: #17181c; --warn: #c4a56a; --fast: #7fae93; --slow: #d9726c;
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --sunken: #121214; --raised: #1e1e22; --control: #34343a;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+  --accent: #9db4d3; --accentSoft: #1d2330; --accentText: #b4c6df; --accentLine: #2f3a4e; --onAccent: #0e1118;
+  --red: #d9726c; --amber: #c4a56a; --amberSoft: #221f18; --scrim: rgba(0,0,0,.55); color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.45; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 18px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+h2 { font-size: 16px; font-weight: 600; margin: 0 }
+header p { margin: 0; color: var(--ink2); max-width: 70ch; font-size: 14px }
+.stage { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start }
+.col { flex: 0 1 360px; min-width: 0; width: 100%; max-width: 360px; display: grid; gap: 8px }
+.lbl { font-size: 13px; color: var(--ink2); font-weight: 600 }
+.side { flex: 1 1 260px; min-width: 0; display: grid; gap: 10px; font-size: 13.5px; color: var(--ink2) }
+.li { padding-left: 14px; position: relative }
+.li::before { content: "+"; position: absolute; left: 0; color: var(--fast); font-weight: 600 }
+.li.no::before { content: "-"; color: var(--slow) }
+.note { font-size: 12.5px; color: var(--warn) }
+.again { font-size: 13.5px; padding: 8px 14px; border-radius: 10px; background: var(--segBg); width: fit-content }
+
+/* The app, at its own sizes: body 14, caption 12.5, title 16. */
+.app { position: relative; height: 720px; background: var(--bg); color: var(--text); border-radius: 26px; overflow: hidden; border: 1px solid var(--border); font-size: 14px }
+.behind { padding: 18px 16px; display: grid; gap: 10px; opacity: .55 }
+.behind .ttl { font-size: 20px; font-weight: 600 }
+.behind .row { height: 44px; border-radius: 12px; background: var(--card); border: 1px solid var(--border) }
+.scrim { position: absolute; inset: 0; background: var(--scrim) }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: calc(100% - 28px); background: var(--card); border-radius: 20px 20px 0 0; display: flex; flex-direction: column }
+.grab { width: 32px; height: 4px; border-radius: 2px; background: var(--control); margin: 8px auto 0; flex: none }
+.body { overflow-y: auto; padding: 10px 16px 8px; display: grid; gap: 8px; align-content: start; flex: 1 }
+.foot { padding: 8px 16px 14px; display: flex; gap: 8px; align-items: center; flex: none }
+.head { display: flex; align-items: center; gap: 8px }
+.h { font-size: 16px; font-weight: 600; flex: 1 }
+.input { width: 100%; min-height: 48px; border-radius: 14px; background: var(--sunken); border: 0; padding: 12px 14px; color: var(--text); font: inherit; font-size: 14px }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+.pill { font-size: 12.5px; padding: 3px 10px; border-radius: 12px; background: var(--accentSoft); color: var(--accentText) }
+.chip { font-size: 12.5px; padding: 4px 10px; border-radius: 12px; background: var(--raised); color: var(--text2); white-space: nowrap }
+.chip.on { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.chip.add { background: none; color: var(--accentText); padding-inline: 4px }
+.cap { font-size: 12.5px; color: var(--muted) }
+.faint { font-size: 12px; color: var(--faint) }
+.ev { display: flex; gap: 8px; align-items: center; padding: 9px 12px; border-radius: 12px; background: var(--raised); font-size: 12.5px; color: var(--muted) }
+.more { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-radius: 12px; background: var(--raised); color: var(--accentText); font-size: 14px }
+.round { width: 44px; height: 44px; border-radius: 50%; background: var(--raised); display: flex; align-items: center; justify-content: center; color: var(--text2); flex: none; font-size: 15px }
+.round.acc { background: var(--accentSoft); color: var(--accentText) }
+.btn2 { height: 44px; padding: 0 14px; border-radius: 12px; background: var(--accentSoft); border: 1px solid var(--accentLine); color: var(--accentText) }
+.btn { height: 44px; padding: 0 16px; border-radius: 12px; background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.grow { flex: 1 }
+.seg { display: inline-flex; background: var(--sunken); border-radius: 10px; padding: 3px; gap: 2px }
+.seg button { font-size: 12.5px; padding: 3px 12px; border-radius: 8px; color: var(--muted) }
+.seg button.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--border) }
+
+/* Compact rows: 22px icon column, about 44px tall. */
+.rows { display: grid }
+.r { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; column-gap: 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--border) }
+.r .ic { color: var(--muted); font-size: 14px; text-align: center }
+.r .v { min-width: 0; color: var(--text) }
+.r .v.dim { color: var(--accentText) }
+.r .t { color: var(--text); font-variant-numeric: tabular-nums; padding: 4px 8px; border-radius: 8px; background: var(--raised); font-size: 13.5px }
+.r .t.off { color: var(--faint) }
+.r .x { color: var(--faint); padding: 4px 6px; font-size: 12px }
+.r.wrap2 { grid-template-rows: auto auto; row-gap: 4px; padding-bottom: 8px }
+.r.wrap2 .sub2 { grid-column: 2 / 4 }
+.ta { width: 100%; min-height: 56px; border-radius: 10px; border: 1px solid var(--border); background: var(--sunken); color: var(--text); font: inherit; font-size: 14px; padding: 7px 10px; resize: none }
+.inl { width: 100%; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 0 }
+.sub { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text2); padding: 3px 0 }
+.box { width: 15px; height: 15px; border-radius: 4px; border: 1.6px solid var(--faint); flex: none }
+.line { font-size: 11.5px; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; background: var(--sunken); color: var(--text2); border-radius: 10px; padding: 8px 10px; overflow-x: auto; white-space: pre }
+.peek { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; padding: 2px 0 }
+.peek.ev2 { white-space: normal }
+
+/* Pickers. */
+.over { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; z-index: 5 }
+.over .sheet { position: relative; max-height: 82% }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 13px }
+.cal .dw { font-size: 11px; color: var(--faint); padding: 3px 0 }
+.cal .dw:first-child { color: var(--red) }
+.cal button { height: 34px; border-radius: 50%; font-variant-numeric: tabular-nums; color: var(--text2) }
+.cal button.td { color: var(--accentText); font-weight: 600; box-shadow: inset 0 0 0 1.5px var(--accentLine) }
+.cal button.sel { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.times { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px }
+.times button { padding: 6px 0; border-radius: 9px; background: var(--raised); text-align: center; font-variant-numeric: tabular-nums; color: var(--text2); font-size: 13px }
+.times button.on { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.opt { display: flex; align-items: center; gap: 10px; min-height: 40px; border-bottom: 1px solid var(--border); text-align: left; width: 100%; font-size: 14px }
+.opt .dot { width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid var(--faint); flex: none }
+.opt.on .dot { border: 5px solid var(--accent) }
+.num { width: 48px; text-align: center; padding: 4px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font: inherit }
+.wd { display: flex; gap: 4px; flex-wrap: wrap }
+.wd button { width: 32px; height: 32px; border-radius: 50%; background: var(--raised); color: var(--text2); text-align: center; font-size: 12.5px }
+.wd button.on { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.sw { width: 36px; height: 22px; border-radius: 11px; background: var(--control); position: relative; flex: none }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--card) }
+.sw.on { background: var(--accent) }
+.sw.on::after { left: 17px; background: var(--onAccent) }
+.warnbox { font-size: 12px; color: var(--amber); background: var(--amberSoft); border-radius: 10px; padding: 6px 10px }
+.mini { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>เพิ่มงานแบบกระชับ</h1>
+    <p>แบบ A ปรับให้ขนาดเท่าแอป: เป็นแผ่นเลื่อนขึ้นจากด้านล่างเหมือนแผ่นอื่น ตัวหนังสือ 14 หัวข้อ 16 แถวสูงราว 44 ซ้ายคือแผ่นเพิ่มงานตอนนี้ ไว้เทียบขนาด ขวาคือแบบใหม่ แตะได้ทุกช่อง</p>
+  </header>
+
+  <div class="stage">
+    <div class="col"><div class="lbl">ตอนนี้ในแอป</div><div class="app" id="now"></div></div>
+    <div class="col"><div class="lbl">A กระชับ</div><div class="app" id="app"></div></div>
+    <div class="side">
+      <h2>เปลี่ยนอะไรจาก A เดิม</h2>
+      <div class="li">ไม่เต็มจอ เป็นแผ่นแบบเดียวกับแผ่นเพิ่มงานเดิม ยังเห็นหน้าข้างหลังด้านบน</div>
+      <div class="li">วันกับเวลาอยู่แถวเดียว แตะวันเปิดปฏิทินเดือน แตะเวลาเปิดตารางเวลา (มี "ไม่ใส่เวลา" แทนสวิตช์ทั้งวัน)</div>
+      <div class="li">ครบกำหนด / นัดทำ / วันเริ่ม เป็นชิปเล็กใต้วัน</div>
+      <div class="li">ความสำคัญกับ Tag อยู่แถวเดียวกัน</div>
+      <div class="li">รายละเอียดกับงานย่อยเป็นลิงก์ "+" แตะแล้วค่อยกาง</div>
+      <div class="li">บรรทัดที่จะเขียนลงโน้ตพับไว้ แตะ "ดูบรรทัดที่จะเขียน"</div>
+      <div class="li no">ช่องที่ไม่ได้ใช้ยังมีให้เห็นเป็นลิงก์ จึงยาวกว่าแผ่นเดิมราวครึ่งหนึ่ง</div>
+      <div class="note">ปุ่มบนสุด งาน / นัด เลือกว่าจะเขียนลงโน้ตหรือลงปฏิทิน ปุ่มล่างเปลี่ยนตาม ถ้าเป็นนัด แถวเวลามีเวลาจบ เตือนได้หลายครั้ง และมีสถานที่กับปฏิทิน</div>
+      <button class="again" data-act="reset">เริ่มใหม่</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TODAY = '2026-10-17';
+const INIT = { mode: 'task', allDay: false, kind: 'due', date: '2026-10-18', startDate: null, time: '09:00', end: '10:00', rep: null, rems: [30], pri: 'สูง', tags: ['งาน'], place: '', notes: '', subs: ['รวบตัวเลขยอดขาย'], cal: 'ปฏิทินหลัก (Google)', over: null, showNotes: false, showSubs: true, peek: false, collapsed: false };
+let S = JSON.parse(JSON.stringify(INIT));
+const DOW = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+const DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const PRI = { 'สูงสุด': '🔺', 'สูง': '⏫', 'กลาง': '🔼', 'ปกติ': '', 'ต่ำ': '🔽', 'ต่ำสุด': '⏬' };
+const UNIT = { day: ['วัน', 'day'], week: ['สัปดาห์', 'week'], month: ['เดือน', 'month'], year: ['ปี', 'year'] };
+const CALS = ['ปฏิทินหลัก (Google)', 'งาน (Google)', 'ครอบครัว'];
+const d = s => { const [y, m, dd] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd)); };
+const iso = x => x.toISOString().slice(0, 10);
+const add = (s, n) => { const x = d(s); x.setUTCDate(x.getUTCDate() + n); return iso(x); };
+const fd = s => { const x = d(s); const rel = s === TODAY ? 'วันนี้, ' : s === add(TODAY, 1) ? 'พรุ่งนี้, ' : ''; return rel + DOW[x.getUTCDay()] + ' ' + x.getUTCDate() + ' ' + MON[x.getUTCMonth()]; };
+const short = s => { if (s === TODAY) return 'วันนี้'; if (s === add(TODAY, 1)) return 'พรุ่งนี้'; const x = d(s); return x.getUTCDate() + ' ' + MON[x.getUTCMonth()]; };
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const addMin = (t, m) => { const x = ((mins(t) + m) % 1440 + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+const remText = m => m === 0 ? 'ตรงเวลา' : m < 60 ? 'ก่อน ' + m + ' นาที' : m < 1440 ? 'ก่อน ' + (m / 60) + ' ชม.' : 'ก่อน ' + (m / 1440) + ' วัน';
+const ord = n => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+function repTh(r) {
+  if (!r) return 'ไม่วนซ้ำ';
+  let s = 'ทุก' + (r.n > 1 ? ' ' + r.n + ' ' : '') + UNIT[r.unit][0];
+  if (r.unit === 'week' && r.days.length) s += (r.days.join() === '1,2,3,4,5') ? ' วันทำงาน' : ' วัน' + r.days.map(i => DOW[i]).join(' ');
+  if (r.unit === 'month') s += ' วันที่ ' + d(S.date).getUTCDate();
+  if (S.mode === 'task' && r.done) s += ' นับจากวันที่ทำเสร็จ';
+  if (S.mode === 'event' && r.endType === 'count') s += ', ' + r.count + ' ครั้ง';
+  if (S.mode === 'event' && r.endType === 'date') s += ', ถึง ' + short(r.until);
+  return s;
+}
+function repRule(r) {
+  let s = 'every ' + (r.n > 1 ? r.n + ' ' + UNIT[r.unit][1] + 's' : UNIT[r.unit][1]);
+  if (r.unit === 'week' && r.days.length) s += ' on ' + r.days.map(i => DOW_EN[i]).join(', ');
+  if (r.unit === 'month') s += ' on the ' + ord(d(S.date).getUTCDate());
+  if (r.done) s += ' when done';
+  return s;
+}
+function taskLine() {
+  const p = ['- [ ] ส่งรายงานไตรมาส'];
+  S.tags.forEach(t => p.push('#' + t));
+  if (!S.allDay) p.push(S.kind === 'due' ? '#remind-at-due ⏰ ' + S.time : '#remind-at-scheduled 🎯 ' + S.time);
+  if (PRI[S.pri]) p.push(PRI[S.pri]);
+  if (S.rep) p.push('🔁 ' + repRule(S.rep));
+  p.push('➕ ' + TODAY);
+  if (S.startDate) p.push('🛫 ' + S.startDate);
+  p.push((S.kind === 'scheduled' ? '⏳ ' : '📅 ') + S.date);
+  let out = p.join(' ');
+  if (S.showNotes && S.notes.trim()) out += '\n' + S.notes.trim().split('\n').map(l => '    - ' + l).join('\n');
+  if (S.showSubs) S.subs.forEach(s => out += '\n    - [ ] ' + s);
+  return out;
+}
+function eventText() {
+  const when = S.allDay ? fd(S.date) + ' ทั้งวัน' : fd(S.date) + ' ' + S.time + ' ถึง ' + S.end;
+  return S.cal + ': ' + when + (S.rep ? ', ' + repTh(S.rep) : '') + (S.rems.length ? ', เตือน ' + S.rems.map(remText).join(' และ ') : '') + (S.place ? ', ที่ ' + S.place : '');
+}
+const behind = '<div class="behind"><div class="ttl">งาน</div><div class="row"></div><div class="row"></div><div class="row"></div><div class="row"></div><div class="row"></div></div><div class="scrim"></div>';
+
+/* Left: the sheet exactly as the app has it now. */
+function nowSheet() {
+  return behind + `<div class="sheet"><div class="grab"></div><div class="body">
+    <div class="h">เพิ่มงาน</div>
+    <div class="input">ส่งรายงานไตรมาส พรุ่งนี้ 9:00 #งาน !!</div>
+    <div class="chips"><span class="pill">18 ต.ค.</span><span class="pill">เตือน 09:00</span><span class="pill">#งาน</span><span class="pill">สูง</span></div>
+    <div class="faint">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List</div>
+    <div class="ev"><span class="grow">ถ้าลงปฏิทิน: 18 ต.ค. 09:00 ถึง 10:00, ปฏิทินหลัก</span><span style="color:var(--accentText)">เปลี่ยน</span></div>
+  </div><div class="foot"><div class="round">🎤</div><div class="round acc">✦</div><div class="grow"></div><span class="btn2" style="display:flex;align-items:center">ลงปฏิทิน</span><span class="btn" style="display:flex;align-items:center">เพิ่มงาน</span></div></div>`;
+}
+
+/* Right: compact A. */
+function sheet() {
+  if (S.collapsed) return `<div class="sheet"><div class="grab"></div><div class="body">
+    <div class="h">เพิ่มงาน</div><div class="input">ส่งรายงานไตรมาส พรุ่งนี้ 9:00 #งาน !!</div>
+    <div class="chips"><span class="pill">${short(S.date)}</span>${S.allDay ? '' : `<span class="pill">เตือน ${S.time}</span>`}${S.tags.map(t => `<span class="pill">#${t}</span>`).join('')}${S.pri !== 'ปกติ' ? `<span class="pill">${S.pri}</span>` : ''}${S.rep ? `<span class="pill">${repTh(S.rep)}</span>` : ''}</div>
+    <button class="more" data-act="expand"><span>ตัวเลือกเพิ่มเติม</span><span>›</span></button>
+  </div><div class="foot"><div class="round">🎤</div><div class="round acc">✦</div><div class="grow"></div><button class="btn2" data-act="noop">ลงปฏิทิน</button><button class="btn" data-act="noop">เพิ่มงาน</button></div></div>`;
+
+  const t = S.mode === 'task';
+  let rows = '';
+  // When: day and time in one row; for a task, which date it is sits beneath as small chips.
+  const timeBtn = S.allDay ? `<button class="t off" data-act="over:time">ไม่ใส่เวลา</button>`
+    : t ? `<button class="t" data-act="over:time">⏰ ${S.time}</button>`
+    : `<span class="mini"><button class="t" data-act="over:time">${S.time}</button><span class="cap">ถึง</span><button class="t" data-act="over:end">${S.end}</button></span>`;
+  rows += `<div class="r ${t ? 'wrap2' : ''}"><span class="ic">◷</span><button class="v" data-act="over:date">${fd(S.date)}</button>${timeBtn}
+    ${t ? `<div class="sub2 chips"><button class="chip ${S.kind === 'due' ? 'on' : ''}" data-act="kind:due">📅 ครบกำหนด</button><button class="chip ${S.kind === 'scheduled' ? 'on' : ''}" data-act="kind:scheduled">⏳ นัดทำ</button>${S.startDate ? `<button class="chip" data-act="over:start">🛫 เริ่ม ${short(S.startDate)}</button>` : `<button class="chip add" data-act="over:start">+ วันเริ่ม</button>`}</div>` : ''}</div>`;
+  rows += `<button class="r" data-act="over:repeat" style="text-align:left;width:100%"><span class="ic">↻</span><span class="v ${S.rep ? '' : 'dim'}">${S.rep ? repTh(S.rep) : 'ไม่วนซ้ำ'}</span><span class="cap">›</span></button>`;
+  if (t) {
+    rows += `<div class="r"><span class="ic">!</span><span class="v chips"><button class="chip ${S.pri !== 'ปกติ' ? 'on' : ''}" data-act="over:pri">${PRI[S.pri]} ${S.pri}</button>${S.tags.map(x => `<button class="chip" data-act="tag:${x}">#${x} ✕</button>`).join('')}<button class="chip add" data-act="over:tag">+ Tag</button></span><span></span></div>`;
+  } else {
+    rows += `<div class="r"><span class="ic">🔔</span><span class="v chips">${S.rems.map(m => `<button class="chip" data-act="rem:${m}">${remText(m)} ✕</button>`).join('')}<button class="chip add" data-act="over:rem">+ เตือน</button></span><span></span></div>`;
+    rows += `<div class="r"><span class="ic">⌖</span><input class="inl v" id="place" placeholder="สถานที่" value="${esc(S.place)}"><span></span></div>`;
+    rows += `<button class="r" data-act="cal" style="text-align:left;width:100%"><span class="ic">▦</span><span class="v">${S.cal}</span><span class="cap">›</span></button>`;
+  }
+  // Details and subtasks stay one line until used.
+  let extra = '';
+  if (S.showNotes) extra += `<textarea class="ta" id="notes" placeholder="${t ? 'รายละเอียด บรรทัดละเรื่อง' : 'รายละเอียดนัด'}">${esc(S.notes)}</textarea>`;
+  if (t && S.showSubs) extra += `<div>${S.subs.map(s => `<div class="sub"><span class="box"></span>${esc(s)}</div>`).join('')}<div class="sub" style="color:var(--accentText)">+ งานย่อย</div></div>`;
+  const links = [!S.showNotes ? '<button class="chip add" data-act="notes">+ รายละเอียด</button>' : '', t && !S.showSubs ? '<button class="chip add" data-act="subs">+ งานย่อย</button>' : ''].join('');
+  rows += `<div class="r ${extra ? 'wrap2' : ''}"><span class="ic">≡</span><span class="v chips">${links || '<span class="cap">รายละเอียด</span>'}</span><span></span>${extra ? `<div class="sub2" style="display:grid;gap:6px">${extra}</div>` : ''}</div>`;
+
+  const peek = t
+    ? `<button class="peek" data-act="peek">${S.peek ? '⌄' : '›'} ดูบรรทัดที่จะเขียนลง Omni note</button>${S.peek ? `<div class="line">${esc(taskLine())}</div>` : ''}`
+    : `<div class="peek ev2">▦ ${esc(eventText())}</div>`;
+
+  return `<div class="sheet"><div class="grab"></div><div class="body">
+    <div class="head"><div class="h">เพิ่มงาน</div><div class="seg"><button class="${t ? 'on' : ''}" data-act="mode:task">งาน</button><button class="${t ? '' : 'on'}" data-act="mode:event">นัด</button></div><button class="chip" data-act="collapse">ย่อ</button></div>
+    <input class="input" value="ส่งรายงานไตรมาส" aria-label="ชื่องาน">
+    <div class="rows">${rows}</div>${peek}
+  </div><div class="foot"><div class="round">🎤</div><div class="round acc">✦</div><div class="grow"></div><button class="btn" data-act="noop">${t ? 'เพิ่มงาน' : 'ลงปฏิทิน'}</button></div></div>`;
+}
+
+function overlay() {
+  const o = S.over; if (!o) return '';
+  let title = '', inner = '';
+  if (o === 'date' || o === 'start') {
+    const cur = o === 'start' ? S.startDate : S.date;
+    title = o === 'start' ? '🛫 วันเริ่ม' : S.mode === 'event' ? 'วันนัด' : S.kind === 'due' ? '📅 วันครบกำหนด' : '⏳ วันนัดทำ';
+    const base = d(S.view || cur || S.date); const y = base.getUTCFullYear(), m = base.getUTCMonth();
+    const first = new Date(Date.UTC(y, m, 1)).getUTCDay(), n = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    let g = DOW.map(x => `<span class="dw">${x}</span>`).join('') + '<span></span>'.repeat(first);
+    for (let i = 1; i <= n; i++) { const s = iso(new Date(Date.UTC(y, m, i))); g += `<button class="${s === cur ? 'sel' : ''} ${s === TODAY ? 'td' : ''}" data-act="${o === 'start' ? 'setstart' : 'setdate'}|${s}">${i}</button>`; }
+    inner = `<div class="chips">${[['วันนี้', TODAY], ['พรุ่งนี้', add(TODAY, 1)], ['จันทร์หน้า', '2026-10-19'], ['สัปดาห์หน้า', '2026-10-24']].map(([l, v]) => `<button class="chip ${v === cur ? 'on' : ''}" data-act="${o === 'start' ? 'setstart' : 'setdate'}|${v}">${l}</button>`).join('')}</div>
+      <div class="mini"><button class="chip" data-act="view|${iso(new Date(Date.UTC(y, m - 1, 1)))}">‹</button><span class="grow" style="text-align:center;font-weight:600">${MON[m]} ${y + 543}</span><button class="chip" data-act="view|${iso(new Date(Date.UTC(y, m + 1, 1)))}">›</button></div><div class="cal">${g}</div>
+      ${o === 'start' && cur ? '<button class="chip" style="width:fit-content" data-act="setstart|">ไม่มีวันเริ่ม</button>' : ''}`;
+  }
+  if (o === 'time' || o === 'end') {
+    const end = o === 'end';
+    title = end ? 'เวลาจบ' : S.mode === 'event' ? 'เวลาเริ่ม' : '⏰ เวลาเตือน';
+    const cur = S.allDay ? null : end ? S.end : S.time; let g = '';
+    for (let h = 6; h <= 23; h++) for (const mm of ['00', '30']) { const x = String(h).padStart(2, '0') + ':' + mm; g += `<button class="${x === cur ? 'on' : ''}" data-act="${end ? 'setend' : 'settime'}|${x}">${x}</button>`; }
+    inner = (end ? `<div class="chips">${[30, 60, 90, 120, 180].map(m => `<button class="chip ${S.end === addMin(S.time, m) ? 'on' : ''}" data-act="setend|${addMin(S.time, m)}">${m < 60 ? m + ' นาที' : m / 60 + ' ชม.'}</button>`).join('')}</div>`
+      : `<button class="opt ${S.allDay ? 'on' : ''}" data-act="allday"><span class="dot"></span>ไม่ใส่เวลา${S.mode === 'event' ? ' (นัดทั้งวัน)' : ' (ไม่เตือน)'}</button>`) + `<div class="times">${g}</div>`;
+  }
+  if (o === 'pri') { title = 'ความสำคัญ'; inner = Object.keys(PRI).map(p => `<button class="opt ${S.pri === p ? 'on' : ''}" data-act="pri|${p}"><span class="dot"></span>${PRI[p]} ${p}</button>`).join(''); }
+  if (o === 'tag') { title = 'Tag'; inner = `<div class="chips">${['งาน', 'บ้าน', 'รอ/พี่เอ', 'โทร', 'อ่าน'].map(x => `<button class="chip ${S.tags.includes(x) ? 'on' : ''}" data-act="tag|${x}">#${x}</button>`).join('')}</div><div class="faint">เรียงตามที่ใช้บ่อย</div>`; }
+  if (o === 'rem') { title = 'เตือนนัด'; inner = [0, 5, 10, 15, 30, 60, 120, 1440].map(m => `<button class="opt ${S.rems.includes(m) ? 'on' : ''}" data-act="rem|${m}"><span class="dot"></span>${remText(m)}</button>`).join('') + '<div class="faint">เลือกได้หลายอัน</div>'; }
+  if (o === 'repeat') {
+    title = 'วนซ้ำ';
+    const dw = d(S.date).getUTCDay();
+    const P = [['ไม่วนซ้ำ', null], ['ทุกวัน', { unit: 'day', days: [] }], ['ทุกวันทำงาน', { unit: 'week', days: [1, 2, 3, 4, 5] }], ['ทุกสัปดาห์ วัน' + DOW[dw], { unit: 'week', days: [dw] }], ['ทุกเดือน วันที่ ' + d(S.date).getUTCDate(), { unit: 'month', days: [] }], ['ทุกปี', { unit: 'year', days: [] }]];
+    window.__pre = P;
+    const r = S.rep;
+    inner = `<div class="chips">${P.map(([l, p], i) => `<button class="chip ${(!r && !p) || (r && p && r.n === 1 && !r.done && r.unit === p.unit && r.days.join() === p.days.join()) ? 'on' : ''}" data-act="pre|${i}">${l}</button>`).join('')}</div>`;
+    if (r) inner += `<div class="cap" style="padding-top:4px">กำหนดเอง</div>
+      <div class="mini"><span>ทุก</span><input class="num" id="repn" type="number" min="1" value="${r.n}"><span class="chips">${Object.keys(UNIT).map(u => `<button class="chip ${r.unit === u ? 'on' : ''}" data-act="unit|${u}">${UNIT[u][0]}</button>`).join('')}</span></div>
+      ${r.unit === 'week' ? `<div class="wd">${DOW.map((x, i) => `<button class="${r.days.includes(i) ? 'on' : ''}" data-act="wd|${i}">${x.replace('.', '')}</button>`).join('')}</div>` : ''}
+      ${S.mode === 'task' ? `<div class="mini"><span class="grow" style="font-size:13.5px">นับรอบถัดไปจากวันที่ทำเสร็จ</span><span class="sw ${r.done ? 'on' : ''}" data-act="done"></span></div>
+        <div class="warnbox">งานในโน้ตตั้งวันสิ้นสุดไม่ได้ ถ้าต้องการ ให้ลงเป็นนัด</div><div class="line">🔁 ${esc(repRule(r))}</div>`
+      : `<div class="chips"><span class="cap">สิ้นสุด</span>${[['never', 'ไม่สิ้นสุด'], ['date', 'ถึง ' + short(r.until)], ['count', 'ครบ ' + r.count + ' ครั้ง']].map(([k, l]) => `<button class="chip ${r.endType === k ? 'on' : ''}" data-act="endt|${k}">${l}</button>`).join('')}</div>`}`;
+  }
+  return `<div class="over"><div class="scrim" data-act="shut"></div><div class="sheet"><div class="grab"></div><div class="body">
+    <div class="head"><div class="h">${title}</div><button class="btn" style="height:34px;padding:0 14px" data-act="shut">ตกลง</button></div>${inner}</div></div></div>`;
+}
+
+function render() {
+  document.getElementById('now').innerHTML = nowSheet();
+  const app = document.getElementById('app');
+  const sc = app.querySelector('.sheet .body')?.scrollTop || 0;
+  app.innerHTML = behind + sheet() + overlay();
+  const b = app.querySelector('.sheet .body'); if (b) b.scrollTop = sc;
+  const n = document.getElementById('notes'); if (n) n.oninput = e => { S.notes = e.target.value; };
+  const p = document.getElementById('place'); if (p) p.oninput = e => { S.place = e.target.value; };
+  const rn = document.getElementById('repn'); if (rn) rn.onchange = e => { S.rep.n = Math.max(1, +e.target.value || 1); render(); };
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act; const i = act.search(/[|:]/);
+  const a = i < 0 ? act : act.slice(0, i), x = i < 0 ? '' : act.slice(i + 1);
+  const r = S.rep;
+  switch (a) {
+    case 'noop': return;
+    case 'reset': S = JSON.parse(JSON.stringify(INIT)); break;
+    case 'expand': S.collapsed = false; break;
+    case 'collapse': S.collapsed = true; S.over = null; break;
+    case 'mode': S.mode = x; break;
+    case 'kind': S.kind = x; break;
+    case 'over': S.over = x; S.view = null; break;
+    case 'shut': S.over = null; break;
+    case 'view': S.view = x; break;
+    case 'setdate': S.date = x; S.over = null; break;
+    case 'setstart': S.startDate = x || null; S.over = null; break;
+    case 'settime': { const len = S.allDay ? 60 : (mins(S.end) - mins(S.time) > 0 ? mins(S.end) - mins(S.time) : 60); S.time = x; S.end = addMin(x, len); S.allDay = false; S.over = null; break; }
+    case 'setend': S.end = x; S.over = null; break;
+    case 'allday': S.allDay = !S.allDay; S.over = null; break;
+    case 'pri': S.pri = x; S.over = null; break;
+    case 'tag': S.tags = S.tags.includes(x) ? S.tags.filter(v => v !== x) : [...S.tags, x]; break;
+    case 'rem': { const m = +x; S.rems = S.rems.includes(m) ? S.rems.filter(v => v !== m) : [...S.rems, m].sort((p, q) => p - q); break; }
+    case 'cal': S.cal = CALS[(CALS.indexOf(S.cal) + 1) % CALS.length]; break;
+    case 'notes': S.showNotes = true; break;
+    case 'subs': S.showSubs = true; break;
+    case 'peek': S.peek = !S.peek; break;
+    case 'pre': { const p = window.__pre[+x][1]; S.rep = p ? { n: 1, unit: p.unit, days: [...p.days], done: false, endType: 'never', count: 10, until: '2026-12-31' } : null; break; }
+    case 'unit': r.unit = x; if (x === 'week' && !r.days.length) r.days = [d(S.date).getUTCDay()]; break;
+    case 'wd': { const k = +x; r.days = r.days.includes(k) ? r.days.filter(v => v !== k) : [...r.days, k].sort(); break; }
+    case 'done': r.done = !r.done; break;
+    case 'endt': r.endType = x; break;
+    default: return;
+  }
+  render();
+});
+render();
+</script>

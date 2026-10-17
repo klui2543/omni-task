@@ -101,6 +101,7 @@ private fun EventInfoDialog(
             tr("เคย sync ขึ้น Google แล้ว: ", "Synced to Google before: ") + yes(info.syncId != null),
             tr("นัดซ้ำ: ", "Recurring: ") + yes(info.recurring),
             "id: ${info.id}",
+            app.omnitask.data.GoogleCalendarCheck.status(androidx.compose.ui.platform.LocalContext.current),
         )
     }
     AlertDialog(
