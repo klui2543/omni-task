@@ -15,6 +15,8 @@ import androidx.core.app.NotificationCompat
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import app.omnitask.R
 import app.omnitask.data.CalendarReader
+import app.omnitask.data.DriveLink
+import app.omnitask.data.GoogleCalendarCheck
 import app.omnitask.model.Lang
 import app.omnitask.model.load
 import app.omnitask.model.tr
@@ -27,8 +29,8 @@ import app.omnitask.time.now
 
 /**
  * The month widget's reload button, as a short foreground service: pulling Google Calendar and reading the vault again
- * can take seconds, and a foreground service is not frozen while it runs. Day and month taps go through
- * [MonthTapActivity] instead (see there for why); one sent here is still taken.
+ * can take seconds, and a foreground service is not frozen while it runs. The tap itself comes through
+ * [MonthTapActivity] (see there for why), which starts this service while it is in front.
  *
  * The service stays [LINGER_MS] after the last start, then ends. Android shows a foreground service's notification
  * once it has run for ten seconds, so a silent one shows in the shade while it runs.
@@ -62,8 +64,7 @@ class MonthTapService : Service() {
             busy++
             MonthLive.scope.launch {
                 try {
-                    withContext(Dispatchers.IO) { runCatching { CalendarReader.requestSync(app, force = true) } }
-                    OmniWidgets.refresh(app)
+                    reloadNow(app)
                     WidgetLog.add("reload asked on the widget")
                 } catch (e: Exception) {
                     WidgetLog.add("reload failed $e")
@@ -141,6 +142,29 @@ class MonthTapService : Service() {
                     WidgetLog.add("tap failed $e")
                 }
             }
+        }
+
+        /** Starts the reload from [MonthTapActivity]; when the service cannot start, the reload runs without it. */
+        internal fun startReload(context: android.content.Context, intent: Intent) {
+            val app = context.applicationContext
+            val start = Intent(app, MonthTapService::class.java).putExtras(intent).setData(intent.data)
+            runCatching { app.startForegroundService(start) }.onFailure {
+                WidgetLog.add("reload service failed $it, reloading without it")
+                MonthLive.scope.launch { runCatching { reloadNow(app) }.onFailure { e -> WidgetLog.add("reload failed $e") } }
+            }
+        }
+
+        /**
+         * Reads everything again: Drive past the widgets' two-minute cache, Google's list of deleted events, and the
+         * phone's calendar (its sync comes in later and redraws the widgets through [CalendarWatch]).
+         */
+        internal suspend fun reloadNow(app: android.content.Context) {
+            withContext(Dispatchers.IO) {
+                runCatching { CalendarReader.requestSync(app, force = true) }
+                if (DriveLink.isOn(app)) runCatching { DriveLink.use(app) { it.refresh(0) } }.onFailure { WidgetLog.add("reload: Drive failed $it") }
+                runCatching { GoogleCalendarCheck.refresh(app, force = true) }
+            }
+            OmniWidgets.refresh(app)
         }
 
         /** How long the service stays after the last start; a reload's own work keeps it longer. */

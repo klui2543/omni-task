@@ -32,7 +32,6 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
-import androidx.glance.appwidget.action.actionStartService
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.runComposition
 import androidx.glance.appwidget.cornerRadius
@@ -386,13 +385,20 @@ private fun tap(context: Context, widgetId: Int, delta: Int) = actionStartActivi
         .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/shift$delta")),
 )
 
-/** The refresh button: pulls Google Calendar and reads the vault and the calendar again for every widget. */
-private fun reload(context: Context, widgetId: Int) = actionStartService(
-    Intent(context, MonthTapService::class.java)
+/**
+ * The refresh button: reads Drive, the vault and the calendar again for every widget, and asks Google Calendar to sync.
+ * Through [MonthTapActivity] like the other taps: ColorOS held the start of the foreground service this went through
+ * before, and the tap did nothing (see the activity).
+ */
+private fun reload(context: Context, widgetId: Int) = actionStartActivity(
+    Intent(context, MonthTapActivity::class.java)
+        .addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
+        )
         .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
         .putExtra(MonthTapService.EXTRA_RELOAD, true)
         .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/reload")),
-    isForegroundService = true,
 )
 
 /** Opens the month page in the app at [day]; with [pick], that day comes selected. */

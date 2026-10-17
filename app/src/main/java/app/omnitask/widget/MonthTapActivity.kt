@@ -5,7 +5,7 @@ import android.os.Build
 import android.os.Bundle
 
 /**
- * Takes a tap on a day, on ‹ › or on the title of the month widget, and finishes before it is drawn.
+ * Takes a tap on a day, on ‹ ›, on the title or on the refresh button of the month widget, and finishes before it is drawn.
  *
  * The owner's phone (OPPO, ColorOS) freezes the app a few seconds after it was last used, even with its battery use
  * unrestricted, and holds what is sent to a frozen app: broadcasts, and the start of the foreground service the taps
@@ -20,7 +20,10 @@ class MonthTapActivity : Activity() {
         noTransition()
         WidgetLog.attach(this)
         WidgetLog.add("tap received through the activity")
-        intent?.let { MonthTapService.tapNow(applicationContext, it) }
+        intent?.let { tap ->
+            if (tap.getBooleanExtra(MonthTapService.EXTRA_RELOAD, false)) MonthTapService.startReload(this, tap)
+            else MonthTapService.tapNow(applicationContext, tap)
+        }
         finish()
         noTransition()
     }
