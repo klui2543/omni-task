@@ -55,7 +55,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
+import app.omnitask.notify.CalendarEvent
+import androidx.compose.ui.text.style.TextOverflow
 import app.omnitask.model.GroupBy
 import app.omnitask.model.Priority
 import app.omnitask.model.Projects
@@ -84,12 +87,26 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     // Opening search puts the cursor in the field, so finding a task is one tap and then typing.
     val searchFocus = remember { FocusRequester() }
     LaunchedEffect(searching) { if (searching) runCatching { searchFocus.requestFocus() } }
+    // Typing in search swaps the view for the results page; the filters and views come back when the field is empty.
+    val showingResults = searching && q.text.isNotBlank()
+    // After an event in the results was tapped: the search to go back to, the event, and the view that was open.
+    var backTo by remember { mutableStateOf<Triple<String, CalendarEvent, Mode?>?>(null) }
+    val openEvent: (CalendarEvent) -> Unit = { e ->
+        backTo = Triple(q.text, e, layout)
+        searching = false
+        vm.setQuery(q.copy(text = ""))
+        vm.requestCalendar(e.begin.date)
+    }
 
     val header: @Composable () -> Unit = {
         Column {
             Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(tr("งาน", "Tasks"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                SquareButton(Ic.search, tr("ค้นหา", "Search"), { searching = !searching; if (!searching) vm.setQuery(q.copy(text = "")) })
+                SquareButton(Ic.search, tr("ค้นหา", "Search"), {
+                    searching = !searching
+                    backTo = null
+                    if (!searching) vm.setQuery(q.copy(text = ""))
+                }, filled = searching)
             }
             if (searching) {
                 BasicTextField(
@@ -101,13 +118,21 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     modifier = Modifier.padding(top = 10.dp).fillMaxWidth().focusRequester(searchFocus).clip(RoundedCornerShape(12.dp)).background(C.card)
                         .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
                     decorationBox = { inner ->
-                        if (q.text.isEmpty()) Text(tr("ค้นหาชื่องาน", "Search task titles"), color = C.faint, fontSize = TS.body)
-                        inner()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                if (q.text.isEmpty()) Text(tr("ค้นหางานและปฏิทิน", "Search tasks and calendar"), color = C.faint, fontSize = TS.body)
+                                inner()
+                            }
+                            if (q.text.isNotEmpty()) Icon(
+                                Ic.close, tr("ล้างคำค้น", "Clear"), tint = C.muted,
+                                modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).clickable { vm.setQuery(q.copy(text = "")) },
+                            )
+                        }
                     },
                 )
             }
             // One row: the filter, the views to choose from (one at a time), and sorting where it applies.
-            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!showingResults) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
                 ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter) { sheet = Sheet.FILTER }
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -118,12 +143,14 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 // Sorting and grouping apply to the list and to Kanban's columns only.
                 if (layout == null || layout == Mode.KANBAN) SquareButton(Ic.sort, tr("เรียงและจัดกลุ่ม", "Sort and group"), { sheet = Sheet.SORT })
             }
-            ActiveFilters(state, vm, Modifier.padding(top = 8.dp))
+            if (!showingResults) ActiveFilters(state, vm, Modifier.padding(top = 8.dp))
         }
     }
 
     val mode = layout
-    if (mode == null) {
+    if (showingResults) {
+        SearchResults(state, vm, q.text, onOpen, openEvent, header)
+    } else if (mode == null) {
         TaskList(state, vm, onOpen, header)
     } else {
         // Every view honours the same filters as the list. Kanban shows all statuses as its columns,
@@ -132,9 +159,25 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         // "Hide done" (on by default) keeps finished and cancelled work out of every view.
         val narrowed = (if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses })
             .filter { !q.hideDone || it.isOpen }
-        Column(Modifier.fillMaxSize()) {
-            Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) { header() }
-            ViewBody(mode, state, pool, narrowed, vm, onOpen)
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) { header() }
+                ViewBody(mode, state, pool, narrowed, vm, onOpen)
+            }
+            val back = backTo
+            if (back != null && mode == Mode.CALENDAR && !searching) {
+                BackToSearch(
+                    back.second,
+                    onBack = {
+                        backTo = null
+                        vm.setTasksLayout(back.third)
+                        vm.setQuery(state.query.copy(text = back.first))
+                        searching = true
+                    },
+                    onDismiss = { backTo = null },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(start = 14.dp, end = 14.dp, bottom = NavClearance + FabClearance),
+                )
+            }
         }
     }
 
@@ -191,6 +234,30 @@ private fun TaskList(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, 
                 }
             }
         }
+    }
+}
+
+/** The bar under the calendar after an event in the search results was opened there: its name and the way back. */
+@Composable
+private fun BackToSearch(e: CalendarEvent, onBack: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.widthIn(max = 760.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.accentDeep)
+            .border(1.dp, C.accentLine, RoundedCornerShape(12.dp)).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Ic.calendar, null, tint = C.tealChip, modifier = Modifier.size(18.dp))
+        Column(Modifier.weight(1f)) {
+            Text(e.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val time = if (e.allDay) tr("ทั้งวัน", "All day") else "%02d:%02d".format(e.begin.hour, e.begin.minute) + " " + tr("ถึง", "to") + " " + "%02d:%02d".format(e.end.hour, e.end.minute)
+            Text(Countdown.day(e.begin.date) + "  " + time, color = C.muted, fontSize = TS.caption, maxLines = 1)
+        }
+        Text(
+            tr("กลับไปผลค้นหา", "Back to results"), color = C.accentText, fontSize = TS.caption,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, C.accentLine, RoundedCornerShape(8.dp)).clickable(onClick = onBack)
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+        )
+        Icon(Ic.close, tr("ปิด", "Close"), tint = C.muted, modifier = Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onDismiss).padding(10.dp))
     }
 }
 

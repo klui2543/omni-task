@@ -98,6 +98,7 @@ object Ic {
     val up = icon("up", "M6 15l6-6 6 6", width = 2f)
     val down = icon("down", "M6 9l6 6 6-6", width = 2f)
     val mic = icon("mic", "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
+    val calendar = icon("calendar", "M4.5 6h15v14h-15Z", "M4.5 10.5h15M8.5 3.5v4M15.5 3.5v4")
     val gear = icon("gear", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z", "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8")
 }
 
