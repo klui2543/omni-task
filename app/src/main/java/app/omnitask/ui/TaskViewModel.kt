@@ -1428,6 +1428,46 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A task from the detailed add page: the line, its description and its subtasks go in together. */
+    fun addDetailedTask(detail: QuickAdd.Detail, status: Status = Status.TODO, link: String? = null) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val today = LocalDate.now()
+                val lines = detail.block(today).split("\n").toMutableList()
+                if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
+                if (link != null) lines.add(1, "    - $link")
+                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n")) }.map { lines[0] }
+            }
+            result.getOrNull()?.let { noteCreated(it) }
+            val text = result.fold(
+                { tr("เพิ่มงานแล้ว: ${detail.title}", "Added: ${detail.title}") },
+                { e -> tr("เพิ่มงานไม่ได้: ${e.message}", "Cannot add task: ${e.message}") },
+            )
+            _state.update { it.copy(message = text) }
+            reload()
+        }
+    }
+
+    /** An event from the detailed add page: its own start and end, place, notes, repeat and alerts. */
+    fun addDetailedEvent(
+        calendarId: Long, title: String, begin: LocalDateTime, end: LocalDateTime, allDay: Boolean,
+        place: String, notes: String, rrule: String?, reminders: List<Int>,
+    ) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                val id = CalendarReader.insertDetailed(app, calendarId, title, begin, end, allDay, place, notes, rrule, reminders)
+                if (id != null) {
+                    CalendarReader.requestSync(app, force = true)
+                    runCatching { OmniWidgets.refresh(app) }
+                }
+                id
+            }
+            _state.update { it.copy(message = if (id != null) tr("ลงปฏิทินแล้ว: $title", "Added to calendar: $title") else tr("ลงปฏิทินไม่ได้", "Cannot add the event")) }
+        }
+    }
+
     // ---- Assistant ----
 
     /** Reads what the owner asked for ([Planner.askOf]): a look-ahead, a plan for a range, a ranking, or time for something new. */

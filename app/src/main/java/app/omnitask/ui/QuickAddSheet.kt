@@ -151,6 +151,10 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         }
     }
 
+    // The full-screen page for what one sentence can't say; it starts from what was typed so far.
+    var full by remember { mutableStateOf(false) }
+    if (full) AddDetailPage(state, vm, text, status, link, onClose = { full = false }, onSaved = { full = false; onDismiss() })
+
     SheetFrame(onDismiss) {
         Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
         BasicTextField(
@@ -248,6 +252,16 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             tr("วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือก List", "today, tomorrow, monday, 25/10, 9:00, #tag, ! !! !!! for priority, and # to pick a list"),
             Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption,
         )
+
+        if (target == null) {
+            Row(
+                Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.raised).clickable { full = true }.padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(tr("ตัวเลือกเพิ่มเติม", "More options"), Modifier.weight(1f), color = C.accentText, fontSize = TS.body)
+                Icon(Ic.next, null, tint = C.accentText, modifier = Modifier.size(16.dp))
+            }
+        }
 
         // What "ลงปฏิทิน" would make, right above the buttons; a tap opens the length and the calendar.
         if (target == null && draft.title.isNotBlank()) {

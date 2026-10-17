@@ -73,4 +73,29 @@ class QuickAddTest {
         assertEquals("ทำไม 28 Years Later", Shared.titleFromHtml("<meta property=\"og:title\" content=\"ทำไม 28 Years Later\"><title>x - YouTube</title>"))
         assertNull(Shared.titleFromHtml("<html><body>no title</body></html>"))
     }
+
+    @Test
+    fun detailedTaskKeepsTokenOrderAndWritesNotesAndSubtasks() {
+        val rule = Recurrence.build(1, "week", setOf(kotlinx.datetime.DayOfWeek.THURSDAY, kotlinx.datetime.DayOfWeek.MONDAY))
+        assertEquals("every week on Monday, Thursday", rule)
+        assertEquals(true, Recurrence.parse(rule) != null)
+        val d = QuickAdd.Detail(
+            title = "ส่งรายงาน", scheduled = true, date = LocalDate.parse("2026-10-08"), time = LocalTime.of(9, 0),
+            start = LocalDate.parse("2026-10-07"), rule = rule, tags = listOf("งาน"), priority = Priority.HIGH,
+            notes = listOf("ส่งทางอีเมล"), subtasks = listOf("รวบตัวเลข", " "),
+        )
+        assertEquals(
+            "- [ ] ส่งรายงาน #งาน #remind-at-scheduled 🎯 09:00 ⏫ 🔁 every week on Monday, Thursday ➕ 2026-10-07 🛫 2026-10-07 ⏳ 2026-10-08\n    - ส่งทางอีเมล\n    - [ ] รวบตัวเลข",
+            d.block(today),
+        )
+    }
+
+    @Test
+    fun customRulesAndCalendarRules() {
+        assertEquals("every 2 weeks when done", Recurrence.build(2, "week", whenDone = true))
+        assertEquals("every month", Recurrence.build(1, "month"))
+        assertEquals("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH;COUNT=5", Recurrence.rrule(2, "week", setOf(kotlinx.datetime.DayOfWeek.THURSDAY, kotlinx.datetime.DayOfWeek.MONDAY), count = 5))
+        assertEquals("FREQ=DAILY;UNTIL=20261231T235959Z", Recurrence.rrule(1, "day", until = LocalDate.parse("2026-12-31")))
+        assertEquals("FREQ=YEARLY;UNTIL=20261231", Recurrence.rrule(1, "year", until = LocalDate.parse("2026-12-31"), allDay = true))
+    }
 }

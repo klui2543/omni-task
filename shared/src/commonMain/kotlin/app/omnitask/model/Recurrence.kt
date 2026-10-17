@@ -28,6 +28,29 @@ object Recurrence {
     private val HEAD = Regex("""^every\s+(?:(\d+)\s+)?(day|week|month|year)s?\b(.*)$""")
     private val MONTH_DAY = Regex("""on the (\d{1,2})(?:st|nd|rd|th)?\b""")
 
+    /** The 🔁 rule for a custom choice: [unit] is day, week, month or year; [days] only counts for week. */
+    fun build(n: Int, unit: String, days: Set<DayOfWeek> = emptySet(), whenDone: Boolean = false): String {
+        val every = if (n > 1) "every $n ${unit}s" else "every $unit"
+        val on = if (unit == "week" && days.isNotEmpty()) " on " + days.sortedBy { it.ordinal }.joinToString(", ") { it.name.lowercase().replaceFirstChar { c -> c.uppercase() } } else ""
+        return every + on + if (whenDone) " when done" else ""
+    }
+
+    /**
+     * The calendar's RRULE for the same choice (an event, which also can end): [until] as `yyyyMMdd`,
+     * or [count] rounds. All-day events take the date form of UNTIL, timed ones a UTC time at day's end.
+     */
+    fun rrule(n: Int, unit: String, days: Set<DayOfWeek> = emptySet(), count: Int? = null, until: LocalDate? = null, allDay: Boolean = false): String {
+        val parts = mutableListOf("FREQ=" + when (unit) { "day" -> "DAILY"; "week" -> "WEEKLY"; "month" -> "MONTHLY"; else -> "YEARLY" })
+        if (n > 1) parts += "INTERVAL=$n"
+        if (unit == "week" && days.isNotEmpty()) parts += "BYDAY=" + days.sortedBy { it.ordinal }.joinToString(",") { it.name.take(2) }
+        if (count != null) parts += "COUNT=$count"
+        else if (until != null) {
+            val d = "%04d%02d%02d".format(until.year, until.monthNumber, until.dayOfMonth)
+            parts += "UNTIL=" + if (allDay) d else d + "T235959Z"
+        }
+        return parts.joinToString(";")
+    }
+
     fun parse(text: String?): Rule? {
         if (text == null) return null
         var t = text.trim().lowercase().replace(Regex("""\s+"""), " ")
