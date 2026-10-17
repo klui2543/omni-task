@@ -41,6 +41,9 @@ import kotlinx.datetime.LocalDate
 /** Which results the search shows: everything, only tasks, or only calendar events. */
 private enum class SearchKind { ALL, TASKS, EVENTS }
 
+/** The results last read: the text they are for and the events found, so the tasks can follow the same text. */
+private class Found(val text: String, val events: List<EventHit>)
+
 /** One calendar event found by the search: the instance shown, how many times it repeats in the range, and its calendar. */
 private class EventHit(val event: CalendarEvent, val repeats: Int, val calendar: String?)
 
@@ -58,7 +61,6 @@ fun SearchResults(
     text: String,
     onOpen: (Task) -> Unit,
     onEvent: (CalendarEvent) -> Unit,
-    header: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
     val today = state.today
@@ -66,10 +68,11 @@ fun SearchResults(
     val needle = text.trim()
 
     // The provider is read off the main thread, a moment after typing stops; it reads again when the calendar changes.
-    val events by produceState(emptyList<EventHit>(), needle, today, state.events) {
-        if (needle.isEmpty()) { value = emptyList(); return@produceState }
+    // Tasks and events show together, once the events for the text are in, so rows never move under a finger.
+    val found by produceState(Found("", emptyList()), needle, today, state.events) {
+        if (needle.isEmpty()) { value = Found("", emptyList()); return@produceState }
         delay(250)
-        value = withContext(Dispatchers.IO) {
+        value = Found(needle, withContext(Dispatchers.IO) {
             runCatching {
                 val names = CalendarReader.calendars(context).associate { it.id to it.name }
                 // A repeating event comes back once per time; show the next one (or the last, when all are past) and the count.
@@ -78,12 +81,14 @@ fun SearchResults(
                     EventHit(shown, times.size, names[shown.calendarId])
                 }
             }.getOrDefault(emptyList())
-        }
+        })
     }
+    val shownText = found.text
+    val events = found.events
 
-    val tasks = remember(state.allTasks, needle) {
-        if (needle.isEmpty()) emptyList()
-        else state.allTasks.filter { it.title.contains(needle, ignoreCase = true) || it.description.contains(needle, ignoreCase = true) }
+    val tasks = remember(state.allTasks, shownText) {
+        if (shownText.isEmpty()) emptyList()
+        else state.allTasks.filter { it.title.contains(shownText, ignoreCase = true) || it.description.contains(shownText, ignoreCase = true) }
     }
 
     val groups = remember(tasks, events, kind, today) {
@@ -94,10 +99,9 @@ fun SearchResults(
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = 760.dp).fillMaxSize(),
-            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = NavClearance + FabClearance),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { header() }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip(tr("ทั้งหมด ${tasks.size + events.size}", "All ${tasks.size + events.size}"), kind == SearchKind.ALL, { kind = SearchKind.ALL })
@@ -105,7 +109,7 @@ fun SearchResults(
                     Chip(tr("ปฏิทิน ${events.size}", "Calendar ${events.size}"), kind == SearchKind.EVENTS, { kind = SearchKind.EVENTS })
                 }
             }
-            if (groups.isEmpty()) {
+            if (groups.isEmpty() && shownText.isNotEmpty()) {
                 item {
                     Card { Text(tr("ไม่พบงานหรือ event ที่มีคำนี้", "No tasks or events match"), Modifier.padding(16.dp), color = C.muted) }
                 }

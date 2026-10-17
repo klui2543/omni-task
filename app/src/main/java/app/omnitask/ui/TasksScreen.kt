@@ -148,21 +148,29 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     }
 
     val mode = layout
-    if (showingResults) {
-        SearchResults(state, vm, q.text, onOpen, openEvent, header)
-    } else if (mode == null) {
+    if (mode == null && !searching) {
         TaskList(state, vm, onOpen, header)
     } else {
-        // Every view honours the same filters as the list. Kanban shows all statuses as its columns,
-        // so the status filter only narrows the other views, and only when it differs from the default.
-        val pool = state.tasks.filter { q.copy(statuses = emptySet()).matches(it, state.today) }
-        // "Hide done" (on by default) keeps finished and cancelled work out of every view.
-        val narrowed = (if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses })
-            .filter { !q.hideDone || it.isOpen }
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
+                // While searching the field stays in this one place whatever shows below it, so typing never
+                // rebuilds it (which closed the keyboard).
                 Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) { header() }
-                ViewBody(mode, state, pool, narrowed, vm, onOpen)
+                Box(Modifier.weight(1f)) {
+                    if (showingResults) {
+                        SearchResults(state, vm, q.text, onOpen, openEvent)
+                    } else if (mode == null) {
+                        TaskList(state, vm, onOpen, null)
+                    } else {
+                        // Every view honours the same filters as the list. Kanban shows all statuses as its columns,
+                        // so the status filter only narrows the other views, and only when it differs from the default.
+                        val pool = state.tasks.filter { q.copy(statuses = emptySet()).matches(it, state.today) }
+                        // "Hide done" (on by default) keeps finished and cancelled work out of every view.
+                        val narrowed = (if (q.statuses == TaskQuery.DEFAULT.statuses) pool else pool.filter { it.status in q.statuses })
+                            .filter { !q.hideDone || it.isOpen }
+                        ViewBody(mode, state, pool, narrowed, vm, onOpen)
+                    }
+                }
             }
             val back = backTo
             if (back != null && mode == Mode.CALENDAR && !searching) {
@@ -189,17 +197,17 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
 }
 
 @Composable
-private fun TaskList(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, header: @Composable () -> Unit) {
+private fun TaskList(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, header: (@Composable () -> Unit)?) {
     val q = state.query
     val groups = q.run(state.allTasks, state.today)
     val blocked = Projects.blocked(state.tasks)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = 760.dp).fillMaxSize(),
-            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = if (header != null) 14.dp else 4.dp, bottom = NavClearance + FabClearance),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { header() }
+            if (header != null) item { header() }
 
             if (groups.isEmpty()) {
                 item { Card { Text(tr("ไม่มีงานตรงตัวกรอง", "No tasks match the filters"), Modifier.padding(16.dp), color = C.muted) } }
