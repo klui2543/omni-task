@@ -71,7 +71,12 @@ object DriveLink {
     }
 
     /** What the app asks Google for: the whole Drive, which finding the vault's folders by name needs (the web asks the same). */
-    fun request(): AuthorizationRequest = AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(DriveRest.SCOPE))).build()
+    /**
+     * Also read-only calendar access: Omni checks with Google which events still exist ([GoogleCalendarCheck]), since
+     * the phone's calendar store can keep events deleted elsewhere. Adding it asks the owner to sign in once more.
+     */
+    fun request(): AuthorizationRequest =
+        AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(DriveRest.SCOPE), Scope(GoogleCalendarCheck.SCOPE))).build()
 
     /**
      * Asks Google for access. The result carries a token, or a screen to show first ([AuthorizationResult.hasResolution]);
@@ -104,6 +109,12 @@ object DriveLink {
         if (result.hasResolution()) throw DriveUnavailable(signIn = true, message = "sign-in needed")
         return result.accessToken ?: throw DriveUnavailable(signIn = true, message = "no token")
     }
+
+    /** A token without showing anything, or null when Google needs the owner first (or there is no network). */
+    fun silentToken(context: Context): String? = runCatching { accessToken(context.applicationContext) }.getOrNull()
+
+    /** Google turned [t] down: get a new one next time. */
+    fun dropToken(context: Context, t: String) = refused(context.applicationContext, t)
 
     /** Drive turned a token down: forget it here and in Google's cache, so the next call gets a new one. */
     private fun refused(context: Context, t: String) {

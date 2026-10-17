@@ -20,6 +20,7 @@ import app.omnitask.data.ImageAttach
 import app.omnitask.data.BehaviorLog
 import app.omnitask.data.SettingsSync
 import app.omnitask.data.MonthMarksStore
+import app.omnitask.data.GoogleCalendarCheck
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
@@ -447,6 +448,22 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) { runCatching { CalendarReader.requestSync(app, force = true) } }
         reload()
+        checkWithGoogle(force = true)
+    }
+
+    /**
+     * Asks Google which events still exist and hides the ones the phone kept after they were deleted there
+     * ([GoogleCalendarCheck]); when that changes anything, the calendar and the widgets are read again.
+     */
+    private fun checkWithGoogle(force: Boolean = false) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val changed = withContext(Dispatchers.IO) { runCatching { GoogleCalendarCheck.refresh(app, force) }.getOrDefault(false) }
+            if (changed) {
+                refreshEvents()
+                launch { runCatching { OmniWidgets.refresh(app) } }
+            }
+        }
     }
 
     fun reload() {
@@ -489,6 +506,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { CalendarReader.requestSync(app) }
                 loadEvents(app)
             }
+            checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }

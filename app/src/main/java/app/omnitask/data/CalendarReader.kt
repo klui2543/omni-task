@@ -223,6 +223,8 @@ object CalendarReader {
             CalendarContract.Instances.CALENDAR_ID,
         )
         val hidden = hiddenIds(context)
+        // Events Google no longer has, though the phone's store still holds them (see GoogleCalendarCheck).
+        val gone = GoogleCalendarCheck.gone(context)
         val out = ArrayList<CalendarEvent>()
         runCatching {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
@@ -237,6 +239,7 @@ object CalendarReader {
             cursor?.use { c ->
                 while (c.moveToNext()) {
                     if (calendars == null && isHidden(c.getLong(5), hidden)) continue
+                    if (c.getLong(0) in gone) continue
                     val allDay = c.getInt(4) == 1
                     // All-day instances are stored in UTC midnights; read them as local dates.
                     fun at(ms: Long) = if (allDay) {
