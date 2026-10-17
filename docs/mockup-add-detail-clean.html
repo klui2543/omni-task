@@ -1,0 +1,304 @@
+<title>เพิ่มงานเต็มจอ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: the full-screen add page in a phone beside short notes. Two text sizes only: 20 for the title, 14 for everything else. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --segBg: #e1e5eb; --fast: #2f7a55; --slow: #b3443d; --warn: #9a6a12;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --bg: #ffffff; --sunken: #f1f2f5; --raised: #eceef1; --line: #e8eaee; --control: #cdd2da;
+  --text: #1b1e23; --text2: #3c424c; --muted: #7a8291; --faint: #a3a9b4;
+  --accent: #3d4f6e; --accentSoft: #e6eaf1; --accentText: #33445f; --onAccent: #ffffff; --red: #bf4b47; --scrim: rgba(20,24,30,.38);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --segBg: #17181c; --fast: #7fae93; --slow: #d9726c; --warn: #c4a56a;
+    --bg: #161618; --sunken: #1c1c1f; --raised: #232327; --line: #26262a; --control: #3a3a40;
+    --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #5f5f67;
+    --accent: #9db4d3; --accentSoft: #1d2330; --accentText: #b4c6df; --onAccent: #0e1118; --red: #d9726c; --scrim: rgba(0,0,0,.55); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --segBg: #17181c; --fast: #7fae93; --slow: #d9726c; --warn: #c4a56a;
+  --bg: #161618; --sunken: #1c1c1f; --raised: #232327; --line: #26262a; --control: #3a3a40;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #5f5f67;
+  --accent: #9db4d3; --accentSoft: #1d2330; --accentText: #b4c6df; --onAccent: #0e1118; --red: #d9726c; --scrim: rgba(0,0,0,.55); color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.45; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 18px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--ink) }
+header p { margin: 0; color: var(--ink2); max-width: 68ch; font-size: 14px }
+.stage { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start }
+.phone { flex: 0 1 370px; min-width: 0; width: 100%; max-width: 370px }
+.side { flex: 1 1 280px; min-width: 0; display: grid; gap: 10px; font-size: 13.5px; color: var(--ink2) }
+.li { padding-left: 14px; position: relative }
+.li::before { content: "+"; position: absolute; left: 0; color: var(--fast); font-weight: 600 }
+.li.no::before { content: "-"; color: var(--slow) }
+.note { font-size: 12.5px; color: var(--warn) }
+.again { font-size: 13.5px; padding: 8px 14px; border-radius: 10px; background: var(--segBg); width: fit-content }
+
+/* The page. */
+.app { position: relative; height: 740px; background: var(--bg); color: var(--text); border-radius: 26px; overflow: hidden; border: 1px solid var(--line); font-size: 14px; display: flex; flex-direction: column }
+.top { display: flex; align-items: center; gap: 8px; padding: 12px 12px 4px 8px; flex: none }
+.icbtn svg { width: 20px; height: 20px }
+.icbtn { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--text2) }
+.seg { display: inline-flex; background: var(--sunken); border-radius: 10px; padding: 3px; gap: 2px }
+.seg button { padding: 4px 14px; border-radius: 8px; color: var(--muted) }
+.seg button.on { background: var(--bg); color: var(--text); font-weight: 500; box-shadow: 0 0 0 1px var(--line) }
+.save { height: 38px; padding: 0 18px; border-radius: 12px; background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.grow { flex: 1 }
+.scroll { flex: 1; overflow-y: auto; padding: 4px 0 24px }
+.title { width: 100%; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 20px; padding: 10px 20px 14px 60px }
+.title::placeholder { color: var(--faint) }
+.grp { border-top: 1px solid var(--line); padding: 6px 0 }
+.r { display: flex; align-items: center; gap: 16px; min-height: 46px; padding: 0 20px; width: 100%; text-align: left; color: var(--text) }
+.r svg { width: 20px; height: 20px; flex: none; color: var(--muted) }
+.r .sp { width: 20px; flex: none }
+.r .v { flex: 1; min-width: 0 }
+.r .t { font-variant-numeric: tabular-nums; color: var(--text) }
+.r .empty { color: var(--faint) }
+.r .x { color: var(--faint); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center }
+.r .x svg { width: 14px; height: 14px; color: var(--faint) }
+.kinds { display: flex; gap: 18px }
+.kinds button { color: var(--muted); padding: 2px 0; border-bottom: 2px solid transparent }
+.kinds button.on { color: var(--text); border-bottom-color: var(--accent) }
+.ta { flex: 1; min-height: 64px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 12px 0; resize: none }
+.ta::placeholder, .inl::placeholder { color: var(--faint) }
+.inl { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 0; min-width: 0 }
+.box { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--control); flex: none; margin: 0 2px }
+
+/* Pickers. */
+.over { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; z-index: 5 }
+.scrim { position: absolute; inset: 0; background: var(--scrim) }
+.sheet { position: relative; max-height: 84%; background: var(--bg); border-radius: 20px 20px 0 0; display: flex; flex-direction: column }
+.grab { width: 32px; height: 4px; border-radius: 2px; background: var(--control); margin: 8px auto 0; flex: none }
+.sbody { overflow-y: auto; padding: 10px 20px 20px; display: grid; gap: 12px }
+.shead { display: flex; align-items: center; gap: 8px; font-weight: 600 }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+.chip { padding: 5px 12px; border-radius: 14px; background: var(--raised); color: var(--text2); white-space: nowrap }
+.chip.on { background: var(--accent); color: var(--onAccent); font-weight: 500 }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center }
+.cal .dw { color: var(--faint); padding: 2px 0 }
+.cal .dw:first-child { color: var(--red) }
+.cal button { height: 36px; border-radius: 50%; font-variant-numeric: tabular-nums; color: var(--text2) }
+.cal button.td { color: var(--accentText); font-weight: 600 }
+.cal button.sel { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.times { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px }
+.times button { padding: 7px 0; border-radius: 10px; background: var(--raised); text-align: center; font-variant-numeric: tabular-nums; color: var(--text2) }
+.times button.on { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.opt { display: flex; align-items: center; gap: 12px; min-height: 42px; width: 100%; text-align: left }
+.opt .dot { width: 18px; height: 18px; border-radius: 50%; border: 1.6px solid var(--control); flex: none }
+.opt.on .dot { border: 5px solid var(--accent) }
+.mini { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.num { width: 52px; text-align: center; padding: 5px; border-radius: 10px; border: 1px solid var(--line); background: var(--sunken); color: var(--text); font: inherit }
+.wd { display: flex; gap: 4px; flex-wrap: wrap }
+.wd button { width: 36px; height: 36px; border-radius: 50%; background: var(--raised); color: var(--text2); text-align: center }
+.wd button.on { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: var(--control); position: relative; flex: none }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg) }
+.sw.on { background: var(--accent) }
+.sw.on::after { left: 19px; background: var(--onAccent) }
+.muted { color: var(--muted) }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>เพิ่มงานเต็มจอ</h1>
+    <p>เต็มจอเหมือนแบบ A เดิม แต่ไม่มีอีโมจิ ตัวหนังสือน้อยลง ใช้สองขนาด ช่องที่ยังว่างเป็นตัวจาง แตะได้ทุกแถว ข้อความตัวอย่าง "ส่งรายงานไตรมาส พรุ่งนี้ 9:00 #งาน !!" (วันนี้ ส. 17 ต.ค.)</p>
+  </header>
+  <div class="stage">
+    <div class="phone"><div class="app" id="app"></div></div>
+    <div class="side">
+      <h2>ต่างจาก A เดิม</h2>
+      <div class="li">ไม่มีอีโมจิ ไอคอนหน้าแถวเป็นเส้นบางสีเทา</div>
+      <div class="li">ไม่มีคำอธิบายเล็กใต้แถว ไม่มีชิปมีกรอบในหน้า แต่ละแถวมีค่าเดียว</div>
+      <div class="li">ช่องที่ยังไม่ได้ตั้งเป็นตัวจาง เช่น "ไม่วนซ้ำ" "เพิ่ม Tag" แตะแล้วตั้งได้</div>
+      <div class="li">แบ่งกลุ่มด้วยเส้นเดียวระหว่างกลุ่ม: เวลา, ความถี่กับเตือน, Tag กับความสำคัญ, รายละเอียด</div>
+      <div class="li">ครบกำหนด / นัดทำ เป็นคำสองคำ ขีดเส้นใต้คำที่เลือก</div>
+      <div class="li no">ไม่มีบรรทัดตัวอย่างว่าจะเขียนอะไรลงโน้ต</div>
+      <div class="note">งาน: เวลาในแถวแรกคือเวลาเตือน เตือนได้ครั้งเดียว ตามรูปแบบไฟล์ของ TaskForge
+        นัด: มีเวลาจบ เตือนได้หลายครั้ง มีสถานที่และปฏิทิน</div>
+      <button class="again" data-act="reset">เริ่มใหม่</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TODAY = '2026-10-17';
+const INIT = { mode: 'task', allDay: false, kind: 'due', date: '2026-10-18', startDate: null, time: '09:00', end: '10:00', rep: null, rems: [30], pri: 'สูง', tags: ['งาน'], place: '', notes: '', subs: [], cal: 'ปฏิทินหลัก', over: null, view: null };
+let S = JSON.parse(JSON.stringify(INIT));
+const DOW = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+const MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const PRIS = ['สูงสุด', 'สูง', 'กลาง', 'ปกติ', 'ต่ำ', 'ต่ำสุด'];
+const UNIT = { day: 'วัน', week: 'สัปดาห์', month: 'เดือน', year: 'ปี' };
+const CALS = ['ปฏิทินหลัก', 'งาน', 'ครอบครัว'];
+const TAGS = ['งาน', 'บ้าน', 'รอ/พี่เอ', 'โทร', 'อ่าน'];
+const d = s => { const [y, m, dd] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd)); };
+const iso = x => x.toISOString().slice(0, 10);
+const add = (s, n) => { const x = d(s); x.setUTCDate(x.getUTCDate() + n); return iso(x); };
+const fd = s => { const x = d(s); const rel = s === TODAY ? 'วันนี้, ' : s === add(TODAY, 1) ? 'พรุ่งนี้, ' : ''; return rel + DOW[x.getUTCDay()] + ' ' + x.getUTCDate() + ' ' + MON[x.getUTCMonth()]; };
+const short = s => { if (s === TODAY) return 'วันนี้'; if (s === add(TODAY, 1)) return 'พรุ่งนี้'; const x = d(s); return x.getUTCDate() + ' ' + MON[x.getUTCMonth()]; };
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const addMin = (t, m) => { const x = ((mins(t) + m) % 1440 + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+const remText = m => m === 0 ? 'เตือนตรงเวลา' : m < 60 ? 'เตือนก่อน ' + m + ' นาที' : m < 1440 ? 'เตือนก่อน ' + (m / 60) + ' ชม.' : 'เตือนก่อน ' + (m / 1440) + ' วัน';
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+function repTh(r) {
+  let s = 'ทุก' + (r.n > 1 ? ' ' + r.n + ' ' : '') + UNIT[r.unit];
+  if (r.unit === 'week' && r.days.length) s += r.days.join() === '1,2,3,4,5' ? ' วันทำงาน' : ' วัน' + r.days.map(i => DOW[i]).join(' ');
+  if (r.unit === 'month') s += ' วันที่ ' + d(S.date).getUTCDate();
+  if (S.mode === 'task' && r.done) s += ' นับจากวันที่ทำเสร็จ';
+  if (S.mode === 'event' && r.endType === 'count') s += ', ' + r.count + ' ครั้ง';
+  if (S.mode === 'event' && r.endType === 'date') s += ', ถึง ' + short(r.until);
+  return s;
+}
+
+/* Thin line icons, one stroke weight. */
+const P = {
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  repeat: '<path d="M4 11V9a3 3 0 0 1 3-3h11l-3-3M20 13v2a3 3 0 0 1-3 3H6l3 3"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5h4"/>',
+  flag: '<path d="M6 21V4M6 4h11l-2 4 2 4H6"/>',
+  tag: '<path d="M3.5 12.5V4.5h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.2"/>',
+  notes: '<path d="M5 6h14M5 11h14M5 16h9"/>',
+  check: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  pin: '<path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  cal: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  start: '<path d="M4 12h11M11 7.5l4.5 4.5-4.5 4.5M19.5 5v14"/>',
+};
+const ic = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[k]}</svg>`;
+const xbtn = act => `<button class="x" data-act="${act}" aria-label="เอาออก">${ic('close')}</button>`;
+
+function page() {
+  const t = S.mode === 'task';
+  let g1 = '', g2 = '', g3 = '', g4 = '';
+  // When.
+  if (t) {
+    g1 += `<div class="r"><span class="sp"></span><span class="kinds"><button class="${S.kind === 'due' ? 'on' : ''}" data-act="kind:due">ครบกำหนด</button><button class="${S.kind === 'scheduled' ? 'on' : ''}" data-act="kind:scheduled">นัดทำ</button></span></div>`;
+    g1 += `<div class="r">${ic('clock')}<button class="v" data-act="over:date">${fd(S.date)}</button><button class="t ${S.allDay ? 'empty' : ''}" data-act="over:time">${S.allDay ? 'ไม่ใส่เวลา' : S.time}</button></div>`;
+    g1 += S.startDate
+      ? `<div class="r">${ic('start')}<button class="v" data-act="over:start">เริ่ม ${fd(S.startDate)}</button>${xbtn('setstart|')}</div>`
+      : `<button class="r" data-act="over:start">${ic('start')}<span class="v empty">วันเริ่ม</span></button>`;
+  } else {
+    g1 += `<div class="r">${ic('clock')}<span class="v">ทั้งวัน</span><span class="sw ${S.allDay ? 'on' : ''}" data-act="allday" role="switch" aria-checked="${S.allDay}"></span></div>`;
+    g1 += `<div class="r"><span class="sp"></span><button class="v" data-act="over:date">${fd(S.date)}</button>${S.allDay ? '' : `<button class="t" data-act="over:time">${S.time}</button>`}</div>`;
+    g1 += `<div class="r"><span class="sp"></span><button class="v" data-act="over:date">${fd(S.date)}</button>${S.allDay ? '' : `<button class="t" data-act="over:end">${S.end}</button>`}</div>`;
+  }
+  // Repeat and reminders.
+  g2 += `<button class="r" data-act="over:repeat">${ic('repeat')}<span class="v ${S.rep ? '' : 'empty'}">${S.rep ? repTh(S.rep) : 'ไม่วนซ้ำ'}</span></button>`;
+  if (!t) {
+    S.rems.forEach((m, i) => g2 += `<div class="r">${i ? '<span class="sp"></span>' : ic('bell')}<span class="v">${remText(m)}</span>${xbtn('rem|' + m)}</div>`);
+    g2 += `<button class="r" data-act="over:rem">${S.rems.length ? '<span class="sp"></span>' : ic('bell')}<span class="v empty">เพิ่มการเตือน</span></button>`;
+  }
+  // Task: priority and tags. Event: place and calendar.
+  if (t) {
+    g3 += `<button class="r" data-act="over:pri">${ic('flag')}<span class="v ${S.pri === 'ปกติ' ? 'empty' : ''}">${S.pri === 'ปกติ' ? 'ความสำคัญ' : 'ความสำคัญ' + S.pri}</span></button>`;
+    g3 += `<button class="r" data-act="over:tag">${ic('tag')}<span class="v ${S.tags.length ? '' : 'empty'}">${S.tags.length ? S.tags.map(x => '#' + x).join('  ') : 'เพิ่ม Tag'}</span></button>`;
+  } else {
+    g3 += `<div class="r">${ic('pin')}<input class="inl" id="place" placeholder="สถานที่" value="${esc(S.place)}"></div>`;
+    g3 += `<button class="r" data-act="cal">${ic('cal')}<span class="v">${S.cal}</span></button>`;
+  }
+  // Details and subtasks.
+  g4 += `<div class="r" style="align-items:flex-start">${ic('notes').replace('<svg', '<svg style="margin-top:13px"')}<textarea class="ta" id="notes" rows="2" placeholder="รายละเอียด">${esc(S.notes)}</textarea></div>`;
+  if (t) {
+    S.subs.forEach((s, i) => g4 += `<div class="r">${i ? '<span class="sp"></span>' : ic('check')}<span class="box"></span><span class="v">${esc(s)}</span>${xbtn('rmsub|' + i)}</div>`);
+    g4 += `<div class="r">${S.subs.length ? '<span class="sp"></span>' : ic('check')}<input class="inl" id="newsub" placeholder="เพิ่มงานย่อย"></div>`;
+  }
+  return `<div class="top"><button class="icbtn" aria-label="ปิด" data-act="noop">${ic('close')}</button><div class="grow"></div>
+      <div class="seg"><button class="${t ? 'on' : ''}" data-act="mode:task">งาน</button><button class="${t ? '' : 'on'}" data-act="mode:event">นัด</button></div>
+      <div class="grow"></div><button class="save" data-act="noop">บันทึก</button></div>
+    <div class="scroll"><input class="title" value="ส่งรายงานไตรมาส" placeholder="ชื่องาน" aria-label="ชื่องาน">
+      <div class="grp">${g1}</div><div class="grp">${g2}</div><div class="grp">${g3}</div><div class="grp">${g4}</div></div>`;
+}
+
+function overlay() {
+  const o = S.over; if (!o) return '';
+  let title = '', inner = '';
+  if (o === 'date' || o === 'start') {
+    const cur = o === 'start' ? S.startDate : S.date, set = o === 'start' ? 'setstart' : 'setdate';
+    title = o === 'start' ? 'วันเริ่ม' : S.mode === 'event' ? 'วันนัด' : S.kind === 'due' ? 'วันครบกำหนด' : 'วันนัดทำ';
+    const base = d(S.view || cur || S.date); const y = base.getUTCFullYear(), m = base.getUTCMonth();
+    const first = new Date(Date.UTC(y, m, 1)).getUTCDay(), n = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    let g = DOW.map(x => `<span class="dw">${x}</span>`).join('') + '<span></span>'.repeat(first);
+    for (let i = 1; i <= n; i++) { const s = iso(new Date(Date.UTC(y, m, i))); g += `<button class="${s === cur ? 'sel' : ''} ${s === TODAY ? 'td' : ''}" data-act="${set}|${s}">${i}</button>`; }
+    inner = `<div class="chips">${[['วันนี้', TODAY], ['พรุ่งนี้', add(TODAY, 1)], ['จันทร์หน้า', '2026-10-19'], ['สัปดาห์หน้า', '2026-10-24']].map(([l, v]) => `<button class="chip ${v === cur ? 'on' : ''}" data-act="${set}|${v}">${l}</button>`).join('')}</div>
+      <div class="mini"><button class="chip" data-act="view|${iso(new Date(Date.UTC(y, m - 1, 1)))}" aria-label="เดือนก่อน">‹</button><span class="grow" style="text-align:center">${MON[m]} ${y + 543}</span><button class="chip" data-act="view|${iso(new Date(Date.UTC(y, m + 1, 1)))}" aria-label="เดือนถัดไป">›</button></div><div class="cal">${g}</div>`;
+  }
+  if (o === 'time' || o === 'end') {
+    const end = o === 'end';
+    title = end ? 'เวลาจบ' : S.mode === 'event' ? 'เวลาเริ่ม' : 'เวลาเตือน';
+    const cur = S.allDay ? null : end ? S.end : S.time; let g = '';
+    for (let h = 6; h <= 23; h++) for (const mm of ['00', '30']) { const x = String(h).padStart(2, '0') + ':' + mm; g += `<button class="${x === cur ? 'on' : ''}" data-act="${end ? 'setend' : 'settime'}|${x}">${x}</button>`; }
+    inner = (end ? `<div class="chips">${[30, 60, 90, 120].map(m => `<button class="chip ${S.end === addMin(S.time, m) ? 'on' : ''}" data-act="setend|${addMin(S.time, m)}">${m < 60 ? m + ' นาที' : m / 60 + ' ชม.'}</button>`).join('')}</div>`
+      : S.mode === 'task' ? `<button class="opt ${S.allDay ? 'on' : ''}" data-act="allday"><span class="dot"></span>ไม่ใส่เวลา</button>` : '') + `<div class="times">${g}</div>`;
+  }
+  if (o === 'pri') { title = 'ความสำคัญ'; inner = '<div>' + PRIS.map(p => `<button class="opt ${S.pri === p ? 'on' : ''}" data-act="pri|${p}"><span class="dot"></span>${p}</button>`).join('') + '</div>'; }
+  if (o === 'tag') { title = 'Tag'; inner = `<div class="chips">${TAGS.map(x => `<button class="chip ${S.tags.includes(x) ? 'on' : ''}" data-act="tag|${x}">#${x}</button>`).join('')}</div>`; }
+  if (o === 'rem') { title = 'เพิ่มการเตือน'; inner = '<div>' + [0, 5, 10, 15, 30, 60, 1440].map(m => `<button class="opt ${S.rems.includes(m) ? 'on' : ''}" data-act="rem|${m}"><span class="dot"></span>${remText(m)}</button>`).join('') + '</div>'; }
+  if (o === 'repeat') {
+    title = 'วนซ้ำ';
+    const dw = d(S.date).getUTCDay();
+    const PR = [['ไม่วนซ้ำ', null], ['ทุกวัน', { unit: 'day', days: [] }], ['ทุกวันทำงาน', { unit: 'week', days: [1, 2, 3, 4, 5] }], ['ทุกสัปดาห์ วัน' + DOW[dw], { unit: 'week', days: [dw] }], ['ทุกเดือน วันที่ ' + d(S.date).getUTCDate(), { unit: 'month', days: [] }], ['ทุกปี', { unit: 'year', days: [] }]];
+    window.__pre = PR;
+    const r = S.rep;
+    inner = '<div>' + PR.map(([l, p], i) => `<button class="opt ${(!r && !p) || (r && p && r.n === 1 && !r.done && r.unit === p.unit && r.days.join() === p.days.join()) ? 'on' : ''}" data-act="pre|${i}"><span class="dot"></span>${l}</button>`).join('') + '</div>';
+    if (r) inner += `<div class="mini muted">กำหนดเอง</div>
+      <div class="mini"><span>ทุก</span><input class="num" id="repn" type="number" min="1" value="${r.n}"><span class="chips">${Object.keys(UNIT).map(u => `<button class="chip ${r.unit === u ? 'on' : ''}" data-act="unit|${u}">${UNIT[u]}</button>`).join('')}</span></div>
+      ${r.unit === 'week' ? `<div class="wd">${DOW.map((x, i) => `<button class="${r.days.includes(i) ? 'on' : ''}" data-act="wd|${i}">${x.replace('.', '')}</button>`).join('')}</div>` : ''}
+      ${S.mode === 'task' ? `<div class="mini"><span class="grow">นับรอบถัดไปจากวันที่ทำเสร็จ</span><span class="sw ${r.done ? 'on' : ''}" data-act="done"></span></div>`
+        : `<div class="chips"><span class="muted">สิ้นสุด</span>${[['never', 'ไม่สิ้นสุด'], ['date', 'ถึง ' + short(r.until)], ['count', 'ครบ ' + r.count + ' ครั้ง']].map(([k, l]) => `<button class="chip ${r.endType === k ? 'on' : ''}" data-act="endt|${k}">${l}</button>`).join('')}</div>`}`;
+  }
+  return `<div class="over"><div class="scrim" data-act="shut"></div><div class="sheet"><div class="grab"></div><div class="sbody">
+    <div class="shead"><span class="grow">${title}</span><button class="save" style="height:34px" data-act="shut">ตกลง</button></div>${inner}</div></div></div>`;
+}
+
+function render() {
+  const app = document.getElementById('app');
+  const sc = app.querySelector('.scroll')?.scrollTop || 0;
+  app.innerHTML = page() + overlay();
+  const s = app.querySelector('.scroll'); if (s) s.scrollTop = sc;
+  const n = document.getElementById('notes'); if (n) n.oninput = e => { S.notes = e.target.value; };
+  const p = document.getElementById('place'); if (p) p.oninput = e => { S.place = e.target.value; };
+  const ns = document.getElementById('newsub'); if (ns) ns.onkeydown = e => { if (e.key === 'Enter' && e.target.value.trim()) { S.subs.push(e.target.value.trim()); render(); document.getElementById('newsub')?.focus(); } };
+  const rn = document.getElementById('repn'); if (rn) rn.onchange = e => { S.rep.n = Math.max(1, +e.target.value || 1); render(); };
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act; const i = act.search(/[|:]/);
+  const a = i < 0 ? act : act.slice(0, i), x = i < 0 ? '' : act.slice(i + 1);
+  const r = S.rep;
+  switch (a) {
+    case 'noop': return;
+    case 'reset': S = JSON.parse(JSON.stringify(INIT)); break;
+    case 'mode': S.mode = x; if (x === 'task') S.allDay = false; break;
+    case 'kind': S.kind = x; break;
+    case 'over': S.over = x; S.view = null; break;
+    case 'shut': S.over = null; break;
+    case 'view': S.view = x; break;
+    case 'setdate': S.date = x; S.over = null; break;
+    case 'setstart': S.startDate = x || null; S.over = null; break;
+    case 'settime': { const len = mins(S.end) - mins(S.time) > 0 ? mins(S.end) - mins(S.time) : 60; S.time = x; S.end = addMin(x, len); S.allDay = false; S.over = null; break; }
+    case 'setend': S.end = x; S.over = null; break;
+    case 'allday': S.allDay = !S.allDay; S.over = null; break;
+    case 'pri': S.pri = x; S.over = null; break;
+    case 'tag': S.tags = S.tags.includes(x) ? S.tags.filter(v => v !== x) : [...S.tags, x]; break;
+    case 'rem': { const m = +x; S.rems = S.rems.includes(m) ? S.rems.filter(v => v !== m) : [...S.rems, m].sort((p, q) => p - q); break; }
+    case 'rmsub': S.subs.splice(+x, 1); break;
+    case 'cal': S.cal = CALS[(CALS.indexOf(S.cal) + 1) % CALS.length]; break;
+    case 'pre': { const p = window.__pre[+x][1]; S.rep = p ? { n: 1, unit: p.unit, days: [...p.days], done: false, endType: 'never', count: 10, until: '2026-12-31' } : null; break; }
+    case 'unit': r.unit = x; if (x === 'week' && !r.days.length) r.days = [d(S.date).getUTCDay()]; break;
+    case 'wd': { const k = +x; r.days = r.days.includes(k) ? r.days.filter(v => v !== k) : [...r.days, k].sort(); break; }
+    case 'done': r.done = !r.done; break;
+    case 'endt': r.endType = x; break;
+    default: return;
+  }
+  render();
+});
+render();
+</script>

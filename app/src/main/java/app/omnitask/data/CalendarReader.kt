@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.CalendarContract
 import app.omnitask.model.tr
+import app.omnitask.model.Recurrence
 import app.omnitask.notify.CalendarEvent
 import java.time.Instant
 import kotlinx.datetime.LocalDate
@@ -137,6 +138,56 @@ object CalendarReader {
         return runCatching { context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)?.let { ContentUris.parseId(it) } }.getOrNull()
     }
 
+    /**
+     * The detailed add page's event: [begin] to [end] (or [begin]'s day to [end]'s day when [allDay]), with an
+     * optional place, description, repeat rule ([rrule], as [Recurrence.rrule] writes it) and alerts ([reminders], minutes before).
+     */
+    fun insertDetailed(
+        context: Context, calendarId: Long, title: String, begin: LocalDateTime, end: LocalDateTime, allDay: Boolean,
+        place: String = "", notes: String = "", rrule: String? = null, reminders: List<Int> = emptyList(),
+    ): Long? {
+        if (!canWrite(context)) return null
+        val zone = ZoneId.systemDefault()
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId)
+            put(CalendarContract.Events.TITLE, title)
+            if (place.isNotBlank()) put(CalendarContract.Events.EVENT_LOCATION, place.trim())
+            if (notes.isNotBlank()) put(CalendarContract.Events.DESCRIPTION, notes.trim())
+            val from: Long
+            val to: Long
+            if (allDay) {
+                put(CalendarContract.Events.ALL_DAY, 1)
+                put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+                from = begin.date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+                to = maxOf(end.date, begin.date).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            } else {
+                put(CalendarContract.Events.EVENT_TIMEZONE, zone.id)
+                from = begin.atZone(zone).toInstant().toEpochMilli()
+                to = maxOf(end.atZone(zone).toInstant().toEpochMilli(), from + 60_000)
+            }
+            put(CalendarContract.Events.DTSTART, from)
+            if (rrule != null) {
+                // A repeating event is stored with a length instead of an end.
+                put(CalendarContract.Events.RRULE, rrule)
+                put(CalendarContract.Events.DURATION, if (allDay) "P${(to - from) / 86_400_000L}D" else "PT${(to - from) / 1000}S")
+            } else {
+                put(CalendarContract.Events.DTEND, to)
+            }
+            put(CalendarContract.Events.HAS_ALARM, if (reminders.isEmpty()) 0 else 1)
+        }
+        val id = runCatching { context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)?.let { ContentUris.parseId(it) } }.getOrNull()
+            ?: return null
+        reminders.forEach { minutes ->
+            val r = ContentValues().apply {
+                put(CalendarContract.Reminders.EVENT_ID, id)
+                put(CalendarContract.Reminders.MINUTES, minutes)
+                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+            }
+            runCatching { context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, r) }
+        }
+        return id
+    }
+
     /** Adds an all-day event on [day]; all-day events are stored as UTC midnights. */
     fun insertAllDay(context: Context, calendarId: Long, title: String, day: LocalDate): Long? {
         if (!canWrite(context)) return null
@@ -175,6 +226,8 @@ object CalendarReader {
             CalendarContract.Instances.CALENDAR_ID,
         )
         val hidden = hiddenIds(context)
+        // Events Google no longer has, though the phone's store still holds them (see GoogleCalendarCheck).
+        val gone = GoogleCalendarCheck.gone(context)
         val out = ArrayList<CalendarEvent>()
         runCatching {
             // Calendars hidden in the calendar app stay hidden here too, and so do the ones switched off in Omni.
@@ -193,6 +246,7 @@ object CalendarReader {
                 while (c.moveToNext()) {
                     if (calendars == null && isHidden(c.getLong(5), hidden)) continue
                     if (titleContains != null && c.getString(1)?.contains(titleContains, ignoreCase = true) != true) continue
+                    if (c.getLong(0) in gone) continue
                     val allDay = c.getInt(4) == 1
                     // All-day instances are stored in UTC midnights; read them as local dates.
                     fun at(ms: Long) = if (allDay) {
