@@ -45,7 +45,7 @@ object Recurrence {
         if (unit == "week" && days.isNotEmpty()) parts += "BYDAY=" + days.sortedBy { it.ordinal }.joinToString(",") { it.name.take(2) }
         if (count != null) parts += "COUNT=$count"
         else if (until != null) {
-            val d = "%04d%02d%02d".format(until.year, until.monthNumber, until.dayOfMonth)
+            val d = until.year.toString().padStart(4, '0') + until.monthNumber.toString().padStart(2, '0') + until.dayOfMonth.toString().padStart(2, '0')
             parts += "UNTIL=" + if (allDay) d else d + "T235959Z"
         }
         return parts.joinToString(";")
