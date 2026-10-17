@@ -124,16 +124,30 @@ fun OmniTaskApp(vm: TaskViewModel) {
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
 
+    // The frames and emoji page and the settings pages are drawn alone, in place of the tabs and their sheets. What a
+    // widget asks for closes them first, or quick add or the calendar would wait behind them.
+    fun leavePages() {
+        if (state.month != null) vm.requestMonth(null)
+        notifyOpen = false
+        settingsOpen = false
+    }
+
     // A widget or shortcut asked for quick add (or the assistant): open it once, then clear the request.
     LaunchedEffect(state.quickAdd) {
         state.quickAdd?.let { r ->
+            leavePages()
             if (r.assistant) screen = Screen.AI else adding = r
             vm.requestQuickAdd(null)
         }
     }
 
     // The month widget asked for the calendar: go to the Tasks tab, whose calendar takes the day.
-    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) screen = Screen.TASKS }
+    LaunchedEffect(state.calendarDay) {
+        if (state.calendarDay != null) {
+            leavePages()
+            screen = Screen.TASKS
+        }
+    }
 
     LaunchedEffect(state.message) {
         state.message?.let {

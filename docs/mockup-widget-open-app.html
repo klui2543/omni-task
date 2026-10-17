@@ -1,0 +1,360 @@
+<title>Widget แตะวันเปิดแอป</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: a phone (home screen and the app, one at a time) beside a panel that explains the way and times each tap. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --rule: #d9dde4; --pick: #3d4f6e; --segBg: #e1e5eb; --warn: #9a6a12; --fast: #2f7a55; --slow: #b3443d;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --card: #f6f7f9; --border: #d5d9e0; --grid: #d3d7de; --text: #1f2329; --text2: #3a414c; --muted: #646c78; --faint: #6f7783;
+  --accent: #3d5a85; --accentText: #34517d; --onAccent: #ffffff; --red: #b3443d; --green: #3f7d62; --event: #4d6f8f; --raised: #e9ecf1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --segBg: #17181c; --warn: #c4a56a; --fast: #7fae93; --slow: #d9726c;
+    --card: #161618; --border: #26262a; --grid: #2e2e35; --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+    --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118; --red: #d9726c; --green: #7fae93; --event: #7d8794; --raised: #1e1e22; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --segBg: #17181c; --warn: #c4a56a; --fast: #7fae93; --slow: #d9726c;
+  --card: #161618; --border: #26262a; --grid: #2e2e35; --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+  --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118; --red: #d9726c; --green: #7fae93; --event: #7d8794; --raised: #1e1e22; color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.55; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 920px; margin: 0 auto; display: grid; gap: 20px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+header p { margin: 0; color: var(--ink2); max-width: 68ch; font-size: 14px }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; background: var(--segBg); padding: 4px; border-radius: 12px; width: fit-content; max-width: 100% }
+.seg button { font-size: 13.5px; padding: 6px 14px; border-radius: 9px; color: var(--ink2) }
+.seg button.on { background: var(--pick); color: var(--page); font-weight: 600 }
+.stage { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start }
+.phone { flex: 0 1 372px; min-width: 0; width: 100%; max-width: 372px }
+.side { flex: 1 1 320px; min-width: 0; display: grid; gap: 16px }
+.about { font-size: 13.5px; color: var(--ink2); display: grid; gap: 6px }
+.about h2 { font-size: 16px; color: var(--ink); margin: 0; font-weight: 600 }
+.about .li { padding-left: 14px; position: relative }
+.about .li::before { content: "+"; position: absolute; left: 0; color: var(--fast); font-weight: 600 }
+.about .li.no::before { content: "-"; color: var(--slow) }
+.log { font-size: 12.5px; border-top: 2px solid var(--rule); padding-top: 8px; display: grid; gap: 3px; font-variant-numeric: tabular-nums; min-height: 150px; align-content: start }
+.log h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 600 }
+.log .slow { color: var(--slow); font-weight: 600 }
+.log .fast { color: var(--fast); font-weight: 600 }
+.log .hint { color: var(--ink2) }
+.note { font-size: 12.5px; color: var(--warn) }
+
+/* The phone: wallpaper, then either the home screen or the app on top of it. */
+.home { position: relative; min-height: 700px; background: linear-gradient(160deg, #1d2a33, #2b2233 60%, #1a1f2a); border-radius: 28px; overflow: hidden; padding: 22px 12px 80px }
+.dock { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; justify-content: center; gap: 22px }
+.dock span { width: 40px; height: 40px; border-radius: 12px; background: #ffffff1f }
+.w { background: var(--card); border-radius: 24px; padding: 10px 12px 8px; color: var(--text) }
+.w.lag { opacity: .72; transition: opacity .1s }
+.hd { display: flex; align-items: center; gap: 2px; height: 36px }
+.hd .ttl { font-size: 17px; font-weight: 500; flex: 1; padding-left: 2px }
+.ib { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 16px }
+.ib:hover { background: var(--raised) }
+.plus { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--onAccent); display: flex; align-items: center; justify-content: center; font-weight: 600; margin-left: 4px }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 10.5px; color: var(--faint); text-align: center; height: 16px }
+.dow span:first-child { color: var(--red) }
+.mon { margin-top: 8px; border-top: 1px solid var(--grid); border-left: 1px solid var(--grid) }
+.wk { display: grid; grid-template-columns: repeat(7, 1fr) }
+.c { position: relative; height: var(--ch, 42px); border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); text-align: center; padding-top: 3px; display: block; width: 100% }
+.c:hover { background: var(--raised) }
+.n { position: relative; z-index: 2; display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums }
+.sun .n, .hol .n { color: var(--red) }
+.out .n { opacity: .32 }
+.today .n { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.lvl1 { background: color-mix(in srgb, var(--green) 13%, transparent) }
+.lvl2 { background: color-mix(in srgb, var(--green) 26%, transparent) }
+.lvl3 { background: color-mix(in srgb, var(--green) 42%, transparent) }
+.out.lvl1, .out.lvl2, .out.lvl3 { background: none }
+.fr { background-image: linear-gradient(color-mix(in srgb, var(--violet, #a893c9) 22%, transparent), color-mix(in srgb, var(--violet, #a893c9) 22%, transparent)) }
+.st { position: absolute; right: 3px; bottom: 2px; font-size: 11px; line-height: 1 }
+.picked::after { content: ""; position: absolute; inset: 1px; border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); z-index: 1 }
+.ag { margin-top: 8px; display: grid; gap: 2px }
+.dh { font-size: 11.5px; color: var(--muted); padding: 4px 4px 2px }
+.dh.first { color: var(--accentText); font-weight: 600 }
+.it { display: flex; align-items: center; gap: 8px; padding: 0 4px; height: 28px; font-size: 13.5px }
+.it .bar { width: 3px; height: 16px; border-radius: 2px; background: var(--event); flex: none }
+.it .ring { width: 15px; height: 15px; border-radius: 50%; border: 1.6px solid var(--faint); flex: none; margin: 0 2px }
+.it .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.it .tm { font-size: 11.5px; color: var(--muted) }
+.empty { font-size: 12.5px; color: var(--faint); padding: 4px 6px }
+
+/* The app, over the wallpaper. */
+.app { position: absolute; inset: 0; background: var(--card); color: var(--text); display: flex; flex-direction: column; border-radius: 28px; opacity: 0; transform: scale(.96); pointer-events: none; transition: opacity .16s, transform .16s }
+.app.open { opacity: 1; transform: none; pointer-events: auto }
+.bar2 { display: flex; align-items: center; gap: 4px; padding: 14px 10px 6px }
+.bar2 .ttl { flex: 1; font-size: 18px; font-weight: 600; text-align: center }
+.appbody { padding: 4px 12px 12px; overflow: auto; flex: 1 }
+.picklist { margin-top: 12px; border-top: 1px solid var(--grid); padding-top: 8px }
+.picklist h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--accentText) }
+.pill { display: inline-block; font-size: 10.5px; padding: 1px 8px; border-radius: 9px; background: color-mix(in srgb, var(--violet, #a893c9) 25%, transparent); margin-left: 6px; vertical-align: 1px; color: var(--text2) }
+.opening { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--accent); transform-origin: left; transform: scaleX(0); z-index: 5 }
+.opening.go { transform: scaleX(1); transition: transform var(--dur, .4s) linear }
+@media (prefers-reduced-motion: reduce) { .app, .opening.go, .w.lag { transition: none } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Widget แตะวันเปิดแอป</h1>
+    <p>ลองแตะบน widget แล้วดูว่าเร็วขึ้นแค่ไหน ในแบบใหม่ แตะวันจะเปิดแอปที่วันนั้นเลย ส่วนเปลี่ยนเดือนยังทำบน widget และเร็วขึ้น ตัวเลขเวลาเป็นค่าประมาณ ยังไม่ได้วัดบน Find N6</p>
+  </header>
+
+  <div class="seg" role="group" aria-label="เลือกแบบ">
+    <button id="m-old" type="button">แบบตอนนี้</button>
+    <button id="m-new" type="button" class="on">แบบใหม่ แตะวันเปิดแอป</button>
+  </div>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="home" id="home">
+        <div class="w" id="w">
+          <div class="hd">
+            <button class="ttl" id="w-ttl" type="button" style="text-align:left"></button>
+            <button class="ib" id="w-prev" type="button" aria-label="เดือนก่อน">&#8249;</button>
+            <button class="ib" id="w-next" type="button" aria-label="เดือนถัดไป">&#8250;</button>
+            <button class="ib" type="button" aria-label="โหลดใหม่">&#8635;</button>
+            <button class="ib" type="button" aria-label="ใส่กรอบและ Emoji">&#9998;</button>
+            <button class="plus" type="button" aria-label="เพิ่มงาน">+</button>
+          </div>
+          <div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
+          <div class="mon" id="w-grid"></div>
+          <div class="ag" id="w-ag"></div>
+        </div>
+        <div class="dock"><span></span><span></span><span></span><span></span></div>
+
+        <div class="app" id="app" aria-hidden="true">
+          <div class="opening" id="opening"></div>
+          <div class="bar2">
+            <button class="ib" id="a-back" type="button" aria-label="กลับหน้าจอหลัก">&#8592;</button>
+            <button class="ib" id="a-prev" type="button" aria-label="เดือนก่อน">&#8249;</button>
+            <div class="ttl" id="a-ttl"></div>
+            <button class="ib" id="a-next" type="button" aria-label="เดือนถัดไป">&#8250;</button>
+            <button class="ib" id="a-today" type="button" aria-label="วันนี้" style="font-size:12px">วันนี้</button>
+          </div>
+          <div class="appbody">
+            <div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
+            <div class="mon" id="a-grid" style="--ch:46px"></div>
+            <div class="picklist" id="a-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="about" id="about"></div>
+      <div class="log" id="log" aria-live="polite"><h3>เวลาจากแตะถึงขึ้นจอ (ค่าประมาณ)</h3><div class="hint">แตะ widget เพื่อเริ่ม</div></div>
+      <div class="note">ตัวเลขมาจากที่เห็นใน log เดิม (ส่วนที่แอปวาดใช้ราว 110 ms) บวกเวลาที่ launcher ใช้ ซึ่งยังไม่เคยวัด จึงเป็นค่าประมาณ</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TODAY = '2026-10-16';
+  var MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  var SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  var DOWN = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+
+  // Example work: e = calendar event, t = task.
+  var DATA = {
+    '2026-10-01': [['e','ประชุมทีม','10:00'],['t','ส่งใบเสนอราคา']],
+    '2026-10-05': [['t','ซื้อของเข้าบ้าน']],
+    '2026-10-08': [['e','ทันตแพทย์','14:30'],['t','โทรยืนยันนัด'],['t','จ่ายค่าไฟ']],
+    '2026-10-12': [['e','ทริปเชียงใหม่','ทั้งวัน']],
+    '2026-10-13': [['e','ทริปเชียงใหม่','ทั้งวัน'],['t','จองที่พัก']],
+    '2026-10-14': [['e','ทริปเชียงใหม่','ทั้งวัน']],
+    '2026-10-16': [['e','ซ้อมวง','19:00'],['t','เขียนรายงานสรุป'],['t','ตอบอีเมลลูกค้า']],
+    '2026-10-17': [['t','ซักผ้า'],['e','กินข้าวกับพี่เอ','12:30']],
+    '2026-10-22': [['t','ส่งงวดที่ 2'],['e','พรีเซนต์งาน','15:00']],
+    '2026-10-23': [['t','ปิดงบเดือน']],
+    '2026-10-29': [['e','ตรวจรถ','09:00'],['t','เติมน้ำมัน'],['t','ต่อประกัน'],['t','ซื้อของขวัญ']],
+    '2026-10-30': [['t','ส่งสรุปประจำเดือน']],
+    '2026-10-31': [['e','งานฮาโลวีน','18:00']],
+    '2026-11-03': [['e','ประชุมไตรมาส','13:00'],['t','เตรียมสไลด์']],
+    '2026-11-11': [['t','จ่ายค่าเน็ต']],
+    '2026-11-12': [['e','นัดหมอ','11:00'],['t','รับยา']]
+  };
+  var STICKER = { '2026-10-08': '🦷', '2026-10-12': '✈️', '2026-10-31': '🎃', '2026-11-12': '💊' };
+  var FRAME = { '2026-10-12': 'ทริป', '2026-10-13': 'ทริป', '2026-10-14': 'ทริป' };
+  var HOLIDAY = { '2026-10-13': 1, '2026-10-23': 1 };
+
+  var mode = 'new';
+  var wOff = 0;                      // widget month, months from this one
+  var wPick = null;                  // day boxed on the widget (old way only)
+  var aMonth = { y: 2026, m: 9 };    // app month
+  var aPick = TODAY;
+  var taps = 0;
+  var busy = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+  function key(y, m, d) { return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+  function parse(s) { var p = s.split('-'); return { y: +p[0], m: +p[1] - 1, d: +p[2] }; }
+  function dow(y, m, d) { return new Date(Date.UTC(y, m, d, 12)).getUTCDay(); }
+  function norm(y, m) { var t = y * 12 + m; return { y: Math.floor(t / 12), m: ((t % 12) + 12) % 12 }; }
+  function days(y, m) {
+    var first = new Date(Date.UTC(y, m, 1, 12));
+    var lead = first.getUTCDay();
+    var len = new Date(Date.UTC(y, m + 1, 0, 12)).getUTCDate();
+    var weeks = Math.ceil((lead + len) / 7);
+    var out = [];
+    for (var i = 0; i < weeks * 7; i++) {
+      var dt = new Date(Date.UTC(y, m, 1 - lead + i, 12));
+      out.push({ k: key(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()), d: dt.getUTCDate(), inMonth: dt.getUTCMonth() === m, dow: dt.getUTCDay() });
+    }
+    return out;
+  }
+  function level(n) { return n === 0 ? 0 : n === 1 ? 1 : n <= 3 ? 2 : 3; }
+  function label(k) { var p = parse(k); return p.d + ' ' + SHORT[p.m]; }
+  function dayName(k) { var p = parse(k); return DOWN[dow(p.y, p.m, p.d)] + ' ' + label(k); }
+
+  function gridHtml(y, m, pick, withButtons, ch) {
+    var ds = days(y, m), html = '';
+    for (var w = 0; w < ds.length / 7; w++) {
+      html += '<div class="wk">';
+      for (var i = 0; i < 7; i++) {
+        var c = ds[w * 7 + i];
+        var cls = ['c'];
+        if (c.dow === 0 || HOLIDAY[c.k]) cls.push(c.dow === 0 ? 'sun' : 'hol'); if (HOLIDAY[c.k]) cls.push('hol');
+        if (!c.inMonth) cls.push('out');
+        if (c.k === TODAY) cls.push('today');
+        if (c.inMonth) { var n = (DATA[c.k] || []).length; if (n) cls.push('lvl' + level(n)); if (FRAME[c.k]) cls.push('fr'); }
+        if (c.k === pick) cls.push('picked');
+        var st = c.inMonth && STICKER[c.k] ? '<span class="st">' + STICKER[c.k] + '</span>' : '';
+        html += '<button type="button" class="' + cls.join(' ') + '" data-k="' + c.k + '" aria-label="' + c.d + ' ' + SHORT[parse(c.k).m] + '"><span class="n">' + c.d + '</span>' + st + '</button>';
+      }
+      html += '</div>';
+    }
+    return html;
+  }
+  function itemsHtml(k) {
+    var it = DATA[k] || [];
+    if (!it.length) return '<div class="empty">ว่าง</div>';
+    return it.map(function (x) {
+      return x[0] === 'e'
+        ? '<div class="it"><span class="bar"></span><span class="t">' + x[1] + '</span><span class="tm">' + x[2] + '</span></div>'
+        : '<div class="it"><span class="ring"></span><span class="t">' + x[1] + '</span></div>';
+    }).join('');
+  }
+
+  function drawWidget() {
+    var mm = norm(2026, 9 + wOff);
+    $('w-ttl').textContent = MONTHS[mm.m] + ' ' + mm.y;
+    $('w-grid').innerHTML = gridHtml(mm.y, mm.m, mode === 'old' ? wPick : null);
+    var list = mode === 'old' && wPick && wPick !== TODAY ? [wPick] : [TODAY, '2026-10-17'];
+    $('w-ag').innerHTML = list.map(function (k, i) {
+      var head = (k === TODAY ? 'วันนี้ ' : k === '2026-10-17' ? 'พรุ่งนี้ ' : '') + (k === TODAY || k === '2026-10-17' ? label(k) : dayName(k));
+      return '<div class="dh' + (i === 0 ? ' first' : '') + '">' + head + '</div>' + itemsHtml(k);
+    }).join('');
+  }
+  function drawApp() {
+    $('a-ttl').textContent = MONTHS[aMonth.m] + ' ' + aMonth.y;
+    $('a-grid').innerHTML = gridHtml(aMonth.y, aMonth.m, aPick);
+    var fr = FRAME[aPick] ? '<span class="pill">กรอบ ' + FRAME[aPick] + '</span>' : '';
+    $('a-list').innerHTML = '<h4>' + dayName(aPick) + fr + '</h4>' + itemsHtml(aPick);
+  }
+
+  function log(text, ms, cls, extra) {
+    var el = $('log');
+    var first = el.querySelector('.hint'); if (first) first.remove();
+    var row = document.createElement('div');
+    row.innerHTML = text + ': <span class="' + cls + '">ประมาณ ' + ms + ' ms</span>' + (extra ? ' <span class="hint">' + extra + '</span>' : '');
+    el.appendChild(row);
+    while (el.children.length > 9) el.removeChild(el.children[1]);
+  }
+
+  function after(ms, fn) { setTimeout(fn, ms); }
+  function lagged(ms, fn) {
+    if (busy) return;
+    var w = $('w'); busy = true; w.classList.add('lag');
+    after(ms, function () { fn(); w.classList.remove('lag'); busy = false; });
+  }
+
+  function openApp(k, ms, first) {
+    var p = parse(k);
+    aMonth = { y: p.y, m: p.m }; aPick = k; drawApp();
+    var bar = $('opening'), app = $('app');
+    bar.style.setProperty('--dur', ms + 'ms'); bar.classList.remove('go'); void bar.offsetWidth; bar.classList.add('go');
+    busy = true;
+    after(ms, function () { app.classList.add('open'); app.setAttribute('aria-hidden', 'false'); bar.classList.remove('go'); busy = false; $('a-back').focus({ preventScroll: true }); });
+  }
+
+  // Widget taps.
+  $('w-grid').addEventListener('click', function (e) {
+    var b = e.target.closest('.c'); if (!b || busy) return;
+    var k = b.getAttribute('data-k'); taps++;
+    if (mode === 'new') {
+      var first = !$('app').dataset.warm;
+      var ms = first ? 450 : 350;
+      $('app').dataset.warm = '1';
+      log('แตะที่ widget ครั้งที่ ' + taps + ' (' + label(k) + '), แอปเปิดที่วันนั้น', ms, 'hint', 'รอครั้งเดียว');
+      openApp(k, ms);
+    } else {
+      lagged(450, function () { wPick = wPick === k ? null : k; drawWidget(); });
+      log('แตะที่ widget ครั้งที่ ' + taps + ' (' + label(k) + '), รายการเปลี่ยน', 450, 'slow', 'ทุกครั้งที่แตะ');
+    }
+  });
+  function shiftWidget(delta) {
+    if (busy) return; taps++;
+    var ms = mode === 'new' ? 200 : 450;
+    lagged(ms, function () { wOff += delta; wPick = null; drawWidget(); });
+    log('เปลี่ยนเดือนบน widget ครั้งที่ ' + taps, ms, mode === 'new' ? 'fast' : 'slow');
+  }
+  $('w-prev').addEventListener('click', function () { shiftWidget(-1); });
+  $('w-next').addEventListener('click', function () { shiftWidget(1); });
+  $('w-ttl').addEventListener('click', function () {
+    if (busy || (wOff === 0 && !wPick)) return;
+    var ms = mode === 'new' ? 200 : 450;
+    lagged(ms, function () { wOff = 0; wPick = null; drawWidget(); });
+    log('กลับเดือนนี้ครั้งที่ ' + (++taps), ms, mode === 'new' ? 'fast' : 'slow');
+  });
+
+  // App taps: all in the app's own process, so nothing waits.
+  $('a-grid').addEventListener('click', function (e) {
+    var b = e.target.closest('.c'); if (!b) return;
+    aPick = b.getAttribute('data-k');
+    var p = parse(aPick); aMonth = { y: p.y, m: p.m }; drawApp();
+    log('แตะวันในแอป (' + label(aPick) + ')', 16, 'fast', 'ไม่ต้องรอ launcher');
+  });
+  function shiftApp(delta) {
+    aMonth = norm(aMonth.y, aMonth.m + delta); aPick = key(aMonth.y, aMonth.m, 1); drawApp();
+    log('เปลี่ยนเดือนในแอป', 16, 'fast', 'ไม่ต้องรอ launcher');
+  }
+  $('a-prev').addEventListener('click', function () { shiftApp(-1); });
+  $('a-next').addEventListener('click', function () { shiftApp(1); });
+  $('a-today').addEventListener('click', function () { aMonth = { y: 2026, m: 9 }; aPick = TODAY; drawApp(); });
+  $('a-back').addEventListener('click', function () {
+    $('app').classList.remove('open'); $('app').setAttribute('aria-hidden', 'true'); $('w-grid').querySelector('.c:not(.out)').focus({ preventScroll: true });
+  });
+
+  var ABOUT = {
+    'new': '<h2>แบบใหม่ แตะวันเปิดแอป</h2>' +
+      '<div class="li">แตะวันใน widget แล้วแอปเปิดที่เดือนนั้นและเลือกวันนั้นไว้ รอครั้งเดียวตอนเปิด</div>' +
+      '<div class="li">ในแอปเปลี่ยนวันและเดือนได้ทันที เพราะไม่ต้องวิ่งไปกลับกับ launcher</div>' +
+      '<div class="li">เปลี่ยนเดือนบน widget ยังทำได้ และเร็วขึ้น เพราะ widget เบาลง</div>' +
+      '<div class="li">รายการใต้ตารางแสดงวันนี้กับพรุ่งนี้ตลอด ไม่มีกรอบเลือกวันบน widget</div>' +
+      '<div class="li no">กดดูงานของวันอื่นจะออกจากหน้าจอหลักทุกครั้ง</div>',
+    'old': '<h2>แบบตอนนี้</h2>' +
+      '<div class="li no">แตะวันแล้ว widget ต้องรอแอปวาดใหม่ทั้งก้อน รู้สึกอืดทุกครั้ง</div>' +
+      '<div class="li no">เปลี่ยนเดือนช้าแบบเดียวกัน</div>' +
+      '<div class="li">เห็นงานของวันอื่นได้โดยไม่ต้องออกจากหน้าจอหลัก</div>'
+  };
+  function setMode(m) {
+    mode = m; wPick = null; busy = false;
+    $('m-old').classList.toggle('on', m === 'old'); $('m-new').classList.toggle('on', m === 'new');
+    $('m-old').setAttribute('aria-pressed', m === 'old'); $('m-new').setAttribute('aria-pressed', m === 'new');
+    $('about').innerHTML = ABOUT[m];
+    $('app').classList.remove('open'); $('w').classList.remove('lag');
+    drawWidget();
+  }
+  $('m-old').addEventListener('click', function () { setMode('old'); });
+  $('m-new').addEventListener('click', function () { setMode('new'); });
+
+  setMode('new'); drawApp();
+})();
+</script>

@@ -148,6 +148,8 @@ data class UiState(
     val month: MonthRequest? = null,
     /** The month widget asked for the calendar at this day; the calendar takes it and clears it. */
     val calendarDay: LocalDate? = null,
+    /** Whether the calendar should bring [calendarDay]'s list into view: when the widget opened the day, not when a page closed. */
+    val calendarReveal: Boolean = false,
     /** The Tasks tab's view (null: the list) and the calendar's span, kept while the app is open, not saved. */
     val tasksLayout: Mode? = null,
     val calendarSpan: CalendarSpan = CalendarSpan.MONTH,
@@ -1400,7 +1402,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestMonth(request: MonthRequest?) = _state.update { it.copy(month = request) }
 
-    fun requestCalendar(day: LocalDate?) = _state.update { it.copy(calendarDay = day) }
+    fun requestCalendar(day: LocalDate?, reveal: Boolean = false) = _state.update { it.copy(calendarDay = day, calendarReveal = reveal) }
 
     fun setTasksLayout(mode: Mode?) = _state.update { it.copy(tasksLayout = mode) }
 

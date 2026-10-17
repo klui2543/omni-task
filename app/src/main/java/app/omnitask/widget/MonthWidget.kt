@@ -110,13 +110,14 @@ import app.omnitask.time.*
  * The month on the home screen (4×5): a grid from Sunday with the owner's coloured frames and emoji, red Sundays and
  * public holidays, each day's work shown as a deeper background or as short title bars ([CellStyle]), and today and
  * tomorrow listed below. The grid is drawn as one
- * picture, since a widget cannot draw a frame running across days; a tap layer over it lists the tapped day's work
- * under the grid. ‹ › move this widget a month at a time; the title brings it back to this month and today. Frames
- * and emoji are set from the pencil.
+ * picture, since a widget cannot draw a frame running across days; a tap layer over it opens the app's calendar at the
+ * tapped day, where moving between days needs no round trip through the launcher. ‹ › move this widget a month at a
+ * time; the title brings it back to this month. Frames and emoji are set from the pencil.
  *
- * Which month and day show is the widget's own state, saved with it and kept in memory by [MonthLive], and the work
- * for several months around it is loaded once into [MonthSource]: a tap recomposes from what is already in memory.
- * A tap does not go through Glance's own session for the widget (see [MonthLive] for why). A new [STAMP] (see
+ * Which month shows is the widget's own state, saved with it and kept in memory by [MonthLive], and the work for
+ * several months around it is loaded once into [MonthSource] (and loaded again ahead of ‹ ›, before they reach its
+ * edge): a tap recomposes from what is already in memory. A tap does not go through Glance's own session for the
+ * widget (see [MonthLive] for why). A new [STAMP] (see
  * [OmniWidgets.refresh]) tells the composition to load again after the vault or the calendar changed.
  */
 class MonthWidget : GlanceAppWidget() {
@@ -126,7 +127,7 @@ class MonthWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetId = MonthLive.key(context, id)
         WidgetLog.attach(context)
-        WidgetLog.add("provideGlance widget=$widgetId ${AppRestriction.describe(context)}")
+        WidgetLog.add("provideGlance widget=$widgetId ${AppRestriction.describe(context)} sizes=${MonthLive.sizes(context, widgetId)}")
         val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
         val first = MonthSource.load(
             context, (MonthLive.navs[widgetId] ?: nav(prefs)).fresh(System.currentTimeMillis()).offset, maxOf(prefs[STAMP] ?: 0L, MonthLive.stamp.value),
@@ -138,11 +139,14 @@ class MonthWidget : GlanceAppWidget() {
             val nav = (MonthLive.navs[widgetId] ?: nav(state)).fresh(System.currentTimeMillis())
             val stamp = maxOf(state[STAMP] ?: 0L, MonthLive.stamp.value)
             var source by remember { mutableStateOf(first) }
-            // Load again only when the data changed or the month moved past what is loaded.
+            // Load again when the data changed or the month moved past what is loaded, and in the background when ‹ ›
+            // come within two months of its edge, so the next months are there before they are asked for.
             LaunchedEffect(nav.offset, stamp) {
                 if (stamp != source.stamp || !source.covers(nav.offset)) source = MonthSource.load(context, nav.offset, stamp)
+                else if (!MonthSource.ahead(source, nav.offset)) source = MonthSource.load(context, nav.offset, stamp, ahead = true)
             }
-            MonthContent(context, source.view(nav.offset, nav.picked))
+            // A day tap opens the app, so the widget always lists today and tomorrow.
+            MonthContent(context, source.view(nav.offset, null))
         }
     }
 
@@ -242,6 +246,14 @@ internal object MonthLive {
     @Volatile
     private var homeArmedAt = 0L
 
+    /** How many sizes the launcher asks this widget for: Glance composes and sends the whole widget once for each. */
+    fun sizes(context: Context, widgetId: Int): Int = runCatching {
+        if (android.os.Build.VERSION.SDK_INT < 31) return@runCatching 1
+        @Suppress("DEPRECATION")
+        AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+            .getParcelableArrayList<android.util.SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)?.size ?: 1
+    }.getOrDefault(-1)
+
     fun key(context: Context, id: GlanceId): Int = runCatching { GlanceAppWidgetManager(context).getAppWidgetId(id) }.getOrDefault(-1)
 
     fun set(widgetId: Int, nav: MonthNav) {
@@ -310,7 +322,7 @@ internal object MonthLive {
             try {
                 do {
                     val began = SystemClock.elapsedRealtime()
-                    WidgetLog.add("composition starts widget=$widgetId")
+                    WidgetLog.add("composition starts widget=$widgetId sizes=${sizes(context, widgetId)}")
                     val state = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
                     val sizes = options ?: AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
                     var drawn = 0
@@ -355,27 +367,23 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 /**
- * A tap on the widget, taken by [MonthTapActivity]: the phone starts an activity at once, where a broadcast or a
- * service start to the app waited seconds whenever the phone had frozen the app (see the activity). A day lists that
- * day's work (see [MonthNav]); ‹ and › move the widget a month, and a delta of 0 (the title) brings it back to this
- * month and today.
+ * A tap on ‹ › or the title, taken by [MonthTapActivity]: the phone starts an activity at once, where a broadcast or a
+ * service start to the app waited seconds whenever the phone had frozen the app (see the activity). ‹ and › move the
+ * widget a month, and a delta of 0 (the title) brings it back to this month.
  */
-private fun tap(context: Context, widgetId: Int, day: LocalDate? = null, delta: Int? = null) = actionStartActivity(
+private fun tap(context: Context, widgetId: Int, delta: Int) = actionStartActivity(
     Intent(context, MonthTapActivity::class.java)
         // A task of its own, so the app's task is not brought up, and no animation for an activity never seen. A new
-        // task every time: otherwise a second tap on the same cell, while the first one's activity is still starting
+        // task every time: otherwise a second tap on the same button, while the first one's activity is still starting
         // (as when the phone has just woken the app), only brings that task up and is lost.
         .addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or
                 Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
         )
         .putExtra(MonthTapService.EXTRA_WIDGET, widgetId)
-        .apply {
-            if (day != null) putExtra(MonthTapService.EXTRA_TAP_DAY, day.toString())
-            if (delta != null) putExtra(MonthTapService.EXTRA_DELTA, delta)
-        }
-        // A distinct address per cell keeps each one's PendingIntent its own.
-        .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/${day ?: "shift$delta"}")),
+        .putExtra(MonthTapService.EXTRA_DELTA, delta)
+        // A distinct address per button keeps each one's PendingIntent its own.
+        .setData(android.net.Uri.parse("omnitask://widget/month/$widgetId/tap/shift$delta")),
 )
 
 /** The refresh button: pulls Google Calendar and reads the vault and the calendar again for every widget. */
@@ -466,14 +474,23 @@ internal class MonthSource(
         @Volatile
         private var kept: MonthSource? = null
 
-        /** Whether [source] can stand for a fresh load: same data ([stamp]), same day, and the month in what it holds. */
-        fun reusable(source: MonthSource?, stamp: Long, offset: Int, today: LocalDate): Boolean =
-            source != null && source.stamp == stamp && source.today == today && source.covers(offset)
+        /**
+         * Whether [source] can stand for a fresh load: same data ([stamp]), same day, and the month in what it holds;
+         * with [ahead], the two months either side of it as well.
+         */
+        fun reusable(source: MonthSource?, stamp: Long, offset: Int, today: LocalDate, ahead: Boolean = false): Boolean =
+            source != null && source.stamp == stamp && source.today == today && source.covers(offset) && (!ahead || ahead(source, offset))
 
-        /** Loads the months around [offset]: three before it and three after, so ‹ › rarely need a load. */
-        suspend fun load(context: Context, offset: Int, stamp: Long): MonthSource {
+        /** Whether [source] holds the two months either side of [offset] too, so ‹ › find them loaded. */
+        fun ahead(source: MonthSource, offset: Int): Boolean = (-2..2).all { source.covers(offset + it) }
+
+        /**
+         * Loads the months around [offset]: three before it and three after, so ‹ › rarely need a load. With [ahead],
+         * what is kept must also hold the two months either side, or they are read again around [offset].
+         */
+        suspend fun load(context: Context, offset: Int, stamp: Long, ahead: Boolean = false): MonthSource {
             sample?.let { return it }
-            kept?.takeIf { reusable(it, stamp, offset, LocalDate.now()) }?.let { return it }
+            kept?.takeIf { reusable(it, stamp, offset, LocalDate.now(), ahead) }?.let { return it }
             return read(context, offset, stamp).also { kept = it }
         }
 
@@ -617,8 +634,7 @@ private fun MonthContent(context: Context, data: MonthData) {
             }
         }
         Box(GlanceModifier.fillMaxWidth().height(gridHeight.dp)) {
-            // The picture changes only with the month, the work or the size; a tap on a day keeps it and moves the box,
-            // drawn on top, so the launcher gets a small update.
+            // The picture changes only with the month, the work or the size.
             val palette = widgetPalette(context)
             val bitmap = Pictures.get(Pictures.Key(data.month, data.today, data.marks, data.holidays, data.work, data.style, data.emoji, gridWidth, cell, rows, palette)) {
                 MonthPainter(context, palette, maxScale = 2f, background = palette.card.toArgb(), ring = false)
@@ -631,17 +647,9 @@ private fun MonthContent(context: Context, data: MonthData) {
                     Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
                         for (i in 0 until 7) {
                             val d = days[w * 7 + i]
-                            // With the list showing, a tap lists the day's work there; too small for a list, it opens the app.
-                            val tap = if (showAgenda) tap(context, widgetId, day = d) else openCalendar(context, d)
-                            Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(tap)) {
-                                // The chosen day is boxed whole, so the tap is plainly on that day.
-                                if (d == data.selected) Image(
-                                    ImageProvider(R.drawable.w_cell_pick), null,
-                                    GlanceModifier.fillMaxSize(),
-                                    contentScale = ContentScale.FillBounds,
-                                    colorFilter = ColorFilter.tint(cp { it.accent }),
-                                )
-                            }
+                            // A tap opens the app's calendar at that day: changing days there is at once, where each
+                            // change on the widget waited for the launcher to draw it again.
+                            Box(GlanceModifier.defaultWeight().fillMaxHeight().clickable(openCalendar(context, d))) {}
                         }
                     }
                 }
@@ -661,7 +669,7 @@ private fun Header(context: Context, data: MonthData) {
         val title = GlanceModifier.defaultWeight().padding(start = 2.dp)
         Text(
             MonthGrid.title(data.month),
-            if (data.offset != 0 || data.selected != null) title.clickable(tap(context, widgetId, delta = 0)) else title.clickable(openCalendar(context, data.today)),
+            if (data.offset != 0) title.clickable(tap(context, widgetId, delta = 0)) else title.clickable(openCalendar(context, data.today)),
             style = TextStyle(color = cp { it.text }, fontSize = 17.sp, fontWeight = androidx.glance.text.FontWeight.Medium),
             maxLines = 1,
         )

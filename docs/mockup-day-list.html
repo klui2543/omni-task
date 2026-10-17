@@ -1,0 +1,311 @@
+<title>รายการงานของวันในปฏิทิน</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: the app's calendar page in a phone, a switch for four ways to show the tapped day's list, and notes beside it. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --rule: #d9dde4; --pick: #3d4f6e; --segBg: #e1e5eb; --warn: #9a6a12; --fast: #2f7a55; --slow: #b3443d;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --bg: #f1f3f6; --card: #ffffff; --border: #d5d9e0; --grid: #d3d7de; --text: #1f2329; --text2: #3a414c; --muted: #646c78; --faint: #6f7783;
+  --accent: #3d5a85; --accentText: #34517d; --onAccent: #ffffff; --red: #b3443d; --green: #3f7d62; --teal: #4d6f8f; --tealText: #3f6a8a; --raised: #e9ecf1; --violet: #8a74b0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --segBg: #17181c; --warn: #c4a56a; --fast: #7fae93; --slow: #d9726c;
+    --bg: #0e0e10; --card: #161618; --border: #26262a; --grid: #2e2e35; --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+    --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118; --red: #d9726c; --green: #7fae93; --teal: #7d8794; --tealText: #8ccbc4; --raised: #1e1e22; --violet: #a893c9; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --rule: #24262b; --pick: #9db4d3; --segBg: #17181c; --warn: #c4a56a; --fast: #7fae93; --slow: #d9726c;
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --grid: #2e2e35; --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+  --accent: #9db4d3; --accentText: #b4c6df; --onAccent: #0e1118; --red: #d9726c; --green: #7fae93; --teal: #7d8794; --tealText: #8ccbc4; --raised: #1e1e22; --violet: #a893c9; color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.55; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 920px; margin: 0 auto; display: grid; gap: 18px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+header p { margin: 0; color: var(--ink2); max-width: 68ch; font-size: 14px }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; background: var(--segBg); padding: 4px; border-radius: 12px; width: fit-content; max-width: 100% }
+.seg button { font-size: 13.5px; padding: 6px 14px; border-radius: 9px; color: var(--ink2) }
+.seg button.on { background: var(--pick); color: var(--page); font-weight: 600 }
+.stage { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start }
+.phone { flex: 0 1 372px; min-width: 0; width: 100%; max-width: 372px }
+.side { flex: 1 1 300px; min-width: 0; display: grid; gap: 14px }
+.about { font-size: 13.5px; color: var(--ink2); display: grid; gap: 6px }
+.about h2 { font-size: 16px; color: var(--ink); margin: 0; font-weight: 600 }
+.li { padding-left: 14px; position: relative }
+.li::before { content: "+"; position: absolute; left: 0; color: var(--fast); font-weight: 600 }
+.li.no::before { content: "-"; color: var(--slow) }
+.again { font-size: 13.5px; padding: 8px 14px; border-radius: 10px; background: var(--segBg); width: fit-content }
+.again:hover { background: var(--rule) }
+.note { font-size: 12.5px; color: var(--warn) }
+
+/* The app. */
+.app { position: relative; height: 740px; background: var(--bg); color: var(--text); border-radius: 28px; overflow: hidden; border: 1px solid var(--border) }
+.top { display: flex; align-items: center; gap: 6px; padding: 16px 12px 8px }
+.top .ttl { flex: 1; font-size: 20px; font-weight: 600; padding-left: 6px }
+.sq { min-width: 40px; height: 40px; border-radius: 12px; background: var(--raised); display: flex; align-items: center; justify-content: center; font-size: 17px; padding: 0 10px; color: var(--text2) }
+.sq.sm { font-size: 13px }
+.scroll { position: absolute; left: 0; right: 0; top: 64px; bottom: 0; overflow-y: auto; padding: 0 12px 124px; scroll-behavior: smooth; display: grid; gap: 10px; align-content: start }
+.card { background: var(--card); border-radius: 18px; border: 1px solid var(--border) }
+.gh { display: flex; align-items: center; gap: 6px; padding: 8px 8px 4px 16px }
+.gh .t { flex: 1; font-size: 14px; font-weight: 600; color: var(--text) }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 10.5px; color: var(--faint); text-align: center; padding: 6px 8px 4px }
+.dow span:first-child { color: var(--red) }
+.mon { margin: 0 8px; border-top: 1px solid var(--grid); border-left: 1px solid var(--grid) }
+.wk { display: grid; grid-template-columns: repeat(7, 1fr) }
+.wk.hide { display: none }
+.c { position: relative; height: 44px; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); text-align: center; padding-top: 3px; display: block; width: 100% }
+.c:hover { background: var(--raised) }
+.n { position: relative; z-index: 2; display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums }
+.sun .n, .hol .n { color: var(--red) }
+.out .n { opacity: .32 }
+.today .n { background: var(--accent); color: var(--onAccent); font-weight: 600 }
+.lvl1 { background: color-mix(in srgb, var(--green) 13%, transparent) }
+.lvl2 { background: color-mix(in srgb, var(--green) 26%, transparent) }
+.lvl3 { background: color-mix(in srgb, var(--green) 42%, transparent) }
+.out.lvl1, .out.lvl2, .out.lvl3 { background: none }
+.picked::after { content: ""; position: absolute; inset: 1px; border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent) }
+.gfoot { height: 10px }
+.dh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 12px 16px 4px }
+.dh .t { font-size: 14px; font-weight: 600; color: var(--text2) }
+.badge { font-size: 11.5px; padding: 1px 9px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accentText); font-weight: 600 }
+.hl { padding: 0 16px 4px; font-size: 12px; color: var(--red) }
+.it { display: flex; align-items: center; gap: 12px; padding: 8px 16px }
+.it .bar { width: 4px; height: 30px; border-radius: 2px; background: var(--teal); flex: none }
+.it .ring { width: 18px; height: 18px; border-radius: 50%; border: 1.7px solid var(--faint); flex: none; margin: 0 5px }
+.it .tt { font-size: 14px }
+.it .tm { font-size: 12px; color: var(--tealText) }
+.lfoot { height: 6px }
+
+/* The bars the real app draws over the bottom of the page. */
+.bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 112px; background: linear-gradient(transparent, var(--bg) 22%); padding: 22px 12px 10px; display: grid; gap: 8px; z-index: 6; pointer-events: none }
+.ask { border: 1px solid var(--border); border-radius: 14px; padding: 9px 14px; font-size: 13.5px; color: var(--faint); background: var(--card) }
+.tabs { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--faint); padding: 0 8px }
+.tabs .on { color: var(--text); font-weight: 600 }
+.tabs .plus { width: 44px; height: 38px; border-radius: 12px; background: var(--raised); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--text2) }
+.pill { position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%); z-index: 7; background: var(--accent); color: var(--onAccent); font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 18px; box-shadow: 0 2px 10px #0006; white-space: nowrap }
+.pill[hidden] { display: none }
+
+/* Variant C: the day's list as a sheet over the page. */
+.sheet { position: absolute; left: 0; right: 0; bottom: 112px; z-index: 5; background: var(--card); border: 1px solid var(--border); border-radius: 22px 22px 0 0; height: 40%; transition: height .22s; display: flex; flex-direction: column; box-shadow: 0 -4px 14px #0004 }
+.sheet.full { height: 70% }
+.sheet[hidden] { display: none }
+.grab { padding: 10px 0 2px; display: flex; justify-content: center; flex: none; width: 100% }
+.grab span { width: 40px; height: 4px; border-radius: 2px; background: var(--faint) }
+.sbody { overflow-y: auto; flex: 1; padding-bottom: 8px }
+@media (prefers-reduced-motion: reduce) { .sheet { transition: none } .scroll { scroll-behavior: auto } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>รายการงานของวันในปฏิทิน</h1>
+    <p>วิดีโอที่คุณส่งมาแสดงว่าตารางเดือนกินจอเกือบหมด รายการของวันถูกช่อง "ถามผู้ช่วย" กับแถบล่างบัง และไม่มีอะไรบอกว่ายังมีอีก เลือกแบบด้านล่างแล้วแตะวันบนปฏิทินได้เลย (วันที่ 13 มีงานเยอะสุด)</p>
+  </header>
+
+  <div class="seg" role="group" aria-label="เลือกแบบ">
+    <button id="v-now" type="button">ตอนนี้</button>
+    <button id="v-a" type="button" class="on">ก บอกจำนวน และเลื่อนให้</button>
+    <button id="v-b" type="button">ข ตารางหดเป็นสัปดาห์</button>
+    <button id="v-c" type="button">ค แผ่นลอย</button>
+  </div>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="app" id="app">
+        <div class="top">
+          <div class="ttl" id="ttl"></div>
+          <button class="sq sm" id="today" type="button">วันนี้</button>
+          <button class="sq" id="prev" type="button" aria-label="เดือนก่อน">&#8249;</button>
+          <button class="sq" id="next" type="button" aria-label="เดือนถัดไป">&#8250;</button>
+        </div>
+        <div class="scroll" id="scroll"></div>
+        <div class="sheet" id="sheet" hidden>
+          <button class="grab" id="grab" type="button" aria-label="ขยายหรือย่อรายการ"><span></span></button>
+          <div class="sbody" id="sbody"></div>
+        </div>
+        <button class="pill" id="pill" type="button" hidden></button>
+        <div class="bottom">
+          <div class="ask">ถามผู้ช่วย</div>
+          <div class="tabs"><span>โฟกัส</span><span class="on">งาน</span><span class="plus">+</span><span>โปรเจกต์</span><span>ตั้งค่า</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="about" id="about"></div>
+      <button class="again" id="again" type="button">จำลอง: แตะวันที่ 13 จาก widget</button>
+      <div class="note">งานในแต่ละวันเป็นตัวอย่าง ความสูงของแต่ละแบบใกล้เคียงของจริงบนจอ Find N6 แต่ยังไม่ได้วัด</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TODAY = '2026-10-16';
+  var MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  var DOWN = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+  var DATA = {
+    '2026-10-01': [['e','ประชุมทีม','10:00 ถึง 11:00'],['t','ส่งใบเสนอราคา']],
+    '2026-10-05': [['t','ซื้อของเข้าบ้าน']],
+    '2026-10-08': [['e','ทันตแพทย์','14:30 ถึง 15:30'],['t','โทรยืนยันนัด'],['t','จ่ายค่าไฟ']],
+    '2026-10-12': [['e','ทริปเชียงใหม่','ทั้งวัน']],
+    '2026-10-13': [['e','ทริปเชียงใหม่','ทั้งวัน'],['e','ประชุมโปรเจกต์','10:00 ถึง 11:30'],['e','นัดกินข้าวกับพี่เอ','12:30 ถึง 14:00'],['t','จองที่พัก'],['t','ส่งสไลด์ให้ลูกค้า'],['t','โอนค่ามัดจำ']],
+    '2026-10-14': [['e','ทริปเชียงใหม่','ทั้งวัน']],
+    '2026-10-16': [['e','ซ้อมวง','19:00 ถึง 21:00'],['t','เขียนรายงานสรุป'],['t','ตอบอีเมลลูกค้า']],
+    '2026-10-17': [['t','ซักผ้า'],['e','กินข้าวกับพี่เอ','12:30 ถึง 14:00']],
+    '2026-10-22': [['t','ส่งงวดที่ 2'],['e','พรีเซนต์งาน','15:00 ถึง 16:00']],
+    '2026-10-23': [['t','ปิดงบเดือน']],
+    '2026-10-29': [['e','ตรวจรถ','09:00 ถึง 10:00'],['t','เติมน้ำมัน'],['t','ต่อประกัน'],['t','ซื้อของขวัญ']],
+    '2026-10-30': [['t','ส่งสรุปประจำเดือน']],
+    '2026-10-31': [['e','งานฮาโลวีน','18:00 ถึง 22:00']],
+    '2026-11-03': [['e','ประชุมไตรมาส','13:00 ถึง 14:30'],['t','เตรียมสไลด์']],
+    '2026-11-11': [['t','จ่ายค่าเน็ต']],
+    '2026-11-12': [['e','นัดหมอ','11:00 ถึง 12:00'],['t','รับยา']]
+  };
+  var HOLIDAY = { '2026-10-13': 'วันคล้ายวันสวรรคต ร.9', '2026-10-23': 'วันปิยมหาราช' };
+
+  var variant = 'a';
+  var ym = { y: 2026, m: 9 };
+  var picked = '2026-10-13';
+  var weekOnly = true;     // variant B: only the picked week shows
+  var sheetFull = false;   // variant C
+
+  var $ = function (id) { return document.getElementById(id); };
+  function key(y, m, d) { return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+  function parse(s) { var p = s.split('-'); return { y: +p[0], m: +p[1] - 1, d: +p[2] }; }
+  function norm(y, m) { var t = y * 12 + m; return { y: Math.floor(t / 12), m: ((t % 12) + 12) % 12 }; }
+  function level(n) { return n === 0 ? 0 : n === 1 ? 1 : n <= 3 ? 2 : 3; }
+  function dayName(k) { var p = parse(k); return DOWN[new Date(Date.UTC(p.y, p.m, p.d, 12)).getUTCDay()] + ' ' + p.d + ' ' + MONTHS[p.m]; }
+  function days(y, m) {
+    var lead = new Date(Date.UTC(y, m, 1, 12)).getUTCDay();
+    var len = new Date(Date.UTC(y, m + 1, 0, 12)).getUTCDate();
+    var out = [];
+    for (var i = 0; i < Math.ceil((lead + len) / 7) * 7; i++) {
+      var dt = new Date(Date.UTC(y, m, 1 - lead + i, 12));
+      out.push({ k: key(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()), d: dt.getUTCDate(), inMonth: dt.getUTCMonth() === m, dow: dt.getUTCDay() });
+    }
+    return out;
+  }
+
+  function gridCard() {
+    var ds = days(ym.y, ym.m), rows = ds.length / 7, html = '';
+    var pickRow = -1;
+    ds.forEach(function (c, i) { if (c.k === picked) pickRow = Math.floor(i / 7); });
+    var collapsed = variant === 'b' && weekOnly && pickRow >= 0;
+    for (var w = 0; w < rows; w++) {
+      html += '<div class="wk' + (collapsed && w !== pickRow ? ' hide' : '') + '">';
+      for (var i = 0; i < 7; i++) {
+        var c = ds[w * 7 + i], cls = ['c'];
+        if (c.dow === 0) cls.push('sun');
+        if (HOLIDAY[c.k]) cls.push('hol');
+        if (!c.inMonth) cls.push('out');
+        if (c.k === TODAY) cls.push('today');
+        var n = (DATA[c.k] || []).length; if (c.inMonth && n) cls.push('lvl' + level(n));
+        if (c.k === picked) cls.push('picked');
+        html += '<button type="button" class="' + cls.join(' ') + '" data-k="' + c.k + '" aria-label="' + c.d + '"><span class="n">' + c.d + '</span></button>';
+      }
+      html += '</div>';
+    }
+    var tog = variant === 'b' ? '<button class="sq sm" id="wtog" type="button">' + (collapsed ? 'ดูทั้งเดือน' : 'ย่อเป็นสัปดาห์') + '</button>' : '';
+    return '<div class="card"><div class="gh"><div class="t">' + MONTHS[ym.m] + ' ' + ym.y + '</div>' + tog + '</div>' +
+      '<div class="dow"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>' +
+      '<div class="mon">' + html + '</div><div class="gfoot"></div></div>';
+  }
+  function listInner() {
+    var it = DATA[picked] || [], hol = HOLIDAY[picked];
+    var count = it.length + (hol ? 0 : 0);
+    var badge = variant !== 'now' ? '<span class="badge">' + (count ? count + ' รายการ' : 'ว่าง') + '</span>' : '';
+    var html = '<div class="dh"><span class="t">' + (picked === TODAY ? 'วันนี้, ' : '') + dayName(picked) + '</span>' + badge + '</div>';
+    if (hol) html += '<div class="hl">' + hol + '</div>';
+    if (!it.length) html += '<div class="it"><span class="tt" style="color:var(--muted)">ว่างทั้งวัน</span></div>';
+    it.forEach(function (x) {
+      html += x[0] === 'e'
+        ? '<div class="it" data-row="1"><span class="bar"></span><div><div class="tt">' + x[1] + '</div><div class="tm">' + x[2] + '</div></div></div>'
+        : '<div class="it" data-row="1"><span class="ring"></span><div class="tt">' + x[1] + '</div></div>';
+    });
+    return html + '<div class="lfoot"></div>';
+  }
+
+  function render(keepScroll) {
+    var sc = $('scroll'), top = sc.scrollTop;
+    $('ttl').textContent = MONTHS[ym.m] + ' ' + ym.y;
+    var html = gridCard();
+    if (variant !== 'c') html += '<div class="card" id="list">' + listInner() + '</div>';
+    sc.style.scrollBehavior = 'auto';
+    sc.innerHTML = html;
+    if (keepScroll) sc.scrollTop = top;
+    sc.style.scrollBehavior = '';
+    var sheet = $('sheet');
+    sheet.hidden = variant !== 'c';
+    sheet.classList.toggle('full', sheetFull);
+    if (variant === 'c') $('sbody').innerHTML = listInner();
+    sc.style.paddingBottom = variant === 'c' ? '330px' : '124px';
+    updatePill();
+  }
+
+  // Variant A: a pill that says how many rows are still below the fold.
+  function updatePill() {
+    var pill = $('pill'), sc = $('scroll');
+    if (variant !== 'a') { pill.hidden = true; return; }
+    var visibleBottom = sc.scrollTop + sc.clientHeight - 124;
+    var rows = sc.querySelectorAll('[data-row]'), hidden = 0;
+    rows.forEach(function (r) { if (r.offsetTop + r.offsetHeight > visibleBottom + 2) hidden++; });
+    if (hidden > 0) { pill.textContent = 'ดูอีก ' + hidden + ' รายการ ↓'; pill.hidden = false; } else pill.hidden = true;
+  }
+  $('scroll').addEventListener('scroll', updatePill);
+  $('pill').addEventListener('click', function () {
+    var list = $('list'); if (list) $('scroll').scrollTo({ top: list.offsetTop - 10, behavior: 'smooth' });
+  });
+
+  function pick(k, fromGrid) {
+    picked = k;
+    var p = parse(k); ym = { y: p.y, m: p.m };
+    if (variant === 'b') weekOnly = true;
+    render(true);
+  }
+  $('scroll').addEventListener('click', function (e) {
+    var c = e.target.closest('.c');
+    if (c) { pick(c.getAttribute('data-k')); return; }
+    if (e.target.closest('#wtog')) { weekOnly = !weekOnly; render(false); }
+  });
+  function shift(d) {
+    ym = norm(ym.y, ym.m + d);
+    picked = key(ym.y, ym.m, ym.y === 2026 && ym.m === 9 ? 16 : 1);
+    if (variant === 'b') weekOnly = false;
+    render(false); $('scroll').scrollTop = 0;
+  }
+  $('prev').addEventListener('click', function () { shift(-1); });
+  $('next').addEventListener('click', function () { shift(1); });
+  $('today').addEventListener('click', function () { ym = { y: 2026, m: 9 }; picked = TODAY; if (variant === 'b') weekOnly = true; render(false); $('scroll').scrollTop = 0; });
+  $('grab').addEventListener('click', function () { sheetFull = !sheetFull; $('sheet').classList.toggle('full', sheetFull); });
+
+  // What the widget's tap does: open the page at that day, as each way would show it.
+  function fromWidget() {
+    ym = { y: 2026, m: 9 }; picked = '2026-10-13'; weekOnly = true; sheetFull = false;
+    render(false);
+    var sc = $('scroll'); sc.scrollTop = 0;
+    if (variant === 'a') setTimeout(function () { var l = $('list'); if (l) sc.scrollTo({ top: l.offsetTop - 10, behavior: 'smooth' }); }, 250);
+  }
+  $('again').addEventListener('click', fromWidget);
+
+  var ABOUT = {
+    now: '<h2>ตอนนี้</h2><div class="li no">ตารางเดือนกินจอ รายการของวันเริ่มที่กลางจอ และถูกช่องถามผู้ช่วยกับแถบล่างบัง</div><div class="li no">ไม่มีอะไรบอกว่าต้องเลื่อนลง หรือมีกี่รายการ</div>',
+    a: '<h2>ก บอกจำนวน และเลื่อนให้</h2><div class="li">หัวข้อวันมีป้าย "6 รายการ" เห็นทันทีว่ามีเท่าไหร่</div><div class="li">ถ้ายังมีรายการอยู่ใต้ขอบจอ จะมีปุ่ม "ดูอีก n รายการ" ลอยอยู่ แตะแล้วเลื่อนให้</div><div class="li">เปิดจาก widget แล้วหน้าเลื่อนลงมาที่รายการเอง</div><div class="li no">ตารางยังกินที่เท่าเดิม ต้องเลื่อนกลับขึ้นไปเลือกวันอื่น</div>',
+    b: '<h2>ข ตารางหดเป็นสัปดาห์</h2><div class="li">เลือกวันแล้วตารางเหลือแถวของสัปดาห์นั้น รายการได้พื้นที่เกือบทั้งจอ</div><div class="li">แตะ "ดูทั้งเดือน" เพื่อกางตารางกลับ เลือกวันแล้วหดเองอีกครั้ง</div><div class="li">ยังเห็นป้ายจำนวนรายการ</div><div class="li no">เห็นเดือนทั้งก้อนน้อยลงตอนดูรายการ</div>',
+    c: '<h2>ค แผ่นลอย</h2><div class="li">ตารางทั้งเดือนอยู่ข้างบนตลอด แผ่นรายการอยู่ครึ่งล่าง</div><div class="li">แตะแถบจับด้านบนของแผ่นเพื่อขยายหรือย่อ เลื่อนดูรายการในแผ่นได้</div><div class="li">แตะวันอื่นแล้วแผ่นเปลี่ยนตามทันที ไม่ต้องเลื่อนหน้า</div><div class="li no">แผ่นกับตารางแย่งที่กัน แถวล่างของตารางอาจถูกแผ่นบังเมื่อขยาย</div>'
+  };
+  function setVariant(v) {
+    variant = v;
+    ['now', 'a', 'b', 'c'].forEach(function (x) { var b = $('v-' + x); b.classList.toggle('on', x === v); b.setAttribute('aria-pressed', x === v); });
+    $('about').innerHTML = ABOUT[v];
+    fromWidget();
+  }
+  ['now', 'a', 'b', 'c'].forEach(function (x) { $('v-' + x).addEventListener('click', function () { setVariant(x); }); });
+  setVariant('a');
+})();
+</script>
