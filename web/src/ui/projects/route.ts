@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { MODES, type ViewMode } from '../views/modes'
+import { host } from '../../host'
 
 /**
  * Where on the Projects page the owner is, kept in the address (#/projects/project/<name>/map) so the browser's back
@@ -53,28 +54,24 @@ export function parentOf(r: ProjectRoute): ProjectRoute {
  * the browser's history when that step came from there, so the two backs never disagree.
  */
 export function useProjectRoute() {
-  const [route, setRoute] = useState(() => parseRoute(location.hash))
-  useEffect(() => {
-    const read = () => setRoute(parseRoute(location.hash))
-    addEventListener('hashchange', read)
-    addEventListener('popstate', read)
-    return () => { removeEventListener('hashchange', read); removeEventListener('popstate', read) }
-  }, [])
+  const address = host.address
+  const [route, setRoute] = useState(() => parseRoute(address.hash()))
+  useEffect(() => address.listen(() => setRoute(parseRoute(address.hash()))), [])
   const go = (r: ProjectRoute) => {
     const to = formatRoute(r)
-    if (to === location.hash) return
-    history.pushState({ back: location.hash }, '', to)
+    if (to === address.hash()) return
+    address.push(to, { back: address.hash() })
     setRoute(parseRoute(to))
   }
   const replace = (r: ProjectRoute) => {
     const to = formatRoute(r)
-    history.replaceState(history.state, '', to)
+    address.replace(to, address.state())
     setRoute(parseRoute(to))
   }
   const back = () => {
     const to = parentOf(route)
-    const state = history.state as { back?: string } | null
-    if (state?.back === formatRoute(to)) history.back()
+    const state = address.state() as { back?: string } | null
+    if (state?.back === formatRoute(to)) address.back()
     else replace(to)
   }
   return { route, go, replace, back }
@@ -82,12 +79,7 @@ export function useProjectRoute() {
 
 /** The page to show for the address: a deeper address inside Projects (#/projects/...) is still the Projects page. */
 export function useProjectsAddress<P extends string>(page: P): P | 'projects' {
-  const [deep, setDeep] = useState(() => location.hash.startsWith(BASE + '/'))
-  useEffect(() => {
-    const read = () => setDeep(location.hash.startsWith(BASE + '/'))
-    addEventListener('hashchange', read)
-    addEventListener('popstate', read)
-    return () => { removeEventListener('hashchange', read); removeEventListener('popstate', read) }
-  }, [])
+  const [deep, setDeep] = useState(() => host.address.hash().startsWith(BASE + '/'))
+  useEffect(() => host.address.listen(() => setDeep(host.address.hash().startsWith(BASE + '/'))), [])
   return deep ? 'projects' : page
 }

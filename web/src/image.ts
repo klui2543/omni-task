@@ -1,5 +1,6 @@
 // A picked photo turned into WebP for the vault, as Android's ImageAttach does. Drawing it again from its pixels
 // also drops EXIF, so GPS and camera data never reach the vault.
+import { host } from './host'
 
 export const MAX_SIDE = 2048
 export const MAX_BYTES = 1_000_000
@@ -25,9 +26,10 @@ async function encode(source: CanvasImageSource, w: number, h: number): Promise<
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', QUALITY))
   if (blob && blob.type === 'image/webp') return blob
   // Safari (the iPad) cannot write WebP from a canvas and hands back a PNG. The same pixels go through libwebp
-  // compiled to WebAssembly instead, fetched only the first time it is needed.
-  const { default: toWebp } = await import('@jsquash/webp/encode.js')
-  const bytes = await toWebp(g.getImageData(0, 0, w, h), { quality: QUALITY * 100 })
+  // compiled to WebAssembly instead, fetched only the first time it is needed (inside Obsidian the plugin carries it).
+  const pixels = g.getImageData(0, 0, w, h)
+  const own = host.embedding?.webp
+  const bytes = own ? await own(pixels, QUALITY * 100) : await (await import('@jsquash/webp/encode.js')).default(pixels, { quality: QUALITY * 100 })
   return new Blob([bytes], { type: 'image/webp' })
 }
 

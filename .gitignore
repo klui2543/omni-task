@@ -10,3 +10,4 @@ web/dist/
 web/test-results/
 obsidian/src/kotlin/
 obsidian/main.js
+obsidian/preview/

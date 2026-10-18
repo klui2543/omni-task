@@ -1,9 +1,11 @@
 // Omni Ygdrasil for Obsidian: every Omni project drawn as one tree on an Excalidraw page, kept in step with the task
 // note. The tree is the shared code's (the same as the Android and web apps'); this plugin only draws it, reads what
-// the owner does on the drawing, and writes the task note through the shared code.
+// the owner does on the drawing, and writes the task note through the shared code. It also opens the whole Omni Task
+// app in a tab (omniView.ts), reading and writing the vault directly.
 import { App, ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, normalizePath } from 'obsidian'
 import * as core from './core'
 import { limbAt, shapes, type Role, type Shape } from './draw'
+import { OMNI_VIEW, OmniView } from './omniView'
 import { PLAIN_FILTER, type Edited, type ProjectsIn, type Task, type YgFilter, type YgOut } from './types'
 
 const VIEW = 'omni-ygdrasil'
@@ -13,6 +15,8 @@ interface Settings {
   drawingPath: string
   autoRedraw: boolean
   autoLink: boolean
+  /** Whether the Omni Task tab opens by itself when Obsidian starts. */
+  openOmniOnStart: boolean
   filter: YgFilter
   folded: string[]
 }
@@ -21,6 +25,7 @@ const DEFAULTS: Settings = {
   drawingPath: `${core.omniDirPath}/Ygdrasil.excalidraw.md`,
   autoRedraw: true,
   autoLink: true,
+  openOmniOnStart: false,
   filter: PLAIN_FILTER,
   folded: [],
 }
@@ -55,6 +60,11 @@ export default class OmniYgdrasil extends Plugin {
     this.settings.filter = { ...PLAIN_FILTER, ...this.settings.filter }
     this.registerView(VIEW, (leaf) => new YgView(leaf, this))
     this.addRibbonIcon('git-fork', 'Omni Ygdrasil', () => this.open())
+    // The Omni Task app in a tab of its own.
+    this.registerView(OMNI_VIEW, (leaf) => new OmniView(leaf))
+    this.addRibbonIcon('list-checks', 'Omni Task', () => this.openOmni())
+    this.addCommand({ id: 'open-omni', name: 'เปิด Omni Task', callback: () => this.openOmni() })
+    this.app.workspace.onLayoutReady(() => { if (this.settings.openOmniOnStart) void this.openOmni() })
     this.addSettingTab(new YgSettings(this.app, this))
 
     this.addCommand({ id: 'open', name: 'เปิดหน้า Ygdrasil', callback: () => this.open() })
@@ -65,7 +75,7 @@ export default class OmniYgdrasil extends Plugin {
     this.addCommand({ id: 'move', name: 'ย้ายงานที่เลือกไปกิ่งอื่น', callback: () => this.moveSelected() })
     this.addCommand({ id: 'fold', name: 'พับหรือกางกิ่งที่เลือก', callback: () => this.foldSelected() })
 
-    // The note changed (ticked on the phone, synced in by Drive, or edited here): the tree is drawn again.
+    // The note changed (ticked on the phone and brought by Obsidian Sync, or edited here): the tree is drawn again.
     this.registerEvent(this.app.vault.on('modify', (f) => {
       if (this.settings.autoRedraw && f instanceof TFile && this.watches(f.path)) this.scheduleRedraw()
     }))
@@ -79,6 +89,14 @@ export default class OmniYgdrasil extends Plugin {
 
   async save() {
     await this.saveData(this.settings)
+  }
+
+  /** Shows the Omni Task tab, opening it in a new tab of the main area when there is none (one is enough). */
+  async openOmni() {
+    const ws = this.app.workspace
+    const leaf = ws.getLeavesOfType(OMNI_VIEW)[0] ?? ws.getLeaf('tab')
+    await leaf.setViewState({ type: OMNI_VIEW, active: true })
+    ws.revealLeaf(leaf)
   }
 
   // ---- The vault ----
@@ -564,6 +582,8 @@ class YgSettings extends PluginSettingTab {
       .addText((t) => t.setValue(p.settings.drawingPath).onChange(async (v) => { p.settings.drawingPath = v.trim(); await p.save() }))
     new Setting(containerEl).setName('วาดใหม่เองเมื่องานเปลี่ยน').setDesc('เมื่อ Omni note.md ถูกแก้ ไม่ว่าจากมือถือหรือที่นี่')
       .addToggle((t) => t.setValue(p.settings.autoRedraw).onChange(async (v) => { p.settings.autoRedraw = v; await p.save() }))
+    new Setting(containerEl).setName('เปิด Omni Task เองตอนเริ่ม Obsidian').setDesc('เปิดแอปไว้ในแท็บหนึ่งทุกครั้งที่เปิด Obsidian')
+      .addToggle((t) => t.setValue(p.settings.openOmniOnStart).onChange(async (v) => { p.settings.openOmniOnStart = v; await p.save() }))
     new Setting(containerEl).setName('ลูกศรระหว่างงานเป็นงานที่รอกัน').setDesc('ลากลูกศรจากงานหนึ่งไปอีกงาน แล้วเขียน 🆔 และ ⛔ ลงโน้ตให้')
       .addToggle((t) => t.setValue(p.settings.autoLink).onChange(async (v) => { p.settings.autoLink = v; await p.save() }))
   }

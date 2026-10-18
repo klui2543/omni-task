@@ -13,6 +13,7 @@ import { MODES, MODE_LABEL, ViewsPage, type ViewMode } from './Views'
 import { listsSeeded, renamedProject, toggleIn, useProjectsLocal, useYgdrasilLocal, withProject } from '../ui/projects/projectState'
 import { HOME, useProjectRoute } from '../ui/projects/route'
 import { QuickAdd } from './Tasks'
+import { host } from '../host'
 
 type Dialog =
   | { k: 'rename' }
@@ -383,7 +384,7 @@ export function ProjectsPage(p: PageProps) {
             <div class="scrim" onClick={() => setDialog(null)}>
               <div class="dialog" role="alertdialog" aria-modal="true" aria-label={`ลบ ${list.name}?`} onClick={(e) => e.stopPropagation()}>
                 <h2>ลบ {list.name}?</h2>
-                <p class="muted">ลบไฟล์ {list.path.split('/').pop()} พร้อม {own} รายการในนั้น (ไปอยู่ในถังขยะของ Google Drive)</p>
+                <p class="muted">ลบไฟล์ {list.path.split('/').pop()} พร้อม {own} รายการในนั้น ({host.obsidian ? 'ไปอยู่ในถังขยะ' : 'ไปอยู่ในถังขยะของ Google Drive'})</p>
                 {pulled > 0 && <p class="muted">งานที่ดึงมาจากโน้ตอื่น {pulled} งานจะอยู่ที่เดิม แค่เอา #{list.tag} ออก</p>}
                 <div class="dialog-actions">
                   <button class="ghost" onClick={() => setDialog(null)}>ยกเลิก</button>

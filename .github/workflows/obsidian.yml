@@ -1,14 +1,14 @@
 name: Obsidian plugin
 
 # Omni Ygdrasil for Obsidian (obsidian/): the tree drawn on an Excalidraw page, built on the same Kotlin code as the
-# apps (shared/). Releases go to their own repository, so BRAT finds only the plugin there and Obtainium, which watches
-# this repository's releases for the APK, never sees them.
+# apps (shared/), and the whole Omni Task web app (web/src) in a tab. Releases go to their own repository, so BRAT finds
+# only the plugin there and Obtainium, which watches this repository's releases for the APK, never sees them.
 on:
   push:
     branches: [main]
-    paths: ["obsidian/**", "shared/**", ".github/workflows/obsidian.yml"]
+    paths: ["obsidian/**", "shared/**", "web/src/**", "web/package*.json", ".github/workflows/obsidian.yml"]
   pull_request:
-    paths: ["obsidian/**", "shared/**", ".github/workflows/obsidian.yml"]
+    paths: ["obsidian/**", "shared/**", "web/src/**", "web/package*.json", ".github/workflows/obsidian.yml"]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     env:
       # Obsidian and BRAT want the release tag, its name and the manifest's version to be the same.
-      VERSION: 0.1.${{ github.run_number }}
+      VERSION: 0.2.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +37,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: obsidian/package-lock.json
+          cache-dependency-path: |
+            obsidian/package-lock.json
+            web/package-lock.json
+
+      # The Omni Task tab is the web app's code: its packages (Preact) come from web/.
+      - name: Install the web app's packages
+        working-directory: web
+        run: npm ci
 
       - name: Build the Kotlin core, test and bundle the plugin
         working-directory: obsidian

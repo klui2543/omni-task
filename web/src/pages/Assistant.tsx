@@ -14,6 +14,7 @@ import { AgendaCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, Re
 import { AskCard, Interview } from '../ui/assistant/Interview'
 import { StuckDeck } from '../ui/Stuck'
 import { byNote } from '../vault'
+import { host } from '../host'
 
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
@@ -392,7 +393,7 @@ export function AssistantPage(p: PageProps) {
           {head}
           {chat.length === 0 && profile && (
             <>
-              {!connected && (
+              {!connected && host.google && (
                 <section class="fcard connect">
                   <div class="grow">
                     <div class="strong">เชื่อมต่อ Google Calendar</div>

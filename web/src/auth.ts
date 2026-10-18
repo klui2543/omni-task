@@ -4,6 +4,8 @@
 // app again does not ask again; after that one quiet round trip to Google renews it. The sign-in as a whole
 // lasts 24 hours from the owner's last sign-in; then the sign-in page asks again.
 
+import { host } from './host'
+
 const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 const REVOKE = 'https://oauth2.googleapis.com/revoke'
 export const SCOPE = 'https://www.googleapis.com/auth/drive'
@@ -132,6 +134,8 @@ export class Auth {
 
   /** Whether the owner has agreed to [scope] on this device. */
   static granted(scope: string): boolean {
+    // Inside Obsidian there is no Google sign-in, so nothing of Google's is granted.
+    if (!host.google) return false
     return (store.get(localStorage, SCOPES_KEY) ?? '').split(/[\s,]+/).includes(scope)
   }
 

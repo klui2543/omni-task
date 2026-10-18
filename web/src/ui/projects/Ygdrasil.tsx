@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { host } from '../../host'
 import type { Task, YgFilter, YgOut, YgSpot } from '../../types'
 import { RingButton } from './bits'
 import { STATE_COLOR, STATE_LABEL } from './MindMap'
@@ -173,7 +174,7 @@ export function Ygdrasil(p: {
       const c = carrying.current!
       const moved = c.moved || Math.hypot(e.clientX - c.x, e.clientY - c.y) > 6
       setCarry({ ...c, x: e.clientX, y: e.clientY, moved })
-      const under = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-yg-tag]')
+      const under = host.at(e.clientX, e.clientY)?.closest('[data-yg-tag]')
       setDropTag(under?.getAttribute('data-yg-tag') ?? null)
     }
     const up = () => {
@@ -264,7 +265,7 @@ export function Ygdrasil(p: {
       </div>
 
       {carry && (
-        <div class="yg-ghost" aria-hidden="true" style={{ left: `${carry.x + 14}px`, top: `${carry.y + 10}px` }}>
+        <div class="yg-ghost" aria-hidden="true" style={{ left: `${carry.x - host.origin().left + 14}px`, top: `${carry.y - host.origin().top + 10}px` }}>
           {carry.label}
           <span class="small">
             {carry.task

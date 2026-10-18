@@ -1,4 +1,5 @@
 import type { CalendarFeed } from '../../calendarFeed'
+import { host } from '../../host'
 
 /**
  * The card that asks to read Google Calendar, and the reason when it could not be read (or no calendar was found)
@@ -7,7 +8,7 @@ import type { CalendarFeed } from '../../calendarFeed'
 export function CalendarConnect(p: Pick<CalendarFeed, 'connected' | 'note' | 'denied' | 'retry'> & { onConnect: () => void }) {
   return (
     <>
-      {!p.connected && (
+      {!p.connected && host.google && (
         <section class="fcard connect">
           <div class="grow">
             <div class="strong">เชื่อมต่อ Google Calendar</div>

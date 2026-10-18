@@ -14,6 +14,7 @@ import { StuckDialog, WeekBars } from '../ui/Stuck'
 import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
 import '../ui/focusSleep.css'
+import { host } from '../host'
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} ชม.` : `${m} นาที`)
@@ -242,7 +243,7 @@ export function FocusPage(p: PageProps) {
                     <button key={rule} role="menuitemradio" aria-checked={urgent === rule} class={urgent === rule ? 'on' : ''}
                       onClick={() => { urgentRule.set(rule); setUrgent(rule); setMenu(false) }}>ด่วน = {label}</button>
                   ))}
-                  <button role="menuitem" onClick={() => { setMenu(false); p.onChangeVault() }}>เปลี่ยน vault</button>
+                  {host.google && <button role="menuitem" onClick={() => { setMenu(false); p.onChangeVault() }}>เปลี่ยน vault</button>}
                   <button role="menuitem" onClick={() => { setMenu(false); p.onNavigate('settings') }}>ตั้งค่า</button>
                 </div>
               </>
@@ -255,7 +256,7 @@ export function FocusPage(p: PageProps) {
         ) : (
           <div class="focus-cols">
             <div class="colA">
-              {!connected && (
+              {!connected && host.google && (
                 <section class="fcard connect">
                   <div class="grow">
                     <div class="strong">เชื่อมต่อ Google Calendar</div>

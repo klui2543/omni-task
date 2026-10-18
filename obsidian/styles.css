@@ -12,3 +12,8 @@
 .omni-yg-search { width: 100%; }
 .omni-yg-pick { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
 .omni-yg-pick button { justify-content: flex-start; }
+
+/* The Omni Task tab: the app fills it edge to edge and draws everything itself, inside its shadow root. */
+.workspace-leaf-content[data-type="omni-task"] .view-content.omni-task-view { padding: 0; overflow: hidden; }
+.omni-task-host { height: 100%; }
+.omni-task-elsewhere { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 16px; color: var(--text-muted); }
