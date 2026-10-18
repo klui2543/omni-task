@@ -1694,15 +1694,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Adds an event to calendar [calendarId]: all day when [start] is null, else [minutes] long from [start]. */
-    fun addEvent(calendarId: Long, title: String, day: LocalDate, start: kotlinx.datetime.LocalTime?, minutes: Int) {
+    /** The quick-add sheet's event: [start] to [end], or [start]'s day to [end]'s day when [allDay]. */
+    fun addEvent(calendarId: Long, title: String, start: kotlinx.datetime.LocalDateTime, end: kotlinx.datetime.LocalDateTime, allDay: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch {
             val id = withContext(Dispatchers.IO) {
-                val id = if (start == null) {
-                    CalendarReader.insertAllDay(app, calendarId, title, day)
-                } else {
-                    CalendarReader.insert(app, calendarId, title, day.atTime(start), day.atTime(start).plusMinutes(minutes.toLong()))
-                }
+                val id = if (allDay) CalendarReader.insertAllDay(app, calendarId, title, start.date, end.date)
+                else CalendarReader.insert(app, calendarId, title, start, end)
                 if (id != null) {
                     // Up to Google at once, so the event shows on the owner's other devices too.
                     CalendarReader.requestSync(app, force = true)

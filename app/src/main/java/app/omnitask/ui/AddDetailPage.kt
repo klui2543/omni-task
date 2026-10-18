@@ -133,8 +133,9 @@ fun AddDetailPage(
     var date by remember { mutableStateOf(draft.due ?: today) }
     var time by remember { mutableStateOf(draft.time) }
     var allDay by remember { mutableStateOf(draft.time == null) }
-    var endDate by remember { mutableStateOf<LocalDate?>(null) }
-    var endTime by remember { mutableStateOf<LocalTime?>(null) }
+    // A range typed in the sentence ("9:00-11:00", "20-22/10") is the event's end.
+    var endDate by remember { mutableStateOf(draft.endDue) }
+    var endTime by remember { mutableStateOf(draft.endTime) }
     var begin by remember { mutableStateOf<LocalDate?>(null) }
     var rep by remember { mutableStateOf<Rep?>(null) }
     var priority by remember { mutableStateOf(draft.priority) }
@@ -442,7 +443,7 @@ private fun PlainField(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DayDialog(title: String, current: LocalDate, clear: (() -> Unit)?, onSet: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+internal fun DayDialog(title: String, current: LocalDate, clear: (() -> Unit)?, onSet: (LocalDate) -> Unit, onDismiss: () -> Unit) {
     val ps = rememberDatePickerState(initialSelectedDateMillis = current.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
     DatePickerDialog(
         onDismissRequest = onDismiss,
