@@ -1506,7 +1506,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         if (after != before) repo.writePath(vault, Swap.PATH, Swap.write(after))
     }
 
-    private fun calendarTouched(app: Application) {
+    private suspend fun calendarTouched(app: Application) {
         CalendarReader.requestSync(app, force = true)
         runCatching { OmniWidgets.refresh(app) }
     }
@@ -1603,9 +1603,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun swapBack(work: () -> Unit) {
+    private fun swapBack(work: suspend () -> Unit) {
         viewModelScope.launch {
-            val failed = withContext(Dispatchers.IO) { runCatching(work).exceptionOrNull() }
+            val failed = withContext(Dispatchers.IO) { runCatching { work() }.exceptionOrNull() }
             failed?.let { e -> _state.update { it.copy(message = tr("เลิกทำไม่ได้: ${e.message}", "Cannot undo: ${e.message}")) } }
             reload()
         }
