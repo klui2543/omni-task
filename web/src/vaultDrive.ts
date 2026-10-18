@@ -3,6 +3,7 @@
 // a file's id is its path in the vault, a version is a fingerprint of its text, and nothing is ever offline.
 // Everything above it (the vault, the note index, the settings file, the behavior log) works unchanged.
 import { Drive, DriveError, FOLDER, sameName, type DriveChange, type DriveFile, type Versioned, type Written } from './drive'
+import type { GoogleLink } from './host'
 
 /** One item of a folder in the vault. */
 export interface VaultEntry {
@@ -59,8 +60,11 @@ export class VaultDrive extends Drive {
   /** Paths this app wrote, with when: Obsidian tells about those changes too, and they are not news to the app. */
   private own = new Map<string, number>()
 
-  /** [rootId] stands for the vault itself; it is unique to the vault, so what the app keeps per vault stays apart. */
-  constructor(private fs: VaultFs, readonly rootId: string) {
+  /**
+   * [rootId] stands for the vault itself; it is unique to the vault, so what the app keeps per vault stays apart.
+   * [google] answers the app's Google Calendar calls, once linked (see host.ts).
+   */
+  constructor(private fs: VaultFs, readonly rootId: string, private google: GoogleLink | null = null) {
     super(() => { throw new DriveError(401, 'no Google sign-in inside Obsidian') })
   }
 
@@ -111,14 +115,16 @@ export class VaultDrive extends Drive {
     return at !== undefined && Date.now() - at < withinMs
   }
 
-  /* ---------- Google's own APIs: not inside Obsidian ---------- */
+  /* ---------- Google's own APIs: Calendar, through the link the plugin keeps ---------- */
 
-  override async json(): Promise<any> {
-    throw new DriveError(403, 'Google is not connected inside Obsidian')
+  override async json(url: string): Promise<any> {
+    if (!this.google) throw new DriveError(403, 'Google is not connected inside Obsidian')
+    return this.google.call(url)
   }
 
-  override async postJson(): Promise<any> {
-    throw new DriveError(403, 'Google is not connected inside Obsidian')
+  override async postJson(url: string, body: unknown): Promise<any> {
+    if (!this.google) throw new DriveError(403, 'Google is not connected inside Obsidian')
+    return this.google.call(url, body)
   }
 
   /* ---------- Finding ---------- */

@@ -15,6 +15,7 @@ import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
 import '../ui/focusSleep.css'
 import { host } from '../host'
+import { ConnectCard } from '../ui/GoogleConnect'
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} ชม.` : `${m} นาที`)
@@ -256,15 +257,7 @@ export function FocusPage(p: PageProps) {
         ) : (
           <div class="focus-cols">
             <div class="colA">
-              {!connected && host.google && (
-                <section class="fcard connect">
-                  <div class="grow">
-                    <div class="strong">เชื่อมต่อ Google Calendar</div>
-                    <div class="muted small">ให้เว็บอ่านนัดและเวรจาก Google Calendar เพื่อจัดเวลาว่าง และให้ผู้ช่วยลงนัดให้ได้</div>
-                  </div>
-                  <button class="primary" onClick={p.onConnectCalendar}>อนุญาต</button>
-                </section>
-              )}
+              {!connected && <ConnectCard note="ให้เว็บอ่านนัดและเวรจาก Google Calendar เพื่อจัดเวลาว่าง และให้ผู้ช่วยลงนัดให้ได้" onConnect={p.onConnectCalendar} />}
               {calendarNote && <section class="notice" role="alert"><span class="grow">{calendarNote}</span></section>}
 
               <section class="fcard">

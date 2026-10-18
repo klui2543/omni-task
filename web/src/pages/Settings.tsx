@@ -13,6 +13,7 @@ import { FONTS, PALETTES, SCALES, THEMES, appearance, setAppearance } from '../s
 import { notifyChoice } from '../settingsNotify'
 import { askPermission, check as checkReminders, permission, test as testReminder, type Permission } from '../reminders'
 import { host } from '../host'
+import { GoogleRow } from '../ui/GoogleConnect'
 
 /** A row of choices that works like a radio group, in Android's segmented look. */
 function Segmented<T extends string | number>(p: { label: string; options: [T, string][]; value: T; disabled?: T[]; onPick: (v: T) => void }) {
@@ -168,9 +169,7 @@ export function SettingsPage(p: PageProps) {
               </span>
               <button class="pillbtn" disabled={p.busy} onClick={p.onReload}>โหลดใหม่</button>
             </div>
-            {host.obsidian && (
-              <span class="set-note">อ่านและเขียนโน้ตใน vault นี้โดยตรง Obsidian Sync พาไปยังเครื่องอื่นเอง ปฏิทิน Google ยังใช้ในแท็บนี้ไม่ได้</span>
-            )}
+            {host.obsidian && <GoogleRow />}
             {host.google && (
               <>
                 <div class="set-row">

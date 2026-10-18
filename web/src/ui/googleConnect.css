@@ -1,0 +1,14 @@
+/* Google Calendar inside Obsidian: waiting for the sign-in in the browser, and the client secret pasted once in Settings. */
+.g-wait { display: flex; flex-direction: column; gap: 2px; }
+.g-wait-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+.g-wait-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.g-spin { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--accent-soft); border-top-color: var(--accent); animation: g-spin 1s linear infinite; }
+@keyframes g-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .g-spin { animation: none; } }
+.set-row.g-row-open { padding-bottom: 0; }
+.g-secret { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 10px; }
+.g-secret-row { display: flex; gap: 8px; align-items: center; }
+.g-secret-input { flex: 1; min-width: 0; min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--accent); background: var(--card); color: var(--text); font-size: 14px; }
+.set-row button.pillbtn.fill, .g-secret button.pillbtn.fill { height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: 13.5px; white-space: nowrap; }
+.g-secret button.pillbtn.fill:disabled { opacity: .5; }
+:root[data-theme=dark] .g-secret button.pillbtn.fill { color: #0e1118; }

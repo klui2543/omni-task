@@ -31,7 +31,25 @@ the other devices. When Sync brings a change in, or a note is edited in Obsidian
   turns the app's styles into the tab's: the page's root becomes the tab, a width rule asks the tab's width (a container
   query), and a screen height is the tab's height. The app's sheets and bars stay inside the tab.
 - `npm run preview` builds `preview/index.html`, the tab in a page shaped like Obsidian over example notes, for looking
-  at the layout in a browser (`?dark`, `?page=%23/tasks`, `?side=0`).
+  at the layout in a browser (`?dark`, `?page=%23/tasks`, `?side=0`, `?google=off|waiting|on|revoked|nosecret`).
+
+### Google Calendar in the tab
+
+The owner signs in once in the browser and the tab keeps a lasting permission (a refresh token), renewing the hour-long
+one by itself; reading and adding events are asked at once. `src/google.ts` does it: the browser opens at Google's
+sign-in, Google sends it to `web/public/obsidian.html` on the Omni website, which hands the answer back to Obsidian as
+`obsidian://omni-task-auth` (the vault's name rides in the state, so the right window gets it). The plugin trades the
+code for the permission with the web OAuth client's ID (built in from `web/.env.production`), its client secret and a
+PKCE proof. The secret and the permission are kept in the plugin's settings file on the device, never in a note.
+
+Set up once, in the Google Cloud project of the web app:
+
+1. APIs & Services > Credentials > the OAuth client of the web app > Authorized redirect URIs: add
+   `https://klui2543.github.io/omni-task/obsidian.html`. Copy its Client secret.
+2. The consent screen must be published (In production), as it already is for Android; in Testing a permission ends
+   after 7 days. Its scopes must include `calendar.readonly` and `calendar.events`, as the web asks for them too.
+3. The page `obsidian.html` goes live with the next deploy of the web app (a push to `main`).
+4. In the Omni Task tab: Settings > บัญชีและข้อมูล > Google Calendar, paste the secret, then "บันทึกแล้วเชื่อม".
 
 ## Installing and updating (BRAT)
 

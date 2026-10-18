@@ -8,6 +8,7 @@ import { host } from './host'
 import { Main } from './Home'
 import { apply } from './settingsAppearance'
 import { Reminders } from './ui/Reminders'
+import { connectInObsidian } from './ui/GoogleConnect'
 import { VaultDrive, type VaultFs } from './vaultDrive'
 import './style.css'
 
@@ -37,15 +38,20 @@ export function mountOmni(opts: { scope: ShadowRoot; frame: HTMLElement; root: H
   style.textContent = FRAME_CSS + css.join('\n')
   opts.scope.prepend(style)
   apply()
-  const drive = new VaultDrive(opts.fs, opts.rootId)
+  const drive = new VaultDrive(opts.fs, opts.rootId, host.calendar)
+  // "อนุญาต" for Google Calendar, and for adding events (both are asked at once inside Obsidian).
+  const connect = () => {
+    const link = host.calendar
+    if (link) connectInObsidian(link)
+  }
   render(
     <>
       <Main
         drive={drive}
         vaultId={drive.rootId}
         onSignIn={NOOP}
-        onConnectCalendar={NOOP}
-        onAllowCalendarWrite={NOOP}
+        onConnectCalendar={connect}
+        onAllowCalendarWrite={connect}
         onSignOut={NOOP}
         onChangeVault={NOOP}
       />

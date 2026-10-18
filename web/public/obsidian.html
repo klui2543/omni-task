@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Omni Task: กลับไปที่ Obsidian</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      /* Google sends the browser here after signing in from the Omni Task tab in Obsidian; this page only hands the
+         answer back to Obsidian (obsidian://omni-task-auth) and keeps nothing. */
+      :root { --bg: #f2f3f5; --card: #fff; --border: #e1e3e8; --text: #1b1e23; --muted: #667080; --accent: #3d4f6e; --on-accent: #fff; --ok: #4c8566; --bad: #b0403c; color-scheme: light; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #16171a; --card: #1e2024; --border: #2c2f35; --text: #e6e8ec; --muted: #959daa; --accent: #9db0d3; --on-accent: #0e1118; --ok: #7fc19b; --bad: #e8908c; color-scheme: dark; }
+      }
+      body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.55 Sarabun, system-ui, "Noto Sans Thai", sans-serif; display: grid; place-items: center; padding: 24px 16px; box-sizing: border-box; }
+      main { width: min(420px, 100%); background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+      h1 { margin: 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+      .dot.bad { background: var(--bad); }
+      p { margin: 0; color: var(--muted); font-size: 15px; }
+      a.button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 14px; background: var(--accent); color: var(--on-accent); font-weight: 500; text-decoration: none; }
+      a.button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1><span class="dot" id="dot" aria-hidden="true"></span><span id="title">กำลังกลับไปที่ Obsidian</span></h1>
+      <p id="note">หน้านี้ส่งการเข้าสู่ระบบ Google กลับไปที่แท็บ Omni Task ใน Obsidian</p>
+      <a class="button" id="open" href="obsidian://open" hidden>เปิด Obsidian</a>
+    </main>
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search)
+        var code = q.get('code')
+        var state = q.get('state')
+        var error = q.get('error')
+        // The code is used once by the plugin; it is taken out of the address so it is not kept in the history.
+        if (code || error) history.replaceState(null, '', location.pathname)
+        if (!state || (!code && !error)) return
+        // Spaces as %20, not "+": Obsidian reads its links with decodeURIComponent.
+        var back = []
+        var put = function (key, value) { back.push(key + '=' + encodeURIComponent(value)) }
+        // The vault that began the sign-in is named after "~" in the state, so the answer goes to its window.
+        var vault = state.indexOf('~') >= 0 ? state.slice(state.indexOf('~') + 1) : ''
+        if (vault) put('vault', vault)
+        put('state', state)
+        if (code) put('code', code)
+        if (error) put('error', error)
+        var target = 'obsidian://omni-task-auth?' + back.join('&')
+        var link = document.getElementById('open')
+        link.href = target
+        link.hidden = false
+        if (error) {
+          document.getElementById('dot').className = 'dot bad'
+          document.getElementById('title').textContent = 'ยังไม่ได้เข้าสู่ระบบ'
+          document.getElementById('note').textContent = 'Google ไม่ได้ให้สิทธิ์ (' + error + ') กดปุ่มด้านล่างเพื่อกลับไปที่ Obsidian แล้วลองอีกครั้งได้'
+        } else {
+          document.getElementById('title').textContent = 'เข้าสู่ระบบแล้ว'
+          document.getElementById('note').textContent = 'กำลังกลับไปที่ Obsidian ถ้าไม่เปิดเอง กดปุ่มด้านล่าง แล้วปิดหน้านี้ได้'
+        }
+        location.href = target
+      })()
+    </script>
+  </body>
+</html>

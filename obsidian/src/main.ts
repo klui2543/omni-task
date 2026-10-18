@@ -2,13 +2,19 @@
 // note. The tree is the shared code's (the same as the Android and web apps'); this plugin only draws it, reads what
 // the owner does on the drawing, and writes the task note through the shared code. It also opens the whole Omni Task
 // app in a tab (omniView.ts), reading and writing the vault directly.
-import { App, ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, normalizePath } from 'obsidian'
+import { App, ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, normalizePath, requestUrl } from 'obsidian'
+import { Offline } from '../../web/src/drive'
 import * as core from './core'
 import { limbAt, shapes, type Role, type Shape } from './draw'
+import { AUTH_ACTION, Google, type GoogleStore } from './google'
 import { OMNI_VIEW, OmniView } from './omniView'
 import { PLAIN_FILTER, type Edited, type ProjectsIn, type Task, type YgFilter, type YgOut } from './types'
 
 const VIEW = 'omni-ygdrasil'
+/** The Omni web app's OAuth client (web/.env.production), put in by the build. */
+const GOOGLE_CLIENT_ID: string = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
+/** The page of the Omni website that hands Google's answer back to Obsidian; registered as a redirect URI of that client. */
+const GOOGLE_REDIRECT = 'https://klui2543.github.io/omni-task/obsidian.html'
 const MARK = 'ygdrasil'
 
 interface Settings {
@@ -17,6 +23,8 @@ interface Settings {
   autoLink: boolean
   /** Whether the Omni Task tab opens by itself when Obsidian starts. */
   openOmniOnStart: boolean
+  /** Google Calendar for the Omni Task tab: the client secret and the lasting permission (google.ts). */
+  google: GoogleStore
   filter: YgFilter
   folded: string[]
 }
@@ -26,6 +34,7 @@ const DEFAULTS: Settings = {
   autoRedraw: true,
   autoLink: true,
   openOmniOnStart: false,
+  google: {},
   filter: PLAIN_FILTER,
   folded: [],
 }
@@ -48,6 +57,7 @@ type El = any
 
 export default class OmniYgdrasil extends Plugin {
   settings: Settings = DEFAULTS
+  google!: Google
   drawn: Drawn | null = null
   busy = false
   private redrawTimer: number | null = null
@@ -61,7 +71,29 @@ export default class OmniYgdrasil extends Plugin {
     this.registerView(VIEW, (leaf) => new YgView(leaf, this))
     this.addRibbonIcon('git-fork', 'Omni Ygdrasil', () => this.open())
     // The Omni Task app in a tab of its own.
-    this.registerView(OMNI_VIEW, (leaf) => new OmniView(leaf))
+    this.google = new Google({
+      clientId: GOOGLE_CLIENT_ID,
+      redirectUri: GOOGLE_REDIRECT,
+      vaultName: this.app.vault.getName(),
+      load: () => this.settings.google ?? {},
+      save: async (store) => { this.settings.google = store; await this.save() },
+      // Obsidian's own request, which Google's servers answer whatever page asks; it fails only without a network.
+      http: async (r) => {
+        try {
+          const res = await requestUrl({ url: r.url, method: r.method, headers: r.headers, contentType: r.contentType, body: r.body, throw: false })
+          return { status: res.status, text: res.text }
+        } catch (e) {
+          throw new Offline(String(e))
+        }
+      },
+      open: (url) => { window.open(url) },
+    })
+    // The browser comes back from Google's sign-in (web/public/obsidian.html sends it to obsidian://omni-task-auth).
+    this.registerObsidianProtocolHandler(AUTH_ACTION, async (params) => {
+      if (await this.google.finish({ code: params.code, state: params.state, error: params.error })) new Notice('เชื่อมปฏิทิน Google แล้ว')
+      else if (this.google.error()) new Notice(this.google.error()!)
+    })
+    this.registerView(OMNI_VIEW, (leaf) => new OmniView(leaf, this.google))
     this.addRibbonIcon('list-checks', 'Omni Task', () => this.openOmni())
     this.addCommand({ id: 'open-omni', name: 'เปิด Omni Task', callback: () => this.openOmni() })
     this.app.workspace.onLayoutReady(() => { if (this.settings.openOmniOnStart) void this.openOmni() })

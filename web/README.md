@@ -30,6 +30,12 @@ back, not a popup, since popups are often blocked in an app added to the iPad ho
 on the device for its hour; after that one quiet round trip to Google renews it. A sign-in lasts 24 hours from the
 owner's last sign-in (quiet renewals do not extend it); after that the sign-in page asks again and says why. Nothing passes through a server of ours.
 
+## The page for Obsidian
+
+`public/obsidian.html` is where Google sends the browser after a sign-in begun in the Omni Task tab inside Obsidian
+(`obsidian/`): it only hands Google's answer back to Obsidian (`obsidian://omni-task-auth`) and keeps nothing. Its
+address must be an authorized redirect URI of the OAuth client; see `obsidian/README.md`.
+
 ## Google Calendar on the Focus page (optional)
 
 The Focus page can read your Google Calendar (events and shifts in the day plan, free time, the night's sleep). It is

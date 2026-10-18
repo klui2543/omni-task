@@ -1,4 +1,5 @@
 // What the plugin's build and the preview share: one copy of the shared core, and the app's styles scoped to its tab.
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,3 +28,9 @@ export const appCss = {
   },
 }
 
+
+/** The web app's OAuth client ID (web/.env.production), for Google Calendar in the Omni Task tab. */
+export function googleClientId() {
+  const env = readFileSync(join(here, '..', 'web', '.env.production'), 'utf8')
+  return /^VITE_GOOGLE_CLIENT_ID=(.+)$/m.exec(env)?.[1].trim() ?? ''
+}

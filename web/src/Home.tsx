@@ -19,6 +19,7 @@ import { listCalendars } from './calendar'
 import { archiveDays, sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
 import { host } from './host'
+import { useGoogleState } from './ui/GoogleConnect'
 import { useProjectsAddress } from './ui/projects/route'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
@@ -211,6 +212,10 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
 
   // Inside Obsidian: a note changed from outside the app (brought by Obsidian Sync, or typed in the editor), read again.
   useEffect(() => host.embedding?.watch?.(() => { reload() }), [vault])
+
+  // Inside Obsidian: Google Calendar linked, waiting or let go. Every page draws again and reads its events anew.
+  const google = useGoogleState()
+  useEffect(() => { calendar.stale() }, [google])
 
   /** Adds the lines of a clash to the end of their note, or lets the clash go. */
   const putBack = (c: Clash) =>

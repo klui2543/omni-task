@@ -64,6 +64,36 @@ export function memoryAddress(start = '#/focus'): Address {
   }
 }
 
+/**
+ * Where the Google Calendar link stands inside Obsidian: no client secret pasted yet, not linked, waiting for the
+ * sign-in in the browser, linked, or turned down by Google since (the owner withdrew it, say).
+ */
+export type GoogleState = 'nosecret' | 'off' | 'waiting' | 'on' | 'revoked'
+
+/**
+ * Google Calendar inside Obsidian (obsidian/src/google.ts): signed in once in the browser, the plugin keeps a lasting
+ * permission and renews the short one by itself, for reading and adding events alike.
+ */
+export interface GoogleLink {
+  state(): GoogleState
+  /** The account linked (its primary calendar's id), once linked. */
+  email(): string | null
+  /** Why the last sign-in did not go through, in words for the owner; null when it did. */
+  error(): string | null
+  /** Keeps the OAuth client's secret (pasted once in Settings) on this device. */
+  setSecret(secret: string): Promise<void>
+  /** Opens the browser at Google's sign-in; the answer comes back to Obsidian by itself. */
+  connect(): void
+  /** Stops waiting for the browser. */
+  cancel(): void
+  /** Forgets the permission here and asks Google to withdraw it. */
+  disconnect(): Promise<void>
+  /** A GET (or, with a body, a POST of JSON) to a Google API as the owner, answered as JSON; fails with DriveError like Drive's calls. */
+  call(url: string, body?: unknown): Promise<any>
+  /** Calls [fn] whenever the state changes; returns the way to stop. */
+  listen(fn: () => void): () => void
+}
+
 /** What Obsidian hands the app when it opens it in a tab (see obsidian/src/omniView.ts). */
 export interface Embedding {
   /** The element that stands for the page: the theme's attributes and the font go on it, the scrolling happens in it. */
@@ -81,6 +111,8 @@ export interface Embedding {
   webp?: (image: ImageData, quality: number) => Promise<ArrayBuffer>
   /** Calls [fn] when a note changed in the vault from outside the app (Obsidian Sync, the editor); returns the way to stop. */
   watch?: (fn: () => void) => () => void
+  /** Google Calendar, signed in through the browser. */
+  google?: GoogleLink
 }
 
 let embedding: Embedding | null = null
@@ -90,9 +122,13 @@ export const host = {
   get obsidian(): boolean {
     return embedding !== null
   },
-  /** Google sign-in, Drive and Calendar: only on the web page. */
+  /** Google sign-in and Drive: only on the web page (inside Obsidian, Google Calendar alone comes through [calendar]). */
   get google(): boolean {
     return embedding === null
+  },
+  /** Google Calendar inside Obsidian, or null (on the web page the app's own sign-in serves). */
+  get calendar(): GoogleLink | null {
+    return embedding?.google ?? null
   },
   get embedding(): Embedding | null {
     return embedding

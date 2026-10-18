@@ -3,7 +3,7 @@
 import { build } from 'esbuild'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { appCss, oneCore } from './scripts/bundle.mjs'
+import { appCss, googleClientId, oneCore } from './scripts/bundle.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -20,8 +20,8 @@ await build({
   // The web app's own packages, when only the plugin's are installed.
   nodePaths: [join(here, 'node_modules'), join(here, '..', 'web', 'node_modules')],
   loader: { '.wasm': 'binary' },
-  // What Vite fills in for the web page: the tab needs no Google client.
-  define: { 'import.meta.env.VITE_GOOGLE_CLIENT_ID': 'undefined', 'import.meta.env.PROD': 'true' },
+  // What Vite fills in for the web page: the web app's Google client, which the tab uses for Google Calendar.
+  define: { 'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(googleClientId()), 'import.meta.env.PROD': 'true' },
   // The web page's WebP encoder fetches its .wasm from beside it; the tab carries its own (src/webp.ts).
   external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*', '@jsquash/webp/encode.js'],
   plugins: [oneCore, appCss],

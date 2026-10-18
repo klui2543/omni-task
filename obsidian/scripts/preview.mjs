@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { appCss, oneCore } from './bundle.mjs'
+import { appCss, googleClientId, oneCore } from './bundle.mjs'
 
 const here = join(dirname(fileURLToPath(import.meta.url)), '..')
 mkdirSync(join(here, 'preview'), { recursive: true })
@@ -18,7 +18,7 @@ await build({
   jsx: 'automatic',
   jsxImportSource: 'preact',
   nodePaths: [join(here, 'node_modules'), join(here, '..', 'web', 'node_modules')],
-  define: { 'import.meta.env.VITE_GOOGLE_CLIENT_ID': 'undefined', 'import.meta.env.PROD': 'true' },
+  define: { 'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(googleClientId()), 'import.meta.env.PROD': 'true' },
   external: ['@jsquash/webp/encode.js'],
   plugins: [oneCore, appCss],
   logLevel: 'warning',

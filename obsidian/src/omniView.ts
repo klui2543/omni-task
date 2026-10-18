@@ -4,6 +4,7 @@
 import { ItemView, TFile, type TAbstractFile, type WorkspaceLeaf } from 'obsidian'
 import { host, memoryAddress } from '../../web/src/host'
 import type { Mounted } from '../../web/src/embed'
+import type { Google } from './google'
 import { vaultFs } from './vaultFs'
 
 export const OMNI_VIEW = 'omni-task'
@@ -30,7 +31,7 @@ export class OmniView extends ItemView {
   private listeners = new Set<() => void>()
   private timer: number | null = null
 
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: WorkspaceLeaf, private google: Google) {
     super(leaf)
   }
 
@@ -74,6 +75,7 @@ export class OmniView extends ItemView {
       dark: () => document.body.classList.contains('theme-dark'),
       // The encoder is loaded the first time a picture is attached, not with Obsidian.
       webp: async (image, quality) => (await import('./webp')).webp(image, quality),
+      google: this.google,
       watch: (fn) => {
         this.listeners.add(fn)
         return () => { this.listeners.delete(fn) }

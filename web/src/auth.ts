@@ -134,8 +134,8 @@ export class Auth {
 
   /** Whether the owner has agreed to [scope] on this device. */
   static granted(scope: string): boolean {
-    // Inside Obsidian there is no Google sign-in, so nothing of Google's is granted.
-    if (!host.google) return false
+    // Inside Obsidian only Google Calendar is linked, reading and adding events at once (see host.calendar).
+    if (!host.google) return host.calendar?.state() === 'on' && (scope === CALENDAR_SCOPE || scope === CALENDAR_WRITE_SCOPE)
     return (store.get(localStorage, SCOPES_KEY) ?? '').split(/[\s,]+/).includes(scope)
   }
 
