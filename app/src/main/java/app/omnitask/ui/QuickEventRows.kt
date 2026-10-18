@@ -219,16 +219,14 @@ fun QuickEventRows(
 
 @Composable
 private fun TimeRow(day: String, onDay: () -> Unit, time: String?, onTime: () -> Unit, menu: @Composable () -> Unit) {
+    // The whole row picks the day; only the time on the right opens the time list.
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 46.dp),
+        Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(onClick = onDay),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Spacer(Modifier.width(20.dp))
         Box(Modifier.weight(1f)) {
-            Text(
-                day, Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onDay).padding(vertical = 8.dp),
-                color = C.text, fontSize = TS.body, maxLines = 1,
-            )
+            Text(day, Modifier.padding(vertical = 8.dp), color = C.text, fontSize = TS.body, maxLines = 1)
         }
         if (time != null) {
             Box {
