@@ -1,0 +1,343 @@
+<title>Omni web รอบ 1</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600&display=swap">
+<style>
+/* Layout: the web's own tokens (web/src/style.css); each screen is a frame holding the dialog as the web draws it. */
+:root {
+  --bg: #f2f3f5; --card: #fff; --border: #e1e3e8; --raised: #eceef1; --divider: #e8eaee; --control: #cdd2da;
+  --text: #1b1e23; --text2: #3c424c; --muted: #667080; --faint: #6b7482;
+  --accent: #3d4f6e; --accent-soft: #e6eaf1; --accent-text: #33445f; --accent-line: #c5ccd9;
+  --red: #bf4b47; --red-text: #b0403c; --scrim: rgb(20 20 30 / .32); --frame: #dfe2e7;
+  --ui: Sarabun, system-ui, "Noto Sans Thai", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --raised: #1e1e22; --divider: #212125; --control: #34343a;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+  --accent: #9db4d3; --accent-soft: #1d2330; --accent-text: #b4c6df; --accent-line: #2f3a4e;
+  --red: #d9726c; --red-text: #d9726c; --scrim: rgb(0 0 0 / .5); --frame: #08080a; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e0e10; --card: #161618; --border: #26262a; --raised: #1e1e22; --divider: #212125; --control: #34343a;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #7a7a83;
+  --accent: #9db4d3; --accent-soft: #1d2330; --accent-text: #b4c6df; --accent-line: #2f3a4e;
+  --red: #d9726c; --red-text: #d9726c; --scrim: rgb(0 0 0 / .5); --frame: #08080a; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--ui); padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+header h1 { font-size: 24px; font-weight: 600; margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 66ch; }
+section > h2 { font-size: 18px; font-weight: 600; margin: 0; }
+section > p { margin: 4px 0 14px; color: var(--muted); max-width: 70ch; font-size: 14px; }
+.screens { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.screen { flex: 1 1 380px; max-width: 560px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.cap { font-size: 13px; color: var(--muted); }
+.cap b { color: var(--text); font-weight: 600; }
+.frame { background: var(--scrim); border-radius: 18px; padding: 22px 14px; border: 1px solid var(--frame); }
+.frame.page { background: var(--bg); padding: 14px; }
+
+/* The web's dialog */
+.dialog { background: var(--card); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 50px rgb(20 20 40 / .18); }
+.dialog h3 { margin: 0; font-size: 18px; font-weight: 500; }
+.sub { margin-top: -8px; font-size: 13px; color: var(--muted); }
+.input { min-height: 48px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--accent); font-size: 16px; }
+.name { min-height: 48px; padding: 12px 14px; border-radius: 12px; background: var(--raised); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--control); background: var(--card); font-size: 14px; color: var(--text2); display: inline-flex; align-items: center; }
+.chip.on { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
+.pill { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12.5px; background: var(--accent-soft); color: var(--accent-text); }
+.faint { font-size: 13px; color: var(--faint); }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grow { flex: 1; }
+.round { width: 44px; height: 44px; border-radius: 50%; background: var(--raised); color: var(--text2); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.round.accent { background: var(--accent-soft); color: var(--accent-text); }
+.btn { min-height: 42px; padding: 0 16px; border-radius: 14px; display: inline-flex; align-items: center; white-space: nowrap; font-weight: 500; }
+.btn.primary { background: var(--accent); color: var(--card); }
+.btn.soft { background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-line); border-radius: 12px; font-weight: 400; }
+.btn.ghost { border: 1px solid var(--control); color: var(--text2); border-radius: 12px; font-weight: 400; }
+.btn.link { color: var(--text2); font-weight: 400; padding: 0 8px; }
+.btn.danger { color: var(--red-text); }
+svg.i { width: 20px; height: 20px; flex: none; color: var(--muted); }
+
+/* Event rows, as Google Calendar's new-event sheet */
+.rows { border-top: 1px solid var(--divider); padding-top: 4px; display: flex; flex-direction: column; }
+.row { display: flex; align-items: center; gap: 16px; min-height: 46px; position: relative; }
+.row .gap { width: 20px; flex: none; }
+.row .t { flex: 1; min-width: 0; }
+.row .time { padding: 6px 8px; border-radius: 8px; }
+.row .time.open { background: var(--accent-soft); color: var(--accent-text); }
+.row .hint { color: var(--faint); }
+.row .x { color: var(--faint); font-size: 16px; width: 28px; text-align: center; }
+.row .chev { color: var(--faint); }
+.toggle { width: 40px; height: 24px; border-radius: 12px; background: var(--control); position: relative; flex: none; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--card); }
+.toggle.on { background: var(--accent); }
+.toggle.on::after { left: 19px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); flex: none; }
+.menu { position: absolute; right: 0; top: 42px; width: 190px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 30px rgb(20 20 40 / .18); padding: 4px 0; z-index: 2; }
+.menu div { padding: 9px 14px; font-size: 14px; display: flex; gap: 6px; }
+.menu div span { color: var(--muted); }
+.menu div.sel { background: var(--accent-soft); color: var(--accent-text); }
+.menu div.sel span { color: var(--accent-text); }
+.spacer-menu { height: 150px; }
+
+/* Full add page */
+.full { padding: 0; gap: 0; overflow: hidden; }
+.topbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px 8px; }
+.close { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2); font-size: 20px; }
+.seg { display: inline-flex; background: var(--raised); border-radius: 10px; padding: 3px; }
+.seg span { padding: 5px 16px; border-radius: 8px; color: var(--muted); }
+.seg span.on { background: var(--card); color: var(--text); font-weight: 500; }
+.seg.wide { display: flex; }
+.seg.wide span { flex: 1; text-align: center; }
+.bigtitle { font-size: 22px; padding: 10px 20px 14px 56px; }
+.group { border-top: 1px solid var(--divider); padding: 6px 20px; display: flex; flex-direction: column; }
+.kind { display: flex; gap: 18px; }
+.kind span { color: var(--muted); }
+.kind span.on { color: var(--text); font-weight: 500; text-decoration: underline; }
+.notes { min-height: 70px; align-items: flex-start; padding-top: 12px; }
+.box { width: 16px; height: 16px; border-radius: 4px; background: var(--control); flex: none; }
+
+/* Swap */
+.swapbtn { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent-text); }
+.swapbtn svg.i { color: var(--accent-text); }
+.swapbtn small { display: block; color: var(--muted); font-size: 12.5px; }
+.kept { background: var(--raised); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.kept > span { font-size: 13px; color: var(--muted); }
+.kept .chips span { font-size: 12.5px; padding: 1px 9px; border-radius: 10px; background: var(--card); border: 1px solid var(--divider); color: var(--text2); }
+.panel { background: var(--card); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--border); }
+.panel .top { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.panel h4 { margin: 0; font-size: 18px; font-weight: 500; }
+.small-btn { padding: 4px 10px; border-radius: 10px; border: 1px solid var(--control); font-size: 13px; color: var(--text2); }
+.fake { color: var(--faint); font-size: 13px; }
+.info { display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--text2); }
+
+.ask { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.ask h2 { font-size: 17px; margin: 0; font-weight: 600; }
+.ask ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.ask li b { color: var(--accent-text); }
+.notes-list { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="rep" viewBox="0 0 24 24"><path d="M5 12a7 7 0 0 1 12-5l2 2M19 12a7 7 0 0 1-12 5l-2-2M19 4v5h-5M5 20v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16ZM10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="flag" viewBox="0 0 24 24"><path d="M6 21V4h10l-2 4 2 4H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="tag" viewBox="0 0 24 24"><path d="M3.5 12V4.5h7.5l9 9-7.5 7.5-9-9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="8" cy="9" r="1.4" fill="currentColor"/></symbol>
+  <symbol id="pin" viewBox="0 0 24 24"><path d="M12 21s-6-6-6-11a6 6 0 0 1 12 0c0 5-6 11-6 11Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="notes" viewBox="0 0 24 24"><path d="M5 6h14M5 11h14M5 16h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8 12 3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="begin" viewBox="0 0 24 24"><path d="M5 4v16M9 12h10M15 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></symbol>
+  <symbol id="spark" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2Zm6 12l.9 2.6 2.6.9-2.6.9L18 21l-.9-2.6-2.6-.9 2.6-.9L18 14Z"/></symbol>
+</svg>
+
+<div class="wrap">
+<header>
+  <h1>เว็บรอบ 1: ลงปฏิทิน, หน้าเพิ่มเต็มจอ, สลับงานกับนัด</h1>
+  <p>หน้าตาเว็บเดิม (สีและปุ่มชุดเดียวกับ web/src/style.css) ใส่สิ่งที่แอปมีแล้ว ตัวอย่างพิมพ์ "ประชุมทีม พรุ่งนี้ 9:00-11:00" กดสลับธีมเครื่องเพื่อดูโหมดมืด</p>
+</header>
+
+<!-- 1 -->
+<section>
+  <h2>1. ช่องเพิ่มงานด่วน มีปุ่มลงปฏิทิน</h2>
+  <p>ใต้ประโยคมีแถวนัดแบบ Google Calendar: ทั้งวัน, แถวเริ่ม, แถวจบ (วันซ้าย เวลาขวา), ปฏิทิน และตัวเลือกเพิ่มเติม กดทั้งแถวเพื่อเลือกวัน กดที่เวลาเพื่อเปิดรายการเวลา ปุ่มยกเลิกเดิมเอาออกแบบในแอป (กดนอกกล่องหรือ Esc เพื่อปิด) เพื่อให้ปุ่มลงปฏิทินกับเพิ่มงานอยู่ใต้นิ้วพอดีบนจอแคบ</p>
+  <div class="screens">
+    <div class="screen">
+      <div class="cap"><b>ก.</b> พิมพ์ช่วงเวลาแล้ว แถวนัดเติมให้เอง</div>
+      <div class="frame">
+        <div class="dialog">
+          <h3>เพิ่มงาน</h3>
+          <div class="input">ประชุมทีม พรุ่งนี้ 9:00-11:00</div>
+          <div class="chips"><span class="pill">พรุ่งนี้</span><span class="pill">9:00 ถึง 11:00</span></div>
+          <span class="faint">วันนี้ พรุ่งนี้ วันจันทร์ 25/10 เวลา 9:00 ช่วง 9:00-11:00 หรือ 20-22/10 #tag ! !! !!! สำหรับความสำคัญ และ # แล้วเลือกลิสต์</span>
+          <div class="rows">
+            <div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">ทั้งวัน</span><span class="toggle"></span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">09:00</span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">11:00</span></div>
+            <div class="row"><svg class="i"><use href="#cal"/></svg><span class="dot"></span><span class="t">norapol.uttho@gmail.com</span></div>
+            <div class="row"><span class="gap"></span><span class="t hint">ตัวเลือกเพิ่มเติม</span><span class="chev">›</span></div>
+          </div>
+          <div class="actions">
+            <span class="round"><svg class="i" style="color:inherit;width:19px"><use href="#mic"/></svg></span>
+            <span class="round accent"><svg class="i" style="color:inherit;width:19px"><use href="#spark"/></svg></span>
+            <span class="grow"></span>
+            <span class="btn soft">ลงปฏิทิน</span>
+            <span class="btn primary">เพิ่มงาน</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="cap"><b>ข.</b> กดเวลาจบ: รายการบอกความยาวด้วย เหมือน Google Calendar</div>
+      <div class="frame">
+        <div class="dialog">
+          <h3>เพิ่มงาน</h3>
+          <div class="input">ประชุมทีม พรุ่งนี้ 9:00-11:00</div>
+          <div class="rows">
+            <div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">ทั้งวัน</span><span class="toggle"></span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">09:00</span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time open">11:00</span>
+              <div class="menu">
+                <div>10:00 <span>(1 ชม.)</span></div>
+                <div>10:30 <span>(1 ชม. 30 นาที)</span></div>
+                <div class="sel">11:00 <span>(2 ชม.)</span></div>
+                <div>11:30 <span>(2 ชม. 30 นาที)</span></div>
+                <div>12:00 <span>(3 ชม.)</span></div>
+              </div>
+            </div>
+            <div class="spacer-menu"></div>
+          </div>
+          <span class="faint">วันเปิดตัวเลือกวันของเบราว์เซอร์ ปฏิทินเลือกได้เฉพาะที่เราแก้ได้ และจำอันล่าสุดไว้</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section>
+  <h2>2. หน้าเพิ่มแบบเต็มจอ (จาก "ตัวเลือกเพิ่มเติม")</h2>
+  <p>บนจอแคบเต็มจอ บน iPad และคอมเป็นกล่องกลางจอกว้างประมาณ 560px สลับงานกับนัดได้ที่ด้านบน สิ่งที่พิมพ์ไว้ในประโยคติดมาด้วย</p>
+  <div class="screens">
+    <div class="screen">
+      <div class="cap"><b>ค.</b> แบบงาน: ลงโน้ตเหมือนเดิม</div>
+      <div class="frame">
+        <div class="dialog full">
+          <div class="topbar"><span class="close">×</span><span class="grow" style="display:flex;justify-content:center"><span class="seg"><span class="on">งาน</span><span>นัด</span></span></span><span class="btn primary">บันทึก</span></div>
+          <div class="bigtitle">ประชุมทีม</div>
+          <div class="group">
+            <div class="row"><span class="gap"></span><span class="kind"><span class="on">ครบกำหนด</span><span>นัดทำ</span></span></div>
+            <div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">09:00</span><span class="x">×</span></div>
+            <div class="row"><svg class="i"><use href="#begin"/></svg><span class="t hint">วันเริ่ม</span></div>
+          </div>
+          <div class="group">
+            <div class="row"><svg class="i"><use href="#rep"/></svg><span class="t">ทุกสัปดาห์ วันจันทร์</span></div>
+          </div>
+          <div class="group">
+            <div class="row"><svg class="i"><use href="#flag"/></svg><span class="t hint">ความสำคัญ</span></div>
+            <div class="row"><svg class="i"><use href="#tag"/></svg><span class="t">#งาน</span></div>
+          </div>
+          <div class="group">
+            <div class="row notes"><svg class="i"><use href="#notes"/></svg><span class="t hint">รายละเอียด</span></div>
+            <div class="row"><svg class="i"><use href="#check"/></svg><span class="box"></span><span class="t">เตรียมสไลด์</span><span class="x">×</span></div>
+            <div class="row"><span class="gap"></span><span class="t hint">เพิ่มงานย่อย</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="cap"><b>ง.</b> แบบนัด: ลง Google Calendar พร้อมสถานที่ เตือน และวนซ้ำ</div>
+      <div class="frame">
+        <div class="dialog full">
+          <div class="topbar"><span class="close">×</span><span class="grow" style="display:flex;justify-content:center"><span class="seg"><span>งาน</span><span class="on">นัด</span></span></span><span class="btn primary">บันทึก</span></div>
+          <div class="bigtitle">ประชุมทีม</div>
+          <div class="group">
+            <div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">ทั้งวัน</span><span class="toggle"></span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">09:00</span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">11:00</span></div>
+          </div>
+          <div class="group">
+            <div class="row"><svg class="i"><use href="#rep"/></svg><span class="t">ทุกสัปดาห์ วันจันทร์, 10 ครั้ง</span></div>
+            <div class="row"><svg class="i"><use href="#bell"/></svg><span class="t">เตือนก่อน 30 นาที</span><span class="x">×</span></div>
+            <div class="row"><span class="gap"></span><span class="t hint">เพิ่มการเตือน</span></div>
+          </div>
+          <div class="group">
+            <div class="row"><svg class="i"><use href="#pin"/></svg><span class="t">ห้องประชุม 3</span></div>
+            <div class="row"><svg class="i"><use href="#cal"/></svg><span class="t">norapol.uttho@gmail.com</span></div>
+          </div>
+          <div class="group">
+            <div class="row notes"><svg class="i"><use href="#notes"/></svg><span class="t hint">รายละเอียด</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section>
+  <h2>3. สลับงานกับนัด</h2>
+  <p>งานที่กลายเป็นนัดเก็บความสำคัญ Tag งานย่อย บันทึกค้าง และวันสร้างไว้ในไฟล์ omni-swap.json (ไฟล์เดียวกับแอป) เปลี่ยนกลับเมื่อไหร่ก็ได้คืน สลับจากเว็บแล้วไปสลับกลับในแอปก็ได้</p>
+  <div class="screens">
+    <div class="screen">
+      <div class="cap"><b>จ.</b> ในหน้าแก้ไขงาน: ปุ่มใต้แถวสถานะ</div>
+      <div class="frame page">
+        <div class="panel">
+          <div class="top"><span class="grow">Omni note.md บรรทัด 12</span><span class="small-btn">ลบงาน</span><span class="small-btn">ปิด</span></div>
+          <h4>ประชุมทีม</h4>
+          <span class="fake">รายละเอียด, สถานะ, ช่องวันที่ เหมือนเดิม</span>
+          <div class="swapbtn"><svg class="i"><use href="#cal"/></svg><span class="grow">เปลี่ยนเป็นนัด</span><span>›</span></div>
+          <div class="swapbtn"><svg class="i"><use href="#cal"/></svg><span class="grow">เปลี่ยนกลับเป็นนัด<small>จบ 11:00 (2 ชม.), ห้องประชุม 3, เตือนก่อน 30 นาที ยังเก็บไว้</small></span><span>›</span></div>
+          <span class="fake">(ปุ่มที่สองคือแบบที่งานเคยเป็นนัดมาก่อน)</span>
+        </div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="cap"><b>ฉ.</b> กล่องเปลี่ยนเป็นนัด</div>
+      <div class="frame">
+        <div class="dialog">
+          <h3>เปลี่ยนเป็นนัด</h3>
+          <div class="sub">งานนี้จะออกจาก Omni note.md แล้วไปอยู่ในปฏิทิน</div>
+          <div class="name">ประชุมทีม</div>
+          <div class="rows">
+            <div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">ทั้งวัน</span><span class="toggle"></span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">09:00</span></div>
+            <div class="row"><span class="gap"></span><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span><span class="time">10:00</span></div>
+            <div class="row"><svg class="i"><use href="#cal"/></svg><span class="dot"></span><span class="t">norapol.uttho@gmail.com</span></div>
+            <div class="row"><svg class="i"><use href="#bell"/></svg><span class="t">เตือนตอนเริ่ม</span></div>
+          </div>
+          <div class="kept"><span>เก็บไว้ให้ เปลี่ยนกลับเป็นงานเมื่อไหร่ก็ได้คืน</span>
+            <div class="chips"><span>ความสำคัญ สูง</span><span>#งาน</span><span>งานย่อย 2</span><span>บันทึกค้าง 1</span><span>วันสร้าง 12 ต.ค.</span></div></div>
+          <div class="actions"><span class="grow"></span><span class="btn link">ยกเลิก</span><span class="btn primary">เปลี่ยนเป็นนัด</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="screens" style="margin-top:20px">
+    <div class="screen">
+      <div class="cap"><b>ช.</b> กดนัดในปฏิทิน (Focus, มุมมอง, ผู้ช่วย): กล่องเล็กของนัด</div>
+      <div class="frame">
+        <div class="dialog">
+          <h3>ประชุมทีม</h3>
+          <div class="info"><span>พรุ่งนี้, จ. 19 ต.ค. 09:00 ถึง 11:00</span><span>ปฏิทิน: norapol.uttho@gmail.com</span><span>ห้องประชุม 3</span></div>
+          <div class="actions"><span class="btn link">เปิดใน Google Calendar</span><span class="grow"></span><span class="btn link danger">ลบ</span><span class="btn soft">เปลี่ยนเป็นงาน</span></div>
+          <span class="faint">นัดซ้ำเปลี่ยนเป็นงานไม่ได้ (เหมือนในแอป) ปุ่มเปลี่ยนจะไม่แสดง ลบถามยืนยันก่อน</span>
+        </div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="cap"><b>ซ.</b> กล่องเปลี่ยนเป็นงาน</div>
+      <div class="frame">
+        <div class="dialog">
+          <h3>เปลี่ยนเป็นงาน</h3>
+          <div class="sub">นัดนี้จะออกจากปฏิทิน แล้วไปเป็นงานใน Omni note.md</div>
+          <div class="name">ประชุมทีม</div>
+          <div class="seg wide"><span class="on">วันครบกำหนด</span><span>วันนัดทำ</span></div>
+          <div class="rows">
+            <div class="row"><svg class="i"><use href="#cal"/></svg><span class="t">พรุ่งนี้, จ. 19 ต.ค.</span></div>
+            <div class="row"><svg class="i"><use href="#bell"/></svg><span class="t">เตือน 09:00</span><span class="x">×</span></div>
+          </div>
+          <div class="kept"><span>เก็บไว้ให้ เปลี่ยนกลับเป็นนัดเมื่อไหร่ก็ได้คืน</span>
+            <div class="chips"><span>จบ 11:00 (2 ชม.)</span><span>ห้องประชุม 3</span><span>เตือนก่อน 30 นาที</span><span>norapol.uttho@gmail.com</span></div></div>
+          <div class="actions"><span class="grow"></span><span class="btn link">ยกเลิก</span><span class="btn primary">เปลี่ยนเป็นงาน</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ask">
+  <h2>ให้เลือก</h2>
+  <ol>
+    <li>ช่องเพิ่มงานด่วน (ก, ข) <b>ตามนี้</b> หรือ <b>เก็บปุ่มยกเลิกไว้</b> ด้วย</li>
+    <li>กล่องของนัด (ช): <b>กดนัดเปิดกล่องนี้</b> (ข้างในมีปุ่มเปิดใน Google Calendar) หรือ <b>กดนัดเปิด Google Calendar เหมือนเดิม แล้วกดค้างหรือคลิกขวาเพื่อเปิดกล่อง</b> แบบในแอป</li>
+    <li>ส่วนอื่น (ค, ง, จ, ฉ, ซ) ตามนี้ไหม</li>
+  </ol>
+  <ul class="notes-list">
+    <li>ครั้งแรกที่ลงปฏิทินหรือลบนัด เว็บจะขอสิทธิ์ Google Calendar แบบเพิ่มและแก้นัด (แบบเดียวกับที่ผู้ช่วยขออยู่แล้ว)</li>
+    <li>ลบนัดเอาไว้ในรอบ 1 ด้วยเลย เพราะอยู่กล่องเดียวกัน (เดิมวางไว้รอบ 2)</li>
+  </ul>
+</section>
+</div>
