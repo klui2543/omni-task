@@ -127,7 +127,7 @@ const EX = [
 ];
 const LENS = [[30, '30 นาที'], [60, '1 ชม.'], [90, '1 ชม. 30 นาที'], [120, '2 ชม.'], [180, '3 ชม.']];
 
-function top(x) {
+function head(x) {
   return `<div class="grab"></div><div class="st">เพิ่มงาน</div>
   <div class="field">${x.text}<span class="cur"></span></div>
   <div class="pills">${x.pills.map(p => `<span class="pill">${p}</span>`).join('')}</div>
@@ -147,11 +147,11 @@ function bar() {
   return `<div class="bar"><span class="rnd"></span><span class="rnd ac"></span><span class="grow"></span><span class="btn2">ลงปฏิทิน</span><span class="btn1">เพิ่มงาน</span></div>`;
 }
 function A(x) {
-  return top(x) + `<div class="rows">${allDayRow(x)}${row('เริ่ม', x.s)}${row('จบ', x.e)}</div>` + cals() + bar();
+  return head(x) + `<div class="rows">${allDayRow(x)}${row('เริ่ม', x.s)}${row('จบ', x.e)}</div>` + cals() + bar();
 }
 function B(x) {
   const lens = x.allDay ? '' : `<div class="lab">นานเท่าไร</div><div class="chips">${LENS.map(([m, l]) => `<span class="chip${m === x.len ? ' on' : ''}">${l}</span>`).join('')}</div>`;
-  return top(x) + lens + `<div class="rows">${allDayRow(x)}${row('จบ', x.e)}</div>` + cals() + bar();
+  return head(x) + lens + `<div class="rows">${allDayRow(x)}${row('จบ', x.e)}</div>` + cals() + bar();
 }
 function show(i) {
   document.getElementById('A').innerHTML = A(EX[i]);
