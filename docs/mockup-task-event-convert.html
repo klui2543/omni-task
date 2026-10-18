@@ -1,0 +1,245 @@
+<title>สลับงานกับนัด</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: one phone per flow (task to event, event to task), each with step buttons, beside notes. App tokens, two text sizes. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --segBg: #e1e5eb; --fast: #2f7a55; --slow: #b3443d; --warn: #9a6a12;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --bg: #ffffff; --sunken: #f1f2f5; --raised: #eceef1; --line: #e8eaee; --control: #cdd2da;
+  --text: #1b1e23; --text2: #3c424c; --muted: #7a8291; --faint: #a3a9b4;
+  --accent: #3d4f6e; --accentSoft: #e6eaf1; --accentDeep: #f3f5f9; --accentLine: #c9d2e0; --accentText: #33445f; --onAccent: #ffffff;
+  --red: #bf4b47; --scrim: rgba(20,24,30,.38); --snack: #2a2f38; --onSnack: #f2f3f5; --snackAct: #b4c6df;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --segBg: #17181c; --fast: #7fae93; --slow: #d9726c; --warn: #c4a56a;
+    --bg: #161618; --sunken: #1c1c1f; --raised: #232327; --line: #26262a; --control: #3a3a40;
+    --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #5f5f67;
+    --accent: #9db4d3; --accentSoft: #1d2330; --accentDeep: #191d26; --accentLine: #2c3546; --accentText: #b4c6df; --onAccent: #0e1118;
+    --red: #d9726c; --scrim: rgba(0,0,0,.55); --snack: #e6e7ea; --onSnack: #16181c; --snackAct: #33445f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --segBg: #17181c; --fast: #7fae93; --slow: #d9726c; --warn: #c4a56a;
+  --bg: #161618; --sunken: #1c1c1f; --raised: #232327; --line: #26262a; --control: #3a3a40;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #5f5f67;
+  --accent: #9db4d3; --accentSoft: #1d2330; --accentDeep: #191d26; --accentLine: #2c3546; --accentText: #b4c6df; --onAccent: #0e1118;
+  --red: #d9726c; --scrim: rgba(0,0,0,.55); --snack: #e6e7ea; --onSnack: #16181c; --snackAct: #33445f; color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.45; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+h2 { font-size: 16px; font-weight: 600; margin: 0 }
+header p { margin: 0; color: var(--ink2); max-width: 70ch; font-size: 14px }
+.stage { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start }
+.col { flex: 0 1 360px; min-width: 0; width: 100%; max-width: 360px; display: grid; gap: 10px }
+.steps { display: inline-flex; background: var(--segBg); border-radius: 12px; padding: 4px; gap: 4px; flex-wrap: wrap; width: fit-content }
+.steps button { padding: 5px 12px; border-radius: 9px; font-size: 13px; color: var(--ink2) }
+.steps button.on { background: var(--bg); color: var(--ink); font-weight: 500 }
+.notes { display: grid; gap: 6px; font-size: 13.5px; color: var(--ink2) }
+.li { padding-left: 14px; position: relative }
+.li::before { content: "+"; position: absolute; left: 0; color: var(--fast); font-weight: 600 }
+.li.no::before { content: "-"; color: var(--slow) }
+
+/* Phone. */
+.app { position: relative; height: 700px; background: var(--sunken); border-radius: 26px; overflow: hidden; border: 1px solid var(--line); font-size: 14px; color: var(--text); display: flex; flex-direction: column; justify-content: flex-end }
+.list { position: absolute; inset: 0; padding: 18px 16px; display: grid; gap: 8px; align-content: start }
+.list .h { font-size: 16px; font-weight: 500; margin-bottom: 4px }
+.item { background: var(--bg); border-radius: 14px; padding: 12px 14px; display: flex; gap: 10px; align-items: center }
+.item .box { width: 18px; height: 18px; border-radius: 5px; border: 1.6px solid var(--control); flex: none }
+.item .t { flex: 1; min-width: 0 }
+.item .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums }
+.ev { background: var(--accentSoft); border-radius: 10px; padding: 8px 12px; border-left: 3px solid var(--accent) }
+.ev .s { font-size: 12.5px; color: var(--accentText); font-variant-numeric: tabular-nums }
+.ev.press { outline: 2px solid var(--accent) }
+.hour { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--faint); font-variant-numeric: tabular-nums }
+.hour > span { width: 38px; flex: none; padding-top: 2px }
+.hour > div { flex: 1; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; min-height: 40px }
+.scrim { position: absolute; inset: 0; background: var(--scrim) }
+.sheet { position: relative; background: var(--bg); border-radius: 22px 22px 0 0; padding: 8px 18px 18px }
+.grab { width: 32px; height: 4px; border-radius: 2px; background: var(--control); margin: 0 auto 12px }
+
+/* Edit sheet. */
+.head { display: flex; gap: 10px; align-items: flex-start }
+.head .box { width: 22px; height: 22px; border-radius: 6px; border: 1.8px solid var(--control); margin-top: 8px; flex: none }
+.head .tt { flex: 1; min-width: 0; padding-top: 6px }
+.head .tt b { font-weight: 500; font-size: 16px; display: block }
+.head .tt span { font-size: 12.5px; color: var(--faint) }
+.ib { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--faint); flex: none }
+.ib svg { width: 19px; height: 19px }
+.ib.hl { background: var(--accentSoft); color: var(--accentText) }
+.seg { margin-top: 12px; display: flex; background: var(--sunken); border-radius: 12px; padding: 3px }
+.seg span { flex: 1; text-align: center; padding: 6px 0; border-radius: 9px; color: var(--muted) }
+.seg span.on { background: var(--accent); color: var(--onAccent); font-weight: 500 }
+.chips { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px }
+.pc { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 11px; border-radius: 12px; border: 1px solid var(--control); color: var(--muted); font-variant-numeric: tabular-nums }
+.pc.set { background: var(--accentDeep); border-color: var(--accentLine); color: var(--text) }
+.pc.set small { color: var(--muted); font-size: 12.5px }
+.fold { margin-top: 12px; background: var(--sunken); border-radius: 14px }
+.fold div { display: flex; justify-content: space-between; padding: 12px 14px; color: var(--text2) }
+.fold div + div { border-top: 1px solid var(--line) }
+.fold small { color: var(--faint); font-size: 12.5px }
+.conv { margin-top: 12px; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--accentLine); background: var(--accentSoft); color: var(--accentText); width: 100% }
+.conv svg { width: 20px; height: 20px; flex: none }
+.conv span { flex: 1 }
+
+/* Convert sheet. */
+.ctitle { font-size: 16px; font-weight: 500 }
+.csub { font-size: 12.5px; color: var(--muted); margin-top: 2px }
+.name { margin-top: 12px; border-radius: 14px; background: var(--sunken); padding: 14px }
+.rows { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 4px }
+.r { display: flex; align-items: center; gap: 16px; min-height: 46px; width: 100% }
+.r svg { width: 20px; height: 20px; flex: none; color: var(--muted) }
+.r .sp { width: 20px; flex: none }
+.r .v { flex: 1; min-width: 0 }
+.r .tap { font-variant-numeric: tabular-nums }
+.r .gone { color: var(--faint); text-decoration: line-through; font-variant-numeric: tabular-nums }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: var(--control); position: relative; flex: none }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg) }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); display: inline-block; margin-right: 8px; vertical-align: -1px }
+.warn { margin-top: 8px; font-size: 12.5px; color: var(--warn) }
+.info { margin-top: 8px; font-size: 12.5px; color: var(--muted) }
+.bar { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end }
+.btn2 { height: 44px; padding: 0 14px; border-radius: 12px; color: var(--text2); display: flex; align-items: center }
+.btn1 { height: 44px; padding: 0 16px; border-radius: 12px; background: var(--accent); color: var(--onAccent); font-weight: 500; display: flex; align-items: center }
+
+/* Long-press dialog and snackbar. */
+.dlg { position: absolute; left: 22px; right: 22px; top: 150px; background: var(--raised); border-radius: 24px; padding: 22px 22px 14px; z-index: 3 }
+.dlg b { font-size: 16px; font-weight: 500; display: block }
+.dlg p { margin: 12px 0 0; color: var(--text2); font-size: 13px; white-space: pre-line }
+.dlg .acts { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end }
+.dlg .acts span { padding: 8px 10px; border-radius: 18px; color: var(--text2) }
+.dlg .acts .main { color: var(--accentText); background: var(--accentSoft); font-weight: 500 }
+.dlg .acts .del { color: var(--red) }
+.snack { position: absolute; left: 14px; right: 14px; bottom: 18px; background: var(--snack); color: var(--onSnack); border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; z-index: 3 }
+.snack span { flex: 1 }
+.snack b { color: var(--snackAct); font-weight: 500 }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>สลับงานกับนัด</h1>
+    <p>สองทาง: งานเป็นนัด จากหน้าแก้งาน และนัดเป็นงาน จากการกดค้างที่นัด แปลงแล้วของเดิมหายไป มีปุ่ม "เลิกทำ" ให้ย้อนได้ กดปุ่มขั้นตอนเหนือโทรศัพท์เพื่อดูทีละหน้า (วันนี้ อา. 18 ต.ค.)</p>
+  </header>
+  <div class="stage">
+    <div class="col">
+      <h2>งานเป็นนัด</h2>
+      <div class="steps" data-flow="t">
+        <button class="on" data-s="0">1 หน้าแก้งาน</button><button data-s="1">2 ตั้งเวลานัด</button><button data-s="2">3 เสร็จ</button>
+      </div>
+      <div class="app" id="t"></div>
+      <div class="notes">
+        <div class="li">ปุ่ม "เปลี่ยนเป็นนัด" อยู่ใต้ชิป เห็นชัด ไม่ต้องหาในเมนู</div>
+        <div class="li">หน้าตั้งเวลาใช้แถวแบบ Google Calendar เหมือนแผ่นเพิ่มงานด่วน เติมวันจากวันครบกำหนดหรือวันนัดทำ เวลาจากเวลาเตือน ยาว 1 ชม.</div>
+        <div class="li">รายละเอียดของงานไปเป็นรายละเอียดของนัด งานวนซ้ำแบบง่าย (ทุกวัน ทุกสัปดาห์ ทุกเดือน) ไปเป็นนัดวนซ้ำ</div>
+        <div class="li no">ถ้างานมีงานย่อย ความสำคัญ หรือ Tag จะบอกก่อนว่าส่วนนี้ไม่ติดไป เพราะนัดในปฏิทินเก็บไม่ได้</div>
+      </div>
+    </div>
+    <div class="col">
+      <h2>นัดเป็นงาน</h2>
+      <div class="steps" data-flow="e">
+        <button class="on" data-s="0">1 กดค้างที่นัด</button><button data-s="1">2 ดูงานที่จะได้</button><button data-s="2">3 เสร็จ</button>
+      </div>
+      <div class="app" id="e"></div>
+      <div class="notes">
+        <div class="li">กดค้างที่นัดในหน้าไหนก็ได้ที่มีนัด ขึ้นหน้าต่างเดิม มีปุ่ม "เปลี่ยนเป็นงาน" เพิ่ม</div>
+        <div class="li">เลือกได้ว่าวันของนัดจะเป็นวันครบกำหนดหรือวันนัดทำ เวลาเริ่มของนัดเป็นเวลาเตือน</div>
+        <div class="li no">เวลาจบหายไป ขีดฆ่าให้เห็นก่อนกด เพราะงานในโน้ตเก็บเวลาจบไม่ได้</div>
+        <div class="li">นัดที่คนอื่นเชิญ หรือนัดวนซ้ำแบบซับซ้อน จะไม่มีปุ่มนี้ และบอกเหตุผลแทน</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const IC = {
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
+  swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4M9 15h6M13 13l2 2-2 2"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20h4"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h9"/></svg>',
+};
+const taskList = (hl) => `<div class="list"><div class="h">งาน</div>
+  ${hl === 'gone' ? '' : `<div class="item"><span class="box"></span><span class="t">ส่งรายงานไตรมาส<div class="s">พรุ่งนี้ 09:00</div></span></div>`}
+  <div class="item"><span class="box"></span><span class="t">จองตั๋วเชียงใหม่<div class="s">ศ. 23 ต.ค.</div></span></div>
+  <div class="item"><span class="box"></span><span class="t">โทรหาช่าง<div class="s">วันนี้</div></span></div>
+  ${hl === 'gone' ? `<div class="h" style="margin-top:10px">ปฏิทิน จ. 19 ต.ค.</div><div class="ev">ส่งรายงานไตรมาส<div class="s">09:00 ถึง 10:00</div></div>` : ''}
+</div>`;
+const T = [
+  () => taskList() + `<div class="scrim"></div><div class="sheet"><div class="grab"></div>
+    <div class="head"><span class="box"></span><div class="tt"><b>ส่งรายงานไตรมาส</b><span>Omni note.md บรรทัด 12</span></div><span class="ib">${IC.trash}</span></div>
+    <div class="seg"><span class="on">ต้องทำ</span><span>กำลังทำ</span><span>รอ</span></div>
+    <div class="chips"><span class="pc set"><small>ครบกำหนด</small>พรุ่งนี้</span><span class="pc">นัดทำ</span><span class="pc set"><small>เตือน</small>09:00</span><span class="pc">วนซ้ำ</span><span class="pc set"><small>ความสำคัญ</small>สูง</span><span class="pc">ประเภท</span><span class="pc set"><small>Tag</small>#งาน</span></div>
+    <button class="conv">${IC.swap}<span>เปลี่ยนเป็นนัด</span>›</button>
+    <div class="fold"><div>ทำไมยังค้าง<small>ยังไม่มีบันทึก</small></div><div>งานย่อย<small>ไม่มี</small></div></div>
+  </div>`,
+  () => taskList() + `<div class="scrim"></div><div class="sheet"><div class="grab"></div>
+    <div class="ctitle">เปลี่ยนเป็นนัด</div><div class="csub">งานนี้จะออกจาก Omni note.md แล้วไปอยู่ในปฏิทิน</div>
+    <div class="name">ส่งรายงานไตรมาส</div>
+    <div class="rows">
+      <div class="r">${IC.clock}<span class="v">ทั้งวัน</span><span class="sw"></span></div>
+      <div class="r"><span class="sp"></span><span class="v tap">พรุ่งนี้, จ. 19 ต.ค.</span><span class="tap">09:00</span></div>
+      <div class="r"><span class="sp"></span><span class="v tap">พรุ่งนี้, จ. 19 ต.ค.</span><span class="tap">10:00</span></div>
+      <div class="r">${IC.bell}<span class="v">เตือนก่อน 30 นาที</span></div>
+      <div class="r">${IC.cal}<span class="v"><span class="dot"></span>ปฏิทินหลัก</span></div>
+    </div>
+    <div class="warn">ความสำคัญ "สูง" และ #งาน ไม่ติดไป เพราะนัดในปฏิทินเก็บไม่ได้</div>
+    <div class="bar"><span class="btn2">ยกเลิก</span><span class="btn1">เปลี่ยนเป็นนัด</span></div>
+  </div>`,
+  () => taskList('gone') + `<div class="snack"><span>เปลี่ยนเป็นนัดแล้ว</span><b>เลิกทำ</b></div>`,
+];
+const day = (press) => `<div class="list"><div class="h">จ. 19 ต.ค.</div>
+  <div class="hour"><span>08:00</span><div></div></div>
+  <div class="hour"><span>09:00</span><div><div class="ev${press ? ' press' : ''}">ประชุมทีม<div class="s">09:00 ถึง 11:00</div></div></div></div>
+  <div class="hour"><span>10:00</span><div></div></div>
+  <div class="hour"><span>11:00</span><div></div></div>
+  <div class="hour"><span>12:00</span><div><div class="ev">กินข้าวกับแม่<div class="s">12:00 ถึง 13:00</div></div></div></div>
+</div>`;
+const afterList = `<div class="list"><div class="h">จ. 19 ต.ค.</div>
+  <div class="hour"><span>08:00</span><div></div></div>
+  <div class="hour"><span>09:00</span><div><div class="item" style="padding:8px 12px"><span class="box"></span><span class="t">ประชุมทีม<div class="s">เตือน 09:00</div></span></div></div></div>
+  <div class="hour"><span>10:00</span><div></div></div>
+  <div class="hour"><span>11:00</span><div></div></div>
+  <div class="hour"><span>12:00</span><div><div class="ev">กินข้าวกับแม่<div class="s">12:00 ถึง 13:00</div></div></div></div>
+</div>`;
+const E = [
+  () => day(true) + `<div class="scrim"></div><div class="dlg"><b>ประชุมทีม</b>
+    <p>ปฏิทิน: ปฏิทินหลัก
+บัญชี: (Google)
+นัดซ้ำ: ไม่</p>
+    <div class="acts"><span>เปิดในปฏิทิน</span><span class="main">เปลี่ยนเป็นงาน</span><span class="del">ลบ</span><span>ปิด</span></div></div>`,
+  () => day(true) + `<div class="scrim"></div><div class="sheet"><div class="grab"></div>
+    <div class="ctitle">เปลี่ยนเป็นงาน</div><div class="csub">นัดนี้จะออกจากปฏิทิน แล้วไปเป็นงานใน Omni note.md</div>
+    <div class="name">ประชุมทีม</div>
+    <div class="seg"><span class="on">วันครบกำหนด</span><span>วันนัดทำ</span></div>
+    <div class="rows">
+      <div class="r">${IC.cal}<span class="v tap">พรุ่งนี้, จ. 19 ต.ค.</span></div>
+      <div class="r">${IC.bell}<span class="v">เตือน <span class="tap">09:00</span></span><span class="gone">จบ 11:00</span></div>
+      <div class="r">${IC.notes}<span class="v">ห้องประชุม 3, วาระ: งบไตรมาส</span></div>
+    </div>
+    <div class="info">เวลาจบไม่ติดไป เพราะงานในโน้ตเก็บเวลาจบไม่ได้ สถานที่กับรายละเอียดไปอยู่ในรายละเอียดของงาน</div>
+    <div class="bar"><span class="btn2">ยกเลิก</span><span class="btn1">เปลี่ยนเป็นงาน</span></div>
+  </div>`,
+  () => afterList + `<div class="snack"><span>เปลี่ยนเป็นงานแล้ว</span><b>เลิกทำ</b></div>`,
+];
+const show = (id, i) => {
+  document.getElementById(id).innerHTML = (id === 't' ? T : E)[i]();
+  document.querySelectorAll(`[data-flow="${id}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.s === i));
+};
+document.querySelectorAll('.steps').forEach(s => s.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) show(s.dataset.flow, +b.dataset.s);
+}));
+// Tapping the main button inside a phone moves to the next step.
+['t', 'e'].forEach(id => document.getElementById(id).addEventListener('click', e => {
+  const on = document.querySelector(`[data-flow="${id}"] button.on`);
+  const i = +on.dataset.s;
+  if (e.target.closest('.conv, .btn1, .main')) show(id, Math.min(2, i + 1));
+}));
+show('t', 0); show('e', 0);
+</script>
