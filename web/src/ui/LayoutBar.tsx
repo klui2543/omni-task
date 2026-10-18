@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { useStored } from './views/hooks'
 import { MODES, MODE_LABEL, type ViewMode } from './views/modes'
+import { host } from '../host'
 
 export const LAYOUTS = ['list', ...MODES] as const
 export type Layout = (typeof LAYOUTS)[number]
@@ -14,18 +15,17 @@ const LABEL: Record<Layout, string> = { list: 'รายการ', ...MODE_LABE
 export function useLayout() {
   const [viewMode, setViewMode] = useStored<ViewMode>('omni.viewMode', 'kanban', MODES)
   const [stored, setStored] = useStored<Layout>('omni.tasksLayout', 'list', LAYOUTS)
-  const [layout, setLayout] = useState<Layout>(() => (location.hash === '#/views' ? viewMode : stored))
+  const [layout, setLayout] = useState<Layout>(() => (host.address.hash() === '#/views' ? viewMode : stored))
   // The old address, on a fresh load or followed while on this page: show that view and leave the address as Tasks'.
   const showViews = () => {
-    if (location.hash !== '#/views') return
+    if (host.address.hash() !== '#/views') return
     setLayout(viewMode)
     setStored(viewMode)
-    history.replaceState(null, '', '#/tasks')
+    host.address.replace('#/tasks', null)
   }
   useEffect(() => {
     showViews()
-    addEventListener('hashchange', showViews)
-    return () => removeEventListener('hashchange', showViews)
+    return host.address.listen(showViews)
   })
   return [
     layout,

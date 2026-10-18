@@ -41,6 +41,16 @@ the web in `web/src/behavior.ts`, until they are written to the file.
 A kind of work whose reminders keep being put off by an hour is asked about first. A yes is written to the profile
 note (`- เตือนช้าลง:`), and only new tasks of that kind are then offered a later reminder.
 
+## With Obsidian Sync
+
+When the vault is synced by Obsidian Sync instead of Google Drive:
+
+- Android: the folder picker points at the vault folder Obsidian keeps on the phone, and Settings > Google Drive is
+  disconnected (the app would otherwise write the Omni folder to Drive, where Obsidian Sync never looks). A Drive sync
+  app may still copy the folder up to Drive one way, as a backup, but must not bring anything back down.
+- Computer and iPad: the Omni Task tab of the Omni Ygdrasil plugin (`obsidian/`), the web app inside Obsidian, reading
+  and writing the vault directly.
+
 ## Google Drive for the Omni folder (Android)
 
 Settings > Google Drive connects the Omni folder (`📁 Folder/หลังบ้าน/Omni`) on Drive. From then on the app reads and

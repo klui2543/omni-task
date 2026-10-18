@@ -2,6 +2,7 @@
 // file (settingsSync.ts; the 'linear' key is the graphite look, it kept the name it had when it was blue). Importing
 // this file applies the saved choice at once, so the app never flashes the default look.
 import { settingsBus } from './settingsBus'
+import { host } from './host'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type PaletteChoice = 'linear' | 'midnight'
@@ -43,7 +44,10 @@ export function appearance(): Appearance {
   }
 }
 
+// Inside Obsidian "follow the system" follows Obsidian's own theme, which the owner may have set apart from the device's.
 const systemDark = () => {
+  const inObsidian = host.embedding
+  if (inObsidian) return inObsidian.dark()
   try { return matchMedia('(prefers-color-scheme: dark)').matches } catch { return false }
 }
 
@@ -51,7 +55,7 @@ const loaded = new Set<string>()
 
 /** Puts [a] on the page: the colours by attributes on the root (see style.css), the font and size by variables. */
 export function apply(a: Appearance = appearance()) {
-  const root = document.documentElement
+  const root = host.root()
   // The first look is dark only, whatever the theme says.
   const dark = a.palette === 'midnight' || a.theme === 'dark' || (a.theme === 'system' && systemDark())
   root.dataset.theme = dark ? 'dark' : 'light'
@@ -100,7 +104,7 @@ export function appearanceFromAndroid(s: { font?: string; scale?: number; theme?
   return out
 }
 
-apply()
+if (typeof document !== 'undefined') apply()
 try {
   // "Follow the system" follows the system while the page is open, too.
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply())

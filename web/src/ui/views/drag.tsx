@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { host } from '../../host'
 
 // Dragging a task card to a column or a quadrant, with pointer events so a mouse and a finger work the same:
 // a mouse drags as soon as it moves, a finger after a half-second hold (a quick swipe still scrolls), as
@@ -25,7 +26,7 @@ interface Pending {
   timer: number
 }
 
-const overAt = (x: number, y: number) => document.elementFromPoint(x, y)?.closest('[data-drop]')?.getAttribute('data-drop') ?? null
+const overAt = (x: number, y: number) => host.at(x, y)?.closest('[data-drop]')?.getAttribute('data-drop') ?? null
 
 export function useTaskDrag(onDrop: (key: string, target: string) => void) {
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -45,14 +46,14 @@ export function useTaskDrag(onDrop: (key: string, target: string) => void) {
   }
   const begin = (p: Pending, x: number, y: number) => {
     forget()
-    document.body.classList.add('dragging')
+    host.body().classList.add('dragging')
     set({ key: p.key, title: p.title, x, y, over: overAt(x, y) })
   }
   const end = (dropIt: boolean) => {
     forget()
     const d = live.current
     if (!d) return
-    document.body.classList.remove('dragging')
+    host.body().classList.remove('dragging')
     set(null)
     // The click that follows a drag must not open the card.
     quiet.current = Date.now() + 80
@@ -99,7 +100,7 @@ export function useTaskDrag(onDrop: (key: string, target: string) => void) {
       removeEventListener('touchmove', block)
       removeEventListener('click', click, true)
       removeEventListener('keydown', key)
-      document.body.classList.remove('dragging')
+      host.body().classList.remove('dragging')
       forget()
     }
   }, [])
@@ -124,5 +125,6 @@ export function useTaskDrag(onDrop: (key: string, target: string) => void) {
 /** The title following the pointer while a card is dragged. */
 export function DragGhost({ drag }: { drag: DragState | null }) {
   if (!drag) return null
-  return <div class="vghost" style={{ left: `${drag.x + 14}px`, top: `${drag.y + 14}px` }} aria-hidden="true">{drag.title}</div>
+  const o = host.origin()
+  return <div class="vghost" style={{ left: `${drag.x - o.left + 14}px`, top: `${drag.y - o.top + 14}px` }} aria-hidden="true">{drag.title}</div>
 }

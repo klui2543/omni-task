@@ -14,6 +14,8 @@ import { StuckDialog, WeekBars } from '../ui/Stuck'
 import { Check, PriorityDot } from '../ui/TaskRow'
 import { evLink, evTag } from '../ui/views/dates'
 import '../ui/focusSleep.css'
+import { host } from '../host'
+import { ConnectCard } from '../ui/GoogleConnect'
 
 const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} ชม.` : `${m} นาที`)
@@ -242,7 +244,7 @@ export function FocusPage(p: PageProps) {
                     <button key={rule} role="menuitemradio" aria-checked={urgent === rule} class={urgent === rule ? 'on' : ''}
                       onClick={() => { urgentRule.set(rule); setUrgent(rule); setMenu(false) }}>ด่วน = {label}</button>
                   ))}
-                  <button role="menuitem" onClick={() => { setMenu(false); p.onChangeVault() }}>เปลี่ยน vault</button>
+                  {host.google && <button role="menuitem" onClick={() => { setMenu(false); p.onChangeVault() }}>เปลี่ยน vault</button>}
                   <button role="menuitem" onClick={() => { setMenu(false); p.onNavigate('settings') }}>ตั้งค่า</button>
                 </div>
               </>
@@ -255,15 +257,7 @@ export function FocusPage(p: PageProps) {
         ) : (
           <div class="focus-cols">
             <div class="colA">
-              {!connected && (
-                <section class="fcard connect">
-                  <div class="grow">
-                    <div class="strong">เชื่อมต่อ Google Calendar</div>
-                    <div class="muted small">ให้เว็บอ่านนัดและเวรจาก Google Calendar เพื่อจัดเวลาว่าง และให้ผู้ช่วยลงนัดให้ได้</div>
-                  </div>
-                  <button class="primary" onClick={p.onConnectCalendar}>อนุญาต</button>
-                </section>
-              )}
+              {!connected && <ConnectCard note="ให้เว็บอ่านนัดและเวรจาก Google Calendar เพื่อจัดเวลาว่าง และให้ผู้ช่วยลงนัดให้ได้" onConnect={p.onConnectCalendar} />}
               {calendarNote && <section class="notice" role="alert"><span class="grow">{calendarNote}</span></section>}
 
               <section class="fcard">

@@ -18,6 +18,8 @@ import { calendarCache } from './calendarCache'
 import { listCalendars } from './calendar'
 import { archiveDays, sweepIfDue, sweptNotice } from './settingsDevice'
 import { Page, Shell, usePage } from './Shell'
+import { host } from './host'
+import { useGoogleState } from './ui/GoogleConnect'
 import { useProjectsAddress } from './ui/projects/route'
 import type { Task } from './types'
 import { Cut, Snapshot, Vault, VaultError } from './vault'
@@ -169,9 +171,9 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
       if (e instanceof AuthExpired) setNeedSignIn(true)
       else if (e instanceof Offline) {
         setOffline(true)
-        setMessage('ออฟไลน์อยู่ รายการนี้ต้องต่อ Google Drive ได้ก่อน ลองอีกครั้งเมื่อต่อเน็ตได้')
+        setMessage(`ออฟไลน์อยู่ รายการนี้ต้องต่อ ${host.store} ได้ก่อน ลองอีกครั้งเมื่อต่อเน็ตได้`)
       } else if (e instanceof VaultError) setMessage(e.message)
-      else setMessage(`เชื่อมต่อ Google Drive ไม่ได้ (${(e as Error).message})`)
+      else setMessage(host.obsidian ? `อ่านหรือเขียนโน้ตใน vault ไม่ได้ (${(e as Error).message})` : `เชื่อมต่อ Google Drive ไม่ได้ (${(e as Error).message})`)
     } finally {
       setKept(clashes.all())
     }
@@ -207,6 +209,13 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
     window.addEventListener('online', back)
     return () => window.removeEventListener('online', back)
   }, [vault])
+
+  // Inside Obsidian: a note changed from outside the app (brought by Obsidian Sync, or typed in the editor), read again.
+  useEffect(() => host.embedding?.watch?.(() => { reload() }), [vault])
+
+  // Inside Obsidian: Google Calendar linked, waiting or let go. Every page draws again and reads its events anew.
+  const google = useGoogleState()
+  useEffect(() => { calendar.stale() }, [google])
 
   /** Adds the lines of a clash to the end of their note, or lets the clash go. */
   const putBack = (c: Clash) =>
@@ -277,7 +286,7 @@ export function Main(p: { drive: Drive; vaultId: string; onSignIn: () => void; o
       {kept.length > 0 && (
         <div class="banner" role="alert" aria-label="การแก้ที่ชนกัน">
           <strong>การแก้ที่ชนกับที่อื่น</strong>
-          <div class="small">Google Drive ใช้ของอีกฝั่งไว้ ด้านล่างคือที่แก้จากเครื่องนี้ ใส่ไว้ท้ายโน้ตเพื่อจัดการเอง หรือทิ้งไปถ้าไม่ต้องการแล้ว</div>
+          <div class="small">{host.obsidian ? 'โน้ตใช้ของอีกฝั่งไว้' : 'Google Drive ใช้ของอีกฝั่งไว้'} ด้านล่างคือที่แก้จากเครื่องนี้ ใส่ไว้ท้ายโน้ตเพื่อจัดการเอง หรือทิ้งไปถ้าไม่ต้องการแล้ว</div>
           {kept.map((c) => (
             <div class="clash" key={c.id}>
               <div class="small">{c.name}</div>

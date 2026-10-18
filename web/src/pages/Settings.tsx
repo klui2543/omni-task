@@ -12,6 +12,8 @@ import { ARCHIVE_DAYS, archiveDays, sweepAndSay } from '../settingsDevice'
 import { FONTS, PALETTES, SCALES, THEMES, appearance, setAppearance } from '../settingsAppearance'
 import { notifyChoice } from '../settingsNotify'
 import { askPermission, check as checkReminders, permission, test as testReminder, type Permission } from '../reminders'
+import { host } from '../host'
+import { GoogleRow } from '../ui/GoogleConnect'
 
 /** A row of choices that works like a radio group, in Android's segmented look. */
 function Segmented<T extends string | number>(p: { label: string; options: [T, string][]; value: T; disabled?: T[]; onPick: (v: T) => void }) {
@@ -161,24 +163,32 @@ export function SettingsPage(p: PageProps) {
           <section class="set-card">
             <h2>บัญชีและข้อมูล</h2>
             <div class="set-row">
-              <span class="grow"><span>Vault ใน Google Drive</span><span class="set-note">{p.snapshot?.path ?? ''}</span></span>
+              <span class="grow">
+                <span>{host.obsidian ? `Vault ${host.embedding!.vaultName}` : 'Vault ใน Google Drive'}</span>
+                <span class="set-note">{p.snapshot?.path ?? ''}</span>
+              </span>
               <button class="pillbtn" disabled={p.busy} onClick={p.onReload}>โหลดใหม่</button>
             </div>
-            <div class="set-row">
-              <span class="grow"><span>เปลี่ยน vault</span></span>
-              <button class="pillbtn" onClick={p.onChangeVault}>เลือกใหม่</button>
-            </div>
-            <div class="set-row">
-              <span class="grow">
-                <span>Google Calendar</span>
-                <span class="set-note">{connected ? 'อ่านนัดและเวรได้แล้ว เลือกปฏิทินที่แสดงได้ด้านล่าง' : 'ยังไม่ได้เชื่อม ให้เว็บอ่านนัดและเวรเพื่อจัดเวลาว่าง'}</span>
-              </span>
-              {!connected && <button class="pillbtn" onClick={p.onConnectCalendar}>อนุญาต</button>}
-            </div>
-            <div class="set-row">
-              <span class="grow"><span>บัญชี Google</span><span class="set-note">เข้าสู่ระบบอยู่ ครบ 24 ชั่วโมงนับจากการเข้าสู่ระบบครั้งล่าสุดแล้วจะถามใหม่</span></span>
-              <button class="pillbtn danger" onClick={p.onSignOut}>ออกจากระบบ</button>
-            </div>
+            {host.obsidian && <GoogleRow />}
+            {host.google && (
+              <>
+                <div class="set-row">
+                  <span class="grow"><span>เปลี่ยน vault</span></span>
+                  <button class="pillbtn" onClick={p.onChangeVault}>เลือกใหม่</button>
+                </div>
+                <div class="set-row">
+                  <span class="grow">
+                    <span>Google Calendar</span>
+                    <span class="set-note">{connected ? 'อ่านนัดและเวรได้แล้ว เลือกปฏิทินที่แสดงได้ด้านล่าง' : 'ยังไม่ได้เชื่อม ให้เว็บอ่านนัดและเวรเพื่อจัดเวลาว่าง'}</span>
+                  </span>
+                  {!connected && <button class="pillbtn" onClick={p.onConnectCalendar}>อนุญาต</button>}
+                </div>
+                <div class="set-row">
+                  <span class="grow"><span>บัญชี Google</span><span class="set-note">เข้าสู่ระบบอยู่ ครบ 24 ชั่วโมงนับจากการเข้าสู่ระบบครั้งล่าสุดแล้วจะถามใหม่</span></span>
+                  <button class="pillbtn danger" onClick={p.onSignOut}>ออกจากระบบ</button>
+                </div>
+              </>
+            )}
             <div class="set-row">
               <span class="grow"><span>ด่วน</span><span class="set-note">ใช้ใน Matrix และหน้าโฟกัส</span></span>
             </div>
@@ -242,7 +252,9 @@ function RemindersCard() {
         </span>
         <button class="pillbtn" onClick={() => { testReminder(); setTested(true) }}>{tested ? 'ส่งแล้ว' : 'ทดสอบ'}</button>
       </div>
-      <span class="set-note">เว็บเตือนได้เฉพาะตอนที่เปิดอยู่ ถ้าปิดไว้ตอนถึงเวลา จะเตือนเมื่อกลับมาเปิด บน iPad การแจ้งเตือนของเครื่องใช้ได้เมื่อเพิ่มแอปไว้ที่หน้าจอโฮม (แชร์ แล้วเลือกเพิ่มไปยังหน้าจอโฮม) ไอคอนแอปจะบอกจำนวนงานเลยกำหนดและครบวันนี้ ส่วนสรุปงานตามเวลา ทบทวนสัปดาห์ และเตือนนัดใน Google Calendar ตั้งในแอป Android</span>
+      {host.obsidian ? (
+        <span class="set-note">เตือนได้เฉพาะตอนที่เปิด Obsidian อยู่ ถ้าปิดไว้ตอนถึงเวลา จะเตือนเมื่อกลับมาเปิด ส่วนสรุปงานตามเวลา ทบทวนสัปดาห์ และเตือนนัดใน Google Calendar ตั้งในแอป Android</span>
+      ) : <span class="set-note">เว็บเตือนได้เฉพาะตอนที่เปิดอยู่ ถ้าปิดไว้ตอนถึงเวลา จะเตือนเมื่อกลับมาเปิด บน iPad การแจ้งเตือนของเครื่องใช้ได้เมื่อเพิ่มแอปไว้ที่หน้าจอโฮม (แชร์ แล้วเลือกเพิ่มไปยังหน้าจอโฮม) ไอคอนแอปจะบอกจำนวนงานเลยกำหนดและครบวันนี้ ส่วนสรุปงานตามเวลา ทบทวนสัปดาห์ และเตือนนัดใน Google Calendar ตั้งในแอป Android</span>}
     </section>
   )
 }

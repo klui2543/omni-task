@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { pendingQuestion } from './assistantState'
+import { host } from './host'
 import './parity.css'
 
 export type Page = 'focus' | 'tasks' | 'projects' | 'assistant' | 'settings'
@@ -36,15 +37,15 @@ const pageOf = (hash: string): Page => {
 
 /** The open page, kept in the address (#/tasks) so reloading and the back button stay on it. */
 export function usePage(): [Page, (p: Page) => void] {
-  const [page, setPage] = useState(() => pageOf(location.hash))
+  const [page, setPage] = useState(() => pageOf(host.address.hash()))
   useEffect(() => {
-    const onHash = () => setPage(pageOf(location.hash))
-    addEventListener('hashchange', onHash)
+    const onHash = () => setPage(pageOf(host.address.hash()))
+    const stop = host.address.listen(onHash)
     // A change made between the first render and this listener would otherwise be missed.
     onHash()
-    return () => removeEventListener('hashchange', onHash)
+    return stop
   }, [])
-  return [page, (p) => { location.hash = '/' + p }]
+  return [page, (p) => host.address.assign('#/' + p)]
 }
 
 /** [waiting]: notes with edits made offline that are not on Drive yet. */
@@ -97,16 +98,16 @@ function AskLine(p: { class: string; below?: boolean; onNavigate: (p: Page) => v
  */
 export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () => void; sync: Sync; onReload: () => void; children: ComponentChildren }) {
   const syncText = p.sync.state === 'off' ? 'ต้องเข้าสู่ระบบใหม่'
-    : p.sync.state === 'busy' ? 'กำลังซิงก์...'
+    : p.sync.state === 'busy' ? (host.obsidian ? 'กำลังอัปเดต...' : 'กำลังซิงก์...')
     : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
-    : p.sync.at ? `ซิงก์ล่าสุด ${hhmm(p.sync.at)}` : ''
+    : p.sync.at ? `${host.obsidian ? 'อัปเดตล่าสุด' : 'ซิงก์ล่าสุด'} ${hhmm(p.sync.at)}` : ''
   return (
     <div class="shell">
       {p.sync.state === 'busy' && <div class="top-progress" role="progressbar" aria-label="กำลังซิงก์" />}
       <nav class="side" aria-label="เมนูหลัก">
         <div class="brand">
           <div class="brand-name">Omni Task</div>
-          <div class="brand-sub"><span class={`dot ${p.sync.state}`} />เชื่อม Google Drive</div>
+          <div class="brand-sub"><span class={`dot ${p.sync.state}`} />{host.obsidian ? 'อยู่ใน Obsidian' : 'เชื่อม Google Drive'}</div>
         </div>
         <div class="side-add">
           <button class="primary" onClick={p.onAdd}>+ เพิ่มงาน</button>

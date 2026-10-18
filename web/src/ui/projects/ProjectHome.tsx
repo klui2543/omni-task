@@ -1,5 +1,6 @@
 import type { ListOut, ProjectOut } from '../../types'
 import { useSortable } from './Sortable'
+import { host } from '../../host'
 
 /** The ring colours of the project cards, in Android's order. */
 const RING = ['var(--accent)', 'var(--amber)', '#2f9e95', 'var(--blue)', 'var(--red)']
@@ -69,7 +70,7 @@ export function ProjectHome(p: {
             {p.arranging ? 'เสร็จ' : 'จัดลำดับ'}
           </button>
         )}
-        <button class="ghost narrow-only" onClick={() => { location.hash = '/settings' }}>ตั้งค่า</button>
+        <button class="ghost narrow-only" onClick={() => host.address.assign('#/settings')}>ตั้งค่า</button>
       </header>
 
       {p.projects.length === 0 && (

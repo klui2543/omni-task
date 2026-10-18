@@ -1,5 +1,11 @@
-// Bundles the plugin (and the shared Kotlin core it calls) into one main.js, as Obsidian loads plugins.
+// Bundles the plugin into one main.js, as Obsidian loads plugins: Ygdrasil, the shared Kotlin core it calls, and the
+// whole Omni web app (../web/src) for the Omni Task tab, with the app's styles scoped to that tab (scripts/scopeCss.mjs).
 import { build } from 'esbuild'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { appCss, googleClientId, oneCore } from './scripts/bundle.mjs'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 await build({
   entryPoints: ['src/main.ts'],
@@ -8,7 +14,17 @@ await build({
   format: 'cjs',
   platform: 'browser',
   target: 'es2020',
-  external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*'],
+  // The web app's JSX, as its own build reads it (web/tsconfig.json).
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
+  // The web app's own packages, when only the plugin's are installed.
+  nodePaths: [join(here, 'node_modules'), join(here, '..', 'web', 'node_modules')],
+  loader: { '.wasm': 'binary' },
+  // What Vite fills in for the web page: the web app's Google client, which the tab uses for Google Calendar.
+  define: { 'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(googleClientId()), 'import.meta.env.PROD': 'true' },
+  // The web page's WebP encoder fetches its .wasm from beside it; the tab carries its own (src/webp.ts).
+  external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*', '@jsquash/webp/encode.js'],
+  plugins: [oneCore, appCss],
   logLevel: 'info',
   sourcemap: false,
   minify: false,

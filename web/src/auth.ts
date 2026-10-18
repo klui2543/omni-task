@@ -4,6 +4,8 @@
 // app again does not ask again; after that one quiet round trip to Google renews it. The sign-in as a whole
 // lasts 24 hours from the owner's last sign-in; then the sign-in page asks again.
 
+import { host } from './host'
+
 const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 const REVOKE = 'https://oauth2.googleapis.com/revoke'
 export const SCOPE = 'https://www.googleapis.com/auth/drive'
@@ -132,6 +134,8 @@ export class Auth {
 
   /** Whether the owner has agreed to [scope] on this device. */
   static granted(scope: string): boolean {
+    // Inside Obsidian only Google Calendar is linked, reading and adding events at once (see host.calendar).
+    if (!host.google) return host.calendar?.state() === 'on' && (scope === CALENDAR_SCOPE || scope === CALENDAR_WRITE_SCOPE)
     return (store.get(localStorage, SCOPES_KEY) ?? '').split(/[\s,]+/).includes(scope)
   }
 

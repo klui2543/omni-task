@@ -14,6 +14,7 @@ import { AgendaCard, Bubble, DurationCard, RangeCard, RankedCard, rangeTitle, Re
 import { AskCard, Interview } from '../ui/assistant/Interview'
 import { StuckDeck } from '../ui/Stuck'
 import { byNote } from '../vault'
+import { ConnectCard } from '../ui/GoogleConnect'
 
 const CALENDAR_OFF =
   'เปิด Google Calendar API ในโปรเจกต์ Google Cloud ของแอปนี้ก่อน (APIs & Services > Library > Google Calendar API > Enable) แล้วกดโหลดใหม่'
@@ -392,15 +393,7 @@ export function AssistantPage(p: PageProps) {
           {head}
           {chat.length === 0 && profile && (
             <>
-              {!connected && (
-                <section class="fcard connect">
-                  <div class="grow">
-                    <div class="strong">เชื่อมต่อ Google Calendar</div>
-                    <div class="muted small">ให้ผู้ช่วยอ่านนัดและเวรเพื่อหาช่วงว่าง ถ้ายังไม่เชื่อม ผู้ช่วยคิดจากงานในโน้ตอย่างเดียว</div>
-                  </div>
-                  <button class="primary" onClick={p.onConnectCalendar}>อนุญาต</button>
-                </section>
-              )}
+              {!connected && <ConnectCard note="ให้ผู้ช่วยอ่านนัดและเวรเพื่อหาช่วงว่าง ถ้ายังไม่เชื่อม ผู้ช่วยคิดจากงานในโน้ตอย่างเดียว" onConnect={p.onConnectCalendar} />}
               <section class="as-card">
                 <span class="as-intro">ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล</span>
                 {/* Every shortcut needs the vault's tasks; until they are read a tap would do nothing, so the buttons wait (disabled) instead. */}

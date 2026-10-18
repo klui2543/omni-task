@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { host } from '../host'
 import { today } from '../core'
 import type { PageProps } from '../Home'
 import { BUCKETS, DEFAULT_QUERY, GROUPS, KINDS, ListQuery, PRIORITIES, SORTS, STATUSES, filterCount, labelOf, storedQuery } from '../query'
@@ -61,9 +62,10 @@ function TaskList(p: PageProps & { layout: Layout; onLayout: (l: Layout) => void
   // "/" jumps to the search box, as on the web versions of TickTick and Linear.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      const target = host.target(e)
+      const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
       // Not while a sheet is open over the page (quick add belongs to the shell now).
-      if (e.key === '/' && !typing && !overlay && !document.querySelector('[aria-modal=true]')) {
+      if (e.key === '/' && !typing && !overlay && !host.find('[aria-modal=true]')) {
         e.preventDefault()
         search.current?.focus()
       }
