@@ -172,6 +172,16 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
 
+    LaunchedEffect(state.swapped) {
+        state.swapped?.let { u ->
+            val text = if (u.toEvent) tr("เปลี่ยน \"${u.title}\" เป็นนัดแล้ว", "\"${u.title}\" is now an event") else tr("เปลี่ยน \"${u.title}\" เป็นงานแล้ว", "\"${u.title}\" is now a task")
+            val r = snackbar.showSnackbar(text, actionLabel = tr("เลิกทำ", "Undo"), duration = SnackbarDuration.Short)
+            // Cleared only after the snackbar closes: clearing first would restart this effect and cancel it.
+            vm.clearSwapped()
+            if (r == SnackbarResult.ActionPerformed) u.undo()
+        }
+    }
+
     // The frames and emoji page, from the month widget or the calendar's pencil; closing it lands on the calendar.
     state.month?.let { r ->
         MonthScreen(r, state) { day -> vm.requestCalendar(day); vm.requestMonth(null) }

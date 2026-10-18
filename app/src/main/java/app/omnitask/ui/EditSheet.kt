@@ -112,6 +112,10 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     var deleting by remember { mutableStateOf(false) }
     var notingStuck by remember { mutableStateOf(false) }
     var stuckLog by remember { mutableStateOf(false) }
+    var swapping by remember { mutableStateOf(false) }
+    // What this task's event left behind, when it was one before (under its 🆔 in the swap file).
+    val swapStore by androidx.compose.runtime.produceState<app.omnitask.model.Swap.Store?>(null, task.key) { value = vm.readSwap() }
+    val keptEvent = task.id?.let { swapStore?.tasks?.get(it) }
     val context = LocalContext.current
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.attachImage(task, uri)
@@ -252,6 +256,12 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         SubtaskBlock(task, state, vm, onOpen)
 
+        // A task in a note can become a calendar event, and back again with everything it had.
+        if (task.parent == null && task.list == null && !task.todayCopy) {
+            val calName = keptEvent?.let { k -> state.calendars.firstOrNull { it.id == k.calendarId }?.let { it.name.ifBlank { it.account } } }
+            SwapToEventButton(keptEvent?.let { app.omnitask.model.Swap.keptOfEvent(it, calName) }) { swapping = true }
+        }
+
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {
             val stuck = StuckLog.entries(task)
@@ -349,6 +359,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     if (linking) {
         NotePicker(state.notePaths.filterNot { NoteLinks.linkText(it, state.notePaths) in task.links }, { vm.addLink(task, it); linking = false }) { linking = false }
     }
+    if (swapping) TaskToEventSheet(task, state, vm, keptEvent, onClose = { swapping = false }, onDone = { swapping = false; onDismiss() })
     if (deleting) {
         val subs = state.subtasksOf(task).size
         AlertDialog(

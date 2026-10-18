@@ -1,0 +1,163 @@
+<title>ลงปฏิทินแบบเลือกช่วง</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
+<style>
+/* Layout: the quick-add sheet in two phones (A and B) beside short notes; tabs swap the example sentence. Same tokens and text sizes as the app. */
+:root {
+  --page: #eef0f3; --ink: #1b1e23; --ink2: #4a5260; --segBg: #e1e5eb; --fast: #2f7a55; --slow: #b3443d;
+  --font: "IBM Plex Sans Thai Looped", "Noto Sans Thai", system-ui, sans-serif;
+  --bg: #ffffff; --sunken: #f1f2f5; --raised: #eceef1; --line: #e8eaee; --control: #cdd2da;
+  --text: #1b1e23; --text2: #3c424c; --muted: #7a8291; --faint: #a3a9b4;
+  --accent: #3d4f6e; --accentSoft: #e6eaf1; --accentLine: #c9d2e0; --accentText: #33445f; --onAccent: #ffffff; --scrim: rgba(20,24,30,.38);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --segBg: #17181c; --fast: #7fae93; --slow: #d9726c;
+    --bg: #161618; --sunken: #1c1c1f; --raised: #232327; --line: #26262a; --control: #3a3a40;
+    --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #5f5f67;
+    --accent: #9db4d3; --accentSoft: #1d2330; --accentLine: #2c3546; --accentText: #b4c6df; --onAccent: #0e1118; --scrim: rgba(0,0,0,.55); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0c; --ink: #e6e7ea; --ink2: #9a9fab; --segBg: #17181c; --fast: #7fae93; --slow: #d9726c;
+  --bg: #161618; --sunken: #1c1c1f; --raised: #232327; --line: #26262a; --control: #3a3a40;
+  --text: #ececee; --text2: #c4c4c9; --muted: #8e8e96; --faint: #5f5f67;
+  --accent: #9db4d3; --accentSoft: #1d2330; --accentLine: #2c3546; --accentText: #b4c6df; --onAccent: #0e1118; --scrim: rgba(0,0,0,.55); color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--font); line-height: 1.45; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; text-wrap: balance }
+h2 { font-size: 16px; font-weight: 600; margin: 0 }
+header p { margin: 0; color: var(--ink2); max-width: 70ch; font-size: 14px }
+.tabs { display: inline-flex; background: var(--segBg); border-radius: 12px; padding: 4px; gap: 4px; flex-wrap: wrap }
+.tabs button { padding: 6px 14px; border-radius: 9px; font-size: 13.5px; color: var(--ink2) }
+.tabs button.on { background: var(--bg); color: var(--ink); font-weight: 500 }
+.stage { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start }
+.col { flex: 0 1 360px; min-width: 0; width: 100%; max-width: 360px; display: grid; gap: 10px }
+.col h2 span { color: var(--muted); font-weight: 400; font-size: 13.5px }
+.notes { display: grid; gap: 6px; font-size: 13.5px; color: var(--ink2) }
+.li { padding-left: 14px; position: relative }
+.li::before { content: "+"; position: absolute; left: 0; color: var(--fast); font-weight: 600 }
+.li.no::before { content: "-"; color: var(--slow) }
+
+/* The phone and the sheet. */
+.app { position: relative; height: 700px; background: var(--sunken); border-radius: 26px; overflow: hidden; border: 1px solid var(--line); font-size: 14px; color: var(--text); display: flex; flex-direction: column; justify-content: flex-end }
+.scrim { position: absolute; inset: 0; background: var(--scrim) }
+.sheet { position: relative; background: var(--bg); border-radius: 22px 22px 0 0; padding: 8px 18px 18px }
+.grab { width: 32px; height: 4px; border-radius: 2px; background: var(--control); margin: 0 auto 12px }
+.st { font-size: 16px; font-weight: 500 }
+.field { margin-top: 12px; min-height: 52px; border-radius: 14px; background: var(--sunken); padding: 14px; line-height: 1.5 }
+.field .cur { display: inline-block; width: 1.5px; height: 18px; background: var(--accent); vertical-align: -3px; margin-left: 1px }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
+.pill { padding: 3px 10px; border-radius: 12px; background: var(--accentSoft); color: var(--accentText); font-size: 12.5px; font-variant-numeric: tabular-nums }
+.more { margin-top: 14px; display: flex; align-items: center; padding: 12px; border-radius: 12px; background: var(--raised); color: var(--accentText) }
+.more span { flex: 1 }
+.as { margin-top: 10px; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--raised); font-size: 12.5px; color: var(--muted) }
+.as span { flex: 1; min-width: 0; font-variant-numeric: tabular-nums }
+.as b { font-weight: 400; color: var(--accentText) }
+.lab { font-size: 12.5px; color: var(--muted); margin: 10px 0 6px }
+.chips { display: flex; flex-wrap: wrap; gap: 6px }
+.chip { padding: 6px 12px; border-radius: 14px; background: var(--raised); color: var(--text2); white-space: nowrap; font-variant-numeric: tabular-nums }
+.chip.on { background: var(--accent); color: var(--onAccent); font-weight: 500 }
+.rows { margin-top: 10px; border-radius: 12px; background: var(--raised); padding: 2px 4px 2px 12px }
+.row { display: flex; align-items: center; gap: 8px; min-height: 44px }
+.row + .row { border-top: 1px solid var(--line) }
+.row .k { width: 40px; color: var(--muted); font-size: 12.5px; flex: none }
+.row .d { flex: 1; min-width: 0 }
+.tap { padding: 6px 8px; border-radius: 8px; font-variant-numeric: tabular-nums; color: var(--text) }
+.tap.hl { background: var(--accentSoft); color: var(--accentText) }
+.row.sw-row .d { color: var(--text) }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: var(--control); position: relative; flex: none; margin-right: 6px }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg) }
+.sw.on { background: var(--accent) }
+.sw.on::after { left: 19px; background: var(--onAccent) }
+.hint { margin-top: 10px; font-size: 12.5px; color: var(--faint) }
+.bar { margin-top: 16px; display: flex; align-items: center; gap: 8px }
+.rnd { width: 44px; height: 44px; border-radius: 50%; background: var(--raised); flex: none }
+.rnd.ac { background: var(--accentSoft) }
+.grow { flex: 1 }
+.btn2 { height: 44px; padding: 0 14px; border-radius: 12px; background: var(--accentSoft); border: 1px solid var(--accentLine); color: var(--accentText); display: flex; align-items: center }
+.btn1 { height: 44px; padding: 0 16px; border-radius: 12px; background: var(--accent); color: var(--onAccent); font-weight: 500; display: flex; align-items: center }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ลงปฏิทินแบบเลือกช่วง</h1>
+    <p>แผ่นเพิ่มงานด่วน ตอนเปิด "เปลี่ยน" ของแถว "ถ้าลงปฏิทิน" (วันนี้ อา. 18 ต.ค.) ทั้งสองแบบอ่านช่วงจากประโยคได้เหมือนกัน ต่างกันแค่แผงที่เปิดขึ้น สลับตัวอย่างได้ข้างล่าง ช่องที่ไฮไลต์คือช่องที่แตะเลือกเองได้</p>
+  </header>
+  <div class="tabs" role="tablist">
+    <button class="on" data-ex="0">ประชุม 9:00-11:00</button>
+    <button data-ex="1">เที่ยว 3 วัน</button>
+    <button data-ex="2">ใส่แค่เวลาเริ่ม</button>
+  </div>
+  <div class="stage">
+    <div class="col">
+      <h2>A <span>แถวเริ่มกับแถวจบ</span></h2>
+      <div class="app"><div class="scrim"></div><div class="sheet" id="A"></div></div>
+      <div class="notes">
+        <div class="li">เห็นวันและเวลาจบตรงๆ แตะวันหรือเวลาเพื่อเปลี่ยน</div>
+        <div class="li">หน้าตาเหมือนหน้า "ตัวเลือกเพิ่มเติม" ที่มีอยู่แล้ว</div>
+        <div class="li no">ปุ่มลัด 30 นาที 1 ชม. หายไป ต้องแตะเวลาจบเอง</div>
+      </div>
+    </div>
+    <div class="col">
+      <h2>B <span>ปุ่มความยาว แล้วมีแถวจบใต้</span></h2>
+      <div class="app"><div class="scrim"></div><div class="sheet" id="B"></div></div>
+      <div class="notes">
+        <div class="li">ยังกดปุ่มลัดความยาวได้ แถว "จบ" ข้างล่างเปลี่ยนตาม</div>
+        <div class="li">ถ้าความยาวไม่ตรงปุ่มไหน ก็แตะเวลาหรือวันจบในแถวเอง</div>
+        <div class="li no">แผงสูงกว่า A หนึ่งแถว</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const EX = [
+  { text: 'ประชุมทีม พรุ่งนี้ 9:00-11:00', pills: ['จ. 19 ต.ค.', '09:00 ถึง 11:00'], allDay: false,
+    as: 'จ. 19 ต.ค. 09:00 ถึง 11:00', s: ['จ. 19 ต.ค.', '09:00'], e: ['จ. 19 ต.ค.', '11:00'], len: 120 },
+  { text: 'เที่ยวเชียงใหม่ 20-22/10', pills: ['อ. 20 ต.ค. ถึง พฤ. 22 ต.ค.'], allDay: true,
+    as: 'อ. 20 ถึง พฤ. 22 ต.ค. ทั้งวัน', s: ['อ. 20 ต.ค.', ''], e: ['พฤ. 22 ต.ค.', ''], len: null },
+  { text: 'โทรหาลูกค้า พรุ่งนี้ 14:00', pills: ['จ. 19 ต.ค.', 'เตือน 14:00'], allDay: false,
+    as: 'จ. 19 ต.ค. 14:00 ถึง 15:00', s: ['จ. 19 ต.ค.', '14:00'], e: ['จ. 19 ต.ค.', '15:00'], len: 60 },
+];
+const LENS = [[30, '30 นาที'], [60, '1 ชม.'], [90, '1 ชม. 30 นาที'], [120, '2 ชม.'], [180, '3 ชม.']];
+
+function head(x) {
+  return `<div class="grab"></div><div class="st">เพิ่มงาน</div>
+  <div class="field">${x.text}<span class="cur"></span></div>
+  <div class="pills">${x.pills.map(p => `<span class="pill">${p}</span>`).join('')}</div>
+  <div class="more"><span>ตัวเลือกเพิ่มเติม</span>›</div>
+  <div class="as"><span>ถ้าลงปฏิทิน: ${x.as}, ปฏิทินหลัก</span><b>ปิด</b></div>`;
+}
+function row(k, d) {
+  return `<div class="row"><span class="k">${k}</span><span class="d"><span class="tap hl">${d[0]}</span></span>${d[1] ? `<span class="tap hl">${d[1]}</span>` : ''}</div>`;
+}
+function allDayRow(x) {
+  return `<div class="row sw-row"><span class="d">ทั้งวัน</span><span class="sw${x.allDay ? ' on' : ''}"></span></div>`;
+}
+function cals() {
+  return `<div class="lab">ปฏิทิน</div><div class="chips"><span class="chip on">ปฏิทินหลัก</span><span class="chip">งาน</span><span class="chip">ครอบครัว</span></div>`;
+}
+function bar() {
+  return `<div class="bar"><span class="rnd"></span><span class="rnd ac"></span><span class="grow"></span><span class="btn2">ลงปฏิทิน</span><span class="btn1">เพิ่มงาน</span></div>`;
+}
+function A(x) {
+  return head(x) + `<div class="rows">${allDayRow(x)}${row('เริ่ม', x.s)}${row('จบ', x.e)}</div>` + cals() + bar();
+}
+function B(x) {
+  const lens = x.allDay ? '' : `<div class="lab">นานเท่าไร</div><div class="chips">${LENS.map(([m, l]) => `<span class="chip${m === x.len ? ' on' : ''}">${l}</span>`).join('')}</div>`;
+  return head(x) + lens + `<div class="rows">${allDayRow(x)}${row('จบ', x.e)}</div>` + cals() + bar();
+}
+function show(i) {
+  document.getElementById('A').innerHTML = A(EX[i]);
+  document.getElementById('B').innerHTML = B(EX[i]);
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', +b.dataset.ex === i));
+}
+document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(+b.dataset.ex); });
+show(0);
+</script>

@@ -19,6 +19,10 @@ object QuickAdd {
         val time: LocalTime? = null,
         val tags: List<String> = emptyList(),
         val priority: Priority = Priority.NONE,
+        /** The end of a typed time range ("9:00-11:00"); only an event uses it. */
+        val endTime: LocalTime? = null,
+        /** The last day of a typed date range ("20-22/10"); only an event uses it, a task keeps [due]. */
+        val endDue: LocalDate? = null,
     ) {
         /** The TaskForge line, in TaskForge token order. */
         fun line(today: LocalDate): String {
@@ -67,8 +71,13 @@ object QuickAdd {
     }
 
     private val TAG = Regex("""(?<!\S)#[^\s#]+""")
+    // "9:00-11:00", "9:00 ถึง 11:00", "9:00 to 11:00".
+    private val TIME_RANGE = Regex("""(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)\s*(?:-|–|ถึง|to)\s*([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])(?:\s*น\.)?""", RegexOption.IGNORE_CASE)
     private val TIME = Regex("""(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])(?:\s*น\.)?""")
     private val BANG = Regex("""(?<!\S)(!{1,3})(?!\S)""")
+    // "20-22/10" (one month), and "28/12-3/1" or "20/10 ถึง 22/10" (each day with its month).
+    private val DAY_RANGE = Regex("""(?<![\d/])(\d{1,2})\s*(?:-|–|ถึง|to)\s*(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?![\d/])""", RegexOption.IGNORE_CASE)
+    private val DATE_RANGE = Regex("""(?<![\d/])(\d{1,2})/(\d{1,2})\s*(?:-|–|ถึง|to)\s*(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?![\d/])""", RegexOption.IGNORE_CASE)
     private val SLASH_DATE = Regex("""(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?![\d/])""")
 
     private val THAI_DAYS = listOf("จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "พฤหัส", "ศุกร์", "เสาร์", "อาทิตย์")
@@ -139,22 +148,44 @@ object QuickAdd {
         }
 
         var time: LocalTime? = null
-        TIME.find(rest)?.let { m ->
+        var endTime: LocalTime? = null
+        TIME_RANGE.find(rest)?.let { m ->
+            val g = m.groupValues
+            time = LocalTime.of(g[1].toInt(), g[2].toInt())
+            endTime = LocalTime.of(g[3].toInt(), g[4].toInt())
+            cut(m.range)
+        }
+        if (time == null) TIME.find(rest)?.let { m ->
             time = LocalTime.of(m.groupValues[1].toInt(), m.groupValues[2].toInt())
             cut(m.range)
         }
 
         var due: LocalDate? = null
-        SLASH_DATE.find(rest)?.let { m ->
+        var endDue: LocalDate? = null
+        // A range's days: a year typed at the end is for both; without one, a range already over is next year's.
+        fun range(fromDay: Int, fromMonth: Int, toDay: Int, toMonth: Int, typedYear: String, m: MatchResult) {
+            val year = year(typedYear)
+            val from = runCatching { LocalDate.of(year ?: today.year, fromMonth, fromDay) }.getOrNull() ?: return
+            var to = runCatching { LocalDate.of(from.year, toMonth, toDay) }.getOrNull() ?: return
+            // "28/12-3/1": the end is in the next year.
+            if (to < from) to = to.plusYears(1)
+            val shift = year == null && to < today
+            due = if (shift) from.plusYears(1) else from
+            endDue = if (shift) to.plusYears(1) else to
+            cut(m.range)
+        }
+        DATE_RANGE.find(rest)?.let { m ->
+            val g = m.groupValues
+            range(g[1].toInt(), g[2].toInt(), g[3].toInt(), g[4].toInt(), g[5], m)
+        }
+        if (due == null) DAY_RANGE.find(rest)?.let { m ->
+            val g = m.groupValues
+            range(g[1].toInt(), g[3].toInt(), g[2].toInt(), g[3].toInt(), g[4], m)
+        }
+        if (due == null) SLASH_DATE.find(rest)?.let { m ->
             val day = m.groupValues[1].toInt()
             val month = m.groupValues[2].toInt()
-            val year = m.groupValues[3].toIntOrNull()?.let { y ->
-                when {
-                    y > 2400 -> y - 543
-                    y < 100 -> if (y > 60) 2500 + y - 543 else 2000 + y
-                    else -> y
-                }
-            }
+            val year = year(m.groupValues[3])
             runCatching { LocalDate.of(year ?: today.year, month, day) }.getOrNull()?.let { d ->
                 due = if (year == null && d < today) d.plusYears(1) else d
                 cut(m.range)
@@ -188,6 +219,17 @@ object QuickAdd {
         if (due == null && time != null) due = today
 
         val title = rest.replace(Regex("""\s+"""), " ").trim()
-        return Draft(title, due, time, tags, priority)
+        // A range on one day is no range.
+        if (endDue == due) endDue = null
+        return Draft(title, due, time, tags, priority, endTime, endDue)
+    }
+
+    /** A typed year: Buddhist years (2569, or 69) and short years (26) as the Western year. */
+    private fun year(typed: String): Int? = typed.toIntOrNull()?.let { y ->
+        when {
+            y > 2400 -> y - 543
+            y < 100 -> if (y > 60) 2500 + y - 543 else 2000 + y
+            else -> y
+        }
     }
 }

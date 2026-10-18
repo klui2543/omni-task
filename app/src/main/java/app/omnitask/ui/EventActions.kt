@@ -28,6 +28,9 @@ class EventActions(val open: (CalendarEvent) -> Unit, val inspect: (CalendarEven
 fun rememberEventActions(vm: TaskViewModel): EventActions {
     val context = LocalContext.current
     var inspecting by remember { mutableStateOf<Pair<CalendarEvent, CalendarReader.EventInfo?>?>(null) }
+    var swapping by remember { mutableStateOf<CalendarReader.EventDetails?>(null) }
+    var store by remember { mutableStateOf(app.omnitask.model.Swap.Store()) }
+    androidx.compose.runtime.LaunchedEffect(inspecting) { if (inspecting != null) store = vm.readSwap() }
     val actions = remember(context) {
         EventActions(
             open = { e ->
@@ -37,9 +40,23 @@ fun rememberEventActions(vm: TaskViewModel): EventActions {
             inspect = { e -> inspecting = e to CalendarReader.inspect(context, e.id) },
         )
     }
+    swapping?.let { d -> EventToTaskSheet(d, store, vm) { swapping = null } }
     inspecting?.let { (e, info) ->
+        // A single event in a calendar this phone can change can become a task; a repeating one cannot.
+        val canSwap = info != null && !info.deleted && !info.recurring && info.calendar?.writable == true && CalendarReader.canWrite(context)
+        val wasTask = info != null && app.omnitask.model.Swap.keptTask(store, e.id, e.title, e.begin) != null
         EventInfoDialog(
             e, info,
+            swapLabel = when {
+                !canSwap -> null
+                wasTask -> tr("เปลี่ยนกลับเป็นงาน", "Back to a task")
+                else -> tr("เปลี่ยนเป็นงาน", "Make it a task")
+            },
+            onSwap = {
+                inspecting = null
+                val d = CalendarReader.details(context, e.id)
+                if (d != null) swapping = d else vm.showMessage(tr("อ่านนัดนี้ไม่ได้", "Cannot read this event"))
+            },
             canDelete = info != null && !info.deleted && CalendarReader.canWrite(context),
             onOpen = { inspecting = null; actions.open(e) },
             onDelete = {
@@ -58,6 +75,8 @@ fun rememberEventActions(vm: TaskViewModel): EventActions {
 private fun EventInfoDialog(
     e: CalendarEvent,
     info: CalendarReader.EventInfo?,
+    swapLabel: String?,
+    onSwap: () -> Unit,
     canDelete: Boolean,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
@@ -99,7 +118,7 @@ private fun EventInfoDialog(
             tr("ถูกลบแล้ว: ", "Deleted: ") + yes(info.deleted),
             tr("มีการแก้ที่ยังไม่ sync: ", "Changes waiting to sync: ") + yes(info.dirty),
             tr("เคย sync ขึ้น Google แล้ว: ", "Synced to Google before: ") + yes(info.syncId != null),
-            tr("นัดซ้ำ: ", "Recurring: ") + yes(info.recurring),
+            tr("นัดซ้ำ: ", "Recurring: ") + yes(info.recurring) + if (info.recurring) tr(" (นัดซ้ำเปลี่ยนเป็นงานไม่ได้)", " (a repeating event cannot become a task)") else "",
             "id: ${info.id}",
             app.omnitask.data.GoogleCalendarCheck.status(androidx.compose.ui.platform.LocalContext.current),
         )
@@ -110,7 +129,9 @@ private fun EventInfoDialog(
         title = { Text(e.title.ifBlank { tr("ไม่มีชื่อ", "Untitled") }) },
         text = { Text(lines.joinToString("\n"), color = C.text2) },
         confirmButton = {
-            Row {
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
+                if (swapLabel != null) TextButton(onClick = onSwap) { Text(swapLabel, color = C.accentText) }
                 if (canDelete) TextButton(onClick = { confirming = true }) { Text(tr("ลบ", "Delete"), color = C.red) }
                 TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) }
             }

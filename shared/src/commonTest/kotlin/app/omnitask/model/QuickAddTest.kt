@@ -98,4 +98,49 @@ class QuickAddTest {
         assertEquals("FREQ=DAILY;UNTIL=20261231T235959Z", Recurrence.rrule(1, "day", until = LocalDate.parse("2026-12-31")))
         assertEquals("FREQ=YEARLY;UNTIL=20261231", Recurrence.rrule(1, "year", until = LocalDate.parse("2026-12-31"), allDay = true))
     }
+
+    @Test
+    fun timeRanges() {
+        val d = QuickAdd.parse("ประชุมทีม พรุ่งนี้ 9:00-11:00", today)
+        assertEquals("ประชุมทีม", d.title)
+        assertEquals(LocalDate.parse("2026-10-08"), d.due)
+        assertEquals(LocalTime.of(9, 0), d.time)
+        assertEquals(LocalTime.of(11, 0), d.endTime)
+        assertNull(d.endDue)
+        assertEquals(LocalTime.of(14, 30), QuickAdd.parse("ทำฟัน 13.00 ถึง 14.30 น.", today).endTime)
+        assertEquals(LocalTime.of(16, 0), QuickAdd.parse("gym 15:00 to 16:00", today).endTime)
+        assertEquals("ทำฟัน", QuickAdd.parse("ทำฟัน 13.00 ถึง 14.30 น.", today).title)
+        // One time is not a range.
+        assertNull(QuickAdd.parse("ส่งรายงาน 9:00", today).endTime)
+        // A task line has no end.
+        assertEquals("- [ ] ประชุมทีม #remind-at-due ⏰ 09:00 ➕ 2026-10-07 📅 2026-10-08", d.line(today))
+    }
+
+    @Test
+    fun dateRanges() {
+        val d = QuickAdd.parse("เที่ยวเชียงใหม่ 20-22/10", today)
+        assertEquals("เที่ยวเชียงใหม่", d.title)
+        assertEquals(LocalDate.parse("2026-10-20"), d.due)
+        assertEquals(LocalDate.parse("2026-10-22"), d.endDue)
+        assertNull(d.time)
+        val e = QuickAdd.parse("ไปญี่ปุ่น 30/10 ถึง 2/11", today)
+        assertEquals(LocalDate.parse("2026-10-30"), e.due)
+        assertEquals(LocalDate.parse("2026-11-02"), e.endDue)
+        // Over new year.
+        val f = QuickAdd.parse("ปีใหม่ 28/12-3/1", today)
+        assertEquals(LocalDate.parse("2026-12-28"), f.due)
+        assertEquals(LocalDate.parse("2027-01-03"), f.endDue)
+        // Already over this year: next year's.
+        val g = QuickAdd.parse("สงกรานต์ 13-15/4", today)
+        assertEquals(LocalDate.parse("2027-04-13"), g.due)
+        assertEquals(LocalDate.parse("2027-04-15"), g.endDue)
+        // With a Buddhist year, and with times.
+        val h = QuickAdd.parse("สัมมนา 5-6/11/2569 9:00-16:00", today)
+        assertEquals(LocalDate.parse("2026-11-05"), h.due)
+        assertEquals(LocalDate.parse("2026-11-06"), h.endDue)
+        assertEquals(LocalTime.of(16, 0), h.endTime)
+        assertEquals("สัมมนา", h.title)
+        // A single date still works.
+        assertNull(QuickAdd.parse("จ่ายค่าเช่า 25/10", today).endDue)
+    }
 }
