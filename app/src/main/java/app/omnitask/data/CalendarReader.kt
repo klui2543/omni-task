@@ -303,6 +303,54 @@ object CalendarReader {
         return runCatching { context.contentResolver.delete(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), null, null) > 0 }.getOrDefault(false)
     }
 
+    /** What turning an event into a task needs: its times, place, description, alerts and calendar. */
+    data class EventDetails(
+        val id: Long,
+        val title: String,
+        val begin: LocalDateTime,
+        /** The end; for an all-day event, its last day at midnight. */
+        val end: LocalDateTime,
+        val allDay: Boolean,
+        val place: String,
+        val notes: String,
+        val calendarId: Long,
+        val recurring: Boolean,
+        val deleted: Boolean,
+        val reminders: List<Int>,
+    )
+
+    fun details(context: Context, id: Long): EventDetails? {
+        if (!hasPermission(context)) return null
+        val zone = ZoneId.systemDefault()
+        val cols = arrayOf(
+            CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART, CalendarContract.Events.DTEND, CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.EVENT_LOCATION, CalendarContract.Events.DESCRIPTION, CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.RRULE, CalendarContract.Events.ORIGINAL_ID, CalendarContract.Events.DELETED,
+        )
+        val base = runCatching {
+            context.contentResolver.query(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), cols, null, null, null)?.use { c ->
+                if (!c.moveToFirst() || c.isNull(1)) return@use null
+                val allDay = c.getInt(3) == 1
+                val startMs = c.getLong(1)
+                val endMs = if (c.isNull(2)) startMs + 3_600_000L else c.getLong(2)
+                fun at(ms: Long, z: java.time.ZoneId) = LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), z)
+                val begin = if (allDay) at(startMs, ZoneOffset.UTC) else at(startMs, zone)
+                val end = if (allDay) at(endMs, ZoneOffset.UTC).date.minusDays(1).let { maxOf(it, begin.date) }.atStartOfDay() else at(endMs, zone)
+                EventDetails(
+                    id = id, title = c.getString(0) ?: "", begin = begin, end = end, allDay = allDay,
+                    place = c.getString(4) ?: "", notes = c.getString(5) ?: "", calendarId = c.getLong(6),
+                    recurring = !c.getString(7).isNullOrBlank() || !c.isNull(8), deleted = c.getInt(9) == 1, reminders = emptyList(),
+                )
+            }
+        }.getOrNull() ?: return null
+        val reminders = runCatching {
+            CalendarContract.Reminders.query(context.contentResolver, id, arrayOf(CalendarContract.Reminders.MINUTES))?.use { c ->
+                buildList { while (c.moveToNext()) add(c.getInt(0)) }
+            }
+        }.getOrNull().orEmpty()
+        return base.copy(reminders = reminders.distinct().sorted())
+    }
+
     /** Reads event [id] straight from the Events table, deleted rows included; null when the phone has no such row. */
     fun inspect(context: Context, id: Long): EventInfo? {
         if (!hasPermission(context)) return null

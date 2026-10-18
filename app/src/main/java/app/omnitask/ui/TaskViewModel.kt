@@ -43,6 +43,7 @@ import app.omnitask.model.load
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
+import app.omnitask.model.Swap
 import app.omnitask.notify.Digest
 import kotlinx.datetime.LocalDateTime
 import app.omnitask.model.NoteLinks
@@ -90,6 +91,9 @@ data class Filters(
 
 data class Deleted(val title: String, val cut: VaultRepository.Cut)
 
+/** A task just turned into an event ([toEvent]) or an event into a task, offered for undo once. */
+class SwapUndo(val title: String, val toEvent: Boolean, val undo: () -> Unit)
+
 data class UiState(
     val vault: Uri? = null,
     val loading: Boolean = false,
@@ -102,6 +106,8 @@ data class UiState(
     val deleted: Deleted? = null,
     /** A task just moved to the archive note, offered for undo once. */
     val archived: Deleted? = null,
+    /** A task just turned into an event, or an event into a task, offered for undo once. */
+    val swapped: SwapUndo? = null,
     /** A task just ticked done: ask whether to archive it, delete it or leave it. */
     val finished: Task? = null,
     /** Finished tasks move to the archive note after this many days; 0 leaves them in place. */
@@ -1485,6 +1491,127 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(message = if (id != null) tr("ลงปฏิทินแล้ว: $title", "Added to calendar: $title") else tr("ลงปฏิทินไม่ได้", "Cannot add the event")) }
         }
     }
+
+    // ---- Task and event, back and forth ----
+
+    /** What tasks and events left behind when they turned into each other ([Swap]). */
+    suspend fun readSwap(): Swap.Store {
+        val vault = _state.value.vault ?: return Swap.Store()
+        return withContext(Dispatchers.IO) { runCatching { Swap.read(repo.readPath(vault, Swap.PATH)) }.getOrDefault(Swap.Store()) }
+    }
+
+    private fun editSwap(vault: Uri, change: (Swap.Store) -> Swap.Store) {
+        val before = Swap.read(repo.readPath(vault, Swap.PATH))
+        val after = change(before)
+        if (after != before) repo.writePath(vault, Swap.PATH, Swap.write(after))
+    }
+
+    private fun calendarTouched(app: Application) {
+        CalendarReader.requestSync(app, force = true)
+        runCatching { OmniWidgets.refresh(app) }
+    }
+
+    /**
+     * Turns [task] into an event from [ev]: the event goes in first, then the task's block comes out of its note and
+     * waits in the swap file under the event's id, so turning the event back gives the same task again.
+     */
+    fun taskToEvent(task: Task, calendarId: Long, ev: QuickEvent, place: String, reminders: List<Int>) {
+        val vault = _state.value.vault ?: return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                val id = CalendarReader.insertDetailed(
+                    app, calendarId, task.title, ev.start, ev.end, ev.allDay, place, Swap.eventNotes(task), null,
+                    if (ev.allDay) emptyList() else reminders,
+                ) ?: return@withContext tr("ลงปฏิทินไม่ได้", "Cannot add the event")
+                val cut = runCatching { repo.deleteTask(task) }.getOrElse { e ->
+                    CalendarReader.delete(app, id)
+                    return@withContext if (e is VaultRepository.ConflictException) tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+                    else tr("เปลี่ยนเป็นนัดไม่ได้: ${e.message}", "Cannot turn it into an event: ${e.message}")
+                }
+                val kept = Swap.KeptTask(cut.lines, task.filePath, task.title, ev.start.toString())
+                val saved = runCatching { editSwap(vault) { it.copy(events = it.events + (id.toString() to kept)) } }.isSuccess
+                calendarTouched(app)
+                _state.update {
+                    it.copy(swapped = SwapUndo(task.title, toEvent = true) {
+                        swapBack {
+                            CalendarReader.delete(app, id)
+                            repo.restore(cut)
+                            runCatching { editSwap(vault) { s -> s.copy(events = s.events - id.toString()) } }
+                        }
+                    })
+                }
+                if (saved) null else tr("เป็นนัดแล้ว แต่เก็บค่าเดิมของงานไว้ไม่ได้", "Now an event, but the task's details could not be kept")
+            }
+            text?.let { t -> _state.update { it.copy(message = t) } }
+            reload()
+        }
+    }
+
+    /**
+     * Turns event [d] into a task on [day] at [time]: the task it came from when there is one (its kept block, at the
+     * end of the note it was in), else a new task in the task note. The event's own details wait under the task's 🆔,
+     * then the event is deleted.
+     */
+    fun eventToTask(d: CalendarReader.EventDetails, scheduled: Boolean, day: LocalDate, time: kotlinx.datetime.LocalTime?) {
+        val vault = _state.value.vault ?: return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                val store = runCatching { Swap.read(repo.readPath(vault, Swap.PATH)) }.getOrDefault(Swap.Store())
+                val found = Swap.keptTask(store, d.id, d.title, d.begin)
+                val (lines, taskId) = found?.let { Swap.restoredLines(it.second, day, time) }
+                    ?: Swap.newId().let { id -> Swap.newTaskLines(d.title, day, time, scheduled, d.notes, LocalDate.now(), id) to id }
+                val block = lines.joinToString("\n")
+                val file = found?.second?.file?.takeIf { it.isNotBlank() } ?: VaultRepository.TASK_FILE
+                runCatching { repo.appendLine(vault, file, block) }
+                    .recoverCatching { e -> if (file != VaultRepository.TASK_FILE) repo.appendLine(vault, VaultRepository.TASK_FILE, block) else throw e }
+                    .onFailure { e -> return@withContext tr("เปลี่ยนเป็นงานไม่ได้: ${e.message}", "Cannot turn it into a task: ${e.message}") }
+                val keptEvent = Swap.KeptEvent(
+                    time = if (d.allDay) null else d.begin.time.toString(),
+                    minutes = if (d.allDay) 60 else maxOf(1L, ChronoUnit.MINUTES.between(d.begin, d.end)),
+                    allDay = d.allDay,
+                    days = if (d.allDay) maxOf(0L, ChronoUnit.DAYS.between(d.begin.date, d.end.date)) else 0,
+                    place = d.place, reminders = d.reminders, calendarId = d.calendarId,
+                )
+                val saved = runCatching {
+                    editSwap(vault) { s -> s.copy(events = found?.let { s.events - it.first } ?: s.events, tasks = s.tasks + (taskId to keptEvent)) }
+                }.isSuccess
+                val gone = CalendarReader.delete(app, d.id)
+                if (gone) calendarTouched(app)
+                _state.update {
+                    it.copy(swapped = SwapUndo(d.title, toEvent = false) {
+                        swapBack {
+                            val back = _state.value.tasks.firstOrNull { t -> t.id == taskId && t.parent == null && !t.todayCopy }
+                            if (back != null) repo.deleteTask(back)
+                            if (gone) {
+                                val id = CalendarReader.insertDetailed(app, d.calendarId, d.title, d.begin, d.end, d.allDay, d.place, d.notes, null, d.reminders)
+                                if (id != null && found != null) runCatching { editSwap(vault) { s -> s.copy(events = s.events + (id.toString() to found.second)) } }
+                                calendarTouched(app)
+                            }
+                        }
+                    })
+                }
+                when {
+                    !gone -> tr("เป็นงานแล้ว แต่ลบนัดเดิมไม่ได้ ลบเองในปฏิทินได้", "Now a task, but the event could not be deleted; delete it in the calendar")
+                    !saved -> tr("เป็นงานแล้ว แต่เก็บค่าเดิมของนัดไว้ไม่ได้", "Now a task, but the event's details could not be kept")
+                    else -> null
+                }
+            }
+            text?.let { t -> _state.update { it.copy(message = t) } }
+            reload()
+        }
+    }
+
+    private fun swapBack(work: () -> Unit) {
+        viewModelScope.launch {
+            val failed = withContext(Dispatchers.IO) { runCatching(work).exceptionOrNull() }
+            failed?.let { e -> _state.update { it.copy(message = tr("เลิกทำไม่ได้: ${e.message}", "Cannot undo: ${e.message}")) } }
+            reload()
+        }
+    }
+
+    fun clearSwapped() = _state.update { it.copy(swapped = null) }
 
     // ---- Assistant ----
 

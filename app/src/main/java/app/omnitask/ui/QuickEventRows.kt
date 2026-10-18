@@ -108,7 +108,7 @@ private val LENGTHS: List<Long> = (listOf(15L, 30L, 45L) + (60L..1440L step 30L)
 fun QuickEventRows(
     draft: QuickAdd.Draft, s: QuickEventState, today: LocalDate,
     calendars: List<CalendarReader.Calendar>, calendar: CalendarReader.Calendar?, onCalendar: (Long) -> Unit,
-    onMore: () -> Unit,
+    onMore: (() -> Unit)?,
 ) {
     // A new day or time in the sentence wins over what was picked before.
     LaunchedEffect(draft.due, draft.time, draft.endTime, draft.endDue) { s.clear() }
@@ -193,7 +193,7 @@ fun QuickEventRows(
                 }
             }
         }
-        Row(
+        if (onMore != null) Row(
             Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(onClick = onMore),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
