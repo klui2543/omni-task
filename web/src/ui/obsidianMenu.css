@@ -23,11 +23,30 @@
   }
   .shell.om .page { padding-bottom: 150px; }
 }
-.om-scrim { position: fixed; inset: 0; z-index: 30; background: rgb(20 20 30 / .4); }
-.om-drawer {
-  position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(300px, 82%); overflow-y: auto;
-  display: flex; flex-direction: column; gap: 12px; padding: 20px 12px 96px; background: var(--card); border-right: 1px solid var(--border);
-  box-shadow: 10px 0 30px rgb(0 0 0 / .18);
+.om-scrim, .om-drawer { display: none; }
+@media (max-width: 999px) {
+  /* --om-p is how far the menu is out: 0 closed, 1 open. A drag sets it on the shell by hand (ui/menuDrag.ts). */
+  .shell.om { --om-p: 0; }
+  .shell.om.om-open { --om-p: 1; }
+  /* Sideways drags are read by the script; up and down stays the page's scrolling. */
+  .shell.om .content { touch-action: pan-y; }
+  .om-scrim {
+    display: block; position: fixed; inset: 0; z-index: 30; background: rgb(20 20 30 / .4);
+    opacity: var(--om-p); transition: opacity .24s, visibility 0s;
+  }
+  .om-drawer {
+    display: flex; position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(300px, 82%); overflow-y: auto; overscroll-behavior: contain;
+    flex-direction: column; gap: 12px; padding: 20px 12px 96px; background: var(--card); border-right: 1px solid var(--border);
+    box-shadow: 10px 0 30px rgb(0 0 0 / .18);
+    transform: translateX(calc((var(--om-p) - 1) * 100%)); transition: transform .24s cubic-bezier(.2, .8, .2, 1), visibility 0s;
+  }
+  /* Closed and not being dragged: out of sight (and of taps and the keyboard) once it has slid away. */
+  .shell.om:not(.om-open):not([data-drag]) .om-scrim,
+  .shell.om:not(.om-open):not([data-drag]) .om-drawer { visibility: hidden; transition-delay: 0s, .24s; }
+  .shell.om[data-drag] .om-scrim, .shell.om[data-drag] .om-drawer { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .om-scrim, .om-drawer { transition: none !important; }
 }
 .om-drawer .side-foot { margin-top: auto; }
 .omni-root[data-theme=dark] .om-fab { color: #0e1118; }
