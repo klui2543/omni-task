@@ -69,7 +69,7 @@ class SmokeTest {
         val vm = vm()
         rule.setContent { OmniTheme { OmniTaskApp(vm) } }
         // The assistant sits in the bottom bar's Settings tab; the task views are a switch inside the Tasks tab.
-        listOf("งาน", "Kanban", "Matrix", "Gantt", "ปฏิทิน", "โปรเจกต์", "ผู้ช่วย", "โฟกัส").forEach { label ->
+        listOf("งาน", "Kanban", "Matrix", "Timeline", "ปฏิทิน", "โปรเจกต์", "ผู้ช่วย", "โฟกัส").forEach { label ->
             if (label == "ผู้ช่วย") {
                 rule.onAllNodesWithText("ตั้งค่า")[0].performClick()
                 rule.waitForIdle()
