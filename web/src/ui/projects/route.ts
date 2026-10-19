@@ -56,7 +56,13 @@ export function parentOf(r: ProjectRoute): ProjectRoute {
 export function useProjectRoute() {
   const address = host.address
   const [route, setRoute] = useState(() => parseRoute(address.hash()))
-  useEffect(() => address.listen(() => setRoute(parseRoute(address.hash()))), [])
+  useEffect(() => {
+    const read = () => setRoute(parseRoute(address.hash()))
+    const stop = address.listen(read)
+    // A change made between the first render and this listener would otherwise be missed.
+    read()
+    return stop
+  }, [])
   const go = (r: ProjectRoute) => {
     const to = formatRoute(r)
     if (to === address.hash()) return
@@ -80,6 +86,13 @@ export function useProjectRoute() {
 /** The page to show for the address: a deeper address inside Projects (#/projects/...) is still the Projects page. */
 export function useProjectsAddress<P extends string>(page: P): P | 'projects' {
   const [deep, setDeep] = useState(() => host.address.hash().startsWith(BASE + '/'))
-  useEffect(() => host.address.listen(() => setDeep(host.address.hash().startsWith(BASE + '/'))), [])
+  useEffect(() => {
+    const read = () => setDeep(host.address.hash().startsWith(BASE + '/'))
+    const stop = host.address.listen(read)
+    // A change made between the first render and this listener would otherwise be missed (the Projects page would
+    // stay on screen after the address moved on).
+    read()
+    return stop
+  }, [])
   return deep ? 'projects' : page
 }

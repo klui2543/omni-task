@@ -116,6 +116,8 @@ test('a long description moves to its own note, linked in its place', async ({ p
 test('subtasks are dragged into a new order, or moved with the arrow keys', async ({ page }) => {
   const { file, panel } = await start(page, 'เขียน paper')
   const handle = (title: string) => panel.getByRole('button', { name: `ลากเพื่อเรียง ${title}` })
+  // The rows are measured once the page has finished reading the vault, so nothing moves under the drag.
+  await expect(page.locator('.top-progress')).toHaveCount(0)
   const from = (await handle('ผลลัพธ์').boundingBox())!
   const to = (await handle('บทนำ').boundingBox())!
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
