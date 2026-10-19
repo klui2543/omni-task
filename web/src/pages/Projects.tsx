@@ -285,11 +285,18 @@ export function ProjectsPage(p: PageProps) {
     </>
   )
 
+  // The most used tags, for the tree filter's Tag section (as the Tasks page picks them).
+  const ygTags = useMemo(() => {
+    const count = new Map<string, number>()
+    p.snapshot?.tasks.forEach((t) => t.tags.forEach((g) => { if (!g.startsWith('remind-at-')) count.set(g, (count.get(g) ?? 0) + 1) }))
+    return [...count.entries()].sort((x, y) => y[1] - x[1]).slice(0, 20).map(([g]) => g)
+  }, [p.snapshot])
+
   const screen = !out ? (
     <p class="muted pad">กำลังโหลด...</p>
   ) : world && tree ? (
     <Ygdrasil
-      out={tree} task={task} busy={p.busy} filter={yg.filter} folded={yg.folded}
+      out={tree} task={task} busy={p.busy} filter={yg.filter} tags={ygTags} folded={yg.folded}
       onFilter={(filter) => setYg({ filter })} onFolded={(folded) => setYg({ folded })}
       onBack={back} onTick={p.tick} onOpen={openTask}
       onAddTask={ygAddTask} onAddBranch={ygAddBranch} onOpenProject={ygOpenProject} onMove={ygMove} onGraft={ygGraft}

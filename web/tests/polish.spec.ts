@@ -39,9 +39,10 @@ test('the Tasks filter sheet has the "hide done" switch too, shared with Views',
   await open(page)
   await page.evaluate(() => { location.hash = '/tasks' })
   await page.getByRole('button', { name: 'กรอง', exact: true }).click()
+  await page.getByRole('dialog', { name: 'กรอง' }).getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
   const sw = page.getByRole('dialog', { name: 'กรอง' }).getByRole('switch', { name: 'ซ่อนงานที่เสร็จและยกเลิก' })
   await expect(sw).toBeChecked()
-  await expect(page.getByRole('dialog', { name: 'กรอง' })).toContainText('ในมุมมอง Kanban, Matrix, Gantt และปฏิทิน')
+  await expect(page.getByRole('dialog', { name: 'กรอง' })).toContainText('ในมุมมอง Kanban, Matrix, Timeline และปฏิทิน')
   await sw.uncheck()
   expect(await page.evaluate(() => localStorage.getItem('omni.hideDone'))).toBe('no')
 

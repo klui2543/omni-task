@@ -483,6 +483,8 @@ private fun YgdrasilFilterDock(
             SquareButton(Ic.close, tr("ปิดตัวกรอง", "Close filter"), onClose)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 18.dp)) {
+            // The search reads titles and details, as on the Tasks tab.
+            DialogField(filter.query.text, tr("ค้นชื่องานหรือรายละเอียด", "Search titles and details")) { onFilter(filter.copy(query = filter.query.copy(text = it))) }
             FilterBody(
                 filter.query, { onFilter(filter.copy(query = it)) }, state, vm,
                 expanded = full, onExpanded = onFull, onSave = { naming = true }, shown = shown, onShow = { onFull(false) },
