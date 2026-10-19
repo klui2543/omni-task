@@ -823,8 +823,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query) }
 
-    fun saveFilter(name: String) {
-        val next = _state.value.savedFilters + (name.trim() to _state.value.query.encode())
+    /** Saves [query] (the task list's own, unless another page passes its filter) under [name]. */
+    fun saveFilter(name: String, query: TaskQuery = _state.value.query) {
+        val next = _state.value.savedFilters + (name.trim() to query.encode())
         prefs.edit().putStringSet(KEY_SAVED_FILTERS, next.map { (k, v) -> "$k\t$v" }.toSet()).apply()
         _state.update { it.copy(savedFilters = next) }
     }

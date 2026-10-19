@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -333,82 +334,23 @@ fun SheetFrame(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 /** True while a sheet is shown as a side pane (wide screens); nested sheets inside it still open normally. */
 val LocalPane = staticCompositionLocalOf { false }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     val q = state.query
     var naming by remember { mutableStateOf(false) }
+    var more by rememberSaveable { mutableStateOf(moreInUse(q) > 0) }
+    val shown = state.allTasks.count { q.matches(it, state.today) }
     SheetFrame(onDismiss) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("กรอง", "Filter"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            Text(
-                tr("ล้างทั้งหมด", "Clear all"),
-                Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.setQuery(q.cleared()) }.padding(8.dp),
-                color = C.red, fontSize = TS.body,
-            )
-        }
-        if (state.savedFilters.isNotEmpty()) {
-            Label(tr("ตัวกรองที่บันทึกไว้ (กดค้างเพื่อลบ)", "Saved filters (long-press to delete)"))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                state.savedFilters.keys.sorted().forEach { name ->
-                    Row(
-                        Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).border(1.dp, C.accentLine, RoundedCornerShape(17.dp))
-                            .combinedClickable(onClick = { vm.applyFilter(name) }, onLongClick = { vm.deleteFilter(name) }).padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(name, color = C.accentText, fontSize = TS.body)
-                    }
-                }
-            }
-        }
-        Label(tr("ประเภทงาน", "Task type"))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            TaskKind.entries.forEach { k -> Chip(k.label, k in q.kinds, { vm.setQuery(q.copy(kinds = q.kinds.toggle(k))) }) }
-            state.listNames.forEach { l -> Chip(l, l in q.lists, { vm.setQuery(q.copy(lists = q.lists.toggle(l))) }) }
-        }
-        Label(tr("วันที่", "Date"))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            DateBucket.entries.forEach { b -> Chip(b.label, b in q.buckets, { vm.setQuery(q.copy(buckets = q.buckets.toggle(b))) }) }
-        }
-        Label(tr("ความสำคัญ", "Priority"))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Priority.entries.forEach { p -> Chip(p.label, p in q.priorities, { vm.setQuery(q.copy(priorities = q.priorities.toggle(p))) }, dot = p.tint) }
-        }
-        Label(tr("สถานะ", "Status"))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Status.entries.forEach { st -> Chip(st.label, st in q.statuses, { vm.setQuery(q.copy(statuses = q.statuses.toggle(st))) }) }
-        }
-        val tags = state.tags.filterNot { it.startsWith("remind-at-") }
-        if (tags.isNotEmpty() || state.notes.isNotEmpty()) {
-            Label(tr("Tag และโน้ต", "Tags and notes"))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                tags.forEach { t -> Chip("#$t", t in q.tags, { vm.setQuery(q.copy(tags = q.tags.toggle(t))) }) }
-                state.notes.forEach { n -> Chip(n, n in q.notes, { vm.setQuery(q.copy(notes = q.notes.toggle(n))) }) }
-            }
-        }
-        Row(
-            Modifier.padding(top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)
-                .clickable { vm.setQuery(q.copy(hideDone = !q.hideDone)) }.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("ซ่อนงานที่เสร็จและยกเลิก", "Hide done and cancelled"), color = C.text, fontSize = TS.body)
-                Text(tr("ในมุมมอง Kanban, Matrix, Gantt และปฏิทิน", "In Kanban, Matrix, Gantt and calendar"), color = C.muted, fontSize = TS.caption)
-            }
-            OnOff(q.hideDone)
-        }
-        val count = state.allTasks.count { q.matches(it, state.today) }
-        Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostButton(tr("บันทึกตัวกรองนี้", "Save this filter"), { naming = true }, Modifier.weight(1f))
-            PrimaryButton(tr("แสดง $count งาน", "Show $count tasks"), onDismiss, Modifier.weight(1.3f))
-        }
+        FilterHead({ vm.setQuery(q.cleared()) })
+        FilterBody(q, vm::setQuery, state, vm, more, { more = it }, onSave = { naming = true }, shown = shown, onShow = onDismiss, hideDone = true)
+        // Folded, the sheet still says how many tasks are left and closes with one tap.
+        if (!more) PrimaryButton(tr("แสดง $shown งาน", "Show $shown tasks"), onDismiss, Modifier.padding(top = 16.dp).fillMaxWidth())
     }
     if (naming) NameDialog(tr("ตั้งชื่อตัวกรอง", "Name this filter"), { vm.saveFilter(it); naming = false }) { naming = false }
 }
 
 @Composable
-private fun NameDialog(title: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+fun NameDialog(title: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
