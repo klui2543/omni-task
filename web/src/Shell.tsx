@@ -1,8 +1,9 @@
 import type { ComponentChildren } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { pendingQuestion } from './assistantState'
 import { host } from './host'
 import './parity.css'
+import { useMenuDrag } from './ui/menuDrag'
 import './ui/obsidianMenu.css'
 
 export type Page = 'focus' | 'tasks' | 'projects' | 'assistant' | 'settings'
@@ -104,8 +105,11 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
     : p.sync.at ? `${host.obsidian ? 'อัปเดตล่าสุด' : 'ซิงก์ล่าสุด'} ${hhmm(p.sync.at)}` : ''
   // The side menu inside Obsidian on a narrow tab.
   const [menu, setMenu] = useState(false)
+  const shell = useRef<HTMLDivElement>(null)
+  // A drag to the right pulls the menu out, a drag to the left pushes it back (menuDrag.ts).
+  useMenuDrag(shell, menu, setMenu, !!host.obsidian)
   return (
-    <div class={host.obsidian ? 'shell om' : 'shell'}>
+    <div ref={shell} class={host.obsidian ? (menu ? 'shell om om-open' : 'shell om') : 'shell'}>
       {p.sync.state === 'busy' && <div class="top-progress" role="progressbar" aria-label="กำลังซิงก์" />}
       <nav class="side" aria-label="เมนูหลัก">
         <div class="brand">
@@ -144,10 +148,10 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         holds the pages and the assistant, and adding a task floats above Obsidian's bar.
       */}
       {host.obsidian && <button class="om-fab" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>}
-      {host.obsidian && menu && (
+      {host.obsidian && (
         <>
           <div class="om-scrim" onClick={() => setMenu(false)} />
-          <nav class="om-drawer" aria-label="เมนูหลัก" onKeyDown={(e) => { if (e.key === 'Escape') setMenu(false) }}>
+          <nav class="om-drawer" aria-label="เมนูหลัก" aria-hidden={!menu} inert={!menu} onKeyDown={(e) => { if (e.key === 'Escape') setMenu(false) }}>
             <div class="brand">
               <div class="brand-name">Omni Task</div>
               <div class="brand-sub"><span class={`dot ${p.sync.state}`} />อยู่ใน Obsidian</div>
