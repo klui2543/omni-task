@@ -10,60 +10,62 @@ import app.omnitask.time.*
  */
 object Ygdrasil {
 
-    enum class Show(private val th: String, private val en: String) {
-        OPEN("ยังไม่เสร็จ", "Open"), ALL("ทั้งหมด", "All"), DONE("เสร็จแล้ว", "Done");
-
-        val label get() = tr(th, en)
-    }
-
-    /** Which dates pass, by the task's due date (or its scheduled date when it has none). */
-    enum class Dates(private val th: String, private val en: String) {
-        ANY("ทุกวัน", "Any date"), OVERDUE("เลยกำหนด", "Overdue"), TODAY("ถึงวันนี้", "Up to today"),
-        WEEK("ภายใน 7 วัน", "Within 7 days"), UNDATED("ไม่มีวัน", "No date");
-
-        val label get() = tr(th, en)
-    }
-
+    /**
+     * What the tree shows: the task list's own filter ([query], the same chips and saved filters as the Tasks tab),
+     * plus what only the tree has. Someday work (#สักวัน) shows by default, greyed, unless [someday] is off or the
+     * query picks task types of its own.
+     */
     data class Filter(
-        val show: Show = Show.OPEN,
-        val dates: Dates = Dates.ANY,
-        /** Empty means every priority. */
-        val priorities: Set<Priority> = emptySet(),
+        val query: TaskQuery = TaskQuery.DEFAULT,
         /** Only tasks waiting for another task that is still open. */
         val blockedOnly: Boolean = false,
         val starredOnly: Boolean = false,
         /** Parked branches stay out unless this is on. */
         val parked: Boolean = false,
+        /** Someday work, shown greyed with its label. */
+        val someday: Boolean = true,
         /** The lines between tasks that wait for one another. */
         val links: Boolean = true,
-        val text: String = "",
     ) {
         /** A narrowing filter drops the branches and worlds left with nothing to show; the plain one keeps the whole shape. */
-        val narrows get() = show == Show.DONE || dates != Dates.ANY || priorities.isNotEmpty() || blockedOnly || text.isNotBlank()
+        val narrows get() = query.activeFilters > 0 || query.text.isNotBlank() || blockedOnly
 
         /** How many choices differ from the plain filter, for the filter button. */
-        val changed get() = listOf(show != Show.OPEN, dates != Dates.ANY, priorities.isNotEmpty(), blockedOnly, starredOnly, parked, !links, text.isNotBlank()).count { it }
+        val changed get() = query.activeFilters + (if (query.text.isNotBlank()) 1 else 0) +
+            listOf(blockedOnly, starredOnly, parked, !someday, !links).count { it }
 
-        /** One line per choice, for keeping the filter between visits. */
+        /** Only the filter part of the query, with the tree's own choices: one line for keeping it between visits. */
         fun encode(): String = listOf(
-            "show=${show.name}", "dates=${dates.name}", "priorities=${priorities.joinToString(",") { it.name }}",
-            "blocked=$blockedOnly", "starred=$starredOnly", "parked=$parked", "links=$links", "text=${text.replace('\n', ' ')}",
+            "v=2", "q=" + query.encode().replace('\n', ' '), "text=" + query.text.replace('\n', ' '),
+            "blocked=$blockedOnly", "starred=$starredOnly", "parked=$parked", "someday=$someday", "links=$links",
         ).joinToString("\n")
 
         companion object {
             fun decode(s: String?): Filter {
                 if (s.isNullOrBlank()) return Filter()
                 val m = s.lines().mapNotNull { l -> l.indexOf('=').takeIf { it > 0 }?.let { l.substring(0, it) to l.substring(it + 1) } }.toMap()
-                return Filter(
-                    show = Show.entries.firstOrNull { it.name == m["show"] } ?: Show.OPEN,
-                    dates = Dates.entries.firstOrNull { it.name == m["dates"] } ?: Dates.ANY,
-                    priorities = m["priorities"].orEmpty().split(',').mapNotNull { n -> Priority.entries.firstOrNull { it.name == n } }.toSet(),
-                    blockedOnly = m["blocked"] == "true",
-                    starredOnly = m["starred"] == "true",
-                    parked = m["parked"] == "true",
-                    links = m["links"] != "false",
-                    text = m["text"].orEmpty(),
+                val flags = Filter(
+                    blockedOnly = m["blocked"] == "true", starredOnly = m["starred"] == "true", parked = m["parked"] == "true",
+                    someday = m["someday"] != "false", links = m["links"] != "false",
                 )
+                if (m["v"] == "2") {
+                    return flags.copy(query = TaskQuery.decode(m["q"].orEmpty(), TaskQuery.DEFAULT).copy(text = m["text"].orEmpty()))
+                }
+                // The first filter (show, dates, priorities) becomes the nearest task-list filter.
+                val statuses = when (m["show"]) {
+                    "ALL" -> setOf(Status.TODO, Status.IN_PROGRESS, Status.DONE)
+                    "DONE" -> setOf(Status.DONE)
+                    else -> TaskQuery.DEFAULT.statuses
+                }
+                val buckets = when (m["dates"]) {
+                    "OVERDUE" -> setOf(DateBucket.OVERDUE)
+                    "TODAY" -> setOf(DateBucket.OVERDUE, DateBucket.TODAY)
+                    "WEEK" -> setOf(DateBucket.OVERDUE, DateBucket.TODAY, DateBucket.THIS_WEEK)
+                    "UNDATED" -> setOf(DateBucket.NO_DATE)
+                    else -> emptySet()
+                }
+                val priorities = m["priorities"].orEmpty().split(',').mapNotNull { n -> Priority.entries.firstOrNull { it.name == n } }.toSet()
+                return flags.copy(query = TaskQuery.DEFAULT.copy(statuses = statuses, buckets = buckets, priorities = priorities, text = m["text"].orEmpty()))
             }
         }
     }
@@ -83,26 +85,19 @@ object Ygdrasil {
         val matched get() = worlds.sumOf { it.matched }
     }
 
+    /** Someday work, which the tree shows greyed. */
+    fun isSomeday(t: Task) = TaskKind.of(t) == TaskKind.SOMEDAY
+
     fun passes(t: Task, f: Filter, today: LocalDate, blocked: Set<Task>): Boolean {
-        val statusOk = when (f.show) {
-            Show.OPEN -> t.isOpen
-            Show.DONE -> t.status == Status.DONE
-            Show.ALL -> t.status != Status.CANCELLED
+        val q = f.query
+        // The task list leaves someday work out unless its type is picked; the tree keeps it, greyed, by default.
+        val ok = if (f.someday && q.kinds.isEmpty() && q.lists.isEmpty() && t.list == null && isSomeday(t)) {
+            q.copy(kinds = setOf(TaskKind.SOMEDAY)).matches(t, today)
+        } else {
+            q.matches(t, today)
         }
-        if (!statusOk) return false
-        val day = t.due ?: t.scheduled
-        val dateOk = when (f.dates) {
-            Dates.ANY -> true
-            Dates.OVERDUE -> t.isOpen && day != null && day < today
-            Dates.TODAY -> day != null && day <= today
-            Dates.WEEK -> day != null && day <= today.plusDays(7)
-            Dates.UNDATED -> day == null
-        }
-        if (!dateOk) return false
-        if (f.priorities.isNotEmpty() && t.priority !in f.priorities) return false
+        if (!ok) return false
         if (f.blockedOnly && t !in blocked) return false
-        val q = f.text.trim()
-        if (q.isNotEmpty() && !t.title.contains(q, ignoreCase = true) && t.tags.none { it.contains(q, ignoreCase = true) }) return false
         return true
     }
 

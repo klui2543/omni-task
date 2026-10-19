@@ -22,23 +22,19 @@ object WebYgdrasil {
 
     private val json = Json { encodeDefaults = true; explicitNulls = false; ignoreUnknownKeys = true }
 
-    /** The filter as the page keeps it; names are [Ygdrasil.Show], [Ygdrasil.Dates] and [Priority] entries. */
+    /** The filter as the page keeps it: the task list's query (as the Tasks page sends it) and the tree's own choices. */
     @Serializable
     data class FilterIn(
-        val show: String = "OPEN",
-        val dates: String = "ANY",
-        val priorities: List<String> = emptyList(),
+        val query: WebCore.QueryDto = WebCore.QueryDto(),
         val blockedOnly: Boolean = false,
         val starredOnly: Boolean = false,
         val parked: Boolean = false,
+        val someday: Boolean = true,
         val links: Boolean = true,
-        val text: String = "",
     ) {
         fun toFilter() = Ygdrasil.Filter(
-            show = Ygdrasil.Show.entries.firstOrNull { it.name == show } ?: Ygdrasil.Show.OPEN,
-            dates = Ygdrasil.Dates.entries.firstOrNull { it.name == dates } ?: Ygdrasil.Dates.ANY,
-            priorities = priorities.mapNotNull { n -> Priority.entries.firstOrNull { it.name == n } }.toSet(),
-            blockedOnly = blockedOnly, starredOnly = starredOnly, parked = parked, links = links, text = text,
+            query = WebViews.queryOf(query, hideDone = false),
+            blockedOnly = blockedOnly, starredOnly = starredOnly, parked = parked, someday = someday, links = links,
         )
     }
 
@@ -64,6 +60,8 @@ object WebYgdrasil {
         /** "And N more", the tasks under a folded limb, or every task shown (the trunk). */
         val count: Int = 0,
         val folded: Boolean = false,
+        /** A someday task (#สักวัน), drawn greyed with its label. */
+        val someday: Boolean = false,
     )
 
     /** One line: BRANCH (coloured by [state]), TASK, LINK or LINK_ACROSS, as an SVG path. */
@@ -118,6 +116,7 @@ object WebYgdrasil {
                         kind = s.kind.name, x = s.x, y = s.y, w = s.w, h = s.h,
                         tag = node?.tag, project = node?.project, path = node?.path, name = node?.name, state = node?.state?.name,
                         done = node?.done ?: 0, total = node?.all?.size ?: 0, key = s.task?.key, count = s.count, folded = s.folded,
+                        someday = s.task?.let { Ygdrasil.isSomeday(it) } ?: false,
                     )
                 },
                 edges = layout.edges.map { e ->

@@ -43,12 +43,12 @@ class YgdrasilTest {
 
     @Test
     fun narrowingFiltersPruneEmptyBranchesAndWorlds() {
-        val overdue = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(dates = Ygdrasil.Dates.OVERDUE))
+        val overdue = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(TaskQuery.DEFAULT.copy(buckets = setOf(DateBucket.OVERDUE))))
         assertEquals(listOf("peddose"), overdue.worlds.map { it.node.project })
         assertEquals(listOf("แอป"), overdue.worlds[0].children.map { it.node.name })
         assertEquals(1, overdue.matched)
 
-        val high = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(priorities = setOf(Priority.HIGH)))
+        val high = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(TaskQuery.DEFAULT.copy(priorities = setOf(Priority.HIGH))))
         assertEquals(listOf("ลองหน้าเว็บ"), high.worlds.flatMap { w -> w.flatten().flatMap { it.tasks } }.map { it.title })
 
         val blocked = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(blockedOnly = true))
@@ -56,7 +56,7 @@ class YgdrasilTest {
         // The blocker is filtered out, yet the waits still show, ending at its branch.
         assertEquals(2, blocked.links.size)
 
-        val parked = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(parked = true, text = "พับ"))
+        val parked = Ygdrasil.grow(tasks, states, today, Ygdrasil.Filter(TaskQuery.DEFAULT.copy(text = "พับ"), parked = true))
         assertEquals(listOf("เก่า"), parked.worlds.single().children.map { it.node.name })
     }
 
@@ -87,10 +87,38 @@ class YgdrasilTest {
 
     @Test
     fun filterKeepsItsChoicesThroughText() {
-        val f = Ygdrasil.Filter(Ygdrasil.Show.ALL, Ygdrasil.Dates.WEEK, setOf(Priority.HIGH, Priority.HIGHEST), blockedOnly = true, links = false, text = "a=b")
+        val q = TaskQuery.DEFAULT.copy(
+            priorities = setOf(Priority.HIGH, Priority.HIGHEST), buckets = setOf(DateBucket.TODAY), tags = setOf("kluido"), text = "a=b",
+        )
+        val f = Ygdrasil.Filter(q, blockedOnly = true, someday = false, links = false)
         assertEquals(f, Ygdrasil.Filter.decode(f.encode()))
         assertEquals(Ygdrasil.Filter(), Ygdrasil.Filter.decode(null))
-        assertEquals(6, f.changed)
+        // Four query chips, the search, and three of the tree's own.
+        assertEquals(8, f.changed)
+    }
+
+    @Test
+    fun theFirstKindOfSavedFilterStillReads() {
+        val old = Ygdrasil.Filter.decode("show=ALL\ndates=WEEK\npriorities=HIGH\nblocked=true\nstarred=false\nparked=false\nlinks=false\ntext=x")
+        assertEquals(setOf(Status.TODO, Status.IN_PROGRESS, Status.DONE), old.query.statuses)
+        assertEquals(setOf(DateBucket.OVERDUE, DateBucket.TODAY, DateBucket.THIS_WEEK), old.query.buckets)
+        assertEquals(setOf(Priority.HIGH), old.query.priorities)
+        assertEquals("x", old.query.text)
+        assertTrue(old.blockedOnly)
+        assertFalse(old.links)
+    }
+
+    @Test
+    fun somedayWorkStaysInTheTreeUnlessTurnedOff() {
+        val withSomeday = VaultText.parseFile("f", "n.md", "- [ ] วันหนึ่งจะทำ #peddose #สักวัน\n- [ ] งานปกติ #peddose")
+        val shown = Ygdrasil.grow(withSomeday, emptyMap(), today, Ygdrasil.Filter())
+        assertEquals(2, shown.matched)
+        assertEquals(1, Ygdrasil.grow(withSomeday, emptyMap(), today, Ygdrasil.Filter(someday = false)).matched)
+        // Picking a type follows the task list: only that type shows.
+        assertEquals(1, Ygdrasil.grow(withSomeday, emptyMap(), today, Ygdrasil.Filter(TaskQuery.DEFAULT.copy(kinds = setOf(TaskKind.NORMAL)))).matched)
+        // The quick "me" chip is a tag filter.
+        val mine = VaultText.parseFile("f", "n.md", "- [ ] ของฉัน #peddose #kluido\n- [ ] ของ Claude #peddose #claudedo")
+        assertEquals(listOf("ของฉัน"), Ygdrasil.grow(mine, emptyMap(), today, Ygdrasil.Filter(TaskQuery.DEFAULT.copy(tags = setOf("kluido")))).worlds.flatMap { w -> w.flatten().flatMap { it.tasks } }.map { it.title })
     }
 
     @Test
