@@ -485,3 +485,19 @@ test('a parked branch is left out of Focus, the task list and the views, but sta
   await page.locator('.pj-card', { hasText: 'peddose' }).click()
   await expect(page.getByText('Mind map ของโปรเจกต์')).toBeVisible()
 })
+
+test('an address changed while the page is still starting is followed: Projects does not stay on screen', async ({ page }) => {
+  await start(page)
+  await page.locator('.pj-card', { hasText: 'peddose' }).click()
+  await page.getByRole('button', { name: /Mind map/ }).click()
+  await expect(page.locator('.page.pj.mapping')).toBeVisible()
+  // Reloaded on the mind map, the address moves to the tasks before the page has begun to listen for it.
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('omni.test.moved')) return
+    sessionStorage.setItem('omni.test.moved', '1')
+    addEventListener('DOMContentLoaded', () => { history.replaceState(null, '', '#/tasks') })
+  })
+  await page.reload()
+  await expect(page.getByRole('heading', { level: 1, name: 'งาน', exact: true })).toBeVisible()
+  await expect(page.locator('.page.pj')).toHaveCount(0)
+})
