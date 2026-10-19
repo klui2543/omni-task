@@ -55,6 +55,11 @@ export class OmniView extends ItemView {
       return
     }
     OmniView.live = this
+    // Obsidian on a phone takes a swipe as opening its side panes and a pull down as its command palette. A swipe,
+    // pull or drag that starts in the app (scrolling, the mind map, a card dragged) stays the app's.
+    for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const) {
+      el.addEventListener(type, (e) => e.stopPropagation(), { passive: true })
+    }
     const shadow = el.createDiv({ cls: 'omni-task-host' }).attachShadow({ mode: 'open' })
     const frame = document.createElement('div')
     frame.className = 'omni-frame'

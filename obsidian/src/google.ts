@@ -124,6 +124,12 @@ export class Google implements GoogleLink {
     return this.lastError
   }
 
+  /** The store was replaced from outside (another device's link synced in): the short permission is asked anew. */
+  reloaded(): void {
+    this.access = null
+    this.tell()
+  }
+
   listen(fn: () => void): () => void {
     this.listeners.add(fn)
     return () => { this.listeners.delete(fn) }

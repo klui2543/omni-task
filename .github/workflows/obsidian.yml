@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     env:
       # Obsidian and BRAT want the release tag, its name and the manifest's version to be the same.
-      VERSION: 0.2.${{ github.run_number }}
+      VERSION: 0.3.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
