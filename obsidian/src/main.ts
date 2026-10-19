@@ -123,6 +123,16 @@ export default class OmniYgdrasil extends Plugin {
     await this.saveData(this.settings)
   }
 
+  /**
+   * The settings file was changed from outside (Obsidian Sync brought another device's): taken in, so the Google
+   * Calendar link made there shows here, and this device does not write its older copy back over it.
+   */
+  async onExternalSettingsChange() {
+    this.settings = { ...DEFAULTS, ...(await this.loadData()) }
+    this.settings.filter = { ...PLAIN_FILTER, ...this.settings.filter }
+    this.google?.reloaded()
+  }
+
   /** Shows the Omni Task tab, opening it in a new tab of the main area when there is none (one is enough). */
   async openOmni() {
     const ws = this.app.workspace

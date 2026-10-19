@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { pendingQuestion } from './assistantState'
 import { host } from './host'
 import './parity.css'
+import './ui/obsidianMenu.css'
 
 export type Page = 'focus' | 'tasks' | 'projects' | 'assistant' | 'settings'
 
@@ -101,8 +102,10 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
     : p.sync.state === 'busy' ? (host.obsidian ? 'กำลังอัปเดต...' : 'กำลังซิงก์...')
     : p.sync.state === 'offline' ? (p.sync.waiting ? `ออฟไลน์ รอส่ง ${p.sync.waiting} โน้ต` : 'ออฟไลน์')
     : p.sync.at ? `${host.obsidian ? 'อัปเดตล่าสุด' : 'ซิงก์ล่าสุด'} ${hhmm(p.sync.at)}` : ''
+  // The side menu inside Obsidian on a narrow tab.
+  const [menu, setMenu] = useState(false)
   return (
-    <div class="shell">
+    <div class={host.obsidian ? 'shell om' : 'shell'}>
       {p.sync.state === 'busy' && <div class="top-progress" role="progressbar" aria-label="กำลังซิงก์" />}
       <nav class="side" aria-label="เมนูหลัก">
         <div class="brand">
@@ -124,13 +127,46 @@ export function Shell(p: { page: Page; onNavigate: (p: Page) => void; onAdd: () 
         </div>
       </nav>
       <div class="content">
+        {/* Inside Obsidian on a narrow tab: the menu button beside the page's title (the side menu opens from it). */}
+        {host.obsidian && (
+          <button class="om-burger" aria-label="เมนู" aria-expanded={menu} onClick={() => setMenu(true)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+        )}
         {/* Upright on the iPad the side bar is hidden: being offline still shows, at the top, and a tap reads again. */}
         {p.sync.state === 'offline' && (
           <button class="sync-chip" aria-label="โหลดใหม่" title="โหลดใหม่" onClick={p.onReload}><span class="dot offline" />{syncText}</button>
         )}
         {p.children}
       </div>
-      <div class="dock">
+      {/*
+        Inside Obsidian on a narrow tab Obsidian's own bar sits at the bottom, so there is no bottom bar: a side menu
+        holds the pages and the assistant, and adding a task floats above Obsidian's bar.
+      */}
+      {host.obsidian && <button class="om-fab" aria-label="เพิ่มงาน" onClick={p.onAdd}>+</button>}
+      {host.obsidian && menu && (
+        <>
+          <div class="om-scrim" onClick={() => setMenu(false)} />
+          <nav class="om-drawer" aria-label="เมนูหลัก" onKeyDown={(e) => { if (e.key === 'Escape') setMenu(false) }}>
+            <div class="brand">
+              <div class="brand-name">Omni Task</div>
+              <div class="brand-sub"><span class={`dot ${p.sync.state}`} />อยู่ใน Obsidian</div>
+            </div>
+            <button class="primary" onClick={() => { setMenu(false); p.onAdd() }}>+ เพิ่มงาน</button>
+            {p.page !== 'assistant' && <AskLine class="side-ask" below onNavigate={(to) => { setMenu(false); p.onNavigate(to) }} />}
+            <div class="side-items">
+              {TABS.map(([page, label]) => (
+                <button key={page} class="side-item" aria-current={p.page === page ? 'page' : undefined} onClick={() => { setMenu(false); p.onNavigate(page) }}>{label}</button>
+              ))}
+            </div>
+            <div class="side-foot">
+              <button class="side-item" aria-current={p.page === 'settings' ? 'page' : undefined} onClick={() => { setMenu(false); p.onNavigate('settings') }}>ตั้งค่า</button>
+              <button class="sync" aria-label="โหลดใหม่" title="โหลดใหม่" onClick={p.onReload}>{syncText}</button>
+            </div>
+          </nav>
+        </>
+      )}
+      <div class={host.obsidian ? 'dock om-hidden' : 'dock'}>
         {p.page !== 'assistant' && <AskLine class="dock-ask" onNavigate={p.onNavigate} />}
         <nav class="bar" aria-label="เมนูหลัก">
           {BAR.map(([page, label], i) => [
