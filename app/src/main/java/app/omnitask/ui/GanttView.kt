@@ -184,7 +184,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                     Text(ganttRange(today.plusDays(kotlin.math.round(start).toLong()), today.plusDays(kotlin.math.round(start + span).toLong() - 1), today), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(spanText(span), color = C.muted, fontSize = TS.micro, maxLines = 1)
                 }
-                TodayButton({ start = -span * 0.15f }, Modifier.padding(end = 6.dp))
+                TodayButton({ start = -1f }, Modifier.padding(end = 6.dp))
                 SquareButton(Ic.back, tr("ก่อนหน้า", "Earlier"), { start -= maxOf(1f, span * 0.75f) })
                 Box(Modifier.width(6.dp))
                 SquareButton(Ic.next, tr("ถัดไป", "Later"), { start += maxOf(1f, span * 0.75f) })

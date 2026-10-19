@@ -592,6 +592,18 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 .gbar.event { background: var(--teal-soft); color: #134e4a; }
 .gbar.done { background: var(--lime-soft); color: var(--muted); }
 .gbar.dim { opacity: .55; }
+/* Timeline: waiting work has a dashed edge, stuck work an amber stripe; a picked bar is outlined, the rest fade */
+.gbar.waiting { border: 1.5px dashed var(--tint); border-left: 3px solid var(--tint); }
+.gbar.stuck { border-left: 4px solid var(--amber); }
+.gbar.picked { outline: 2px solid var(--text); outline-offset: 1px; }
+.glane.faded, .gedge.faded { opacity: .3; }
+.gsub.warn, .warn-text { color: var(--amber); }
+.gcaption.accent { color: var(--accent-text); }
+.chip.tool.stuck { color: var(--amber); }
+.sq.faint-btn { background: none; border: 0; color: var(--muted); }
+.gpick { position: sticky; bottom: 8px; margin: 8px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--raised); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.25); display: flex; flex-direction: column; gap: 4px; }
+.gwho { flex: none; padding: 2px 10px; border-radius: 10px; font-size: 12px; background: var(--teal-soft); color: var(--teal-text); }
+.gwho.claude { background: var(--accent-soft); color: var(--accent-text); }
 .gtext { display: flex; flex-direction: column; min-width: 0; text-align: left; }
 .gtext.end { text-align: right; align-items: flex-end; }
 .gtitle { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }

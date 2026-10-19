@@ -193,7 +193,7 @@ test('a saved filter keeps the grouping and sorting in use', async ({ page }) =>
   await tasks(page)
   await page.getByRole('button', { name: 'กรอง', exact: true }).click()
   let filter = page.getByRole('dialog', { name: 'กรอง' })
-  await filter.getByRole('group', { name: 'วันที่' }).getByRole('button', { name: 'วันนี้' }).click()
+  await filter.getByRole('group', { name: 'ตัวกรองด่วน' }).getByRole('button', { name: 'วันนี้' }).click()
   await filter.getByRole('button', { name: 'บันทึกตัวกรองนี้' }).click()
   await filter.getByLabel('ชื่อตัวกรอง').fill('ด่วน')
   await filter.getByRole('button', { name: 'บันทึก', exact: true }).click()

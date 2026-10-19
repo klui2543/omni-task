@@ -34,6 +34,7 @@ test('the task list narrows to one note, or to a list note\'s items', async ({ p
 
   await page.getByRole('button', { name: /^กรอง/ }).click()
   const panel = page.getByRole('dialog', { name: 'กรอง' })
+  await panel.getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
   await panel.getByRole('group', { name: 'โน้ต' }).getByRole('button', { name: 'วิจัย' }).click()
   await panel.getByRole('button', { name: /^แสดง/ }).click()
   await expect(row(page, 'เขียน paper')).toBeVisible()
@@ -42,6 +43,7 @@ test('the task list narrows to one note, or to a list note\'s items', async ({ p
   await expect(row(page, 'ส่งรายงาน')).toBeVisible()
 
   await page.getByRole('button', { name: /^กรอง/ }).click()
+  await panel.getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
   await panel.getByRole('group', { name: 'ลิสต์' }).getByRole('button', { name: 'Bucket list' }).click()
   await panel.getByRole('button', { name: /^แสดง/ }).click()
   await expect(row(page, 'ไปดูแสงเหนือ')).toBeVisible()

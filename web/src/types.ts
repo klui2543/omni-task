@@ -230,7 +230,7 @@ export interface ViewsOut {
   sideways: string
   /** Tasks on the calendar; [at] is when the reminder fires (yyyy-MM-ddTHH:mm). */
   calendar: { key: string; at?: string }[]
-  gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string }[] }[]
+  gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string; stale?: number | null; waitKey?: string | null; waitTitle?: string | null }[] }[]
   progress: Record<string, { done: number; total: number }>
 }
 

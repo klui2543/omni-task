@@ -54,7 +54,7 @@ test('the search box narrows Kanban, Matrix, Gantt and the calendar by title, an
   await expect(page.getByText('ทบทวนเคส', { exact: true })).toHaveCount(0)
   await expect(search(page)).toHaveValue('รายงาน')
 
-  await layoutTab(page, 'Gantt').click()
+  await layoutTab(page, 'Timeline').click()
   await expect(page.getByRole('button', { name: /ส่งรายงาน/ }).first()).toBeVisible()
   await expect(page.getByText('ร่างบทความ')).toHaveCount(0)
 
@@ -121,7 +121,7 @@ test('a screen inside Projects can be linked to, and "‹ กลับ" still st
   await projects(page)
   await page.evaluate(() => { location.hash = '/projects/project/Siriraj/gantt' })
   await expect(page.getByRole('heading', { level: 1, name: 'Siriraj' })).toBeVisible()
-  await expect(tab(page, 'Gantt')).toHaveAttribute('aria-selected', 'true')
+  await expect(tab(page, 'Timeline')).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: '‹ กลับ' }).click()
   await expect(page.getByRole('tablist', { name: 'มุมมองของโปรเจกต์' })).toBeVisible()
   expect(await hash(page)).toBe('#/projects/project/Siriraj')
@@ -183,7 +183,7 @@ test('Calendar: when it cannot be read or no calendar is found, "ลองอี
   await expect(none).toHaveCount(0)
 })
 
-test('Gantt: a tap anywhere on a lane opens its task, or the next event of an event lane', async ({ page }) => {
+test('Timeline: a tap anywhere on a lane picks its task, or opens the next event of an event lane', async ({ page }) => {
   await views(page, { granted: true, events: [{ title: 'ประชุมทีม', begin: at(10), end: at(11), link: 'https://www.google.com/calendar/event?eid=x1' }] }, 'gantt')
   await page.evaluate(() => {
     const w = window as unknown as { opened: string[] }
@@ -199,6 +199,7 @@ test('Gantt: a tap anywhere on a lane opens its task, or the next event of an ev
   expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened.length)).toBe(2)
 
   await page.locator('.glane', { hasText: 'เขียน paper' }).click({ position: { x: 3, y: 23 } })
+  await page.getByRole('region', { name: /งานที่เลือก เขียน paper/ }).getByRole('button', { name: 'เปิดงาน' }).click()
   await expect(edit(page).getByRole('heading', { name: 'เขียน paper' })).toBeVisible()
 })
 
@@ -215,7 +216,9 @@ async function mouseSwipe(page: Page, selector: string, leftward: boolean) {
 
 test('the Gantt and the timelines page with a mouse drag too, and the drag opens nothing', async ({ page }) => {
   await views(page, {}, 'gantt')
-  await page.getByRole('button', { name: '7 วัน', exact: true }).click()
+  // + walks 14, 10, 7 days.
+  await page.getByRole('button', { name: 'ขยาย ดูรายวัน' }).click()
+  await page.getByRole('button', { name: 'ขยาย ดูรายวัน' }).click()
   await expect(page.locator('.grange')).toHaveText('7 ถึง 13 ต.ค.')
   await mouseSwipe(page, '.gcard', true)
   await expect(page.locator('.grange')).toHaveText('14 ถึง 20 ต.ค.')
@@ -248,11 +251,12 @@ test('the month and its chosen day, the timeline\'s day and the Gantt\'s range s
   await layoutTab(page, 'ปฏิทิน').click()
   await expect(page.locator('.grange')).toHaveText('11 ถึง 13 ต.ค.')
 
-  await layoutTab(page, 'Gantt').click()
-  await page.getByRole('button', { name: '7 วัน', exact: true }).click()
+  await layoutTab(page, 'Timeline').click()
+  await page.getByRole('button', { name: 'ขยาย ดูรายวัน' }).click()
+  await page.getByRole('button', { name: 'ขยาย ดูรายวัน' }).click()
   await page.getByRole('button', { name: 'ถัดไป 7 วัน' }).click()
   await layoutTab(page, 'Matrix').click()
-  await layoutTab(page, 'Gantt').click()
+  await layoutTab(page, 'Timeline').click()
   await expect(page.locator('.grange')).toHaveText('14 ถึง 20 ต.ค.')
 })
 

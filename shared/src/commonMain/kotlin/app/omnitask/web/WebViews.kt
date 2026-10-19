@@ -10,13 +10,14 @@ import app.omnitask.model.Quadrant
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.SortBy
 import app.omnitask.model.Status
+import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.TaskKind
 import app.omnitask.model.TaskQuery
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.quadrant
 import app.omnitask.model.tr
-import app.omnitask.time.minusDays
+import app.omnitask.time.*
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -59,7 +60,16 @@ object WebViews {
     data class CalTask(val key: String, val at: String? = null)
 
     @Serializable
-    data class Span(val key: String, val start: String, val end: String)
+    data class Span(
+        val key: String,
+        val start: String,
+        val end: String,
+        /** Days an open task has sat since it was made or last moved, when that is long (see [StuckLog.ASK_AFTER_DAYS]). */
+        val stale: Int? = null,
+        /** The open task it waits for (`⛔`), by key and title. */
+        val waitKey: String? = null,
+        val waitTitle: String? = null,
+    )
 
     @Serializable
     data class GanttGroup(val project: String, val none: Boolean, val spans: List<Span>)
@@ -82,6 +92,14 @@ object WebViews {
         "ด่วน/ไม่ด่วนมาจากวันครบกำหนด ลากได้แค่ขึ้นลง (สำคัญ ↔ ไม่สำคัญ)",
         "Urgency comes from the due date, so drag only up or down (important ↔ not important)",
     )
+
+    /** Days an open task has sat since it was made or last moved (a note, a subtask ticked), when that is long. */
+    internal fun staleDays(t: Task, subtasks: List<Task>, today: LocalDate): Int? {
+        if (!t.isOpen || t.recurrence != null) return null
+        val base = listOfNotNull(t.created, StuckLog.lastMove(t, subtasks)).maxOrNull() ?: return null
+        val days = ChronoUnit.DAYS.between(base, today)
+        return if (days >= StuckLog.ASK_AFTER_DAYS) days.toInt() else null
+    }
 
     internal fun queryOf(q: WebCore.QueryDto, hideDone: Boolean): TaskQuery {
         fun <E : Enum<E>> pick(names: List<String>, all: Array<E>) = names.mapNotNull { n -> all.firstOrNull { it.name == n } }.toSet()
@@ -146,12 +164,17 @@ object WebViews {
         // Gantt: dated tasks that are open, or were done within the range; a bar runs from start (or scheduled) to due.
         val first = s.ganttFirst?.let { LocalDate.parse(it) } ?: today.minusDays(1)
         val noProject = tr("ไม่มีโปรเจกต์", "No project")
+        val byId = all.filter { it.id != null }.associateBy { it.id }
         val groups = narrowed
             .filter { t -> t.status != Status.CANCELLED && (t.isOpen || t.done?.let { it >= first } == true) }
             .mapNotNull { t ->
                 val a = t.start ?: t.scheduled ?: t.due ?: return@mapNotNull null
                 val b = t.due ?: t.scheduled ?: a
-                (Projects.projectOf(t) ?: noProject) to Span(t.key, a.toString(), (if (b < a) a else b).toString())
+                val blocker = t.dependsOn.mapNotNull { byId[it] }.firstOrNull { it.isOpen }
+                (Projects.projectOf(t) ?: noProject) to Span(
+                    t.key, a.toString(), (if (b < a) a else b).toString(),
+                    stale = staleDays(t, all.filter { it.parent == t.key }, today), waitKey = blocker?.key, waitTitle = blocker?.title,
+                )
             }
             .groupBy({ it.first }, { it.second })
             .toList()
