@@ -52,7 +52,7 @@ test.describe('Focus: tonight\'s sleep', () => {
     // The daytime summary still counts the free time, and the countdown is always there.
     await expect(page.getByText('ว่างเหลือ')).toBeVisible()
     await expect(page.getByText('ก่อนนอน')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'ตั้งนับถอยหลังถึงงานสำคัญ' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ' })).toBeVisible()
 
     // After noon last night is no longer told.
     await page.clock.setFixedTime(at(13))
@@ -116,7 +116,7 @@ test.describe('settings shared with Android', () => {
       })),
     })
     // Focus follows the file at once.
-    await expect(page.getByRole('button', { name: /นับถอยหลัง เขียน paper/ })).toBeVisible()
+    await expect(page.locator('.cd-row', { hasText: 'เขียน paper' })).toBeVisible()
     await expect(page.getByText('มีคนรอมา 12 วันแล้ว ยกเป็นสำคัญ?')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'นอน 23:15' })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
@@ -138,7 +138,9 @@ test.describe('settings shared with Android', () => {
     expect(s['appearance.scale']).toEqual({ float: 1.15 })
     expect(s['appearance.theme']).toEqual({ string: 'DARK' })
     expect(s.futureCount).toEqual({ int: 2 })
-    expect(s['focus.countdown']).toEqual({ string: 'เขียน paper' })
+    // The single countdown of before goes back as Android keeps countdowns now, and the old key is let go.
+    expect(s['focus.countdowns']).toEqual({ set: ['เขียน paper'] })
+    expect(s['focus.countdown']).toEqual({ string: '' })
     expect(s['sleep.tonight']).toEqual({ string: '2026-10-08 23:15' })
     expect(s.reviewedTasks).toEqual({ set: ['ทำเว็บคำนวณยา|2026-10-07'] })
     expect(s.savedFilters).toEqual({ set: ['ด่วน\tTODO\u001FIN_PROGRESS\u001EHIGHEST\u001E\u001E\u001E\u001E\u001E'] })
@@ -157,10 +159,11 @@ test.describe('settings shared with Android', () => {
       })),
     })
     const file = () => JSON.parse(drive.textOf('omni-settings.json')!).settings
-    await page.getByRole('button', { name: /นับถอยหลัง เขียน paper/ }).click()
-    await page.getByRole('dialog').getByRole('button', { name: 'เลิกนับ' }).click()
-    // Android reads an empty countdown as none, so letting it go here lets it go on the phone too.
-    await expect.poll(file).toMatchObject({ 'focus.countdown': { string: '' } })
+    await page.locator('.cd-block').click()
+    await page.getByRole('dialog').getByRole('button', { name: 'ล้างทั้งหมด' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'เสร็จ' }).click()
+    // Android reads an empty set as no countdown, so letting it go here lets it go on the phone too.
+    await expect.poll(file).toMatchObject({ 'focus.countdowns': { set: [] }, 'focus.countdown': { string: '' } })
 
     await page.evaluate(() => { location.hash = '/tasks' })
     await page.locator('.group-head').filter({ has: page.locator('.group-label', { hasText: /^วันนี้$/ }) }).click()
@@ -172,9 +175,43 @@ test.describe('settings shared with Android', () => {
     await open(page, {
       before: (d) => d.omniNote('omni-settings.json', settingsFile(1_900_000_000_000, { 'focus.countdown': { string: 'เขียน paper' }, urgentRule: { string: 'TWO_DAYS' } })),
     })
-    await expect(page.getByRole('button', { name: /นับถอยหลัง เขียน paper/ })).toBeVisible()
+    await expect(page.locator('.cd-row', { hasText: 'เขียน paper' })).toBeVisible()
     // A key the web already shared is not taken from an older file.
     expect(await page.evaluate(() => localStorage.getItem('omni.urgent'))).toBeNull()
+  })
+
+  test('countdowns travel in Android\'s form both ways: tasks and calendar events', async ({ page }) => {
+    const { drive } = await open(page, {
+      before: (d) => d.omniNote('omni-settings.json', settingsFile(1_900_000_000_000, {
+        'focus.countdowns': { set: ['task:เขียน paper'] },
+      })),
+    })
+    // Picked on the phone, shown here.
+    await expect(page.locator('.cd-row', { hasText: 'เขียน paper' })).toBeVisible()
+    expect((await kept(page, 'omni.focus')).countdowns).toEqual(['task:เขียน paper'])
+    // Let go here, gone from the file the phone reads.
+    const file = () => JSON.parse(drive.textOf('omni-settings.json')!).settings
+    await page.locator('.cd-block').click()
+    await page.getByRole('dialog').getByRole('checkbox', { name: /เขียน paper/ }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'เสร็จ' }).click()
+    await expect.poll(() => file()['focus.countdowns']).toEqual({ set: [] })
+  })
+
+  test('a device that shared the old keys still takes the countdowns the phone saved before it knew them', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (localStorage.getItem('omni.settingsSchema')) return
+      localStorage.setItem('omni.settingsSchema', '2')
+      localStorage.setItem('omni.settingsSyncedAt', String(2_000_000_000_000))
+      localStorage.setItem('omni.urgent', 'THIS_WEEK')
+    })
+    await open(page, {
+      before: (d) => d.omniNote('omni-settings.json', settingsFile(1_900_000_000_000, {
+        'focus.countdowns': { set: ['task:เขียน paper'] }, urgentRule: { string: 'TWO_DAYS' },
+      })),
+    })
+    await expect(page.locator('.cd-row', { hasText: 'เขียน paper' })).toBeVisible()
+    // A key this device already shared is not taken from the older file.
+    expect(await page.evaluate(() => localStorage.getItem('omni.urgent'))).toBe('THIS_WEEK')
   })
 
   test('ticking a repeating task notes the day in the history Android keeps', async ({ page }) => {

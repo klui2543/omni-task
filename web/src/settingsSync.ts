@@ -7,7 +7,7 @@
 // understands and leaves every other key as Android wrote it. Everything else the web remembers stays on this device.
 import { applyProjectTags, legacyOmniDirPath, omniDirPath } from './core'
 import { Drive, DriveError, type Versioned } from './drive'
-import { focusLocal } from './focusState'
+import { countdownPins, focusLocal } from './focusState'
 import { DEFAULT_QUERY, type SavedFilter } from './query'
 import { recurHistory } from './recurHistory'
 import { appearance, appearanceFromAndroid, appearanceToAndroid, setAppearance } from './settingsAppearance'
@@ -78,7 +78,10 @@ export function localSettings(): Record<string, Value> {
   out.skippedFuture = { set: sorted(f.skipped) }
   out.dismissedSuggestions = { set: sorted(f.dismissed) }
   out.reviewedTasks = { set: sorted(Object.entries(f.reviewed).map(([title, day]) => `${title}|${day}`)) }
-  out['focus.countdown'] = { string: f.countdown ?? '' }
+  // The countdowns, in Android's form (focus.countdowns); the single one of before is carried by them, so it is let go
+  // as Android lets it go once it saves them.
+  out['focus.countdowns'] = { set: sorted(countdownPins(f)) }
+  out['focus.countdown'] = { string: '' }
   out['sleep.tonight'] = { string: nightValue(f.tonightBed) }
   out['sleep.tonight.wake'] = { string: nightValue(f.tonightWake) }
   if (typeof f.wakeFromWatch === 'boolean') out['sleep.wake.watch'] = { bool: f.wakeFromWatch }
@@ -182,7 +185,13 @@ export function applySettings(s: Record<string, Value>) {
   if (set('reviewedTasks')) {
     f.reviewed = Object.fromEntries(set('reviewedTasks')!.filter((e) => e.includes('|')).map((e) => [e.slice(0, e.lastIndexOf('|')), e.slice(e.lastIndexOf('|') + 1)]))
   }
-  if (s['focus.countdown']?.string !== undefined) f.countdown = s['focus.countdown'].string || null
+  if (set('focus.countdowns')) {
+    f.countdowns = set('focus.countdowns')!
+    f.countdown = null
+  } else if (s['focus.countdown']?.string !== undefined) {
+    // A file from before there could be several: its single countdown (the ones this device keeps, if any, come first).
+    f.countdown = s['focus.countdown'].string || null
+  }
   if (s['sleep.tonight']?.string !== undefined) f.tonightBed = nightOf(s['sleep.tonight'].string)
   if (s['sleep.tonight.wake']?.string !== undefined) f.tonightWake = nightOf(s['sleep.tonight.wake'].string)
   if (typeof s['sleep.wake.watch']?.bool === 'boolean') f.wakeFromWatch = s['sleep.wake.watch'].bool
@@ -222,13 +231,17 @@ export function applySettings(s: Record<string, Value>) {
  * Keys this version of the web shares that an earlier one did not: the first time, they are taken from the file
  * whatever its time, so this device never writes its defaults over what the phone chose before it knew them.
  */
-const SCHEMA = 2
+const SCHEMA = 3
 const SCHEMA_KEY = 'omni.settingsSchema'
-const NEW_KEYS = [
-  'futureCount', 'skippedFuture', 'dismissedSuggestions', 'reviewedTasks', 'focus.countdown', 'sleep.tonight', 'sleep.tonight.wake',
-  'sleep.wake.watch', 'savedFilters', 'foldedGroups', 'foldedColumns', 'appearance.font', 'appearance.scale', 'appearance.theme',
-  'appearance.palette', 'notify.task', 'notify.digestTimes', 'notify.overdue', 'notify.dueToday', 'notify.waiting', 'notify.weekly',
-  'recurHistory',
+/** The keys each version added, so a device takes from the file only the keys it did not share before. */
+const NEW_KEYS_BY_SCHEMA: [number, string[]][] = [
+  [2, [
+    'futureCount', 'skippedFuture', 'dismissedSuggestions', 'reviewedTasks', 'focus.countdown', 'sleep.tonight', 'sleep.tonight.wake',
+    'sleep.wake.watch', 'savedFilters', 'foldedGroups', 'foldedColumns', 'appearance.font', 'appearance.scale', 'appearance.theme',
+    'appearance.palette', 'notify.task', 'notify.digestTimes', 'notify.overdue', 'notify.dueToday', 'notify.waiting', 'notify.weekly',
+    'recurHistory',
+  ]],
+  [3, ['focus.countdowns']],
 ]
 
 /** The morning summary's settings are only read here, so they are compared apart from what the web writes. */
@@ -298,10 +311,12 @@ export class SettingsSync {
     const savedAt = file?.data.savedAt ?? 0
     const s = file?.data.settings
     const newer = savedAt > Number(get(SYNCED_KEY) ?? 0)
-    const firstTime = Number(get(SCHEMA_KEY) ?? 1) < SCHEMA
+    const was = Number(get(SCHEMA_KEY) ?? 1)
+    const firstTime = was < SCHEMA
+    const fresh = NEW_KEYS_BY_SCHEMA.filter(([v]) => v > was).flatMap(([, keys]) => keys)
     if (file && s && (newer || firstTime)) {
       const before = JSON.stringify(localSettings()) + readOnlyPrint()
-      applySettings(newer ? s : Object.fromEntries(Object.entries(s).filter(([k]) => NEW_KEYS.includes(k))))
+      applySettings(newer ? s : Object.fromEntries(Object.entries(s).filter(([k]) => fresh.includes(k))))
       if (newer) put(SYNCED_KEY, String(savedAt))
       changed = JSON.stringify(localSettings()) + readOnlyPrint() !== before
     }
