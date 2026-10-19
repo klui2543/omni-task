@@ -462,10 +462,11 @@ test('a parked branch is left out of Focus, the task list and the views, but sta
   // A reload while the settings file is being written would find the file newer than this device's last sync and
   // take it back in, so the write the first visit makes is let finish first.
   await page.waitForTimeout(2_000)
+  // No file yet means the write has not landed, not that there is none to wait for.
   await expect.poll(async () => {
     const text = drive.textOf('omni-settings.json')
     const synced = await page.evaluate(() => Number(localStorage.getItem('omni.settingsSyncedAt') ?? 0))
-    return !text || JSON.parse(text).savedAt === synced
+    return !!text && JSON.parse(text).savedAt === synced
   }).toBe(true)
   // Park the "แอป" branch from the mind map.
   await page.evaluate(() => {
