@@ -87,7 +87,7 @@ private const val READABLE = 0.62f
  * [picks] get a ring in the accent, each task shows whose turn it is ([mine]: true for the owner, false for Claude)
  * and how long it has sat ([stale]), and the dashed wait lines say "รอ".
  */
-internal class YgdrasilEmbed(
+class YgdrasilEmbed(
     val dim: (Task) -> Boolean,
     val picks: Set<String>,
     val selKey: String?,

@@ -99,14 +99,14 @@ private val GanttClock = DateTimeFormatter.ofPattern("HH:mm")
 private val GanttEventColors get() = GanttColors(C.teal, C.teal.copy(alpha = 0.16f), C.eventText, C.tealText)
 
 /** Whose work the Timeline shows: everyone's, mine (all but Claude's), or Claude's. */
-internal enum class TimelineWho { ALL, ME, CLAUDE }
+enum class TimelineWho { ALL, ME, CLAUDE }
 
 /**
  * The Timeline set inside another page (the assistant's): that page owns the chips and the picked task, rings the
  * tasks in [picks] in the accent, and shows its own card for the picked task, so the Timeline drops its header,
  * chips, events and card. A picked bar is tinted rather than edged in white.
  */
-internal class TimelineEmbed(
+class TimelineEmbed(
     val who: TimelineWho,
     val staleOnly: Boolean,
     val picks: Set<String>,
