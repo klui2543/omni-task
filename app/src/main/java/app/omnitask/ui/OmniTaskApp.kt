@@ -200,6 +200,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
             calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
             drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive, vm::putBackClash, vm::dismissClash),
+            ai = AiSettings(state.ai, vm::setAiKey, vm::testAiKey, vm::setAutoBrief),
         ) { settingsOpen = false }
         return
     }
@@ -250,13 +251,14 @@ fun OmniTaskApp(vm: TaskViewModel) {
                         Screen.FOCUS -> PullToReload(state.loading, vm::pullRefresh) { FocusScreen(state, vm, open, menu) }
                         Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }
                         Screen.PROJECTS -> PullToReload(state.loading, vm::pullRefresh) { ProjectsScreen(state, vm, open) }
-                        Screen.AI -> AssistantScreen(state, vm, open)
+                        Screen.AI -> AssistantScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
                         // The Settings tab: the settings, with the assistant, notifications, urgency and the vault around them.
                         Screen.MORE -> SettingsScreen(
                             profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
                             archive = ArchiveSettings(state.archiveDays, state.askOnDone, vm::setArchiveDays, vm::setAskOnDone),
                             calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
                             drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive, vm::putBackClash, vm::dismissClash),
+                            ai = AiSettings(state.ai, vm::setAiKey, vm::testAiKey, vm::setAutoBrief),
                             head = {
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     SettingsLinks(onAssistant = { screen = Screen.AI }, onNotify = { notifyOpen = true })
@@ -321,7 +323,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 content()
                 if (fullPage.intValue == 0) DockNav(
                     selected = screen, showAsk = askShown,
-                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.ask(it); screen = Screen.AI },
+                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.askAi(it); screen = Screen.AI },
                     presets = askPresets(state, vm),
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
@@ -361,7 +363,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         )
     }
     adding?.let { r ->
-        QuickAddSheet(state, vm, r.voice, r.status, r.text, r.link, onAskAssistant = { vm.ask(it); screen = Screen.AI }) { adding = null }
+        QuickAddSheet(state, vm, r.voice, r.status, r.text, r.link, onAskAssistant = { vm.askAi(it); screen = Screen.AI }) { adding = null }
     }
 }
 

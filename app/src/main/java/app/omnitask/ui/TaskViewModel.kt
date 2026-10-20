@@ -43,6 +43,9 @@ import app.omnitask.model.load
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
+import app.omnitask.model.AiAssist
+import app.omnitask.data.AiKey
+import app.omnitask.data.Gemini
 import app.omnitask.model.Swap
 import app.omnitask.notify.Digest
 import kotlinx.datetime.LocalDateTime
@@ -196,6 +199,8 @@ data class UiState(
     val strictProjects: Set<String> = emptySet(),
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
+    /** The Gemini assistant: the key, the brief at the top of the assistant page, and calls under way. */
+    val ai: AiUi = AiUi(),
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -274,8 +279,37 @@ data class QuickAddRequest(
     val link: String? = null,
 )
 
+/**
+ * The Gemini assistant. [keyTail] shows which key is in without showing it; [brief] is read when the assistant page
+ * opens (at most once an hour, when [autoBrief]) or on request; [thinking] while a typed question is being answered.
+ */
+data class AiUi(
+    val hasKey: Boolean = false,
+    val keyTail: String? = null,
+    val autoBrief: Boolean = true,
+    val brief: AiAssist.Brief? = null,
+    val briefAt: Long = 0L,
+    val briefing: Boolean = false,
+    val briefError: String? = null,
+    val thinking: Boolean = false,
+    val testing: Boolean = false,
+    /** The last key test: true when it worked, with what it said. */
+    val test: Pair<Boolean, String>? = null,
+)
+
 /** One entry in the assistant conversation. */
 sealed interface Chat {
+    /**
+     * Gemini's answer to a typed question, the changes it proposes, and what the owner did with each
+     * ([outcome]: index to true for done, false for declined). [failed] when the call did not work.
+     */
+    data class AiAnswer(
+        val text: String,
+        val actions: List<AiAssist.Action> = emptyList(),
+        val outcome: Map<Int, Boolean> = emptyMap(),
+        val failed: String? = null,
+    ) : Chat
+
     data class Asked(val text: String) : Chat
     data class Slots(val plan: Planner.Plan, val page: Int = 0, val picked: Int = 0, val done: String? = null) : Chat
     data class Today(val tasks: List<Task>) : Chat
@@ -381,6 +415,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private var eventsJob: Job? = null
 
     init {
+        readAiKey()
         prefs.registerOnSharedPreferenceChangeListener(settingsListener)
         runCatching { getApplication<Application>().contentResolver.registerContentObserver(CalendarContract.CONTENT_URI, true, calendarObserver) }
     }
@@ -1777,7 +1812,139 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(chat = it.chat + Chat.Asked(tr("ทบทวนสัปดาห์นี้", "Review this week")) + Chat.Review(m.title, m.lines)) }
     }
 
-    fun clearChat() = _state.update { it.copy(chat = emptyList()) }
+    fun clearChat() = _state.update { it.copy(chat = emptyList(), ai = it.ai.copy(thinking = false)) }
+
+    // ---- Gemini ----
+
+    private val gemini by lazy { Gemini(getApplication()) }
+
+    private fun readAiKey() {
+        val app = getApplication<Application>()
+        val key = AiKey.get(app)
+        _state.update { it.copy(ai = it.ai.copy(hasKey = key != null, keyTail = key?.let(AiKey::tail), autoBrief = AiKey.autoBrief(app))) }
+    }
+
+    /** Saves the owner's key (null removes it), forgets the brief made with the old one, and tries the new one. */
+    fun setAiKey(key: String?) {
+        AiKey.set(getApplication(), key?.trim()?.takeIf { it.isNotEmpty() })
+        _state.update { it.copy(ai = it.ai.copy(brief = null, briefAt = 0L, briefError = null, test = null)) }
+        readAiKey()
+        if (_state.value.ai.hasKey) testAiKey()
+    }
+
+    fun setAutoBrief(on: Boolean) {
+        AiKey.setAutoBrief(getApplication(), on)
+        readAiKey()
+    }
+
+    fun testAiKey() {
+        val key = AiKey.get(getApplication()) ?: return
+        if (_state.value.ai.testing) return
+        _state.update { it.copy(ai = it.ai.copy(testing = true, test = null)) }
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { gemini.test(key) } }
+            val test = r.fold({ true to tr("ใช้ได้ ($it)", "Works ($it)") }, { false to (it.message ?: tr("ใช้ไม่ได้", "Does not work")) })
+            _state.update { it.copy(ai = it.ai.copy(testing = false, test = test)) }
+        }
+    }
+
+    /** The open work as Gemini sees it, from what is loaded now. */
+    private fun aiPicture(): AiAssist.Picture {
+        val s = _state.value
+        val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
+        return AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile)
+    }
+
+    /**
+     * Asks Gemini for the brief. Without [force] it reads again only when the owner left it on ([AiUi.autoBrief]) and
+     * the last one is over an hour old, so opening the page often costs nothing.
+     */
+    fun aiBrief(force: Boolean = false) {
+        val ai = _state.value.ai
+        if (!ai.hasKey || ai.briefing || _state.value.tasks.isEmpty()) return
+        if (!force && (!ai.autoBrief || System.currentTimeMillis() - ai.briefAt < BRIEF_EVERY_MS)) return
+        _state.update { it.copy(ai = it.ai.copy(briefing = true, briefError = null)) }
+        viewModelScope.launch {
+            val picture = aiPicture()
+            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseBrief(gemini.generate(AiAssist.briefRequest(picture)), picture) } }
+            _state.update { st ->
+                st.copy(
+                    ai = r.fold(
+                        { b -> st.ai.copy(briefing = false, brief = b, briefAt = System.currentTimeMillis()) },
+                        { e -> st.ai.copy(briefing = false, briefError = e.message ?: tr("อ่านภาพรวมไม่ได้", "Could not read the brief")) },
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * A question typed to the assistant: Gemini answers when a key is in, the rules do otherwise. Only questions it
+     * answered before go along as the conversation so far, so the turns alternate as Gemini expects.
+     */
+    fun askAi(text: String) {
+        val s = _state.value
+        if (!s.ai.hasKey) { ask(text); return }
+        if (s.ai.thinking) return
+        val earlier = s.chat.zipWithNext().flatMap { (a, b) ->
+            if (a is Chat.Asked && b is Chat.AiAnswer && b.failed == null) listOf(AiAssist.Turn(true, a.text), AiAssist.Turn(false, b.text)) else emptyList()
+        }
+        _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true)) }
+        viewModelScope.launch {
+            val picture = aiPicture()
+            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text)), picture) } }
+            val answer = r.fold(
+                { Chat.AiAnswer(it.text, it.actions) },
+                { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini")) },
+            )
+            _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false)) }
+        }
+    }
+
+    /** The task as it is now: by its place in the note, or by title when lines moved since Gemini answered. */
+    private fun current(task: Task): Task? {
+        val all = _state.value.allTasks
+        return all.firstOrNull { it.key == task.key && it.title == task.title }
+            ?: all.firstOrNull { it.title == task.title && it.filePath == task.filePath && it.isOpen }
+    }
+
+    /**
+     * The owner confirmed ([accept]) or declined proposal [i] of the answer at [index]. A big change is not made here:
+     * the screen hands it to Claude, and this only records that.
+     */
+    fun answerAiAction(index: Int, i: Int, accept: Boolean) {
+        val item = _state.value.chat.getOrNull(index) as? Chat.AiAnswer ?: return
+        if (i in item.outcome) return
+        val action = item.actions.getOrNull(i) ?: return
+        if (accept && action !is AiAssist.Action.Big) {
+            val task = action.task?.let(::current)
+            if (task == null) {
+                showMessage(tr("หางานนี้ไม่เจอแล้ว อาจถูกแก้หรือลบไป", "That task is gone; it may have been edited or deleted"))
+                return
+            }
+            when (action) {
+                is AiAssist.Action.Stuck -> noteStuck(task, action.reason)
+                is AiAssist.Action.Move -> setDate(task, if (task.due == null && task.scheduled != null) DateField.SCHEDULED else DateField.DUE, action.date)
+                is AiAssist.Action.Subtasks -> addSubtasks(task, action.titles)
+                is AiAssist.Action.Big -> Unit
+            }
+        }
+        _state.update {
+            it.copy(chat = it.chat.toMutableList().also { list -> list[index] = item.copy(outcome = item.outcome + (i to accept)) })
+        }
+    }
+
+    /** Several subtasks under [parent], written one after another under the write lock. */
+    private fun addSubtasks(parent: Task, titles: List<String>) {
+        val today = LocalDate.now()
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) { runCatching { titles.filter { it.isNotBlank() }.forEach { repo.addSubtask(parent, QuickAdd.parse(it, today).line(today)) } } }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")) } }
+            if (result.isSuccess) reloadNote(parent) else reload()
+        }
+    }
 
     private fun updateSlots(index: Int, change: (Chat.Slots) -> Chat.Slots) = _state.update {
         val item = it.chat.getOrNull(index) as? Chat.Slots ?: return@update it
@@ -2178,6 +2345,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        /** The brief is read again on opening the assistant only when it is older than this. */
+        const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"
         const val KEY_URGENT = "urgentRule"
         const val KEY_FUTURE_COUNT = "futureCount"

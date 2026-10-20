@@ -81,6 +81,21 @@ private const val READABLE = 0.62f
  * buttons to zoom; tap a world or branch for its actions underneath; tap a task to tick it, long-press to open it.
  * The filter and the folded limbs come from the Projects tab, so they stay while it is open.
  */
+/**
+ * The tree set inside another page (the assistant's): that page owns the chips and the picked task. A tap picks a
+ * task instead of opening it, nothing can be ticked or carried, tasks that do not match are [dim], the assistant's
+ * [picks] get a ring in the accent, each task shows whose turn it is ([mine]: true for the owner, false for Claude)
+ * and how long it has sat ([stale]), and the dashed wait lines say "รอ".
+ */
+internal class YgdrasilEmbed(
+    val dim: (Task) -> Boolean,
+    val picks: Set<String>,
+    val selKey: String?,
+    val mine: (Task) -> Boolean,
+    val stale: (Task) -> Int?,
+    val onSelect: (Task?) -> Unit,
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun YgdrasilScreen(
@@ -93,6 +108,7 @@ fun YgdrasilScreen(
     onOpen: (Task) -> Unit,
     onOpenProject: (String) -> Unit,
     onBack: () -> Unit,
+    embed: YgdrasilEmbed? = null,
 ) {
     val tree = remember(state.tasks, state.parked, state.branchStates, state.today, state.starred, state.projectOrder, filter) {
         Ygdrasil.grow(state.tasks + state.parked, state.branchStates, state.today, filter, state.starred, state.projectOrder)
@@ -189,10 +205,10 @@ fun YgdrasilScreen(
     var filtering by rememberSaveable { mutableStateOf(false) }
     var filterFull by rememberSaveable { mutableStateOf(false) }
 
-    val dock = LocalDockClearance.current
-    FullPage()
+    val dock = if (embed == null) LocalDockClearance.current else 0.dp
+    if (embed == null) FullPage()
     Column(Modifier.fillMaxSize().padding(bottom = dock)) {
-        Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (embed == null) Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text("Project Ygdrasil", style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1)
@@ -263,6 +279,16 @@ fun YgdrasilScreen(
                         }
                     }
                 }
+                // Inside the assistant the wait lines say what they mean.
+                if (embed != null) layout.edges.filter { it.kind == Ygdrasil.EdgeKind.LINK || it.kind == Ygdrasil.EdgeKind.LINK_ACROSS }.forEach { e ->
+                    val mx = (e.x1 + 3 * e.cx1 + 3 * e.cx2 + e.x2) / 8f
+                    val my = (e.y1 + 3 * e.cy1 + 3 * e.cy2 + e.y2) / 8f
+                    Text(
+                        tr("รอ", "waits"),
+                        Modifier.offset((mx + 4).dp, (my - 9).dp).clip(RoundedCornerShape(6.dp)).background(C.sunken).padding(horizontal = 3.dp),
+                        color = if (e.kind == Ygdrasil.EdgeKind.LINK_ACROSS) C.amber else C.text2, fontSize = TS.micro, fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 CompositionLocalProvider(LocalViewConfiguration provides quickHold) {
                 layout.spots.forEach { s ->
                     when (s.kind) {
@@ -290,8 +316,11 @@ fun YgdrasilScreen(
                                         if (target) C.amber else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
                                     )
                                     .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else 1f)
-                                    .pointerInput(n.tag) { detectTapGestures(onTap = { selTag = n.tag }) }
-                                    .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x)
+                                    .then(
+                                        if (embed != null) Modifier else Modifier
+                                            .pointerInput(n.tag) { detectTapGestures(onTap = { selTag = n.tag }) }
+                                            .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
+                                    )
                                     .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -313,18 +342,24 @@ fun YgdrasilScreen(
                             val from = s.limb!!.node.tag
                             val done = t.status == Status.DONE
                             val someday = Ygdrasil.isSomeday(t)
+                            val aiPick = embed?.picks?.contains(t.key) == true
+                            val chosen = embed?.selKey == t.key
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .alpha(if (carry?.task == t) 0.35f else if (someday) 0.6f else 1f)
-                                    // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
-                                    // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
-                                    .pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }
-                                    .carries(Carry(t, from, t.title), s.y - s.h / 2, s.x)
+                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (someday) 0.6f else 1f)
+                                    .then(if (chosen) Modifier.background(C.accentSoft) else Modifier)
+                                    .then(if (aiPick) Modifier.border(2.dp, C.accent, RoundedCornerShape(8.dp)) else Modifier)
+                                    .then(
+                                        if (embed != null) Modifier.pointerInput(t, chosen) { detectTapGestures(onTap = { embed.onSelect(if (chosen) null else t) }) }
+                                        // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
+                                        // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
+                                        else Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }.carries(Carry(t, from, t.title), s.y - s.h / 2, s.x),
+                                    )
                                     .padding(end = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                // The ring is a button of its own, a little larger than it looks.
-                                Box(Modifier.size(28.dp).clip(CircleShape).clickable { vm.toggleDone(t) }, contentAlignment = Alignment.Center) {
+                                // The ring is a button of its own, a little larger than it looks (only a mark inside the assistant).
+                                Box(Modifier.size(28.dp).clip(CircleShape).then(if (embed == null) Modifier.clickable { vm.toggleDone(t) } else Modifier), contentAlignment = Alignment.Center) {
                                     Box(
                                         Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
                                             .border(1.5.dp, if (done) C.lime else priorityTint(t.priority), CircleShape),
@@ -334,6 +369,12 @@ fun YgdrasilScreen(
                                     t.title, Modifier.padding(start = 2.dp).weight(1f, fill = false), color = if (done || someday) C.faint else C.text2, fontSize = TS.caption,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (done) TextDecoration.LineThrough else null,
                                 )
+                                if (!far && embed != null && !someday) {
+                                    Box(Modifier.padding(start = 5.dp).size(7.dp).clip(CircleShape).background(if (embed.mine(t)) C.tealChip else C.accentText))
+                                    embed.stale(t)?.let { d ->
+                                        Text(tr("$d วัน", "${d}d"), Modifier.padding(start = 5.dp), color = C.amber, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    }
+                                }
                                 if (!far && someday) Text(
                                     tr("พักไว้", "Someday"),
                                     Modifier.padding(start = 4.dp).clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 6.dp, vertical = 1.dp),
@@ -381,7 +422,8 @@ fun YgdrasilScreen(
             }
         }
 
-        if (filtering) {
+        if (embed != null) Unit
+        else if (filtering) {
             YgdrasilFilterDock(
                 state, vm, filter, onFilter, tree.matched, filterFull, { filterFull = it }, { filtering = false; filterFull = false },
                 if (filterFull) Modifier.weight(1f) else Modifier.height(380.dp),
