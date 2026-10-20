@@ -32,7 +32,7 @@ object AiAssist {
     const val DEFAULT_MODEL = "gemini-flash-latest"
 
     /** At most this many tasks go to the model, so the request stays small and cheap. */
-    const val MAX_TASKS = 150
+    const val MAX_TASKS = 80
 
     /** The open work as text, and which task each handle stands for. */
     class Picture(val text: String, val refs: Map<String, Task>)
@@ -83,9 +83,10 @@ object AiAssist {
         profile: List<String> = emptyList(),
     ): Picture {
         val open = tasks.filter { it.isOpen && !it.isSubtask }
-        val ordered = open.sortedWith(
+        // Parked (someday) work is only counted: it is not stuck, and leaving it out keeps the request small and quick.
+        val someday = open.count { isSomeday(it) }
+        val ordered = open.filterNot { isSomeday(it) }.sortedWith(
             compareBy<Task>(
-                { isSomeday(it) },
                 { (it.due ?: it.scheduled ?: it.start)?.let { d -> ChronoUnit.DAYS.between(today, d) } ?: Long.MAX_VALUE },
                 { it.lineIndex },
             ),
@@ -108,7 +109,8 @@ object AiAssist {
                     appendLine("- ${e.begin.date} $time ${e.title}")
                 }
             }
-            appendLine("[งานที่ยังไม่เสร็จ] ${open.size} งาน" + if (open.size > ordered.size) " (แสดง ${ordered.size} งานแรก)" else "")
+            appendLine("[งานที่ยังไม่เสร็จ] ${open.size - someday} งาน" + if (open.size - someday > ordered.size) " (แสดง ${ordered.size} งานแรก)" else "")
+            if (someday > 0) appendLine("(งานพักไว้ #สักวัน อีก $someday งาน ไม่ได้แสดง)")
             refs.forEach { (ref, t) -> appendLine(line(ref, t, subtasksOf(t), today, byId, refOf)) }
         }
         return Picture(text.trimEnd(), refs)
@@ -136,7 +138,7 @@ object AiAssist {
         if (subs.isNotEmpty()) parts += "งานย่อยเสร็จ ${subs.count { !it.isOpen }}/${subs.size}"
         val notes = StuckLog.entries(t).takeLast(3)
         if (notes.isNotEmpty()) parts += "บันทึกค้าง: " + notes.joinToString("; ") { "${it.day} ${it.reason}" }
-        t.descriptionPreview?.let { parts += "รายละเอียด: ${it.take(120)}" }
+        t.descriptionPreview?.let { parts += "รายละเอียด: ${it.take(60)}" }
         return parts.joinToString(" | ")
     }
 
@@ -214,6 +216,9 @@ object AiAssist {
             put("responseMimeType", "application/json")
             put("responseSchema", schema)
             put("temperature", 0.4)
+            put("maxOutputTokens", 2048)
+            // Long thinking made answers slow enough to time out on the phone; a little is enough here.
+            putJsonObject("thinkingConfig") { put("thinkingLevel", "low") }
         }
     }.toString()
 
@@ -223,6 +228,13 @@ object AiAssist {
     /** The body of a generateContent call that answers [question], after the [earlier] turns (only the last few are kept). */
     fun chatRequest(picture: Picture, earlier: List<Turn>, question: String): String =
         request(picture, earlier.takeLast(8), CHAT_ASK + "\n\nคำถาม: " + question, replySchema)
+
+    /** The same request without the thinking setting, for a model that does not take it. */
+    fun withoutThinking(body: String): String {
+        val o = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return body
+        val config = o["generationConfig"] as? JsonObject ?: return body
+        return JsonObject(o + ("generationConfig" to JsonObject(config - "thinkingConfig"))).toString()
+    }
 
     /** What went wrong, from Gemini's own words where it gave them. */
     class Failure(message: String) : Exception(message)

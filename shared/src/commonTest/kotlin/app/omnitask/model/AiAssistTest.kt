@@ -46,10 +46,10 @@ class AiAssistTest {
     @Test
     fun thePictureGivesEachOpenTopLevelTaskAHandleAndItsStory() {
         val p = picture()
-        assertEquals(4, p.refs.size, "open top-level tasks only: no subtask, nothing done")
-        // Dated work first, someday last.
+        assertEquals(3, p.refs.size, "open top-level tasks only: no subtask, nothing done, someday only counted")
+        // Dated work first.
         assertEquals("ตอบอีเมลลูกค้า", p.refs["t1"]!!.title)
-        assertEquals("เรียนเปียโน", p.refs["t4"]!!.title)
+        assertTrue("งานพักไว้ #สักวัน อีก 1 งาน" in p.text)
         val line = p.text.lines().first { it.startsWith("t1:") }
         assertTrue("เลยมา 2 วัน" in line, line)
         assertTrue("บันทึกค้าง: 2026-09-29 รอตัดสินใจเรื่องราคา" in line, line)
@@ -59,7 +59,6 @@ class AiAssistTest {
         // What it waits for is named by its handle.
         val tokRef = p.refs.entries.first { it.value.title == "ใส่ token ให้ Claude" }.key
         assertTrue("รอ $tokRef" in sync, sync)
-        assertTrue("พักไว้" in p.text.lines().first { it.startsWith("t4:") })
         assertTrue("2026-10-21 14:00 ถึง 15:00 ประชุมลูกค้า" in p.text)
         assertTrue("- ตื่น 07:00" in p.text)
     }
@@ -72,6 +71,10 @@ class AiAssistTest {
         val config = body["generationConfig"]!!.jsonObject
         assertEquals("application/json", config["responseMimeType"]!!.jsonPrimitive.content)
         assertTrue("picks" in config["responseSchema"]!!.jsonObject["properties"]!!.jsonObject)
+        assertEquals("low", config["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
+        val plain = Json.parseToJsonElement(AiAssist.withoutThinking(AiAssist.briefRequest(picture()))).jsonObject
+        assertTrue("thinkingConfig" !in plain["generationConfig"]!!.jsonObject)
+        assertTrue("responseSchema" in plain["generationConfig"]!!.jsonObject)
     }
 
     @Test

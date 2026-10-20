@@ -47,8 +47,8 @@ class Gemini(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .callTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(150, TimeUnit.SECONDS)
+        .callTimeout(180, TimeUnit.SECONDS)
         .build()
 
     private val base = "https://generativelanguage.googleapis.com/v1beta"
@@ -58,7 +58,9 @@ class Gemini(private val context: Context) {
      * [AiAssist] to read. When the model is not found, picks the newest Flash from Google's list once and retries.
      */
     fun generate(body: String, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): String {
-        val first = post(AiKey.model(context), body, key)
+        var first = post(AiKey.model(context), body, key)
+        // A model that does not take the thinking setting says so: ask again without it.
+        if (first.first == 400 && first.second.contains("thinking", ignoreCase = true)) first = post(AiKey.model(context), AiAssist.withoutThinking(body), key)
         if (first.first != 404) return check(first)
         val newest = list(key)?.let(AiAssist::newestFlash) ?: return check(first)
         AiKey.setModel(context, newest)
@@ -79,6 +81,10 @@ class Gemini(private val context: Context) {
             .build()
         return try {
             client.newCall(request).execute().use { it.code to it.body?.string().orEmpty() }
+        } catch (e: java.io.InterruptedIOException) {
+            // A read or call timeout: the connection worked, the answer was slow. A connect timeout is the network.
+            if (e.message?.contains("connect", ignoreCase = true) == true) throw AiAssist.Failure(NO_NET)
+            throw AiAssist.Failure(SLOW)
         } catch (e: IOException) {
             throw AiAssist.Failure(NO_NET + (e.message?.let { " ($it)" } ?: ""))
         }
@@ -109,6 +115,7 @@ class Gemini(private val context: Context) {
         val NO_KEY get() = tr("ยังไม่ได้ใส่ Gemini API key ใส่ได้ที่ ตั้งค่า > ผู้ช่วย AI", "No Gemini API key yet. Add one in Settings > AI assistant")
         val BAD_KEY get() = tr("API key ใช้ไม่ได้ ตรวจที่ ตั้งค่า > ผู้ช่วย AI", "The API key does not work. Check it in Settings > AI assistant")
         val QUOTA get() = tr("ใช้ Gemini ครบโควตาแล้ว รอสักครู่ หรือเปิดแบบจ่ายเงินใน Google AI Studio", "Gemini quota used up. Wait a while, or turn on billing in Google AI Studio")
+        val SLOW get() = tr("Gemini ตอบช้าเกินไป ลองกดอ่านใหม่อีกครั้ง", "Gemini took too long. Try again")
         val NO_NET get() = tr("ต่อ Gemini ไม่ได้ ตรวจอินเทอร์เน็ต", "Cannot reach Gemini. Check the internet connection")
     }
 }
