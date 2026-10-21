@@ -102,6 +102,29 @@ class Gemini(private val context: Context) {
         }
     }
 
+    /**
+     * Vectors for [texts] (documents to keep, or a [query] to look them up with), from Gemini's embedding model;
+     * the next model is tried when one is not offered.
+     */
+    fun embed(texts: List<String>, query: Boolean, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): List<FloatArray> {
+        var last: Pair<Int, String>? = null
+        for (model in EMBED_MODELS) {
+            val body = app.omnitask.model.AiMemory.embedRequest(model, texts, query)
+            val request = Request.Builder().url("$base/models/$model:batchEmbedContents").header("x-goog-api-key", key)
+                .post(body.toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            val r = try {
+                client.newCall(request).execute().use { it.code to it.body?.string().orEmpty() }
+            } catch (e: IOException) {
+                throw AiAssist.Failure(NO_NET)
+            }
+            if (r.first == 404) { last = r; continue }
+            val vectors = app.omnitask.model.AiMemory.parseEmbeddings(check(r))
+            if (vectors.size != texts.size) throw AiAssist.Failure(tr("แปลงบันทึกเป็นตัวเลขไม่ครบ", "Some notes were not embedded"))
+            return vectors
+        }
+        return app.omnitask.model.AiMemory.parseEmbeddings(check(last ?: (404 to "")))
+    }
+
     /** Every text model this key can use, grouped fast to smart. */
     fun models(key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): List<AiAssist.Model> {
         val text = list(key) ?: throw AiAssist.Failure(tr("อ่านรายชื่อรุ่นจาก Google ไม่ได้", "Could not read the model list from Google"))
@@ -130,6 +153,9 @@ class Gemini(private val context: Context) {
     }
 
     companion object {
+        /** Embedding models, newest first. */
+        val EMBED_MODELS = listOf("gemini-embedding-001", "text-embedding-004")
+
         val NO_KEY get() = tr("ยังไม่ได้ใส่ Gemini API key ใส่ได้ที่ ตั้งค่า > ผู้ช่วย AI", "No Gemini API key yet. Add one in Settings > AI assistant")
         val BAD_KEY get() = tr("API key ใช้ไม่ได้ ตรวจที่ ตั้งค่า > ผู้ช่วย AI", "The API key does not work. Check it in Settings > AI assistant")
         val QUOTA get() = tr("ใช้ Gemini ครบโควตาแล้ว รอสักครู่ หรือเปิดแบบจ่ายเงินใน Google AI Studio", "Gemini quota used up. Wait a while, or turn on billing in Google AI Studio")

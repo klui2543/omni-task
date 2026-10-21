@@ -293,6 +293,8 @@ data class AiUi(
     val briefing: Boolean = false,
     val briefError: String? = null,
     val thinking: Boolean = false,
+    /** While a typed question waits on a search of older conversations that Gemini asked for. */
+    val searching: Boolean = false,
     val testing: Boolean = false,
     /** The last key test: true when it worked, with what it said. */
     val test: Pair<Boolean, String>? = null,
@@ -316,9 +318,10 @@ sealed interface Chat {
         val actions: List<AiAssist.Action> = emptyList(),
         val outcome: Map<Int, Boolean> = emptyMap(),
         val failed: String? = null,
-        /** Which model answered and how long it took, shown under its name. */
+        /** Which model answered and how long it took, shown under its name, and whether it searched older talks. */
         val model: String? = null,
         val seconds: Double? = null,
+        val searched: Boolean = false,
     ) : Chat
 
     data class Asked(val text: String) : Chat
@@ -1894,10 +1897,22 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Adds [lines] under today in the conversation log, off the main thread; a failed write only loses the log line. */
-    private fun logAi(lines: List<String>) {
+    private val logLock = kotlinx.coroutines.sync.Mutex()
+    private val recall by lazy { app.omnitask.data.AiRecall(getApplication(), gemini) }
+
+    /**
+     * Changes the conversation log with [change], off the main thread and one write at a time (an answer and the
+     * change confirmed right after it would otherwise read the same old file). A failed write only loses the line.
+     */
+    private fun editLog(change: (String?) -> String) {
         val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { logLock.withLock { runCatching { repo.editPath(vault, AiMemory.LOG_FILE, change) } } }
+    }
+
+    /** A line under the newest exchange of today: what was done or declined after an answer. */
+    private fun logAi(line: String) {
         val today = LocalDate.now()
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.editPath(vault, AiMemory.LOG_FILE) { old -> AiMemory.addToLog(old, today, lines) } } }
+        editLog { old -> AiMemory.addNote(old, today, line) }
     }
 
     private fun nowHm(): String = java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
@@ -1937,22 +1952,45 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val earlier = s.chat.zipWithNext().flatMap { (a, b) ->
             if (a is Chat.Asked && b is Chat.AiAnswer && b.failed == null) listOf(AiAssist.Turn(true, a.text), AiAssist.Turn(false, b.text)) else emptyList()
         }
-        _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true)) }
+        _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true, searching = false)) }
         viewModelScope.launch {
             val ctx = aiContext()
             val picture = ctx.picture
+            val memory = AiMemory.memoryForModel(ctx.memory)
             val started = System.currentTimeMillis()
-            val body = AiAssist.chatRequest(picture, earlier, text, AiMemory.memoryForModel(ctx.memory), AiMemory.logForModel(ctx.log, text))
-            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseReply(gemini.generate(body), picture) } }
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
+                    // long to send whole) the older ones closest to this question.
+                    val entries = AiMemory.entries(ctx.log)
+                    val whole = AiMemory.allSent(entries)
+                    val found = if (whole) emptyList() else recall.find(entries, text)
+                    val history = AiMemory.history(entries, found)
+                    val first = AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = !whole)), picture)
+                    val query = first.search
+                    if (query == null || whole) first to false
+                    else {
+                        // Gemini asked to look further back: search once more with its own words, then ask again.
+                        _state.update { it.copy(ai = it.ai.copy(searching = true)) }
+                        val more = recall.find(entries, query, k = 8)
+                        val again = AiAssist.chatRequest(picture, earlier, text, memory, AiMemory.history(entries, found + more), searched = more.joinToString("\n\n") { it.text })
+                        AiAssist.parseReply(gemini.generate(again), picture) to true
+                    }
+                }
+            }
             val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
             val model = AiKey.model(getApplication())
             val answer = r.fold(
-                { Chat.AiAnswer(it.text, it.actions, model = model, seconds = seconds) },
+                { (reply, searched) -> Chat.AiAnswer(reply.text, reply.actions, model = model, seconds = seconds, searched = searched) },
                 { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
             )
-            _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false)) }
-            // Kept in the vault, so the assistant remembers it next time and Claude can read it too.
-            logAi(listOf("${nowHm()} ถาม: $text", "  Gemini (${app.omnitask.ui.shortModel(model)}): " + (answer.failed?.let { "ไม่ได้ตอบ: $it" } ?: answer.text)))
+            _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false, searching = false)) }
+            // Kept in the vault under a heading Gemini wrote, so it can be found again and Claude can read it too.
+            val reply = r.getOrNull()?.first
+            val today = LocalDate.now()
+            val time = nowHm()
+            val lines = listOf("ถาม: $text", "Gemini (${shortModel(model)}): " + (answer.failed?.let { "ไม่ได้ตอบ: $it" } ?: answer.text))
+            editLog { old -> AiMemory.addExchange(old, today, time, reply?.topic ?: text.take(60), reply?.tags.orEmpty(), lines) }
         }
     }
 
@@ -1971,7 +2009,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val item = _state.value.chat.getOrNull(index) as? Chat.AiAnswer ?: return
         if (i in item.outcome) return
         val action = item.actions.getOrNull(i) ?: return
-        logAi(listOf("${nowHm()} " + (if (accept) "ทำแล้ว: " else "ไม่ทำ: ") + AiAssist.describe(action)))
+        logAi("${nowHm()} " + (if (accept) "ทำแล้ว: " else "ไม่ทำ: ") + AiAssist.describe(action))
         if (accept && action is AiAssist.Action.Remember) {
             val vault = _state.value.vault
             val today = LocalDate.now()

@@ -103,7 +103,7 @@ class AiAssistTest {
     fun theReplyTurnsEveryKindOfOrderIntoActions() {
         val p = picture()
         val r = AiAssist.parseReply(
-            response("""{"answer":"เตรียมไว้ให้ยืนยันแล้ว","actions":[
+            response("""{"answer":"เตรียมไว้ให้ยืนยันแล้ว","topic":"เพิ่มงาน — ซื้อน้ำเกลือ","tags":["#flow","ซื้อ ของ"],"search":"","actions":[
                 {"kind":"add","text":"ซื้อน้ำเกลือ","date":"2026-10-21","field":"scheduled","time":"9:00","project":"#flow","priority":"high"},
                 {"kind":"move","ref":"t1","date":"2026-10-24"},
                 {"kind":"move","ref":"t2","date":"2026-10-25","field":"start"},
@@ -119,6 +119,9 @@ class AiAssistTest {
             p,
         )
         assertEquals("เตรียมไว้ให้ยืนยันแล้ว", r.text)
+        assertEquals("เพิ่มงาน, ซื้อน้ำเกลือ", r.topic)
+        assertEquals(listOf("flow", "ซื้อ-ของ"), r.tags)
+        assertEquals(null, r.search)
         val add = r.actions[0] as AiAssist.Action.Add
         assertEquals("ซื้อน้ำเกลือ", add.title)
         assertEquals(LocalDate.parse("2026-10-21"), add.date)

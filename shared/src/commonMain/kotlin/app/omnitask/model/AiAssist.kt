@@ -101,7 +101,17 @@ object AiAssist {
         }
     }
 
-    data class Reply(val text: String, val actions: List<Action>)
+    /**
+     * The answer, the changes proposed, a short [topic] and [tags] for the log's index, and [search]: words to look
+     * up in older conversations when the model needs them before it can answer.
+     */
+    data class Reply(
+        val text: String,
+        val actions: List<Action>,
+        val topic: String? = null,
+        val tags: List<String> = emptyList(),
+        val search: String? = null,
+    )
 
     /** One turn of the conversation so far, for the model's memory: the owner's question, or the assistant's answer. */
     data class Turn(val fromOwner: Boolean, val text: String)
@@ -233,7 +243,13 @@ object AiAssist {
 - "remember": สิ่งที่ควรจำไว้เสมอเกี่ยวกับเจ้าของ เช่น ความชอบ นิสัย ข้อตกลง ใส่ใน text เสนอเมื่อเจ้าของบอกเรื่องแบบนี้หรือสั่งให้จำ ห้ามเสนอซ้ำกับความจำที่มีอยู่แล้ว
 - "big": เรื่องที่ควรให้ Claude ช่วยคิดก่อน เช่น จัดแผนใหม่ทั้งโปรเจกต์ เขียนข้อเสนอใน text
 วันที่แบบ "พรุ่งนี้" หรือ "ศุกร์นี้" ให้คิดจากวันนี้ในภาพรวมงาน ถ้าคำสั่งกำกวม เช่น มีหลายงานชื่อคล้ายกัน ให้ถามกลับใน answer และไม่ต้องใส่ actions
-ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง"""
+ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง
+topic: หัวข้อสั้นของการคุยครั้งนี้ ไม่เกิน 8 คำ เช่น "ตกลงทำระบบป้ายก่อน Flow"
+tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปรเจกต์หรือแท็กที่มีอยู่ในภาพรวมงานก่อน แล้วค่อยเป็นเรื่อง เช่น siriraj, ป้าย"""
+
+    private const val SEARCH_ASK = """ถ้าสารบัญบอกว่าเคยคุยเรื่องที่ถาม แต่รายละเอียดไม่อยู่ในบทสนทนาที่ให้มา ให้ใส่คำค้นสั้น ๆ ใน search แล้วเว้น answer และ actions ว่างไว้ แอปจะค้นบันทึกเก่าแล้วส่งผลกลับมาให้ตอบ ถ้ามีข้อมูลพอแล้ว ให้ search ว่าง"""
+
+    private const val SEARCHED = """ด้านล่างคือผลค้นบันทึกเก่าที่คุณขอ ตอบเลยจากข้อมูลที่มี ห้ามขอค้นเพิ่ม ถ้ายังไม่เจอให้บอกตรง ๆ"""
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -258,6 +274,9 @@ object AiAssist {
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
             put("answer", str())
+            put("topic", str())
+            put("tags", obj("ARRAY") { put("items", str()) })
+            put("search", str())
             put("actions", obj("ARRAY") {
                 put("items", obj("OBJECT") {
                     putJsonObject("properties") {
@@ -308,8 +327,18 @@ object AiAssist {
     fun briefRequest(picture: Picture, memory: String? = null): String = request(picture, emptyList(), BRIEF_ASK, briefSchema, memory, null)
 
     /** The body of a generateContent call that answers [question], after the [earlier] turns (only the last few are kept). */
-    fun chatRequest(picture: Picture, earlier: List<Turn>, question: String, memory: String? = null, history: String? = null): String =
-        request(picture, earlier.takeLast(8), CHAT_ASK + "\n\nคำถาม: " + question, replySchema, memory, history)
+    fun chatRequest(
+        picture: Picture, earlier: List<Turn>, question: String, memory: String? = null, history: String? = null,
+        canSearch: Boolean = false, searched: String? = null,
+    ): String {
+        val ask = buildString {
+            append(CHAT_ASK)
+            if (searched != null) append("\n\n").append(SEARCHED).append("\n[ผลค้นบันทึกเก่า]\n").append(searched.ifBlank { "(ไม่เจอ)" })
+            else if (canSearch) append("\n").append(SEARCH_ASK)
+            append("\n\nคำถาม: ").append(question)
+        }
+        return request(picture, earlier.takeLast(8), ask, replySchema, memory, history)
+    }
 
     /** The same request without the thinking setting, for a model that does not take it. */
     fun withoutThinking(body: String): String {
@@ -407,7 +436,8 @@ object AiAssist {
                 else -> null
             }
         }
-        return Reply(clean(o["answer"].s() ?: ""), actions.take(8))
+        val tags = (o["tags"] as? JsonArray).orEmpty().mapNotNull { it.s()?.removePrefix("#")?.trim()?.replace(Regex("""\s+"""), "-")?.takeIf { t -> t.isNotEmpty() } }.distinct().take(3)
+        return Reply(clean(o["answer"].s() ?: ""), actions.take(8), o["topic"].s()?.let(::clean)?.take(80), tags, o["search"].s())
     }
 
     /** How quick a model is meant to be, to group the list the owner picks from. */

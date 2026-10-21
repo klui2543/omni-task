@@ -304,10 +304,13 @@ internal fun AiTaskCard(
 
 /** "Gemini is thinking" while a typed question is answered. */
 @Composable
-internal fun AiThinking() {
+internal fun AiThinking(searching: Boolean = false) {
     Column(Modifier.fillMaxWidth()) {
         GeminiHead()
-        Text(tr("กำลังคิด...", "Thinking..."), Modifier.padding(top = 6.dp, start = 2.dp), color = C.muted, fontSize = TS.body)
+        Text(
+            if (searching) tr("กำลังค้นบันทึกเก่า...", "Searching older talks...") else tr("กำลังคิด...", "Thinking..."),
+            Modifier.padding(top = 6.dp, start = 2.dp), color = C.muted, fontSize = TS.body,
+        )
     }
 }
 
@@ -319,7 +322,10 @@ internal fun AiThinking() {
 internal fun AiAnswerCard(item: Chat.AiAnswer, onAnswer: (Int, Boolean) -> Unit, onClaude: (AiAssist.Action.Big) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         GeminiHead(
-            listOfNotNull(item.model?.let(::shortModel), item.seconds?.let { tr("$it วินาที", "$it s") }).joinToString(", ").ifEmpty { null },
+            listOfNotNull(
+                item.model?.let(::shortModel), item.seconds?.let { tr("$it วินาที", "$it s") },
+                if (item.searched) tr("ค้นบันทึกเก่า", "searched older talks") else null,
+            ).joinToString(", ").ifEmpty { null },
         )
         Card {
             Text(

@@ -279,7 +279,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
                     is Chat.AiAnswer -> AiAnswerCard(item, { i, ok -> vm.answerAiAction(index, i, ok) }) { big -> shareToClaude(app.omnitask.model.AiAssist.forClaude(big, state.today)) }
                 }
             }
-            if (tab == AiTab.CHAT && state.ai.thinking) item(key = "ai-thinking") { AiThinking() }
+            if (tab == AiTab.CHAT && state.ai.thinking) item(key = "ai-thinking") { AiThinking(state.ai.searching) }
 
         }
 
