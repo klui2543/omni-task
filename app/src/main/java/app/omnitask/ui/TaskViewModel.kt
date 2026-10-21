@@ -47,6 +47,7 @@ import app.omnitask.model.AiAssist
 import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
 import app.omnitask.data.Gemini
+import app.omnitask.data.AiRecall
 import app.omnitask.model.Swap
 import app.omnitask.notify.Digest
 import kotlinx.datetime.LocalDateTime
@@ -1898,7 +1899,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Adds [lines] under today in the conversation log, off the main thread; a failed write only loses the log line. */
     private val logLock = kotlinx.coroutines.sync.Mutex()
-    private val recall by lazy { app.omnitask.data.AiRecall(getApplication(), gemini) }
+    private val recall by lazy { AiRecall(getApplication(), gemini) }
 
     /**
      * Changes the conversation log with [change], off the main thread and one write at a time (an answer and the
