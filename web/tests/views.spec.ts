@@ -7,6 +7,8 @@ const MORE = '- [x] จองห้องประชุม ✅ 2026-10-08 📅 
 
 async function views(page: Page, opts: Parameters<typeof open>[1] = {}, mode?: string) {
   if (mode) await page.addInitScript((m) => localStorage.setItem('omni.viewMode', m), mode)
+  // The Timeline opens 7 days wide on a narrow screen and 14 on a wide one; the tests count from 14 on both.
+  await page.addInitScript(() => { if (!localStorage.getItem('omni.timelineSpan')) localStorage.setItem('omni.timelineSpan', '14') })
   const opened = await open(page, { note: NOTE + MORE, ...opts })
   await page.evaluate(() => { location.hash = '/views' })
   await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
