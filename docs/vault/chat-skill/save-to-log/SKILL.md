@@ -7,7 +7,7 @@ description: Save this conversation into Klui's work log. Use when Klui types "�
 
 Klui keeps one work log in Obsidian (`Claude log.md`). Claude Chat and Cowork cannot write there, so they drop a summary into the Google Drive folder "Claude inbox", and a scheduled secretary merges it into the log. Only ever create a new file; never edit, move or delete any file.
 
-Reply in Thai, short. Never use the em dash or the middle dot.
+Reply in Thai, short. Never use the em dash or the middle dot. Never write a patient's name, hospital number (HN), national ID number, phone number or address; write "ผู้ป่วยรายหนึ่ง" instead.
 
 ## Steps
 

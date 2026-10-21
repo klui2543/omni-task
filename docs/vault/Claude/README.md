@@ -1,5 +1,5 @@
 ---
-format: claude-folder/1
+format: claude-folder/2
 ---
 # โฟลเดอร์ Claude
 
@@ -11,8 +11,10 @@ format: claude-folder/1
 - `log/<ปี>/<เลขเดือน> <ชื่อเดือน>.md` เช่น `log/2026/10 Oct.md`: ไทม์ไลน์เก่าของเดือนนั้น และงานที่เสร็จแล้ว
 - `CLAUDE.md`: กติกาที่ทุก session ของ Claude ต้องทำตาม
 - `secretary.md`: ขั้นตอนของเลขา (อ่านใหม่ทุกรอบ แก้ได้)
+- `system/health.md`: ผลรอบล่าสุดของเลขา (ทำครบไหม อ่านกี่ session สำรองข้อมูลล่าสุดเมื่อไร ปัญหาที่เจอ) และ `system/secretary-state.json` ความจำของเลขาว่าอ่านแต่ละ session ถึงไหนแล้ว (ห้ามแก้)
+- สำรองข้อมูล: เลขาคัดลอก vault ทั้งหมดไปที่ GitHub repo private `klui2543/klui-vault-backup` วันละครั้ง ทุกวันเป็น commit แยก ย้อนกลับไปวันไหนก็ได้
 - `commands/`: คำสั่ง `/save` (บันทึกตอนนี้) และ `/recall` (ค้นเรื่องเก่า)
-- Claude Chat และ Cowork: พิมพ์ "บันทึก" แล้ว skill `save-to-log` สร้างไฟล์สรุปใหม่ในโฟลเดอร์ Google Drive ชื่อ `Claude inbox` เลขารวมเข้า `Claude log.md` ทุก 3 ชั่วโมง แล้วย้ายไฟล์ไป `Claude inbox/done` (ลบทิ้งเมื่อเกิน 90 วัน) Chat แค่สร้างไฟล์ใหม่ ไม่แก้ไฟล์ไหน จึงไม่มีทางเขียนทับกัน สำเนา skill อยู่ใน repo omni-task ที่ `docs/vault/chat-skill/`
+- Claude Chat และ Cowork: พิมพ์ "บันทึก" แล้ว skill `save-to-log` สร้างไฟล์สรุปใหม่ในโฟลเดอร์ Google Drive ชื่อ `Claude inbox` เลขารวมเข้า `Claude log.md` ทุก 3 ชั่วโมง แล้วย้ายไฟล์นั้นไปถังขยะของ Drive ทันที (Google ลบถาวรเองหลัง 30 วัน ถ้ารวมผิดยังกู้จากถังขยะได้) Chat แค่สร้างไฟล์ใหม่ ไม่แก้ไฟล์ไหน จึงไม่มีทางเขียนทับกัน สำเนา skill อยู่ใน repo omni-task ที่ `docs/vault/chat-skill/`
 - ผู้ช่วย Gemini ในแอป Omni เก็บของตัวเองที่ `📁 Folder/หลังบ้าน/Omni/Gemini log/` (มี `index.md` และ `README.md` รูปแบบเดียวกัน) และ `Omni/Gemini memory.md`
 
 ## วิธีหาเรื่องเก่า (สำหรับคนหรือ AI)
@@ -35,13 +37,20 @@ Claude ที่มาซ่อม ทำตามลำดับนี้ แ�
 2. ตารางเวลา: `list_triggers` หาตัวที่ชื่อขึ้นต้น "เลขา" ดู `last_run` ถ้าไม่มีหรือปิดอยู่ ให้สร้างใหม่ (ข้อ 4)
 3. session ของเลขา: `get_session` ของ session ที่ตารางเวลาชี้ไป ถ้าหาย ถูกเก็บ หรือรอบล่าสุดล้มเหลวซ้ำ ให้สร้าง session ใหม่ด้วย `create_session` ชื่อ "เลขา (รันทุก 3 ชั่วโมง)" ใช้รุ่น Opus ใหม่สุดที่มี ข้อความแรก: "คุณคือเลขาของ Klui รัน vsync แล้วอ่าน ~/vault/📁 Folder/หลังบ้าน/Claude/secretary.md แล้วทำตามทุกข้อ เริ่มรอบแรกเลย"
 4. ตั้งตารางเวลาให้ชี้ไป session นั้น (`update_trigger` หรือ `create_trigger` แบบ persistent_session_id) cron `CRON_TZ=Asia/Bangkok 7 8-23/3 * * *` ข้อความ "รอบเลขา: รัน vsync แล้วอ่าน secretary.md ใหม่ แล้วทำตามทุกข้อตั้งแต่ข้อ 1 (ไม่ต้องถามอะไรก่อน)" ลบตัวเก่าที่ใช้ไม่ได้
-5. สั่งรอบหนึ่งทันที (`fire_trigger`) แล้วดูว่าบรรทัด `<!-- secretary-last: ... -->` ท้าย `Claude log.md` เป็นเวลาใหม่
+5. สั่งรอบหนึ่งทันที (`fire_trigger`) แล้วดูว่าบรรทัด `<!-- secretary-last: ... -->` ท้าย `Claude log.md` เป็นเวลาใหม่ และ `system/health.md` บอก `result: ok` (ถ้าเป็น partial ให้อ่านบรรทัด problems)
 6. ถ้าวิธีตั้งค่าของ Claude เปลี่ยนไปจากนี้ ให้อ่านเอกสารปัจจุบันของ Claude Code แล้วทำให้ได้ผลเดียวกัน จากนั้นแก้ส่วนนี้ของ README ให้ตรงกับของจริง
 7. จดในไทม์ไลน์ของ `Claude log.md` ว่าซ่อมอะไร และติ๊กงาน `#ระบบ/เลขา` ที่ค้าง
+
+## กู้ข้อมูลจาก backup
+1. เปิด github.com/klui2543/klui-vault-backup (ต้องล็อกอิน เพราะเป็น private)
+2. อยากได้ของวันไหน: กด Commits เลือกวันนั้น แล้ว Browse files หรือดาวน์โหลด zip
+3. คัดลอกไฟล์ที่ต้องการจากโฟลเดอร์ `vault` กลับเข้า Obsidian (ทั้งโฟลเดอร์หรือเฉพาะไฟล์)
+4. หรือบอก Claude Code: "กู้ไฟล์ <ชื่อไฟล์> จาก backup วันที่ <วันที่>"
 
 ## ตรวจประจำปี (ทุกมกราคม ใช้ไม่เกิน 5 นาที)
 - แอป Omni: ตั้งค่า > ผู้ช่วย AI ดูว่า "เลขาบันทึกล่าสุด" ไม่เกินครึ่งวัน และกดทดสอบ key ของ Gemini ผ่าน
 - `log/index.md` และ `Omni/Gemini log/index.md` มีครบทุกเดือนของปีที่แล้ว และมีบรรทัด "สรุปปี"
+- `system/health.md` บอก `last_backup_ok` ไม่เกิน 2 วัน และลองเปิดไฟล์หนึ่งไฟล์จาก repo backup ดูว่าอ่านได้
 - Obsidian Sync บนมือถือยังทำงาน และแพ็กเกจ Claude กับ Obsidian Sync ยังไม่หมดอายุ
 - มีอะไรไม่ผ่าน: ใช้ข้อความในหัวข้อ "ซ่อมเลขา" หรือบอก Claude ว่าข้อไหนไม่ผ่าน
 

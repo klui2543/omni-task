@@ -2,7 +2,7 @@
 description: Save where this work stands into Klui's Claude log (also when it is not finished)
 ---
 
-Save the state of this session into Klui's Claude log now, even if the work is not finished. Reply in Thai, short. Never use the em dash or the middle dot in text written to files.
+Save the state of this session into Klui's Claude log now, even if the work is not finished. Reply in Thai, short. Never use the em dash or the middle dot in text written to files. Never write a patient's name, hospital number (HN), national ID number, phone number or address; write "ผู้ป่วยรายหนึ่ง" instead.
 
 Extra note from Klui (may be empty): $ARGUMENTS
 
