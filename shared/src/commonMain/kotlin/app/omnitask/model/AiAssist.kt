@@ -159,6 +159,10 @@ object AiAssist {
                     appendLine("- ${e.begin.date} $time ${e.title}")
                 }
             }
+            projectList(tasks).takeIf { it.isNotBlank() }?.let {
+                appendLine("[โปรเจกต์และกิ่งที่มี ใช้แท็กตามนี้เท่านั้น]")
+                appendLine(it)
+            }
             claudeLog?.let(::claudeDigest)?.takeIf { it.isNotBlank() }?.let { log ->
                 appendLine("[ความคืบหน้าที่ Claude จดไว้ (Claude log)]")
                 appendLine(log)
@@ -168,6 +172,23 @@ object AiAssist {
             refs.forEach { (ref, t) -> appendLine(line(ref, t, subtasksOf(t), today, byId, refOf)) }
         }
         return Picture(text.trimEnd(), refs)
+    }
+
+    /**
+     * Every project the owner keeps (the ones made on the Projects page, and any other first tag that names one), with
+     * its branches and how many open tasks each holds: the only tags new work may be filed under, so it shows in
+     * Ygdrasil. Branch names come from every task that is not cancelled, so an empty branch is still offered.
+     */
+    fun projectList(tasks: List<Task>): String {
+        val live = tasks.filter { it.status != Status.CANCELLED }
+        val open = live.filter { it.isOpen }.mapNotNull { Projects.tagOf(it) }.groupingBy { it }.eachCount()
+        val names = live.mapNotNull { Projects.tagOf(it) }.distinct()
+        val roots = (Projects.chosen.orEmpty() + names.map { it.substringBefore('/') }).filter { it.isNotBlank() }.distinct().sorted()
+        return roots.joinToString("\n") { r ->
+            val total = open.filterKeys { it == r || it.startsWith("$r/") }.values.sum()
+            val branches = names.filter { it.startsWith("$r/") }.sorted().joinToString(", ") { b -> "$b (${open[b] ?: 0})" }
+            "- $r ($total งาน)" + if (branches.isNotEmpty()) " กิ่ง: $branches" else ""
+        }
     }
 
     /**
@@ -230,18 +251,19 @@ object AiAssist {
 
     private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer
 เจ้าของสั่งแก้งานได้ทุกอย่าง ใส่สิ่งที่จะแก้ใน actions (ไม่เกิน 8 ข้อ) แอปจะแสดงให้เจ้าของกดยืนยันทีละข้อก่อนแก้จริง ใน answer ให้บอกสั้น ๆ ว่าเตรียมอะไรไว้ให้ยืนยัน ห้ามบอกว่าทำเสร็จแล้ว
-- "add": เพิ่มงานใหม่ ชื่อใน text, date (YYYY-MM-DD) ถ้ามี, field "scheduled" ถ้าเป็นวันนัดทำ ไม่ใช่วันกำหนดส่ง, time (HH:mm) ถ้าต้องการเตือน, project ถ้ารู้ว่าเข้าโปรเจกต์ไหน, priority ถ้าระบุ
+- "add": เพิ่มงานใหม่ ชื่อใน text, date (YYYY-MM-DD) ถ้ามี, field "scheduled" ถ้าเป็นวันนัดทำ ไม่ใช่วันกำหนดส่ง, time (HH:mm) ถ้าต้องการเตือน, priority ถ้าระบุ, project ต้องมีทุกครั้ง (ดูกติกาโปรเจกต์ด้านล่าง)
 - "move": เปลี่ยนวันของงาน ref เป็น date, field "due" (กำหนดส่ง ค่าเริ่มต้น) หรือ "scheduled" (วันนัดทำ) หรือ "start" (วันเริ่ม), date ว่างคือลบวันนั้น
 - "rename": เปลี่ยนชื่องาน ref เป็น text
 - "priority": ตั้งความสำคัญงาน ref เป็น priority (highest, high, medium, none, low, lowest)
 - "remind": ตั้งเวลาเตือนงาน ref เป็น time (HH:mm)
 - "done": ติ๊กงาน ref ว่าเสร็จ
 - "delete": ลบงาน ref ใช้เมื่อเจ้าของสั่งลบชัดเจนเท่านั้น
-- "project": ย้ายงาน ref ไปโปรเจกต์ project (ชื่อแท็กไม่มี #)
+- "project": ย้ายงาน ref ไปโปรเจกต์หรือกิ่ง project (ชื่อแท็กไม่มี # ตามกติกาโปรเจกต์ด้านล่าง)
 - "stuck": จดเหตุผลที่งาน ref ยังค้าง ใส่ใน text
 - "subtasks": เพิ่มงานย่อยใต้งาน ref ตาม items (สั้น ทำได้จริง)
 - "remember": สิ่งที่ควรจำไว้เสมอเกี่ยวกับเจ้าของ เช่น ความชอบ นิสัย ข้อตกลง ใส่ใน text เสนอเมื่อเจ้าของบอกเรื่องแบบนี้หรือสั่งให้จำ ห้ามเสนอซ้ำกับความจำที่มีอยู่แล้ว
 - "big": เรื่องที่ควรให้ Claude ช่วยคิดก่อน เช่น จัดแผนใหม่ทั้งโปรเจกต์ เขียนข้อเสนอใน text
+กติกาโปรเจกต์: project ต้องเป็นชื่อจากรายการ [โปรเจกต์และกิ่งที่มี] เท่านั้น สะกดตรงตัว เลือกกิ่งที่ตรงที่สุด เช่น "peddose/แอป" ถ้ามีกิ่งนั้น ไม่งั้นใช้ชื่อโปรเจกต์ ห้ามแต่งชื่อใหม่ ห้ามแปลหรือย่อ ถ้าไม่แน่ใจว่าเข้าโปรเจกต์ไหน ให้ถามใน answer พร้อมเสนอ 2 ถึง 3 ชื่อจากรายการ และยังไม่ต้องใส่ action นั้น ใช้ชื่อที่ไม่อยู่ในรายการได้เฉพาะเมื่อเจ้าของพิมพ์ชื่อโปรเจกต์ใหม่นั้นเอง
 วันที่แบบ "พรุ่งนี้" หรือ "ศุกร์นี้" ให้คิดจากวันนี้ในภาพรวมงาน ถ้าคำสั่งกำกวม เช่น มีหลายงานชื่อคล้ายกัน ให้ถามกลับใน answer และไม่ต้องใส่ actions
 ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง
 topic: หัวข้อสั้นของการคุยครั้งนี้ ไม่เกิน 8 คำ เช่น "ตกลงทำระบบป้ายก่อน Flow"

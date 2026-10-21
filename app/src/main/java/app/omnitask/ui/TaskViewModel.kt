@@ -1253,6 +1253,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         saveProjectTags(if (on) now + tag else now - tag)
     }
 
+    /**
+     * A project the owner confirmed through the assistant becomes one of the chosen projects when it is not yet, so the
+     * task shows in Ygdrasil and on the Projects page instead of under a plain tag.
+     */
+    private fun keepProject(tag: String?) {
+        val root = tag?.removePrefix("#")?.substringBefore('/')?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val now = _state.value.projectTags ?: return
+        if (root !in now) saveProjectTags(now + root)
+    }
+
     private fun saveProjectTags(tags: Set<String>) {
         prefs.edit().putStringSet(KEY_PROJECT_TAGS, tags).apply()
         Projects.chosen = tags
@@ -2055,6 +2065,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 r.exceptionOrNull()?.let { e -> showMessage(tr("จำไว้ไม่ได้: ${e.message}", "Could not remember it: ${e.message}")) }
             }
         } else if (accept && action is AiAssist.Action.Add) {
+            keepProject(action.project)
             addDetailedTask(
                 QuickAdd.Detail(
                     title = action.title, scheduled = action.scheduled, date = action.date, time = action.time,
@@ -2082,7 +2093,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 is AiAssist.Action.Remind -> setReminder(task, action.time, if (task.due == null && task.scheduled != null) ReminderOn.SCHEDULED else ReminderOn.DUE)
                 is AiAssist.Action.Done -> if (task.isOpen) toggleDone(task)
                 is AiAssist.Action.Delete -> deleteTask(task)
-                is AiAssist.Action.Project -> moveTask(task, action.tag)
+                is AiAssist.Action.Project -> { keepProject(action.tag); moveTask(task, action.tag) }
                 is AiAssist.Action.Stuck -> noteStuck(task, action.reason)
                 is AiAssist.Action.Subtasks -> addSubtasks(task, action.titles)
                 is AiAssist.Action.Add, is AiAssist.Action.Big, is AiAssist.Action.Remember -> Unit
