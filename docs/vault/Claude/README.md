@@ -12,7 +12,7 @@ format: claude-folder/1
 - `CLAUDE.md`: กติกาที่ทุก session ของ Claude ต้องทำตาม
 - `secretary.md`: ขั้นตอนของเลขา (อ่านใหม่ทุกรอบ แก้ได้)
 - `commands/`: คำสั่ง `/save` (บันทึกตอนนี้) และ `/recall` (ค้นเรื่องเก่า)
-- Claude Chat และ Cowork: พิมพ์ "บันทึก" แล้ว skill `save-to-log` สร้างไฟล์สรุปใหม่ในโฟลเดอร์ Google Drive ชื่อ `Claude inbox` เลขารวมเข้า `Claude log.md` ทุก 3 ชั่วโมง แล้วย้ายไฟล์ไป `Claude inbox/done` (ลบทิ้งเมื่อเกิน 90 วัน) Chat แค่สร้างไฟล์ใหม่ ไม่แก้ไฟล์ไหน จึงไม่มีทางเขียนทับกัน สำเนา skill อยู่ใน repo omni-task ที่ `docs/vault/chat-skill/`
+- Claude Chat และ Cowork: พิมพ์ "บันทึก" แล้ว skill `save-to-log` สร้างไฟล์สรุปใหม่ในโฟลเดอร์ Google Drive ชื่อ `Claude inbox` เลขารวมเข้า `Claude log.md` ทุก 3 ชั่วโมง แล้วย้ายไฟล์นั้นไปถังขยะของ Drive ทันที (Google ลบถาวรเองหลัง 30 วัน ถ้ารวมผิดยังกู้จากถังขยะได้) Chat แค่สร้างไฟล์ใหม่ ไม่แก้ไฟล์ไหน จึงไม่มีทางเขียนทับกัน สำเนา skill อยู่ใน repo omni-task ที่ `docs/vault/chat-skill/`
 - ผู้ช่วย Gemini ในแอป Omni เก็บของตัวเองที่ `📁 Folder/หลังบ้าน/Omni/Gemini log/` (มี `index.md` และ `README.md` รูปแบบเดียวกัน) และ `Omni/Gemini memory.md`
 
 ## วิธีหาเรื่องเก่า (สำหรับคนหรือ AI)
