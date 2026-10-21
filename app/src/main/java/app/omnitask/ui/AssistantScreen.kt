@@ -161,6 +161,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
     var tab by rememberSaveable { mutableStateOf(if (state.chat.isEmpty()) AiTab.OVERVIEW else AiTab.CHAT) }
     var seenChat by rememberSaveable { mutableStateOf(state.chat.size) }
     var picking by remember { mutableStateOf(false) }
+    var briefOpen by rememberSaveable { mutableStateOf(false) }
     val list = rememberLazyListState()
     LaunchedEffect(state.chat.size, state.ai.thinking) {
         if (state.chat.size > seenChat) tab = AiTab.CHAT
@@ -183,17 +184,12 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             tab, { tab = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp),
         )
 
-        LazyColumn(
-            Modifier.weight(1f),
-            state = list,
-            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (tab == AiTab.OVERVIEW || !profile.exists || interviewing) when {
-                !profile.exists || interviewing -> item(key = "interview") {
-                    Interview(profile, first = !profile.exists, onSave = { vm.saveProfile(it); interviewing = false }, onCancel = if (profile.exists) ({ interviewing = false }) else null)
-                }
-                profile.stale(state.today) -> item(key = "stale") {
+        // The overview fills the page without scrolling: a one-line brief, the switch and chips, and the map taking
+        // the rest, with the picked task's card floating over the map's lower edge, under the thumb.
+        val insight = state.insight
+        val askCard: (@Composable () -> Unit)? = when {
+            profile.stale(state.today) -> {
+                {
                     AskCard(
                         tr("ชีวิตช่วงนี้ยังเหมือนเดิมไหม?", "Is life still the same lately?"),
                         tr("ไม่ได้ทบทวนมา 30 วัน", "Not reviewed in 30 days"),
@@ -204,39 +200,55 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
                         tr("ปรับ", "Update"), { interviewing = true }, tr("ยังเหมือนเดิม", "Still the same"), { vm.saveProfile(profile) },
                     )
                 }
-                state.insight != null -> item(key = "insight") {
-                    val ask = state.insight
+            }
+            insight != null -> {
+                {
+                    val ask = insight
                     AskCard(
                         tr("จำไว้ไหม?", "Remember this?"), ask.window, ask.text,
                         tr("ไม่ใช่", "No"), { vm.answerInsight(false) }, tr("ใช่ จำไว้", "Yes, remember"), { vm.answerInsight(true) },
                     )
                 }
             }
-
-            if (tab == AiTab.OVERVIEW && profile.exists && !interviewing) {
-                item(key = "ai-brief") { AiBriefCard(state.ai, picks.size, { vm.aiBrief(force = true) }, onSettings) }
-                item(key = "ai-switch") {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        AiViewSwitch(view) { view = it }
-                        AiChips(who, staleOnly, stuckCount, { who = it; staleOnly = false }, { staleOnly = !staleOnly })
-                        AiLegend(view)
-                    }
-                }
-                item(key = "ai-map") { AiMap(view, state, vm, onOpen, who, staleOnly, picks.keys, selKey) { selKey = it?.key } }
+            else -> null
+        }
+        if (tab == AiTab.OVERVIEW && profile.exists && !interviewing) Column(
+            Modifier.weight(1f).fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            askCard?.invoke()
+            AiBriefLine(state.ai, picks.size, briefOpen, { briefOpen = !briefOpen }, { vm.aiBrief(force = true) }, onSettings)
+            AiViewSwitch(view) { view = it }
+            AiChips(who, staleOnly, stuckCount, { who = it; staleOnly = false }, { staleOnly = !staleOnly })
+            AiLegend(view)
+            AiMap(
+                view, state, vm, onOpen, who, staleOnly, picks.keys, selKey, { selKey = it?.key },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 picked?.let { t ->
-                    item(key = "ai-pick") {
-                        AiTaskCard(
-                            t, picks[t.key], state,
-                            onAsk = {
-                                input = tr("เรื่องงาน \"${t.title}\" ควรทำอย่างไรต่อ", "About \"${t.title}\": what should I do next?")
-                                runCatching { inputFocus.requestFocus() }
-                            },
-                            onOpen = { onOpen(t) },
-                            onClose = { selKey = null },
-                        )
-                    }
+                    AiTaskCard(
+                        t, picks[t.key], state,
+                        onAsk = {
+                            input = tr("เรื่องงาน \"${t.title}\" ควรทำอย่างไรต่อ", "About \"${t.title}\": what should I do next?")
+                            runCatching { inputFocus.requestFocus() }
+                        },
+                        onOpen = { onOpen(t) },
+                        onClose = { selKey = null },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
+                        floating = true,
+                    )
                 }
             }
+        } else LazyColumn(
+            Modifier.weight(1f),
+            state = list,
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (!profile.exists || interviewing) item(key = "interview") {
+                Interview(profile, first = !profile.exists, onSave = { vm.saveProfile(it); interviewing = false }, onCancel = if (profile.exists) ({ interviewing = false }) else null)
+            }
+
 
 
             if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {

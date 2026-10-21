@@ -44,6 +44,7 @@ import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
+import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
 import app.omnitask.data.Gemini
 import app.omnitask.model.Swap
@@ -1880,13 +1881,26 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * The open work as Gemini sees it, from what is loaded now, with what Claude wrote in Claude log.md (read fresh
      * each time, off the main thread, so a log Obsidian Sync just brought in is used).
      */
-    private suspend fun aiPicture(): AiAssist.Picture {
+    /** The picture, and the assistant's lasting memory and conversation log, read fresh from the vault. */
+    private class AiContext(val picture: AiAssist.Picture, val memory: String?, val log: String?)
+
+    private suspend fun aiContext(): AiContext {
         val s = _state.value
-        val log = s.vault?.let { v -> withContext(Dispatchers.IO) { runCatching { repo.readPath(v, CLAUDE_LOG) }.getOrNull() } }
-        if ((log != null) != s.ai.claudeLog) _state.update { it.copy(ai = it.ai.copy(claudeLog = log != null)) }
+        fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
+        val (claude, memory, log) = withContext(Dispatchers.IO) { Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), read(AiMemory.LOG_FILE)) }
+        if ((claude != null) != s.ai.claudeLog) _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
-        return AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, log)
+        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, log)
     }
+
+    /** Adds [lines] under today in the conversation log, off the main thread; a failed write only loses the log line. */
+    private fun logAi(lines: List<String>) {
+        val vault = _state.value.vault ?: return
+        val today = LocalDate.now()
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.editPath(vault, AiMemory.LOG_FILE) { old -> AiMemory.addToLog(old, today, lines) } } }
+    }
+
+    private fun nowHm(): String = java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
 
     /**
      * Asks Gemini for the brief. Without [force] it reads again only when the owner left it on ([AiUi.autoBrief]) and
@@ -1898,8 +1912,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         if (!force && (!ai.autoBrief || System.currentTimeMillis() - ai.briefAt < BRIEF_EVERY_MS)) return
         _state.update { it.copy(ai = it.ai.copy(briefing = true, briefError = null)) }
         viewModelScope.launch {
-            val picture = aiPicture()
-            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseBrief(gemini.generate(AiAssist.briefRequest(picture)), picture) } }
+            val ctx = aiContext()
+            val picture = ctx.picture
+            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseBrief(gemini.generate(AiAssist.briefRequest(picture, AiMemory.memoryForModel(ctx.memory))), picture) } }
             _state.update { st ->
                 st.copy(
                     ai = r.fold(
@@ -1924,9 +1939,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
         _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true)) }
         viewModelScope.launch {
-            val picture = aiPicture()
+            val ctx = aiContext()
+            val picture = ctx.picture
             val started = System.currentTimeMillis()
-            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text)), picture) } }
+            val body = AiAssist.chatRequest(picture, earlier, text, AiMemory.memoryForModel(ctx.memory), AiMemory.logForModel(ctx.log, text))
+            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseReply(gemini.generate(body), picture) } }
             val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
             val model = AiKey.model(getApplication())
             val answer = r.fold(
@@ -1934,6 +1951,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
             )
             _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false)) }
+            // Kept in the vault, so the assistant remembers it next time and Claude can read it too.
+            logAi(listOf("${nowHm()} ถาม: $text", "  Gemini (${app.omnitask.ui.shortModel(model)}): " + (answer.failed?.let { "ไม่ได้ตอบ: $it" } ?: answer.text)))
         }
     }
 
@@ -1952,7 +1971,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val item = _state.value.chat.getOrNull(index) as? Chat.AiAnswer ?: return
         if (i in item.outcome) return
         val action = item.actions.getOrNull(i) ?: return
-        if (accept && action is AiAssist.Action.Add) {
+        logAi(listOf("${nowHm()} " + (if (accept) "ทำแล้ว: " else "ไม่ทำ: ") + AiAssist.describe(action)))
+        if (accept && action is AiAssist.Action.Remember) {
+            val vault = _state.value.vault
+            val today = LocalDate.now()
+            if (vault != null) viewModelScope.launch {
+                val r = withContext(Dispatchers.IO) { runCatching { repo.editPath(vault, AiMemory.MEMORY_FILE) { old -> AiMemory.remember(old, action.text, today) } } }
+                r.exceptionOrNull()?.let { e -> showMessage(tr("จำไว้ไม่ได้: ${e.message}", "Could not remember it: ${e.message}")) }
+            }
+        } else if (accept && action is AiAssist.Action.Add) {
             addDetailedTask(
                 QuickAdd.Detail(
                     title = action.title, scheduled = action.scheduled, date = action.date, time = action.time,
@@ -1983,7 +2010,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 is AiAssist.Action.Project -> moveTask(task, action.tag)
                 is AiAssist.Action.Stuck -> noteStuck(task, action.reason)
                 is AiAssist.Action.Subtasks -> addSubtasks(task, action.titles)
-                is AiAssist.Action.Add, is AiAssist.Action.Big -> Unit
+                is AiAssist.Action.Add, is AiAssist.Action.Big, is AiAssist.Action.Remember -> Unit
             }
         }
         _state.update {

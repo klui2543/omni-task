@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.PathEffect
@@ -110,6 +111,45 @@ internal fun AiBriefCard(ai: AiUi, picks: Int, onRefresh: () -> Unit, onSettings
     }
 }
 
+/**
+ * The brief folded to one line, so the map below gets the screen: a tap unfolds it. Without a key it says how to
+ * switch the assistant on; while reading or after an error it says so.
+ */
+@Composable
+internal fun AiBriefLine(ai: AiUi, picks: Int, open: Boolean, onToggle: () -> Unit, onRefresh: () -> Unit, onSettings: () -> Unit) {
+    val text = when {
+        !ai.hasKey -> tr("ใส่ Gemini API key แล้วผู้ช่วยจะสรุปและวงงานที่ควรดูให้", "Add a Gemini API key for a summary and picks")
+        ai.brief == null && ai.briefing -> tr("กำลังอ่านงานทั้งหมด...", "Reading all your work...")
+        ai.brief == null && ai.briefError != null -> ai.briefError
+        ai.brief == null -> tr("แตะอ่านใหม่ เพื่อให้ผู้ช่วยสรุปภาพรวม", "Tap read again for a summary")
+        else -> ai.brief?.summary.orEmpty() + if (open && picks > 0) tr("\nวงสีม่วงคืองาน $picks งานที่ควรดูก่อน แตะเพื่อดูเหตุผล", "\nThe $picks ringed in purple are worth a look first.") else ""
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp))
+            .clickable(enabled = ai.brief != null, onClick = onToggle).padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = if (open) Alignment.Top else Alignment.CenterVertically,
+    ) {
+        Box(Modifier.padding(top = if (open) 12.dp else 0.dp).size(14.dp).clip(CircleShape).background(C.accent))
+        Text(
+            text, Modifier.weight(1f).padding(start = 9.dp, top = 8.dp, bottom = 8.dp),
+            color = if (ai.brief == null && ai.briefError != null) C.amber else C.text2, fontSize = TS.body,
+            maxLines = if (open) 20 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, lineHeight = 1.4.em,
+        )
+        when {
+            !ai.hasKey -> Text(
+                tr("ใส่ key", "Add key"),
+                Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onSettings).padding(horizontal = 12.dp, vertical = 12.dp),
+                color = C.accentText, fontSize = TS.caption,
+            )
+            ai.brief != null && !open -> Text(tr("อ่านต่อ", "More"), Modifier.padding(start = 6.dp), color = C.accentText, fontSize = TS.caption)
+        }
+        if (ai.hasKey) Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable(enabled = !ai.briefing, onClick = onRefresh),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Ic.refresh, tr("อ่านใหม่", "Read again"), tint = C.muted, modifier = Modifier.size(18.dp)) }
+    }
+}
+
 /** Timeline or Ygdrasil, with how to move around in it. */
 @Composable
 internal fun AiViewSwitch(view: AiView, onView: (AiView) -> Unit) {
@@ -181,9 +221,11 @@ internal fun AiLegend(view: AiView) {
 internal fun AiMap(
     view: AiView, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit,
     who: TimelineWho, staleOnly: Boolean, picks: Set<String>, selKey: String?, onSelect: (Task?) -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth().height(440.dp),
+    overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
 ) {
     val shape = RoundedCornerShape(16.dp)
-    Box(Modifier.fillMaxWidth().height(440.dp).clip(shape).background(C.bg).border(1.dp, C.cardBorder, shape)) {
+    Box(modifier.clip(shape).background(C.bg).border(1.dp, C.cardBorder, shape)) {
         when (view) {
             AiView.TIMELINE -> Box(Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
                 GanttView(state, state.tasks, vm, onOpen, embed = TimelineEmbed(who, staleOnly, picks, selKey, onSelect))
@@ -204,12 +246,16 @@ internal fun AiMap(
                 ),
             )
         }
+        overlay()
     }
 }
 
 /** The picked task under the map: why the assistant points at it (or what the app knows), and what to do. */
 @Composable
-internal fun AiTaskCard(task: Task, reason: String?, state: UiState, onAsk: () -> Unit, onOpen: () -> Unit, onClose: () -> Unit) {
+internal fun AiTaskCard(
+    task: Task, reason: String?, state: UiState, onAsk: () -> Unit, onOpen: () -> Unit, onClose: () -> Unit,
+    modifier: Modifier = Modifier, floating: Boolean = false,
+) {
     val claude = isClaudeTask(task)
     val today = state.today
     val byId = state.allTasks.filter { it.id != null }.associateBy { it.id }
@@ -220,7 +266,12 @@ internal fun AiTaskCard(task: Task, reason: String?, state: UiState, onAsk: () -
         task.due?.takeIf { it < today && task.isOpen }?.let { tr("เลยกำหนด ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") },
         blocker?.let { tr("รอ: ${it.title}", "Waiting on ${it.title}") },
     )
-    Card(border = if (reason != null) C.accentLine else C.cardBorder) {
+    // Floating over the map it is raised, with a shadow, so it reads as on top of the tasks under it.
+    Card(
+        if (floating) modifier.shadow(12.dp, RoundedCornerShape(18.dp)) else modifier,
+        color = if (floating) C.raised else C.card,
+        border = if (reason != null) C.accentLine else C.cardBorder,
+    ) {
         Column(Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f).padding(top = 6.dp)) { if (reason != null) GeminiHead() }
@@ -323,6 +374,7 @@ private fun actionKind(a: AiAssist.Action): String = when (a) {
     is AiAssist.Action.Project -> tr("ย้ายโปรเจกต์", "Move to a project")
     is AiAssist.Action.Stuck -> tr("จดเหตุผลที่ค้าง", "Note why it is stuck")
     is AiAssist.Action.Subtasks -> tr("เพิ่มงานย่อย", "Add subtasks")
+    is AiAssist.Action.Remember -> tr("จำไว้ถาวร", "Remember for good")
     is AiAssist.Action.Big -> tr("เรื่องใหญ่ ส่งให้ Claude ตรวจก่อน", "Big change: Claude reviews it first")
 }
 
@@ -353,6 +405,7 @@ private fun actionText(a: AiAssist.Action): String = when (a) {
     is AiAssist.Action.Project -> "${a.task.title}\n${tr("ไป", "to")} #${a.tag}"
     is AiAssist.Action.Stuck -> "${a.task.title}\n${tr("ค้าง", "Stuck")}: ${a.reason}"
     is AiAssist.Action.Subtasks -> a.task.title + "\n" + a.titles.joinToString("\n") { "  - $it" }
+    is AiAssist.Action.Remember -> a.text
     is AiAssist.Action.Big -> a.text
 }
 
@@ -363,6 +416,7 @@ private fun actionButton(a: AiAssist.Action): String = when (a) {
     is AiAssist.Action.Done -> tr("ติ๊กเสร็จ", "Mark done")
     is AiAssist.Action.Subtasks -> tr("เพิ่ม ${a.titles.size} งานย่อย", "Add ${a.titles.size}")
     is AiAssist.Action.Big -> tr("ส่งให้ Claude ตรวจ", "Send to Claude")
+    is AiAssist.Action.Remember -> tr("จำไว้", "Remember")
     else -> tr("ทำเลย", "Do it")
 }
 

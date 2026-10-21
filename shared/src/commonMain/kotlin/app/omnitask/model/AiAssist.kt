@@ -90,6 +90,11 @@ object AiAssist {
         /** Add these subtasks under the task. */
         data class Subtasks(override val task: Task, val titles: List<String>) : Action
 
+        /** Keep [text] in the assistant's lasting memory ([AiMemory.MEMORY_FILE]). */
+        data class Remember(val text: String) : Action {
+            override val task: Task? get() = null
+        }
+
         /** Too big to do with one tap (several tasks, parking, dropping): written up for Claude to review. */
         data class Big(val text: String) : Action {
             override val task: Task? get() = null
@@ -225,6 +230,7 @@ object AiAssist {
 - "project": ย้ายงาน ref ไปโปรเจกต์ project (ชื่อแท็กไม่มี #)
 - "stuck": จดเหตุผลที่งาน ref ยังค้าง ใส่ใน text
 - "subtasks": เพิ่มงานย่อยใต้งาน ref ตาม items (สั้น ทำได้จริง)
+- "remember": สิ่งที่ควรจำไว้เสมอเกี่ยวกับเจ้าของ เช่น ความชอบ นิสัย ข้อตกลง ใส่ใน text เสนอเมื่อเจ้าของบอกเรื่องแบบนี้หรือสั่งให้จำ ห้ามเสนอซ้ำกับความจำที่มีอยู่แล้ว
 - "big": เรื่องที่ควรให้ Claude ช่วยคิดก่อน เช่น จัดแผนใหม่ทั้งโปรเจกต์ เขียนข้อเสนอใน text
 วันที่แบบ "พรุ่งนี้" หรือ "ศุกร์นี้" ให้คิดจากวันนี้ในภาพรวมงาน ถ้าคำสั่งกำกวม เช่น มีหลายงานชื่อคล้ายกัน ให้ถามกลับใน answer และไม่ต้องใส่ actions
 ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง"""
@@ -247,7 +253,7 @@ object AiAssist {
         putJsonArray("required") { add(JsonPrimitive("summary")); add(JsonPrimitive("picks")) }
     }
 
-    private val KINDS = listOf("add", "move", "rename", "priority", "remind", "done", "delete", "project", "stuck", "subtasks", "big")
+    private val KINDS = listOf("add", "move", "rename", "priority", "remind", "done", "delete", "project", "stuck", "subtasks", "remember", "big")
 
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
@@ -267,8 +273,15 @@ object AiAssist {
         putJsonArray("required") { add(JsonPrimitive("answer")); add(JsonPrimitive("actions")) }
     }
 
-    private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject): String = buildJsonObject {
-        putJsonObject("systemInstruction") { putJsonArray("parts") { add(buildJsonObject { put("text", RULES + "\n\n[ภาพรวมงาน]\n" + picture.text) }) } }
+    private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?): String = buildJsonObject {
+        // What stays the same between calls goes first, so Google can reuse it (cheaper and quicker).
+        val system = buildString {
+            append(RULES)
+            memory?.takeIf { it.isNotBlank() }?.let { append("\n\n[สิ่งที่จำไว้เกี่ยวกับเจ้าของงาน]\n").append(it) }
+            history?.takeIf { it.isNotBlank() }?.let { append("\n\n[บทสนทนาก่อนหน้ากับเจ้าของ (วันใหม่สุดอยู่บน)]\n").append(it) }
+            append("\n\n[ภาพรวมงาน]\n").append(picture.text)
+        }
+        putJsonObject("systemInstruction") { putJsonArray("parts") { add(buildJsonObject { put("text", system) }) } }
         putJsonArray("contents") {
             turns.forEach { t ->
                 add(buildJsonObject {
@@ -292,11 +305,11 @@ object AiAssist {
     }.toString()
 
     /** The body of a generateContent call that asks for the brief. */
-    fun briefRequest(picture: Picture): String = request(picture, emptyList(), BRIEF_ASK, briefSchema)
+    fun briefRequest(picture: Picture, memory: String? = null): String = request(picture, emptyList(), BRIEF_ASK, briefSchema, memory, null)
 
     /** The body of a generateContent call that answers [question], after the [earlier] turns (only the last few are kept). */
-    fun chatRequest(picture: Picture, earlier: List<Turn>, question: String): String =
-        request(picture, earlier.takeLast(8), CHAT_ASK + "\n\nคำถาม: " + question, replySchema)
+    fun chatRequest(picture: Picture, earlier: List<Turn>, question: String, memory: String? = null, history: String? = null): String =
+        request(picture, earlier.takeLast(8), CHAT_ASK + "\n\nคำถาม: " + question, replySchema, memory, history)
 
     /** The same request without the thinking setting, for a model that does not take it. */
     fun withoutThinking(body: String): String {
@@ -389,6 +402,7 @@ object AiAssist {
                     val items = (a["items"] as? JsonArray).orEmpty().mapNotNull { it.s()?.let(::clean) }.take(8)
                     if (items.isEmpty()) null else Action.Subtasks(t, items)
                 }
+                "remember" -> text?.let { Action.Remember(it) }
                 "big" -> text?.let { Action.Big(it) }
                 else -> null
             }
@@ -432,6 +446,22 @@ object AiAssist {
     fun fallbackModel(response: String): String? {
         val stable = models(response).filter { m -> listOf("preview", "exp", "latest").none { it in m.id } }
         return (stable.firstOrNull { it.tier == Tier.FAST } ?: stable.firstOrNull { it.tier == Tier.BALANCED })?.id
+    }
+
+    /** A change in a few words, for the conversation log. */
+    fun describe(a: Action): String = when (a) {
+        is Action.Add -> "เพิ่มงาน \"${a.title}\"" + (a.date?.let { " วันที่ $it" } ?: "")
+        is Action.Move -> "เลื่อน \"${a.task.title}\" ไป ${a.date ?: "ไม่มีวันที่"}"
+        is Action.Rename -> "เปลี่ยนชื่อ \"${a.task.title}\" เป็น \"${a.title}\""
+        is Action.SetPriority -> "ตั้งความสำคัญ \"${a.task.title}\" เป็น ${a.priority.name.lowercase()}"
+        is Action.Remind -> "ตั้งเตือน \"${a.task.title}\" ${a.time}"
+        is Action.Done -> "ติ๊กเสร็จ \"${a.task.title}\""
+        is Action.Delete -> "ลบ \"${a.task.title}\""
+        is Action.Project -> "ย้าย \"${a.task.title}\" ไป #${a.tag}"
+        is Action.Stuck -> "จดค้าง \"${a.task.title}\": ${a.reason}"
+        is Action.Subtasks -> "เพิ่มงานย่อยใต้ \"${a.task.title}\": ${a.titles.joinToString(", ")}"
+        is Action.Remember -> "จำไว้: ${a.text}"
+        is Action.Big -> "ส่งให้ Claude ตรวจ: ${a.text}"
     }
 
     /** The text the owner sends Claude for a [Action.Big] proposal. */
