@@ -5,7 +5,7 @@ import android.net.Uri
 import app.omnitask.model.AiIndex
 import app.omnitask.model.AiMemory
 import java.io.File
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import org.json.JSONObject
 
 /**
@@ -17,8 +17,6 @@ class AiLibrary(private val context: Context, private val repo: VaultRepository,
 
     val recall = AiRecall(context, gemini)
 
-    private fun kd(day: LocalDate) = kotlinx.datetime.LocalDate(day.year, day.monthValue, day.dayOfMonth)
-
     // ---- what a question reads ----
 
     /**
@@ -27,7 +25,7 @@ class AiLibrary(private val context: Context, private val repo: VaultRepository,
      */
     fun recent(vault: Uri, today: LocalDate): List<AiMemory.Entry> {
         runCatching { moveLegacy(vault) }
-        val now = AiIndex.monthKey(kd(today))
+        val now = AiIndex.monthKey(today)
         return AiMemory.merge(listOf(now, AiIndex.previous(now)).map { read(vault, AiIndex.pathOf(it)) })
     }
 
@@ -78,7 +76,7 @@ class AiLibrary(private val context: Context, private val repo: VaultRepository,
         val full = force || now - state.optLong("lastFull") > WEEK_MS
         val digests = state.optJSONObject("digests") ?: JSONObject()
         val hasKey = AiKey.get(context) != null
-        val tday = kd(today)
+        val tday = today
         val thisMonth = AiIndex.monthKey(tday)
 
         runCatching { moveLegacy(vault) }
