@@ -60,7 +60,8 @@ class Gemini(private val context: Context) {
 
     /**
      * Sends [body] (from [AiAssist.briefRequest] or [AiAssist.chatRequest]) and returns the raw response for
-     * [AiAssist] to read. When the model is not found, picks the newest Flash from Google's list once and retries.
+     * [AiAssist] to read. When the model is not found, picks the newest Flash-Lite (or Flash) from Google's list
+     * once and retries.
      */
     fun generate(body: String, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): String {
         // A model that does not take the thinking setting says so once; after that it is left out, so no call is made twice.
@@ -71,7 +72,7 @@ class Gemini(private val context: Context) {
             first = post(model, AiAssist.withoutThinking(body), key)
         }
         if (first.first != 404) return check(first)
-        val newest = list(key)?.let(AiAssist::newestFlash) ?: return check(first)
+        val newest = list(key)?.let(AiAssist::fallbackModel)?.takeIf { it != model } ?: return check(first)
         AiKey.setModel(context, newest)
         return check(post(newest, body, key))
     }
@@ -99,6 +100,12 @@ class Gemini(private val context: Context) {
         } catch (e: IOException) {
             throw AiAssist.Failure(NO_NET + (e.message?.let { " ($it)" } ?: ""))
         }
+    }
+
+    /** Every text model this key can use, grouped fast to smart. */
+    fun models(key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): List<AiAssist.Model> {
+        val text = list(key) ?: throw AiAssist.Failure(tr("อ่านรายชื่อรุ่นจาก Google ไม่ได้", "Could not read the model list from Google"))
+        return AiAssist.models(text)
     }
 
     private fun list(key: String): String? = runCatching {

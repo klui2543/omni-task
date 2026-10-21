@@ -157,9 +157,18 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
         }
     }
 
+    // Two tabs: the overview of the work, and the conversation. Asking something moves to the conversation.
+    var tab by rememberSaveable { mutableStateOf(if (state.chat.isEmpty()) AiTab.OVERVIEW else AiTab.CHAT) }
+    var seenChat by rememberSaveable { mutableStateOf(state.chat.size) }
+    var picking by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
-    LaunchedEffect(state.chat.size) { if (state.chat.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1) }
+    LaunchedEffect(state.chat.size, state.ai.thinking) {
+        if (state.chat.size > seenChat) tab = AiTab.CHAT
+        seenChat = state.chat.size
+        if (tab == AiTab.CHAT && state.chat.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+    }
     val profile = state.profile
+    if (picking) AiModelSheet(state.ai, vm::loadAiModels, vm::setAiModel) { picking = false }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -169,6 +178,10 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             }
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
         }
+        Segmented(
+            listOf(AiTab.OVERVIEW to tr("ภาพรวม", "Overview"), AiTab.CHAT to tr("แชต", "Chat") + state.chat.count { it is Chat.Asked }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()),
+            tab, { tab = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp),
+        )
 
         LazyColumn(
             Modifier.weight(1f),
@@ -176,7 +189,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            when {
+            if (tab == AiTab.OVERVIEW || !profile.exists || interviewing) when {
                 !profile.exists || interviewing -> item(key = "interview") {
                     Interview(profile, first = !profile.exists, onSave = { vm.saveProfile(it); interviewing = false }, onCancel = if (profile.exists) ({ interviewing = false }) else null)
                 }
@@ -200,7 +213,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
                 }
             }
 
-            if (profile.exists && !interviewing) {
+            if (tab == AiTab.OVERVIEW && profile.exists && !interviewing) {
                 item(key = "ai-brief") { AiBriefCard(state.ai, picks.size, { vm.aiBrief(force = true) }, onSettings) }
                 item(key = "ai-switch") {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -226,7 +239,14 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             }
 
 
-            itemsIndexed(state.chat) { index, item ->
+            if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {
+                Text(
+                    if (state.ai.hasKey) tr("ถามหรือสั่งงานได้ที่ช่องด้านล่าง เช่น เพิ่มงาน เลื่อนวัน หรือถามว่าอะไรค้างนานสุด", "Ask or give an order below: add a task, move a date, or ask what has sat longest")
+                    else tr("ถามได้ที่ช่องด้านล่าง ใส่ Gemini API key ในตั้งค่าเพื่อให้ผู้ช่วยตอบและแก้งานให้ได้", "Ask below. Add a Gemini API key in Settings for answers and changes from the assistant"),
+                    Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp), color = C.muted, fontSize = TS.body,
+                )
+            }
+            if (tab == AiTab.CHAT) itemsIndexed(state.chat) { index, item ->
                 when (item) {
                     is Chat.Asked -> Bubble(item.text)
                     is Chat.Slots -> SlotsCard(
@@ -247,7 +267,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
                     is Chat.AiAnswer -> AiAnswerCard(item, { i, ok -> vm.answerAiAction(index, i, ok) }) { big -> shareToClaude(app.omnitask.model.AiAssist.forClaude(big, state.today)) }
                 }
             }
-            if (state.ai.thinking) item(key = "ai-thinking") { AiThinking() }
+            if (tab == AiTab.CHAT && state.ai.thinking) item(key = "ai-thinking") { AiThinking() }
 
         }
 
@@ -278,9 +298,10 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp)
                 .then(if (ime) Modifier.imePadding() else Modifier)
                 .fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(24.dp))
-                .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = if (state.ai.hasKey) 6.dp else 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (state.ai.hasKey) Box(Modifier.padding(end = 8.dp)) { AiModelChip(state.ai.model) { picking = true } }
             BasicTextField(
                 value = input,
                 onValueChange = { input = it },
@@ -292,7 +313,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
                 maxLines = 3,
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text(tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body)
+                        if (input.isEmpty()) Text(if (state.ai.hasKey) tr("สั่งหรือถามเรื่องงาน", "Ask, or say what to change") else tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body, maxLines = 1)
                         inner()
                     }
                 },
@@ -319,6 +340,9 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
         )
     }
 }
+
+/** The assistant's two tabs. */
+enum class AiTab { OVERVIEW, CHAT }
 
 /** A ready question, offered while typing to the assistant so the common ones need no typing (and are never misread). */
 class AskPreset(val label: String, val run: () -> Unit)
@@ -559,6 +583,7 @@ private fun sources(state: UiState): String {
         if (state.profile.exists) add(Profile.PATH.substringAfterLast('/'))
         add(tr("งาน ${state.tasks.count { it.isOpen }} รายการ", "${state.tasks.count { it.isOpen }} tasks"))
         if (state.calendarAccess == true) add("Google Calendar")
+        if (state.ai.claudeLog) add("Claude log")
     }
     val and = tr("และ", "and")
     return tr("อ่านจาก ", "Reading ") + parts.dropLast(1).joinToString(", ").let { if (it.isEmpty()) parts.last() else "$it $and ${parts.last()}" }

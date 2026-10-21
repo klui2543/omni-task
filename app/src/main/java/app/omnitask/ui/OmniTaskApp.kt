@@ -488,6 +488,12 @@ private fun DockNav(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Opens the assistant's page without typing first.
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
+                    .clickable { focus.clearFocus(); onSelect(Screen.AI) },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.spark, tr("เปิดหน้าผู้ช่วย", "Open the assistant"), tint = C.accentText, modifier = Modifier.size(20.dp)) }
             BasicTextField(
                 value = question,
                 onValueChange = { question = it },

@@ -295,6 +295,13 @@ data class AiUi(
     val testing: Boolean = false,
     /** The last key test: true when it worked, with what it said. */
     val test: Pair<Boolean, String>? = null,
+    /** The model in use, and the ones Google offers this key (read when the picker opens). */
+    val model: String = AiAssist.DEFAULT_MODEL,
+    val models: List<AiAssist.Model> = emptyList(),
+    val modelsLoading: Boolean = false,
+    val modelsError: String? = null,
+    /** Whether Claude log.md was found in the vault, so the assistant says it reads it. */
+    val claudeLog: Boolean = false,
 )
 
 /** One entry in the assistant conversation. */
@@ -308,6 +315,9 @@ sealed interface Chat {
         val actions: List<AiAssist.Action> = emptyList(),
         val outcome: Map<Int, Boolean> = emptyMap(),
         val failed: String? = null,
+        /** Which model answered and how long it took, shown under its name. */
+        val model: String? = null,
+        val seconds: Double? = null,
     ) : Chat
 
     data class Asked(val text: String) : Chat
@@ -1821,7 +1831,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun readAiKey() {
         val app = getApplication<Application>()
         val key = AiKey.get(app)
-        _state.update { it.copy(ai = it.ai.copy(hasKey = key != null, keyTail = key?.let(AiKey::tail), autoBrief = AiKey.autoBrief(app))) }
+        _state.update { it.copy(ai = it.ai.copy(hasKey = key != null, keyTail = key?.let(AiKey::tail), autoBrief = AiKey.autoBrief(app), model = AiKey.model(app))) }
+    }
+
+    /** Reads the models Google offers this key, for the picker. */
+    fun loadAiModels() {
+        if (!_state.value.ai.hasKey || _state.value.ai.modelsLoading) return
+        _state.update { it.copy(ai = it.ai.copy(modelsLoading = true, modelsError = null)) }
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { gemini.models() } }
+            _state.update {
+                it.copy(ai = it.ai.copy(modelsLoading = false, models = r.getOrDefault(it.ai.models), modelsError = r.exceptionOrNull()?.message))
+            }
+        }
+    }
+
+    /** Uses [model] from now on, here and in later questions; the brief is read again with it next time. */
+    fun setAiModel(model: String) {
+        AiKey.setModel(getApplication(), model)
+        readAiKey()
     }
 
     /** Saves the owner's key (null removes it), forgets the brief made with the old one, and tries the new one. */
@@ -1848,11 +1876,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The open work as Gemini sees it, from what is loaded now. */
-    private fun aiPicture(): AiAssist.Picture {
+    /**
+     * The open work as Gemini sees it, from what is loaded now, with what Claude wrote in Claude log.md (read fresh
+     * each time, off the main thread, so a log Obsidian Sync just brought in is used).
+     */
+    private suspend fun aiPicture(): AiAssist.Picture {
         val s = _state.value
+        val log = s.vault?.let { v -> withContext(Dispatchers.IO) { runCatching { repo.readPath(v, CLAUDE_LOG) }.getOrNull() } }
+        if ((log != null) != s.ai.claudeLog) _state.update { it.copy(ai = it.ai.copy(claudeLog = log != null)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
-        return AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile)
+        return AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, log)
     }
 
     /**
@@ -1892,10 +1925,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true)) }
         viewModelScope.launch {
             val picture = aiPicture()
+            val started = System.currentTimeMillis()
             val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text)), picture) } }
+            val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
+            val model = AiKey.model(getApplication())
             val answer = r.fold(
-                { Chat.AiAnswer(it.text, it.actions) },
-                { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini")) },
+                { Chat.AiAnswer(it.text, it.actions, model = model, seconds = seconds) },
+                { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
             )
             _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false)) }
         }
@@ -1916,17 +1952,38 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val item = _state.value.chat.getOrNull(index) as? Chat.AiAnswer ?: return
         if (i in item.outcome) return
         val action = item.actions.getOrNull(i) ?: return
-        if (accept && action !is AiAssist.Action.Big) {
+        if (accept && action is AiAssist.Action.Add) {
+            addDetailedTask(
+                QuickAdd.Detail(
+                    title = action.title, scheduled = action.scheduled, date = action.date, time = action.time,
+                    tags = listOfNotNull(action.project), priority = action.priority,
+                ),
+            )
+        } else if (accept && action !is AiAssist.Action.Big) {
             val task = action.task?.let(::current)
             if (task == null) {
                 showMessage(tr("หางานนี้ไม่เจอแล้ว อาจถูกแก้หรือลบไป", "That task is gone; it may have been edited or deleted"))
                 return
             }
             when (action) {
+                is AiAssist.Action.Move -> setDate(
+                    task,
+                    when (action.kind) { AiAssist.DateKind.DUE -> DateField.DUE; AiAssist.DateKind.SCHEDULED -> DateField.SCHEDULED; AiAssist.DateKind.START -> DateField.START },
+                    action.date,
+                )
+                is AiAssist.Action.Rename -> {
+                    val next = TaskLine.setTitle(task.raw, action.title)
+                    if (next == task.raw) { showMessage(tr("เปลี่ยนชื่อไม่ได้ ลองแก้เองในหน้างาน", "Could not rename it; edit it on the task page")); return }
+                    edit(task) { TaskLine.setTitle(it, action.title) }
+                }
+                is AiAssist.Action.SetPriority -> setPriority(task, action.priority)
+                is AiAssist.Action.Remind -> setReminder(task, action.time, if (task.due == null && task.scheduled != null) ReminderOn.SCHEDULED else ReminderOn.DUE)
+                is AiAssist.Action.Done -> if (task.isOpen) toggleDone(task)
+                is AiAssist.Action.Delete -> deleteTask(task)
+                is AiAssist.Action.Project -> moveTask(task, action.tag)
                 is AiAssist.Action.Stuck -> noteStuck(task, action.reason)
-                is AiAssist.Action.Move -> setDate(task, if (task.due == null && task.scheduled != null) DateField.SCHEDULED else DateField.DUE, action.date)
                 is AiAssist.Action.Subtasks -> addSubtasks(task, action.titles)
-                is AiAssist.Action.Big -> Unit
+                is AiAssist.Action.Add, is AiAssist.Action.Big -> Unit
             }
         }
         _state.update {
@@ -2345,6 +2402,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        /** Where Claude keeps its work log, read into what Gemini sees. */
+        const val CLAUDE_LOG = "📁 Folder/หลังบ้าน/Claude/Claude log.md"
+
         /** The brief is read again on opening the assistant only when it is older than this. */
         const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"

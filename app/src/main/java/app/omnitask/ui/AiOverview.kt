@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -266,7 +267,9 @@ internal fun AiThinking() {
 @Composable
 internal fun AiAnswerCard(item: Chat.AiAnswer, onAnswer: (Int, Boolean) -> Unit, onClaude: (AiAssist.Action.Big) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        GeminiHead()
+        GeminiHead(
+            listOfNotNull(item.model?.let(::shortModel), item.seconds?.let { tr("$it วินาที", "$it s") }).joinToString(", ").ifEmpty { null },
+        )
         Card {
             Text(
                 item.failed ?: item.text.ifBlank { tr("(ไม่มีคำตอบ)", "(no answer)") },
@@ -275,43 +278,30 @@ internal fun AiAnswerCard(item: Chat.AiAnswer, onAnswer: (Int, Boolean) -> Unit,
         }
         item.actions.forEachIndexed { i, a ->
             val big = a is AiAssist.Action.Big
+            val danger = a is AiAssist.Action.Delete
             Card(border = if (big) C.control else C.accentLine) {
                 Column(Modifier.padding(14.dp)) {
-                    Text(
-                        when (a) {
-                            is AiAssist.Action.Stuck -> tr("เสนอจดเหตุผลที่ค้าง", "Note why it is stuck")
-                            is AiAssist.Action.Move -> tr("เสนอเลื่อนวัน", "Move the date")
-                            is AiAssist.Action.Subtasks -> tr("เสนอแบ่งเป็นงานย่อย", "Split into subtasks")
-                            is AiAssist.Action.Big -> tr("เรื่องใหญ่ ส่งให้ Claude ตรวจก่อน", "Big change: Claude reviews it first")
-                        },
-                        color = if (big) C.amber else C.accentText, fontSize = TS.micro, fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        when (a) {
-                            is AiAssist.Action.Stuck -> "${a.task.title}\n${tr("ค้าง", "Stuck")}: ${a.reason}"
-                            is AiAssist.Action.Move -> tr("${a.task.title}\nไปวันที่ ${a.date.format(SHORT_DATE)}", "${a.task.title}\nto ${a.date.format(SHORT_DATE)}")
-                            is AiAssist.Action.Subtasks -> a.task.title + "\n" + a.titles.joinToString("\n") { "  - $it" }
-                            is AiAssist.Action.Big -> a.text
-                        },
-                        Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.body, lineHeight = 1.45.em,
-                    )
+                    Text(actionKind(a), color = if (big) C.amber else if (danger) C.red else C.accentText, fontSize = TS.micro, fontWeight = FontWeight.SemiBold)
+                    Text(actionText(a), Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.body, lineHeight = 1.45.em)
                     val done = item.outcome[i]
                     if (done != null) {
                         Text(
                             when {
                                 !done -> tr("ไม่ทำ", "Declined")
                                 big -> tr("ส่งให้ Claude แล้ว", "Sent to Claude")
+                                danger -> tr("ลบแล้ว ย้อนกลับได้จากแถบด้านล่าง", "Deleted; undo from the bar below")
                                 else -> tr("ทำแล้ว", "Done")
                             },
                             Modifier.padding(top = 10.dp), color = if (done) C.tealChip else C.muted, fontSize = TS.caption,
                         )
                     } else {
                         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            GhostButton(tr("ไม่เอา", "No"), { onAnswer(i, false) }, Modifier.weight(1f))
+                            GhostButton(if (danger) tr("ไม่ลบ", "Keep it") else tr("ไม่เอา", "No"), { onAnswer(i, false) }, Modifier.weight(1f))
                             PrimaryButton(
-                                if (big) tr("ส่งให้ Claude ตรวจ", "Send to Claude") else if (a is AiAssist.Action.Subtasks) tr("เพิ่ม ${a.titles.size} งานย่อย", "Add ${a.titles.size}") else tr("ทำเลย", "Do it"),
+                                actionButton(a),
                                 { if (a is AiAssist.Action.Big) onClaude(a); onAnswer(i, true) },
                                 Modifier.weight(1f),
+                                color = if (danger) C.red else C.accent,
                             )
                         }
                     }
@@ -319,4 +309,140 @@ internal fun AiAnswerCard(item: Chat.AiAnswer, onAnswer: (Int, Boolean) -> Unit,
             }
         }
     }
+}
+
+/** The short label above a proposal: what kind of change it is. */
+private fun actionKind(a: AiAssist.Action): String = when (a) {
+    is AiAssist.Action.Add -> tr("เพิ่มงาน", "New task")
+    is AiAssist.Action.Move -> tr("เลื่อนวัน", "Move the date")
+    is AiAssist.Action.Rename -> tr("เปลี่ยนชื่อ", "Rename")
+    is AiAssist.Action.SetPriority -> tr("ความสำคัญ", "Priority")
+    is AiAssist.Action.Remind -> tr("ตั้งเวลาเตือน", "Reminder")
+    is AiAssist.Action.Done -> tr("ติ๊กว่าเสร็จ", "Mark done")
+    is AiAssist.Action.Delete -> tr("ลบงาน", "Delete")
+    is AiAssist.Action.Project -> tr("ย้ายโปรเจกต์", "Move to a project")
+    is AiAssist.Action.Stuck -> tr("จดเหตุผลที่ค้าง", "Note why it is stuck")
+    is AiAssist.Action.Subtasks -> tr("เพิ่มงานย่อย", "Add subtasks")
+    is AiAssist.Action.Big -> tr("เรื่องใหญ่ ส่งให้ Claude ตรวจก่อน", "Big change: Claude reviews it first")
+}
+
+private fun dateText(d: kotlinx.datetime.LocalDate?) = d?.format(SHORT_DATE) ?: tr("ไม่มีวันที่", "no date")
+
+/** What the proposal changes, in words the owner can check before confirming. */
+private fun actionText(a: AiAssist.Action): String = when (a) {
+    is AiAssist.Action.Add -> buildList {
+        add(a.title)
+        a.date?.let { add((if (a.scheduled) tr("นัดทำ ", "On ") else tr("กำหนด ", "Due ")) + dateText(it)) }
+        a.time?.let { add(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute)) }
+        a.project?.let { add(tr("โปรเจกต์ ", "Project ") + it) }
+        if (a.priority != app.omnitask.model.Priority.NONE) add(tr("ความสำคัญ ", "Priority ") + a.priority.label)
+    }.joinToString("\n")
+    is AiAssist.Action.Move -> {
+        val (name, old) = when (a.kind) {
+            AiAssist.DateKind.DUE -> tr("กำหนด", "Due") to a.task.due
+            AiAssist.DateKind.SCHEDULED -> tr("นัดทำ", "Scheduled") to a.task.scheduled
+            AiAssist.DateKind.START -> tr("เริ่ม", "Start") to a.task.start
+        }
+        "${a.task.title}\n$name: ${dateText(old)} ${tr("ไป", "to")} ${dateText(a.date)}"
+    }
+    is AiAssist.Action.Rename -> "${a.task.title}\n${tr("เป็น", "to")}: ${a.title}"
+    is AiAssist.Action.SetPriority -> "${a.task.title}\n${a.task.priority.label} ${tr("เป็น", "to")} ${a.priority.label}"
+    is AiAssist.Action.Remind -> a.task.title + "\n" + tr("เตือน ", "Remind at ") + "%02d:%02d".format(a.time.hour, a.time.minute)
+    is AiAssist.Action.Done -> a.task.title
+    is AiAssist.Action.Delete -> a.task.title
+    is AiAssist.Action.Project -> "${a.task.title}\n${tr("ไป", "to")} #${a.tag}"
+    is AiAssist.Action.Stuck -> "${a.task.title}\n${tr("ค้าง", "Stuck")}: ${a.reason}"
+    is AiAssist.Action.Subtasks -> a.task.title + "\n" + a.titles.joinToString("\n") { "  - $it" }
+    is AiAssist.Action.Big -> a.text
+}
+
+private fun actionButton(a: AiAssist.Action): String = when (a) {
+    is AiAssist.Action.Add -> tr("เพิ่มงาน", "Add")
+    is AiAssist.Action.Move -> tr("เลื่อน", "Move")
+    is AiAssist.Action.Delete -> tr("ลบงาน", "Delete")
+    is AiAssist.Action.Done -> tr("ติ๊กเสร็จ", "Mark done")
+    is AiAssist.Action.Subtasks -> tr("เพิ่ม ${a.titles.size} งานย่อย", "Add ${a.titles.size}")
+    is AiAssist.Action.Big -> tr("ส่งให้ Claude ตรวจ", "Send to Claude")
+    else -> tr("ทำเลย", "Do it")
+}
+
+/** A model id as people say it: "gemini-flash-lite-latest" is "Flash-Lite", "gemini-3.1-pro" is "3.1 Pro". */
+internal fun shortModel(id: String): String = id.removePrefix("models/").removePrefix("gemini-").removeSuffix("-latest")
+    .split('-').joinToString(" ") { part ->
+        when (part) {
+            "flash" -> "Flash"
+            "lite" -> "Lite"
+            "pro" -> "Pro"
+            else -> part
+        }
+    }.replace("Flash Lite", "Flash-Lite")
+
+/** The model in use, in the field where questions are typed; a tap opens the list. */
+@Composable
+internal fun AiModelChip(model: String, onClick: () -> Unit) {
+    Row(
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick).padding(start = 12.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(shortModel(model), color = C.accentText, fontSize = TS.caption, maxLines = 1)
+        Icon(Ic.next, tr("เลือกรุ่น", "Pick a model"), tint = C.accentText, modifier = Modifier.padding(start = 2.dp).size(14.dp).graphicsLayer { rotationZ = 90f })
+    }
+}
+
+/** Every model Google offers this key, fast to smart; the one in use is marked. */
+@Composable
+internal fun AiModelSheet(ai: AiUi, onLoad: () -> Unit, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { onLoad() }
+    SheetFrame(onDismiss) {
+        Text(tr("เลือกรุ่น", "Pick a model"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
+        Text(tr("รายการจาก Google ตามที่ key ของคุณใช้ได้ จำไว้จนกว่าจะเปลี่ยน", "From Google, as your key allows. Kept until you change it."), Modifier.padding(top = 2.dp, bottom = 8.dp), color = C.muted, fontSize = TS.caption)
+        // The one in use stays on the list even when Google's list leaves it out (an alias such as "latest").
+        val list = if (ai.models.none { it.id == ai.model }) listOf(AiAssist.Model(ai.model, shortModel(ai.model), tierOf(ai.model))) + ai.models else ai.models
+        val tiers = listOf(
+            AiAssist.Tier.FAST to tr("เร็ว", "Fast"), AiAssist.Tier.BALANCED to tr("สมดุล", "Balanced"),
+            AiAssist.Tier.SMART to tr("ฉลาด", "Smart"), AiAssist.Tier.OTHER to tr("อื่น ๆ", "Other"),
+        )
+        tiers.forEach { (tier, label) ->
+            val rows = list.filter { it.tier == tier }
+            if (rows.isNotEmpty()) {
+                Text(label, Modifier.padding(top = 12.dp, bottom = 2.dp), color = C.muted, fontSize = TS.micro)
+                rows.forEach { m ->
+                    val on = m.id == ai.model
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (on) C.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable { onPick(m.id); onDismiss() }.padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (on) C.accent else C.faint, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { if (on) Box(Modifier.size(10.dp).clip(CircleShape).background(C.accent)) }
+                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                            Text(m.name, color = C.text, fontSize = TS.body)
+                            Text(m.id, color = C.faint, fontSize = TS.micro)
+                        }
+                    }
+                }
+            }
+        }
+        when {
+            ai.modelsLoading -> Text(tr("กำลังอ่านรายชื่อจาก Google...", "Reading the list from Google..."), Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.caption)
+            ai.modelsError != null -> {
+                Text(ai.modelsError, Modifier.padding(top = 12.dp), color = C.amber, fontSize = TS.caption)
+                GhostButton(tr("ลองใหม่", "Try again"), onLoad, Modifier.padding(top = 8.dp))
+            }
+        }
+        Text(
+            tr("ทุกรุ่นที่ key ใช้ได้อยู่ในรายการนี้ รวมรุ่นที่ใช้ฟรีได้ ถ้ารุ่นไหนเกินโควตาฟรี ผู้ช่วยจะบอกให้เปลี่ยนรุ่น", "Every model your key can use is here, free ones included. If one runs out of free quota, the assistant says so."),
+            Modifier.padding(top = 14.dp), color = C.muted, fontSize = TS.micro,
+        )
+    }
+}
+
+private fun tierOf(id: String) = when {
+    "flash-lite" in id -> AiAssist.Tier.FAST
+    "flash" in id -> AiAssist.Tier.BALANCED
+    "pro" in id -> AiAssist.Tier.SMART
+    else -> AiAssist.Tier.OTHER
 }

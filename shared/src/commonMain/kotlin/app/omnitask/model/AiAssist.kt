@@ -3,6 +3,7 @@ package app.omnitask.model
 import app.omnitask.notify.CalendarEvent
 import app.omnitask.time.*
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -28,8 +29,8 @@ import kotlinx.serialization.json.putJsonObject
  */
 object AiAssist {
 
-    /** The model asked for by default: Google's alias for its newest Flash model. */
-    const val DEFAULT_MODEL = "gemini-flash-latest"
+    /** The model asked for by default: Google's alias for its newest Flash-Lite, the quickest to answer. */
+    const val DEFAULT_MODEL = "gemini-flash-lite-latest"
 
     /** At most this many tasks go to the model, so the request stays small and cheap. */
     const val MAX_TASKS = 80
@@ -43,15 +44,48 @@ object AiAssist {
     /** The brief at the top of the assistant page. */
     data class Brief(val summary: String, val picks: List<Pick>)
 
-    /** A change the assistant proposes. The owner confirms each one; a [Big] one only goes to Claude for review. */
+    /** Which date a [Action.Move] changes. */
+    enum class DateKind { DUE, SCHEDULED, START }
+
+    /**
+     * A change the assistant proposes, from a question or an order. The owner confirms each one before it is made;
+     * a [Big] one only goes to Claude for review.
+     */
     sealed interface Action {
         val task: Task?
 
+        /** A new task: its title, and the day it is due (or [scheduled] for), a reminder time, project and priority. */
+        data class Add(
+            val title: String,
+            val date: LocalDate? = null,
+            val scheduled: Boolean = false,
+            val time: LocalTime? = null,
+            val project: String? = null,
+            val priority: Priority = Priority.NONE,
+        ) : Action {
+            override val task: Task? get() = null
+        }
+
+        /** Move one of the task's dates ([DateKind.DUE] when the model did not say). Null [date] clears it. */
+        data class Move(override val task: Task, val date: LocalDate?, val kind: DateKind = DateKind.DUE) : Action
+
+        data class Rename(override val task: Task, val title: String) : Action
+
+        data class SetPriority(override val task: Task, val priority: Priority) : Action
+
+        /** A reminder at [time] on the task's due day (or scheduled day when it has only that). */
+        data class Remind(override val task: Task, val time: LocalTime) : Action
+
+        /** Tick it done. */
+        data class Done(override val task: Task) : Action
+
+        data class Delete(override val task: Task) : Action
+
+        /** Move it to another project (its first tag). */
+        data class Project(override val task: Task, val tag: String) : Action
+
         /** Write why the task is still open, as a dated `ค้าง` line under it. */
         data class Stuck(override val task: Task, val reason: String) : Action
-
-        /** Move the task's date. */
-        data class Move(override val task: Task, val date: LocalDate) : Action
 
         /** Add these subtasks under the task. */
         data class Subtasks(override val task: Task, val titles: List<String>) : Action
@@ -81,6 +115,7 @@ object AiAssist {
         today: LocalDate,
         events: List<CalendarEvent> = emptyList(),
         profile: List<String> = emptyList(),
+        claudeLog: String? = null,
     ): Picture {
         val open = tasks.filter { it.isOpen && !it.isSubtask }
         // Parked (someday) work is only counted: it is not stuck, and leaving it out keeps the request small and quick.
@@ -109,11 +144,34 @@ object AiAssist {
                     appendLine("- ${e.begin.date} $time ${e.title}")
                 }
             }
+            claudeLog?.let(::claudeDigest)?.takeIf { it.isNotBlank() }?.let { log ->
+                appendLine("[ความคืบหน้าที่ Claude จดไว้ (Claude log)]")
+                appendLine(log)
+            }
             appendLine("[งานที่ยังไม่เสร็จ] ${open.size - someday} งาน" + if (open.size - someday > ordered.size) " (แสดง ${ordered.size} งานแรก)" else "")
             if (someday > 0) appendLine("(งานพักไว้ #สักวัน อีก $someday งาน ไม่ได้แสดง)")
             refs.forEach { (ref, t) -> appendLine(line(ref, t, subtasksOf(t), today, byId, refOf)) }
         }
         return Picture(text.trimEnd(), refs)
+    }
+
+    /**
+     * What goes to the model from Claude log.md: the overview and the open work in full, and the newest two
+     * sessions of the timeline, cut to a few thousand characters.
+     */
+    fun claudeDigest(text: String, max: Int = 3000): String {
+        val out = StringBuilder()
+        var inTimeline = false
+        var sessions = 0
+        for (line in text.lines()) {
+            val t = line.trimEnd()
+            if (t.startsWith("# ")) inTimeline = t.contains("ไทม์ไลน์") || t.contains("Timeline", ignoreCase = true)
+            if (inTimeline && t.startsWith("## ")) sessions++
+            if (inTimeline && sessions > 2) continue
+            if (t.isBlank() || t.trim() == "- 💬 Klui:" || t.trim() == "💬 Klui:") continue
+            out.appendLine(t)
+        }
+        return out.toString().trim().let { if (it.length > max) it.take(max) + "\n(ตัดส่วนที่เหลือ)" else it }
     }
 
     private fun hm(h: Int, m: Int) = "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
@@ -155,13 +213,21 @@ object AiAssist {
 - summary: 1 ถึง 2 ประโยค บอกว่างานติดที่ไหน (ที่เจ้าของ ที่ Claude หรือเลยกำหนด) และควรเริ่มตรงไหน
 - picks: งานที่ควรดูก่อน 1 ถึง 4 งาน เรียงจากสำคัญสุด แต่ละงานมี reason สั้นไม่เกิน 1 ประโยค ว่าทำไมควรดูและควรทำอะไรต่อ"""
 
-    private const val CHAT_ASK = """ตอบคำถามล่าสุดของเจ้าของงานในช่อง answer
-ถ้าการแก้งานจะช่วยได้ เสนอใน actions ได้ไม่เกิน 3 ข้อ เจ้าของจะกดยืนยันเองทีละข้อ
-- kind "stuck": จดเหตุผลที่งาน ref ยังค้าง ใส่เหตุผลใน text
-- kind "move": เลื่อนวันของงาน ref ไปวันที่ date (รูปแบบ YYYY-MM-DD) ได้ทีละ 1 งาน
-- kind "subtasks": แบ่งงาน ref เป็นงานย่อยตาม items (ไม่เกิน 5 ข้อ สั้น ทำได้จริง)
-- kind "big": เรื่องใหญ่ เช่น เลื่อนหลายงาน พักงาน เลิกทำ ให้เขียนข้อเสนอใน text เพื่อส่งให้ Claude ตรวจก่อน
-ถ้าไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง"""
+    private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer
+เจ้าของสั่งแก้งานได้ทุกอย่าง ใส่สิ่งที่จะแก้ใน actions (ไม่เกิน 8 ข้อ) แอปจะแสดงให้เจ้าของกดยืนยันทีละข้อก่อนแก้จริง ใน answer ให้บอกสั้น ๆ ว่าเตรียมอะไรไว้ให้ยืนยัน ห้ามบอกว่าทำเสร็จแล้ว
+- "add": เพิ่มงานใหม่ ชื่อใน text, date (YYYY-MM-DD) ถ้ามี, field "scheduled" ถ้าเป็นวันนัดทำ ไม่ใช่วันกำหนดส่ง, time (HH:mm) ถ้าต้องการเตือน, project ถ้ารู้ว่าเข้าโปรเจกต์ไหน, priority ถ้าระบุ
+- "move": เปลี่ยนวันของงาน ref เป็น date, field "due" (กำหนดส่ง ค่าเริ่มต้น) หรือ "scheduled" (วันนัดทำ) หรือ "start" (วันเริ่ม), date ว่างคือลบวันนั้น
+- "rename": เปลี่ยนชื่องาน ref เป็น text
+- "priority": ตั้งความสำคัญงาน ref เป็น priority (highest, high, medium, none, low, lowest)
+- "remind": ตั้งเวลาเตือนงาน ref เป็น time (HH:mm)
+- "done": ติ๊กงาน ref ว่าเสร็จ
+- "delete": ลบงาน ref ใช้เมื่อเจ้าของสั่งลบชัดเจนเท่านั้น
+- "project": ย้ายงาน ref ไปโปรเจกต์ project (ชื่อแท็กไม่มี #)
+- "stuck": จดเหตุผลที่งาน ref ยังค้าง ใส่ใน text
+- "subtasks": เพิ่มงานย่อยใต้งาน ref ตาม items (สั้น ทำได้จริง)
+- "big": เรื่องที่ควรให้ Claude ช่วยคิดก่อน เช่น จัดแผนใหม่ทั้งโปรเจกต์ เขียนข้อเสนอใน text
+วันที่แบบ "พรุ่งนี้" หรือ "ศุกร์นี้" ให้คิดจากวันนี้ในภาพรวมงาน ถ้าคำสั่งกำกวม เช่น มีหลายงานชื่อคล้ายกัน ให้ถามกลับใน answer และไม่ต้องใส่ actions
+ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง"""
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -181,14 +247,17 @@ object AiAssist {
         putJsonArray("required") { add(JsonPrimitive("summary")); add(JsonPrimitive("picks")) }
     }
 
+    private val KINDS = listOf("add", "move", "rename", "priority", "remind", "done", "delete", "project", "stuck", "subtasks", "big")
+
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
             put("answer", str())
             put("actions", obj("ARRAY") {
                 put("items", obj("OBJECT") {
                     putJsonObject("properties") {
-                        put("kind", obj("STRING") { putJsonArray("enum") { listOf("stuck", "move", "subtasks", "big").forEach { add(JsonPrimitive(it)) } } })
-                        put("ref", str()); put("text", str()); put("date", str())
+                        put("kind", obj("STRING") { putJsonArray("enum") { KINDS.forEach { add(JsonPrimitive(it)) } } })
+                        put("ref", str()); put("text", str()); put("date", str()); put("field", str())
+                        put("time", str()); put("project", str()); put("priority", str())
                         put("items", obj("ARRAY") { put("items", str()) })
                     }
                     putJsonArray("required") { add(JsonPrimitive("kind")) }
@@ -275,49 +344,94 @@ object AiAssist {
         return Brief(clean(o["summary"].s() ?: ""), picks)
     }
 
+    private fun time(v: String?): LocalTime? = v?.let { Regex("""^(\d{1,2}):(\d{2})""").find(it.trim()) }?.let { m ->
+        val h = m.groupValues[1].toInt(); val min = m.groupValues[2].toInt()
+        if (h in 0..23 && min in 0..59) LocalTime(h, min) else null
+    }
+
+    private fun date(v: String?): LocalDate? = v?.let { runCatching { LocalDate.parse(it.trim().take(10)) }.getOrNull() }
+
+    private fun priority(v: String?): Priority? = v?.let { p -> Priority.entries.firstOrNull { it.name.equals(p.trim(), ignoreCase = true) } }
+
+    private fun tag(v: String?): String? = v?.trim()?.removePrefix("#")?.replace(Regex("""\s+"""), "-")?.takeIf { it.isNotEmpty() }
+
     /**
-     * The reply, from a generateContent [response] to [chatRequest]. Proposals that name no task or carry no date are
-     * dropped. Moving more than one task is a big change by the agreement with the owner, so several moves become a
-     * single proposal for Claude to review.
+     * The reply, from a generateContent [response] to [chatRequest]. A proposal that names no task, or lacks what it
+     * needs (a date, a title), is dropped.
      */
     fun parseReply(response: String, picture: Picture): Reply {
         val o = parseObject(answerText(response))
         val actions = (o["actions"] as? JsonArray).orEmpty().mapNotNull { e ->
             val a = e as? JsonObject ?: return@mapNotNull null
             val task = picture.refs[a["ref"].s()]
+            val text = a["text"].s()?.let(::clean)
             when (a["kind"].s()) {
-                "stuck" -> task?.let { t -> a["text"].s()?.let { Action.Stuck(t, clean(it)) } }
-                "move" -> task?.let { t -> a["date"].s()?.let { d -> runCatching { LocalDate.parse(d) }.getOrNull() }?.let { Action.Move(t, it) } }
+                "add" -> text?.let { title ->
+                    Action.Add(
+                        title, date(a["date"].s()), a["field"].s().equals("scheduled", ignoreCase = true), time(a["time"].s()),
+                        tag(a["project"].s()), priority(a["priority"].s()) ?: Priority.NONE,
+                    )
+                }
+                "move" -> task?.let { t ->
+                    val kind = when (a["field"].s()?.lowercase()) { "scheduled" -> DateKind.SCHEDULED; "start" -> DateKind.START; else -> DateKind.DUE }
+                    val d = date(a["date"].s())
+                    // An empty date clears it; a date that does not read is a mistake, not a clear.
+                    if (d == null && a["date"].s() != null) null else Action.Move(t, d, kind)
+                }
+                "rename" -> task?.let { t -> text?.takeIf { it != t.title }?.let { Action.Rename(t, it) } }
+                "priority" -> task?.let { t -> priority(a["priority"].s())?.let { Action.SetPriority(t, it) } }
+                "remind" -> task?.let { t -> time(a["time"].s())?.let { Action.Remind(t, it) } }
+                "done" -> task?.let { Action.Done(it) }
+                "delete" -> task?.let { Action.Delete(it) }
+                "project" -> task?.let { t -> tag(a["project"].s())?.let { Action.Project(t, it) } }
+                "stuck" -> task?.let { t -> text?.let { Action.Stuck(t, it) } }
                 "subtasks" -> task?.let { t ->
-                    val items = (a["items"] as? JsonArray).orEmpty().mapNotNull { it.s()?.let(::clean) }.take(5)
+                    val items = (a["items"] as? JsonArray).orEmpty().mapNotNull { it.s()?.let(::clean) }.take(8)
                     if (items.isEmpty()) null else Action.Subtasks(t, items)
                 }
-                "big" -> a["text"].s()?.let { Action.Big(clean(it)) }
+                "big" -> text?.let { Action.Big(it) }
                 else -> null
             }
         }
-        val moves = actions.filterIsInstance<Action.Move>()
-        val kept = if (moves.size > 1) {
-            actions.filter { it !is Action.Move } + Action.Big(moves.joinToString("\n") { "เลื่อน \"${it.task.title}\" ไป ${it.date}" })
-        } else actions
-        return Reply(clean(o["answer"].s() ?: ""), kept.take(3))
+        return Reply(clean(o["answer"].s() ?: ""), actions.take(8))
+    }
+
+    /** How quick a model is meant to be, to group the list the owner picks from. */
+    enum class Tier { FAST, BALANCED, SMART, OTHER }
+
+    /** A model Google offers this key: its id for the call, its name to show, and its tier. */
+    data class Model(val id: String, val name: String, val tier: Tier)
+
+    /**
+     * Every Gemini model in a models.list [response] that can answer in text (no embedding, image, speech or live
+     * models), grouped by tier and newest first within each.
+     */
+    fun models(response: String): List<Model> {
+        val list = runCatching { json.parseToJsonElement(response).jsonObject["models"]?.jsonArray }.getOrNull() ?: return emptyList()
+        val skip = listOf("embedding", "tts", "image", "live", "audio", "aqa", "veo", "imagen", "robotics", "computer-use", "learnlm")
+        fun version(id: String) = Regex("""gemini-(\d+)(?:\.(\d+))?""").find(id)?.groupValues?.let { (it[1].toIntOrNull() ?: 0) * 100 + (it[2].toIntOrNull() ?: 0) } ?: 0
+        return list.mapNotNull { m ->
+            val o = m as? JsonObject ?: return@mapNotNull null
+            val id = o["name"].s()?.removePrefix("models/") ?: return@mapNotNull null
+            val methods = (o["supportedGenerationMethods"] as? JsonArray)?.mapNotNull { it.s() }.orEmpty()
+            if (!id.startsWith("gemini-") || "generateContent" !in methods || skip.any { it in id }) return@mapNotNull null
+            val tier = when {
+                "flash-lite" in id -> Tier.FAST
+                "flash" in id -> Tier.BALANCED
+                "pro" in id -> Tier.SMART
+                else -> Tier.OTHER
+            }
+            Model(id, o["displayName"].s() ?: id, tier)
+        }.distinctBy { it.id }.sortedWith(compareBy<Model>({ it.tier.ordinal }, { it.id.endsWith("-latest").not() }, { -version(it.id) }, { it.id }))
     }
 
     /**
-     * The newest Flash model in a models.list [response], for when [DEFAULT_MODEL] is not offered: a stable
-     * "gemini-X.Y-flash" (no lite, preview or dated variant), highest version first. Null when none is listed.
+     * What to use when the default alias is not offered, from a models.list [response]: the newest stable Flash-Lite,
+     * else the newest stable Flash. Null when neither is listed.
      */
-    fun newestFlash(response: String): String? {
-        val models = runCatching { json.parseToJsonElement(response).jsonObject["models"]?.jsonArray }.getOrNull() ?: return null
-        val pattern = Regex("""^models/gemini-(\d+)(?:\.(\d+))?-flash$""")
-        return models.mapNotNull { m ->
-            val o = m as? JsonObject ?: return@mapNotNull null
-            val name = o["name"].s() ?: return@mapNotNull null
-            val methods = (o["supportedGenerationMethods"] as? JsonArray)?.mapNotNull { it.s() }.orEmpty()
-            if ("generateContent" !in methods) return@mapNotNull null
-            val g = pattern.find(name)?.groupValues ?: return@mapNotNull null
-            Triple(name.removePrefix("models/"), g[1].toInt(), g[2].toIntOrNull() ?: 0)
-        }.maxWithOrNull(compareBy({ it.second }, { it.third }))?.first
+    fun fallbackModel(response: String): String? {
+        val stable = models(response).filter { m -> listOf("preview", "exp", "latest").none { it in m.id } }
+        return (stable.firstOrNull { it.tier == Tier.FAST } ?: stable.firstOrNull { it.tier == Tier.BALANCED })?.id
     }
 
     /** The text the owner sends Claude for a [Action.Big] proposal. */

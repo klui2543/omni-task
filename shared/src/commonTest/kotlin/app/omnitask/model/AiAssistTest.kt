@@ -100,25 +100,66 @@ class AiAssistTest {
     }
 
     @Test
-    fun theReplyTurnsProposalsIntoActionsAndSeveralMovesIntoOneForClaude() {
+    fun theReplyTurnsEveryKindOfOrderIntoActions() {
         val p = picture()
-        val one = AiAssist.parseReply(
-            response("""{"answer":"ลองแบ่งงานก่อน","actions":[{"kind":"subtasks","ref":"t1","items":["ร่างราคา","ส่งอีเมล"]},{"kind":"stuck","ref":"t2","text":"ยังไม่ได้ติดตั้ง"},{"kind":"move","ref":"t1","date":"2026-10-22"},{"kind":"move","ref":"t9","date":"2026-10-22"}]}"""),
+        val r = AiAssist.parseReply(
+            response("""{"answer":"เตรียมไว้ให้ยืนยันแล้ว","actions":[
+                {"kind":"add","text":"ซื้อน้ำเกลือ","date":"2026-10-21","field":"scheduled","time":"9:00","project":"#flow","priority":"high"},
+                {"kind":"move","ref":"t1","date":"2026-10-24"},
+                {"kind":"move","ref":"t2","date":"2026-10-25","field":"start"},
+                {"kind":"move","ref":"t2","date":"soon"},
+                {"kind":"rename","ref":"t1","text":"ตอบอีเมลลูกค้าเรื่องราคา"},
+                {"kind":"priority","ref":"t1","priority":"Highest"},
+                {"kind":"remind","ref":"t1","time":"18:30"},
+                {"kind":"done","ref":"t2"},
+                {"kind":"delete","ref":"t3"},
+                {"kind":"project","ref":"t3","project":"omni task"},
+                {"kind":"subtasks","ref":"t9","items":["ไม่มีงานนี้"]}
+            ]}"""),
             p,
         )
-        assertEquals("ลองแบ่งงานก่อน", one.text)
-        assertEquals(3, one.actions.size)
-        assertEquals(listOf("ร่างราคา", "ส่งอีเมล"), (one.actions[0] as AiAssist.Action.Subtasks).titles)
-        assertEquals("ยังไม่ได้ติดตั้ง", (one.actions[1] as AiAssist.Action.Stuck).reason)
-        assertEquals(LocalDate.parse("2026-10-22"), (one.actions[2] as AiAssist.Action.Move).date)
+        assertEquals("เตรียมไว้ให้ยืนยันแล้ว", r.text)
+        val add = r.actions[0] as AiAssist.Action.Add
+        assertEquals("ซื้อน้ำเกลือ", add.title)
+        assertEquals(LocalDate.parse("2026-10-21"), add.date)
+        assertTrue(add.scheduled)
+        assertEquals(kotlinx.datetime.LocalTime(9, 0), add.time)
+        assertEquals("flow", add.project)
+        assertEquals(Priority.HIGH, add.priority)
+        assertEquals(AiAssist.DateKind.DUE, (r.actions[1] as AiAssist.Action.Move).kind)
+        assertEquals(AiAssist.DateKind.START, (r.actions[2] as AiAssist.Action.Move).kind)
+        // A date that does not read is dropped, the rest follow in order.
+        assertTrue(r.actions[3] is AiAssist.Action.Rename)
+        assertEquals(Priority.HIGHEST, (r.actions[4] as AiAssist.Action.SetPriority).priority)
+        assertEquals(kotlinx.datetime.LocalTime(18, 30), (r.actions[5] as AiAssist.Action.Remind).time)
+        assertTrue(r.actions[6] is AiAssist.Action.Done)
+        assertTrue(r.actions[7] is AiAssist.Action.Delete)
+        assertEquals(8, r.actions.size, "at most eight, and the unknown task is dropped")
+    }
 
-        val many = AiAssist.parseReply(
-            response("""{"answer":"เลื่อนสองงาน","actions":[{"kind":"move","ref":"t1","date":"2026-10-27"},{"kind":"move","ref":"t2","date":"2026-10-28"},{"kind":"move","ref":"t3","date":"bad"}]}"""),
-            p,
-        )
-        val big = many.actions.single() as AiAssist.Action.Big
-        assertTrue("ตอบอีเมลลูกค้า" in big.text && "2026-10-28" in big.text, big.text)
-        assertTrue(AiAssist.forClaude(big, today).startsWith("#claudecheck"))
+    @Test
+    fun claudeLogGoesInWithItsOverviewAndTheNewestTwoSessions() {
+        val log = """
+            # ภาพรวม
+            - omni/ygdrasil: Timeline เสร็จ ➜ Klui ทดสอบ
+            # งานค้าง
+            - [ ] ทดสอบ APK #omni #kluido
+            # ไทม์ไลน์
+            ## 2026-10-20
+            - งานใหม่
+              - 💬 Klui:
+            ## 2026-10-19
+            - งานเมื่อวาน
+            ## 2026-10-18
+            - งานเก่ามาก
+        """.trimIndent()
+        val digest = AiAssist.claudeDigest(log)
+        assertTrue("Timeline เสร็จ" in digest && "ทดสอบ APK" in digest && "งานเมื่อวาน" in digest)
+        assertFalse("งานเก่ามาก" in digest)
+        assertFalse("💬" in digest)
+        val all = tasks()
+        val p = AiAssist.picture(all, { t -> all.filter { it.parent == t.key } }, today, claudeLog = log)
+        assertTrue("[ความคืบหน้าที่ Claude จดไว้ (Claude log)]" in p.text)
     }
 
     @Test
@@ -136,16 +177,23 @@ class AiAssistTest {
     }
 
     @Test
-    fun theNewestStableFlashIsPickedFromTheModelList() {
+    fun theModelListKeepsTextModelsGroupedAndPicksAFallback() {
         val list = """{"models":[
-            {"name":"models/gemini-3.5-flash","supportedGenerationMethods":["generateContent"]},
-            {"name":"models/gemini-3.8-flash","supportedGenerationMethods":["generateContent"]},
-            {"name":"models/gemini-3.9-flash-preview","supportedGenerationMethods":["generateContent"]},
-            {"name":"models/gemini-3.8-flash-lite","supportedGenerationMethods":["generateContent"]},
-            {"name":"models/gemini-4-flash","supportedGenerationMethods":["embedContent"]}
+            {"name":"models/gemini-3.5-flash","displayName":"Gemini 3.5 Flash","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-3.1-pro","displayName":"Gemini 3.1 Pro","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-3.1-flash-lite","displayName":"Gemini 3.1 Flash-Lite","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-3.9-flash-lite-preview","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-2.5-flash-lite","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-embedding-001","supportedGenerationMethods":["embedContent"]},
+            {"name":"models/gemini-3.1-flash-image","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemma-3-27b-it","supportedGenerationMethods":["generateContent"]}
         ]}"""
-        assertEquals("gemini-3.8-flash", AiAssist.newestFlash(list))
-        assertNull(AiAssist.newestFlash("""{"models":[]}"""))
-        assertFalse(AiAssist.newestFlash("oops") != null)
+        val m = AiAssist.models(list)
+        assertEquals(listOf("gemini-3.9-flash-lite-preview", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-pro"), m.map { it.id })
+        assertEquals("Gemini 3.1 Pro", m.last().name)
+        assertEquals(AiAssist.Tier.SMART, m.last().tier)
+        assertEquals("gemini-3.1-flash-lite", AiAssist.fallbackModel(list))
+        assertNull(AiAssist.fallbackModel("""{"models":[]}"""))
+        assertTrue(AiAssist.models("oops").isEmpty())
     }
 }

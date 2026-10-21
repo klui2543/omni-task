@@ -111,4 +111,11 @@ class TaskLineTest {
         assertEquals("- [ ] งาน #a ⏫ ➕ 2026-10-02", TaskLine.removeTag(raw, "b"))
         assertEquals(raw, TaskLine.removeTag(raw, "missing"))
     }
+
+    @Test
+    fun aNewTitleKeepsTheRestOfTheLine() {
+        val raw = "- [ ] ตอบอีเมล #งาน ⏫ 📅 2026-10-18"
+        assertEquals("- [ ] ตอบอีเมลลูกค้า #งาน ⏫ 📅 2026-10-18", TaskLine.setTitle(raw, "  ตอบอีเมลลูกค้า "))
+        assertEquals(raw, TaskLine.setTitle(raw, "   "))
+    }
 }
