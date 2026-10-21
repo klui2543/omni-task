@@ -230,7 +230,7 @@ export interface ViewsOut {
   sideways: string
   /** Tasks on the calendar; [at] is when the reminder fires (yyyy-MM-ddTHH:mm). */
   calendar: { key: string; at?: string }[]
-  gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string }[] }[]
+  gantt: { project: string; none: boolean; spans: { key: string; start: string; end: string; stale?: number | null; waitKey?: string | null; waitTitle?: string | null }[] }[]
   progress: Record<string, { done: number; total: number }>
 }
 
@@ -335,15 +335,14 @@ export interface ProjectsOut {
 
 /** What Project Ygdrasil shows; see Ygdrasil.Filter in the shared code. */
 export interface YgFilter {
-  show: 'OPEN' | 'ALL' | 'DONE'
-  dates: 'ANY' | 'OVERDUE' | 'TODAY' | 'WEEK' | 'UNDATED'
-  /** Priority names; empty means every priority. */
-  priorities: string[]
+  /** The task list's query (types, dates, priority, status, tags), as the Tasks page sends it. */
+  query: Query
   blockedOnly: boolean
   starredOnly: boolean
   parked: boolean
+  /** Someday work (#สักวัน), shown greyed with its label. */
+  someday: boolean
   links: boolean
-  text: string
 }
 
 /** Something placed on the tree: [x] is its left edge, [y] its centre line. */
@@ -365,6 +364,8 @@ export interface YgSpot {
   /** "And N more", the tasks under a folded limb, or every task shown (the trunk). */
   count: number
   folded: boolean
+  /** A someday task (#สักวัน), drawn greyed with its label. */
+  someday?: boolean
 }
 
 export interface YgEdge {

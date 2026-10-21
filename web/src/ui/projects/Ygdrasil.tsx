@@ -1,19 +1,25 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { host } from '../../host'
+import { DEFAULT_QUERY, type ListQuery } from '../../query'
 import type { Task, YgFilter, YgOut, YgSpot } from '../../types'
+import { FilterBody, SaveFilter, moreInUse } from '../ListTools'
 import { RingButton } from './bits'
 import { STATE_COLOR, STATE_LABEL } from './MindMap'
 import { usePanZoom } from './panZoom'
 
-export const PLAIN_FILTER: YgFilter = { show: 'OPEN', dates: 'ANY', priorities: [], blockedOnly: false, starredOnly: false, parked: false, links: true, text: '' }
+/** The tree's plain filter: the task list's default query, someday work shown, wait lines on. */
+export const PLAIN_FILTER: YgFilter = {
+  query: { ...DEFAULT_QUERY, text: '' }, blockedOnly: false, starredOnly: false, parked: false, someday: true, links: true,
+}
 
-const SHOWS: [YgFilter['show'], string][] = [['OPEN', 'ยังไม่เสร็จ'], ['ALL', 'ทั้งหมด'], ['DONE', 'เสร็จแล้ว']]
-const DATES: [YgFilter['dates'], string][] = [['ANY', 'ทุกวัน'], ['OVERDUE', 'เลยกำหนด'], ['TODAY', 'ถึงวันนี้'], ['WEEK', 'ภายใน 7 วัน'], ['UNDATED', 'ไม่มีวัน']]
-const PRIORITIES: [string, string][] = [['HIGHEST', 'สูงสุด'], ['HIGH', 'สูง'], ['MEDIUM', 'กลาง'], ['NONE', 'ปกติ'], ['LOW', 'ต่ำ'], ['LOWEST', 'ต่ำสุด']]
+/** The filter's query as a list query (the search box text aside), for the shared filter panel. */
+const listQueryOf = (f: YgFilter): ListQuery => ({ ...DEFAULT_QUERY, ...f.query })
 
 /** How many choices differ from the plain filter (Ygdrasil.Filter.changed). */
 export const filterChanges = (f: YgFilter) =>
-  [f.show !== 'OPEN', f.dates !== 'ANY', f.priorities.length > 0, f.blockedOnly, f.starredOnly, f.parked, !f.links, f.text.trim() !== ''].filter(Boolean).length
+  moreInUse(listQueryOf(f)) + (f.query.tags ?? []).filter((t) => t === 'kluido' || t === 'claudedo').length +
+  (f.query.buckets ?? []).filter((b) => b === 'TODAY' || b === 'OVERDUE').length + ((f.query.text ?? '').trim() ? 1 : 0) +
+  [f.blockedOnly, f.starredOnly, f.parked, !f.someday, !f.links].filter(Boolean).length
 
 /** How long a press is held before the task or branch lifts to be dragged. */
 const HOLD_MS = 250
@@ -54,10 +60,11 @@ function TaskSpot(p: { task: Task; spot: YgSpot; busy: boolean; onTick: () => vo
   const hold = useHold(p.onOpen, p.onLift, p.onOpen)
   const done = p.task.status === 'DONE'
   return (
-    <div class={`pj-mtask-wrap pj-mtask${done ? ' done' : ''}`} style={{ left: `${p.spot.x}px`, top: `${p.spot.y - p.spot.h / 2}px`, width: `${p.spot.w}px`, height: `${p.spot.h}px` }}>
+    <div class={`pj-mtask-wrap pj-mtask${done ? ' done' : ''}${p.spot.someday ? ' someday' : ''}`} style={{ left: `${p.spot.x}px`, top: `${p.spot.y - p.spot.h / 2}px`, width: `${p.spot.w}px`, height: `${p.spot.h}px` }}>
       <RingButton task={p.task} busy={p.busy} onTick={p.onTick} />
       <button class="pj-mtask-open" aria-label={`เปิด ${p.task.title}`} {...hold}>
         <span class="ellipsis">{p.task.title}</span>
+        {p.spot.someday && <span class="yg-someday">พักไว้</span>}
       </button>
     </div>
   )
@@ -89,41 +96,43 @@ const graftable = (from: string, to: string) => {
   return to !== from && !to.startsWith(from + '/') && to !== parent
 }
 
-function FilterPanel(p: { filter: YgFilter; onFilter: (f: YgFilter) => void }) {
+/** The tree's filter, above the tree: the task list's two-layer filter, and the tree's own choices under "more". */
+function FilterPanel(p: { filter: YgFilter; tags: string[]; onFilter: (f: YgFilter) => void }) {
   const f = p.filter
+  const q = listQueryOf(f)
+  const [more, setMore] = useState(moreInUse(q) > 0)
   const set = (change: Partial<YgFilter>) => p.onFilter({ ...f, ...change })
-  const toggle = (on: boolean, label: string, change: Partial<YgFilter>) => (
-    <button class={`chip${on ? ' on' : ''}`} aria-pressed={on} onClick={() => set(change)}>{label}</button>
+  const sw = (on: boolean, title: string, note: string | null, change: Partial<YgFilter>) => (
+    <label class="setting">
+      <span class="stack">
+        <span>{title}</span>
+        {note && <span class="muted small">{note}</span>}
+      </span>
+      <input type="checkbox" class="switch" role="switch" aria-label={title} checked={on} onChange={() => set(change)} />
+    </label>
   )
   return (
     <section class="yg-filter" aria-label="ตัวกรอง">
-      <div class="seg" role="tablist" aria-label="สถานะงาน">
-        {SHOWS.map(([v, label]) => (
-          <button key={v} role="tab" aria-selected={f.show === v} onClick={() => set({ show: v })}>{label}</button>
-        ))}
+      <div class="panel-head">
+        <span class="strong">กรอง</span>
+        <button class="link danger" onClick={() => p.onFilter({ ...PLAIN_FILTER, links: f.links })}>ล้างทั้งหมด</button>
       </div>
-      <div class="chips" role="group" aria-label="วันที่">
-        {DATES.map(([v, label]) => toggle(f.dates === v, label, { dates: v }))}
-      </div>
-      <div class="chips" role="group" aria-label="ความสำคัญ">
-        {PRIORITIES.map(([v, label]) => {
-          const on = f.priorities.includes(v)
-          return toggle(on, label, { priorities: on ? f.priorities.filter((x) => x !== v) : [...f.priorities, v] })
-        })}
-      </div>
-      <div class="chips" role="group" aria-label="อื่น ๆ">
-        {toggle(f.blockedOnly, 'ติดรองานอื่น', { blockedOnly: !f.blockedOnly })}
-        {toggle(f.starredOnly, 'เฉพาะติดดาว', { starredOnly: !f.starredOnly })}
-        {toggle(f.parked, 'รวมกิ่งที่พับเก็บ', { parked: !f.parked })}
-        {toggle(f.links, 'เส้นงานที่รอกัน', { links: !f.links })}
-      </div>
-      <div class="row-gap">
-        <label class="search grow">
-          <input type="search" placeholder="ค้นชื่องานหรือ tag" aria-label="ค้นชื่องานหรือ tag" value={f.text}
-            onInput={(e) => set({ text: (e.target as HTMLInputElement).value })} />
-        </label>
-        {filterChanges(f) > 0 && <button class="ghost small-btn" onClick={() => p.onFilter(PLAIN_FILTER)}>ล้างตัวกรอง</button>}
-      </div>
+      <label class="search">
+        <input type="search" placeholder="ค้นชื่องานหรือรายละเอียด" aria-label="ค้นชื่องานหรือรายละเอียด" value={f.query.text ?? ''}
+          onInput={(e) => set({ query: { ...f.query, text: (e.target as HTMLInputElement).value } })} />
+      </label>
+      <FilterBody query={q} onChange={(next) => set({ query: { ...next, text: f.query.text ?? '' } })} tags={p.tags} more={more} onMore={setMore}
+        extraInUse={[f.blockedOnly, f.starredOnly, f.parked, !f.someday].filter(Boolean).length}
+        extra={(
+          <div class="filter-section" role="group" aria-label="เฉพาะ Ygdrasil">
+            <span class="small accent-text strong">เฉพาะ Ygdrasil</span>
+            {sw(f.blockedOnly, 'ติดรองานอื่น', 'เฉพาะงานที่รองานอื่นที่ยังไม่เสร็จ', { blockedOnly: !f.blockedOnly })}
+            {sw(f.someday, 'แสดงงานที่พักไว้', 'งาน #สักวัน เป็นสีจางพร้อมป้าย', { someday: !f.someday })}
+            {sw(f.parked, 'รวมกิ่งที่พับเก็บ', null, { parked: !f.parked })}
+            {sw(f.starredOnly, 'เฉพาะโปรเจกต์ติดดาว', null, { starredOnly: !f.starredOnly })}
+          </div>
+        )} />
+      {more && <SaveFilter query={q} />}
     </section>
   )
 }
@@ -138,6 +147,8 @@ export function Ygdrasil(p: {
   task: (key: string) => Task | undefined
   busy: boolean
   filter: YgFilter
+  /** Every tag on the tasks, for the filter's Tag section. */
+  tags?: string[]
   folded: string[]
   onFilter: (f: YgFilter) => void
   onFolded: (tags: string[]) => void
@@ -214,7 +225,7 @@ export function Ygdrasil(p: {
         </button>
       </header>
 
-      {filtering && <FilterPanel filter={p.filter} onFilter={p.onFilter} />}
+      {filtering && <FilterPanel filter={p.filter} tags={p.tags ?? []} onFilter={p.onFilter} />}
 
       <div class="pj-map" {...map.boxProps}>
         <div class={`pj-map-layer${far ? ' far' : ''}`} data-testid="yg-layer" style={map.layerStyle}>
@@ -287,6 +298,7 @@ export function Ygdrasil(p: {
             <div class="row-gap wrap">
               <button class="ghost small-btn" onClick={() => p.onFolded([])}>กางทั้งหมด</button>
               <button class="ghost small-btn" onClick={() => p.onFolded(p.out.tags.filter((t) => !t.includes('/')))}>พับทุกโปรเจกต์</button>
+              <button class="ghost small-btn" aria-pressed={p.filter.links} onClick={() => p.onFilter({ ...p.filter, links: !p.filter.links })}>{p.filter.links ? 'ซ่อนเส้นงานที่รอกัน' : 'แสดงเส้นงานที่รอกัน'}</button>
             </div>
             <span class="small muted">แตะโปรเจกต์หรือกิ่งเพื่อจัดการ กดค้างแล้วลากโปรเจกต์ไปวางบนอีกโปรเจกต์เพื่อรวมเป็นกิ่ง ลากกลับมาที่ลำต้นเพื่อแยกออก</span>
           </>

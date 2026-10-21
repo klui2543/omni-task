@@ -102,7 +102,7 @@ import java.time.format.DateTimeFormatter
 import app.omnitask.time.*
 
 enum class Mode(private val th: String, private val en: String) {
-    KANBAN("Kanban", "Kanban"), MATRIX("Matrix", "Matrix"), GANTT("Gantt", "Gantt"), CALENDAR("ปฏิทิน", "Calendar");
+    KANBAN("Kanban", "Kanban"), MATRIX("Matrix", "Matrix"), GANTT("Timeline", "Timeline"), CALENDAR("ปฏิทิน", "Calendar");
 
     val label get() = tr(th, en)
 }

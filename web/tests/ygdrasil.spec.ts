@@ -49,8 +49,10 @@ test('filters narrow the tree and stay for the next visit', async ({ page }) => 
   await expect(limb(page, '#Siriraj')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'ตัวกรอง (1)' })).toBeVisible()
 
-  await filters.getByRole('button', { name: 'ทุกวัน' }).click()
-  await filters.getByRole('button', { name: 'ติดรองานอื่น' }).click()
+  // The quick chip again takes it off; the tree's own choices wait under "more".
+  await filters.getByRole('button', { name: 'เลยกำหนด' }).click()
+  await filters.getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
+  await filters.getByRole('switch', { name: 'ติดรองานอื่น' }).check()
   await expect(task(page, 'เตรียมสไลด์ประชุมทีม')).toBeVisible()
   await expect(task(page, 'ทบทวนเคสก่อนราวด์')).toBeVisible()
   await expect(task(page, 'ส่งรายงานความก้าวหน้า')).toHaveCount(0)
@@ -65,7 +67,7 @@ test('filters narrow the tree and stay for the next visit', async ({ page }) => 
   await expect(page.getByRole('button', { name: 'ตัวกรอง (2)' })).toBeVisible()
   await expect(task(page, 'เตรียมสไลด์ประชุมทีม')).toHaveCount(0)
   await page.getByRole('button', { name: 'ตัวกรอง (2)' }).click()
-  await page.getByRole('button', { name: 'ล้างตัวกรอง' }).click()
+  await page.getByRole('region', { name: 'ตัวกรอง' }).getByRole('button', { name: 'ล้างทั้งหมด' }).click()
   await expect(task(page, 'ทำหน้าเว็บ')).toBeVisible()
 })
 

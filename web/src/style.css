@@ -221,6 +221,18 @@ button.trow-body { border: 0; background: transparent; text-align: left; color: 
 .panel-head { display: flex; align-items: center; justify-content: space-between; }
 .panel-body { display: flex; flex-direction: column; gap: 16px; }
 .filter-section { display: flex; flex-direction: column; gap: 6px; }
+/* Two layers: quick chips and saved filters on top, the rest under "more filters" */
+.filter-body { display: flex; flex-direction: column; gap: 14px; }
+.quick-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.quick-chip { min-height: 48px; padding: 0 4px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
+.quick-chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.more-filters { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 14px; border: 0; border-radius: 14px; background: var(--sunken); color: var(--text); text-align: left; }
+.more-filters .chev { color: var(--muted); font-size: 18px; transition: transform .15s; }
+.more-filters .chev.up { transform: rotate(180deg); }
+.accent-text { color: var(--accent-text); }
+/* Someday work on the tree: greyed, with its label */
+.pj-mtask.someday { opacity: .6; }
+.yg-someday { flex: none; margin-left: 4px; padding: 0 6px; border-radius: 8px; background: var(--raised); color: var(--muted); font-size: 11px; line-height: 18px; }
 .panel-foot { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; position: sticky; bottom: 0; background: var(--card); }
 .panel-foot .grow { min-height: 46px; }
 @media (min-width: 1000px) {
@@ -580,6 +592,18 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 .gbar.event { background: var(--teal-soft); color: #134e4a; }
 .gbar.done { background: var(--lime-soft); color: var(--muted); }
 .gbar.dim { opacity: .55; }
+/* Timeline: waiting work has a dashed edge, stuck work an amber stripe; a picked bar is outlined, the rest fade */
+.gbar.waiting { border: 1.5px dashed var(--tint); border-left: 3px solid var(--tint); }
+.gbar.stuck { border-left: 4px solid var(--amber); }
+.gbar.picked { outline: 2px solid var(--text); outline-offset: 1px; }
+.glane.faded, .gedge.faded { opacity: .3; }
+.gsub.warn, .warn-text { color: var(--amber); }
+.gcaption.accent { color: var(--accent-text); }
+.chip.tool.stuck { color: var(--amber); }
+.sq.faint-btn { background: none; border: 0; color: var(--muted); }
+.gpick { position: sticky; bottom: 8px; margin: 8px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--raised); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.25); display: flex; flex-direction: column; gap: 4px; }
+.gwho { flex: none; padding: 2px 10px; border-radius: 10px; font-size: 12px; background: var(--teal-soft); color: var(--teal-text); }
+.gwho.claude { background: var(--accent-soft); color: var(--accent-text); }
 .gtext { display: flex; flex-direction: column; min-width: 0; text-align: left; }
 .gtext.end { text-align: right; align-items: flex-end; }
 .gtitle { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }

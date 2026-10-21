@@ -109,6 +109,14 @@ object StuckLog {
     }.sortedWith(compareBy<Event>({ it.day }, { it.step.ordinal }))
 
     /** The last day something happened to the task (a note or a finished subtask), or null when nothing has. */
+    /** Days an open task has sat since it was made or last moved (a note, a subtask ticked), when that is [ASK_AFTER_DAYS] or more. */
+    fun staleDays(task: Task, subtasks: List<Task>, today: LocalDate): Int? {
+        if (!task.isOpen || task.recurrence != null) return null
+        val base = listOfNotNull(task.created, lastMove(task, subtasks)).maxOrNull() ?: return null
+        val days = ChronoUnit.DAYS.between(base, today)
+        return if (days >= ASK_AFTER_DAYS) days.toInt() else null
+    }
+
     fun lastMove(task: Task, subtasks: List<Task>): LocalDate? = events(task, subtasks).lastOrNull { it.step != Step.START }?.day
 
     /** What each of a task's weeks held, for the small bars: nothing, a note, or a finished subtask (which wins). */

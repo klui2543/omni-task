@@ -370,7 +370,7 @@ test('filters, grouping and sorting change the list and are remembered', async (
 
   await page.getByRole('button', { name: 'กรอง', exact: true }).click()
   const filter = page.getByRole('dialog', { name: 'กรอง' })
-  await filter.getByRole('group', { name: 'วันที่' }).getByRole('button', { name: 'วันนี้' }).click()
+  await filter.getByRole('group', { name: 'ตัวกรองด่วน' }).getByRole('button', { name: 'วันนี้' }).click()
   await filter.getByRole('button', { name: 'แสดง 2 งาน' }).click()
   await expect(page.getByText('ส่งรายงาน')).toHaveCount(0)
   await expect(page.getByText('โทรหาแม่')).toBeVisible()

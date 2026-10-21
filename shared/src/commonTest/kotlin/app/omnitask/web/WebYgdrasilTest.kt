@@ -42,7 +42,7 @@ class WebYgdrasilTest {
 
     @Test
     fun theFilterAndFoldingComeFromThePage() {
-        val overdue = build(filter = """{"dates":"OVERDUE"}""")
+        val overdue = build(filter = """{"query":{"buckets":["OVERDUE"]}}""")
         assertEquals(1, overdue.worlds)
         assertEquals(setOf("f#0"), overdue.spots.mapNotNull { it.key }.toSet())
 

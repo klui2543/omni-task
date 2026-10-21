@@ -104,6 +104,17 @@ object TaskLine {
         }
     }
 
+    /** Gives the task a new [title], keeping its tags, dates and the rest of the line. Unchanged when the old title is not found as written. */
+    fun setTitle(raw: String, title: String): String {
+        val old = parse(raw)?.title?.takeIf { it.isNotEmpty() } ?: return raw
+        val clean = title.trim().replace(Regex("""\s+"""), " ")
+        if (clean.isEmpty()) return raw
+        return editBody(raw) { body ->
+            val i = body.indexOf(old)
+            if (i < 0) body else body.substring(0, i) + clean + body.substring(i + old.length)
+        }
+    }
+
     fun setPriority(raw: String, priority: Priority): String = editBody(raw) { body ->
         val cleared = PRIORITY.find(body)?.let { remove(body, it.range) } ?: body
         priority.emoji?.let { insertByRank(cleared, it, PRIORITY_RANK) } ?: cleared

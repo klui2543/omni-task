@@ -155,6 +155,7 @@ test('the Tasks filter has a chip for each kind of your own, and it filters by t
   await expect(page.getByRole('button', { name: /^Atomic Habits/ })).toBeVisible()
   await page.getByRole('button', { name: 'กรอง', exact: true }).click()
   const filter = page.getByRole('dialog', { name: 'กรอง' })
+  await filter.getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
   // It is with the kinds, and not twice (the Tag list leaves it out).
   await expect(filter.getByRole('group', { name: 'ประเภทงาน' }).getByRole('button', { name: '📖 อ่าน' })).toBeVisible()
   await expect(filter.getByRole('button', { name: '#อ่าน' })).toHaveCount(0)

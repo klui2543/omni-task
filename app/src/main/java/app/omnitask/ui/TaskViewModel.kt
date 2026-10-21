@@ -43,6 +43,12 @@ import app.omnitask.model.load
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
+import app.omnitask.model.AiAssist
+import app.omnitask.model.AiMemory
+import app.omnitask.data.AiKey
+import app.omnitask.data.Gemini
+import app.omnitask.data.AiLibrary
+import app.omnitask.model.AiIndex
 import app.omnitask.model.Swap
 import app.omnitask.notify.Digest
 import kotlinx.datetime.LocalDateTime
@@ -196,6 +202,8 @@ data class UiState(
     val strictProjects: Set<String> = emptySet(),
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
+    /** The Gemini assistant: the key, the brief at the top of the assistant page, and calls under way. */
+    val ai: AiUi = AiUi(),
 ) {
     val toReview get() = Focus.toReview(tasks, today, reviewed)
 
@@ -274,8 +282,53 @@ data class QuickAddRequest(
     val link: String? = null,
 )
 
+/**
+ * The Gemini assistant. [keyTail] shows which key is in without showing it; [brief] is read when the assistant page
+ * opens (at most once an hour, when [autoBrief]) or on request; [thinking] while a typed question is being answered.
+ */
+data class AiUi(
+    val hasKey: Boolean = false,
+    val keyTail: String? = null,
+    val autoBrief: Boolean = true,
+    val brief: AiAssist.Brief? = null,
+    val briefAt: Long = 0L,
+    val briefing: Boolean = false,
+    val briefError: String? = null,
+    val thinking: Boolean = false,
+    /** While a typed question waits on a search of older conversations that Gemini asked for. */
+    val searching: Boolean = false,
+    val testing: Boolean = false,
+    /** The last key test: true when it worked, with what it said. */
+    val test: Pair<Boolean, String>? = null,
+    /** The model in use, and the ones Google offers this key (read when the picker opens). */
+    val model: String = AiAssist.DEFAULT_MODEL,
+    val models: List<AiAssist.Model> = emptyList(),
+    val modelsLoading: Boolean = false,
+    val modelsError: String? = null,
+    /** Whether Claude log.md was found in the vault, so the assistant says it reads it. */
+    val claudeLog: Boolean = false,
+    /** When the secretary last wrote Claude log.md (its marker line), and until when its warning is hidden. */
+    val secretaryLast: Long? = null,
+    val secretaryHiddenUntil: Long = 0L,
+)
+
 /** One entry in the assistant conversation. */
 sealed interface Chat {
+    /**
+     * Gemini's answer to a typed question, the changes it proposes, and what the owner did with each
+     * ([outcome]: index to true for done, false for declined). [failed] when the call did not work.
+     */
+    data class AiAnswer(
+        val text: String,
+        val actions: List<AiAssist.Action> = emptyList(),
+        val outcome: Map<Int, Boolean> = emptyMap(),
+        val failed: String? = null,
+        /** Which model answered and how long it took, shown under its name, and whether it searched older talks. */
+        val model: String? = null,
+        val seconds: Double? = null,
+        val searched: Boolean = false,
+    ) : Chat
+
     data class Asked(val text: String) : Chat
     data class Slots(val plan: Planner.Plan, val page: Int = 0, val picked: Int = 0, val done: String? = null) : Chat
     data class Today(val tasks: List<Task>) : Chat
@@ -381,6 +434,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private var eventsJob: Job? = null
 
     init {
+        readAiKey()
         prefs.registerOnSharedPreferenceChangeListener(settingsListener)
         runCatching { getApplication<Application>().contentResolver.registerContentObserver(CalendarContract.CONTENT_URI, true, calendarObserver) }
     }
@@ -521,6 +575,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             if (_state.value.projectTags == null) {
                 result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
             }
+            // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
+            aiUpkeep()
+            // When the secretary last wrote Claude log, so the today page can say when it stopped.
+            val secretary = withContext(Dispatchers.IO) { runCatching { Secretary.lastRun(repo.readPath(vault, CLAUDE_LOG)) }.getOrNull() }
+            _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -823,8 +882,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query) }
 
-    fun saveFilter(name: String) {
-        val next = _state.value.savedFilters + (name.trim() to _state.value.query.encode())
+    /** Saves [query] (the task list's own, unless another page passes its filter) under [name]. */
+    fun saveFilter(name: String, query: TaskQuery = _state.value.query) {
+        val next = _state.value.savedFilters + (name.trim() to query.encode())
         prefs.edit().putStringSet(KEY_SAVED_FILTERS, next.map { (k, v) -> "$k\t$v" }.toSet()).apply()
         _state.update { it.copy(savedFilters = next) }
     }
@@ -1776,7 +1836,274 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(chat = it.chat + Chat.Asked(tr("ทบทวนสัปดาห์นี้", "Review this week")) + Chat.Review(m.title, m.lines)) }
     }
 
-    fun clearChat() = _state.update { it.copy(chat = emptyList()) }
+    fun clearChat() = _state.update { it.copy(chat = emptyList(), ai = it.ai.copy(thinking = false)) }
+
+    // ---- Gemini ----
+
+    private val gemini by lazy { Gemini(getApplication()) }
+
+    private fun readAiKey() {
+        val app = getApplication<Application>()
+        val key = AiKey.get(app)
+        _state.update { it.copy(ai = it.ai.copy(hasKey = key != null, keyTail = key?.let(AiKey::tail), autoBrief = AiKey.autoBrief(app), model = AiKey.model(app), secretaryHiddenUntil = AiKey.secretaryHiddenUntil(app))) }
+    }
+
+    /** Reads the models Google offers this key, for the picker. */
+    fun loadAiModels() {
+        if (!_state.value.ai.hasKey || _state.value.ai.modelsLoading) return
+        _state.update { it.copy(ai = it.ai.copy(modelsLoading = true, modelsError = null)) }
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { gemini.models() } }
+            _state.update {
+                it.copy(ai = it.ai.copy(modelsLoading = false, models = r.getOrDefault(it.ai.models), modelsError = r.exceptionOrNull()?.message))
+            }
+        }
+    }
+
+    /** Uses [model] from now on, here and in later questions; the brief is read again with it next time. */
+    fun setAiModel(model: String) {
+        AiKey.setModel(getApplication(), model)
+        readAiKey()
+    }
+
+    /** Saves the owner's key (null removes it), forgets the brief made with the old one, and tries the new one. */
+    fun setAiKey(key: String?) {
+        AiKey.set(getApplication(), key?.trim()?.takeIf { it.isNotEmpty() })
+        _state.update { it.copy(ai = it.ai.copy(brief = null, briefAt = 0L, briefError = null, test = null)) }
+        readAiKey()
+        if (_state.value.ai.hasKey) testAiKey()
+    }
+
+    fun setAutoBrief(on: Boolean) {
+        AiKey.setAutoBrief(getApplication(), on)
+        readAiKey()
+    }
+
+    fun testAiKey() {
+        val key = AiKey.get(getApplication()) ?: return
+        if (_state.value.ai.testing) return
+        _state.update { it.copy(ai = it.ai.copy(testing = true, test = null)) }
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { gemini.test(key) } }
+            val test = r.fold({ true to tr("ใช้ได้ ($it)", "Works ($it)") }, { false to (it.message ?: tr("ใช้ไม่ได้", "Does not work")) })
+            _state.update { it.copy(ai = it.ai.copy(testing = false, test = test)) }
+        }
+    }
+
+    /**
+     * The open work as Gemini sees it, from what is loaded now, with what Claude wrote in Claude log.md (read fresh
+     * each time, off the main thread, so a log Obsidian Sync just brought in is used).
+     */
+    /** The picture, and the assistant's lasting memory and conversation log, read fresh from the vault. */
+    private class AiContext(val picture: AiAssist.Picture, val memory: String?, val entries: List<AiMemory.Entry>, val index: String?)
+
+    private suspend fun aiContext(): AiContext {
+        val s = _state.value
+        fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
+        val (claude, memory, entries) = withContext(Dispatchers.IO) {
+            Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), s.vault?.let { v -> runCatching { library.recent(v, LocalDate.now()) }.getOrNull() }.orEmpty())
+        }
+        val index = withContext(Dispatchers.IO) { s.vault?.let { v -> library.index(v) } }
+        _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null, secretaryLast = Secretary.lastRun(claude) ?: it.ai.secretaryLast)) }
+        val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
+        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries, index)
+    }
+
+    private val logLock = kotlinx.coroutines.sync.Mutex()
+    private val library by lazy { AiLibrary(getApplication(), repo, gemini) }
+
+    /** Hides the "secretary stopped" warning for a day. */
+    fun hideSecretaryWarning() {
+        val until = System.currentTimeMillis() + Secretary.STALE_MS
+        AiKey.setSecretaryHiddenUntil(getApplication(), until)
+        _state.update { it.copy(ai = it.ai.copy(secretaryHiddenUntil = until)) }
+    }
+    private val upkeeping = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Keeps the assistant's log in order ([AiLibrary.upkeep]), in the background, one run at a time. */
+    fun aiUpkeep(force: Boolean = false) {
+        val vault = _state.value.vault ?: return
+        if (!upkeeping.compareAndSet(false, true)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                logLock.withLock { runCatching { library.upkeep(vault, LocalDate.now(), force) } }
+            } finally {
+                upkeeping.set(false)
+            }
+        }
+    }
+
+    /**
+     * Changes the conversation log with [change], off the main thread and one write at a time (an answer and the
+     * change confirmed right after it would otherwise read the same old file). A failed write only loses the line.
+     */
+    private fun editLog(day: LocalDate, change: (String?) -> String) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { logLock.withLock { runCatching { repo.editPath(vault, AiMemory.monthFile(day), change) } } }
+    }
+
+    /** A line under the newest exchange of today: what was done or declined after an answer. */
+    private fun logAi(line: String) {
+        val today = LocalDate.now()
+        editLog(today) { old -> AiMemory.addNote(old, today, line) }
+    }
+
+    private fun nowHm(): String = java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
+
+    /**
+     * Asks Gemini for the brief. Without [force] it reads again only when the owner left it on ([AiUi.autoBrief]) and
+     * the last one is over an hour old, so opening the page often costs nothing.
+     */
+    fun aiBrief(force: Boolean = false) {
+        val ai = _state.value.ai
+        if (!ai.hasKey || ai.briefing || _state.value.tasks.isEmpty()) return
+        if (!force && (!ai.autoBrief || System.currentTimeMillis() - ai.briefAt < BRIEF_EVERY_MS)) return
+        _state.update { it.copy(ai = it.ai.copy(briefing = true, briefError = null)) }
+        viewModelScope.launch {
+            val ctx = aiContext()
+            val picture = ctx.picture
+            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseBrief(gemini.generate(AiAssist.briefRequest(picture, AiMemory.memoryForModel(ctx.memory))), picture) } }
+            _state.update { st ->
+                st.copy(
+                    ai = r.fold(
+                        { b -> st.ai.copy(briefing = false, brief = b, briefAt = System.currentTimeMillis()) },
+                        { e -> st.ai.copy(briefing = false, briefError = e.message ?: tr("อ่านภาพรวมไม่ได้", "Could not read the brief")) },
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * A question typed to the assistant: Gemini answers when a key is in, the rules do otherwise. Only questions it
+     * answered before go along as the conversation so far, so the turns alternate as Gemini expects.
+     */
+    fun askAi(text: String) {
+        val s = _state.value
+        if (!s.ai.hasKey) { ask(text); return }
+        if (s.ai.thinking) return
+        val earlier = s.chat.zipWithNext().flatMap { (a, b) ->
+            if (a is Chat.Asked && b is Chat.AiAnswer && b.failed == null) listOf(AiAssist.Turn(true, a.text), AiAssist.Turn(false, b.text)) else emptyList()
+        }
+        _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true, searching = false)) }
+        viewModelScope.launch {
+            val ctx = aiContext()
+            val picture = ctx.picture
+            val memory = AiMemory.memoryForModel(ctx.memory)
+            val started = System.currentTimeMillis()
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
+                    // long to send whole) the older ones closest to this question.
+                    // This month and the last go along (whole while short); older months as their index lines.
+                    val entries = ctx.entries
+                    val vault = _state.value.vault
+                    val months = AiIndex.forModel(ctx.index)
+                    val whole = AiMemory.allSent(entries)
+                    val canSearch = vault != null && (!whole || months.isNotBlank())
+                    val found = if (whole || vault == null) emptyList() else library.find(vault, text, entries, ctx.index)
+                    val history = AiMemory.history(entries, found, months)
+                    val first = AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch)), picture)
+                    val query = first.search
+                    if (query == null || !canSearch || vault == null) first to false
+                    else {
+                        // Gemini asked to look further back: search every month once with its own words, then ask again.
+                        _state.update { it.copy(ai = it.ai.copy(searching = true)) }
+                        val more = library.find(vault, query, entries, ctx.index, k = 8)
+                        val again = AiAssist.chatRequest(picture, earlier, text, memory, AiMemory.history(entries, found + more, months), searched = more.joinToString("\n\n") { it.text })
+                        AiAssist.parseReply(gemini.generate(again), picture) to true
+                    }
+                }
+            }
+            val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
+            val model = AiKey.model(getApplication())
+            val answer = r.fold(
+                { (reply, searched) -> Chat.AiAnswer(reply.text, reply.actions, model = model, seconds = seconds, searched = searched) },
+                { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
+            )
+            _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false, searching = false)) }
+            // Kept in the vault under a heading Gemini wrote, so it can be found again and Claude can read it too.
+            val reply = r.getOrNull()?.first
+            val today = LocalDate.now()
+            val time = nowHm()
+            val lines = listOf("ถาม: $text", "Gemini (${shortModel(model)}): " + (answer.failed?.let { "ไม่ได้ตอบ: $it" } ?: answer.text))
+            editLog(today) { old -> AiMemory.addExchange(old, today, time, reply?.topic ?: text.take(60), reply?.tags.orEmpty(), lines) }
+        }
+    }
+
+    /** The task as it is now: by its place in the note, or by title when lines moved since Gemini answered. */
+    private fun current(task: Task): Task? {
+        val all = _state.value.allTasks
+        return all.firstOrNull { it.key == task.key && it.title == task.title }
+            ?: all.firstOrNull { it.title == task.title && it.filePath == task.filePath && it.isOpen }
+    }
+
+    /**
+     * The owner confirmed ([accept]) or declined proposal [i] of the answer at [index]. A big change is not made here:
+     * the screen hands it to Claude, and this only records that.
+     */
+    fun answerAiAction(index: Int, i: Int, accept: Boolean) {
+        val item = _state.value.chat.getOrNull(index) as? Chat.AiAnswer ?: return
+        if (i in item.outcome) return
+        val action = item.actions.getOrNull(i) ?: return
+        logAi("${nowHm()} " + (if (accept) "ทำแล้ว: " else "ไม่ทำ: ") + AiAssist.describe(action))
+        if (accept && action is AiAssist.Action.Remember) {
+            val vault = _state.value.vault
+            val today = LocalDate.now()
+            if (vault != null) viewModelScope.launch {
+                val r = withContext(Dispatchers.IO) { runCatching { repo.editPath(vault, AiMemory.MEMORY_FILE) { old -> AiMemory.remember(old, action.text, today) } } }
+                r.exceptionOrNull()?.let { e -> showMessage(tr("จำไว้ไม่ได้: ${e.message}", "Could not remember it: ${e.message}")) }
+            }
+        } else if (accept && action is AiAssist.Action.Add) {
+            addDetailedTask(
+                QuickAdd.Detail(
+                    title = action.title, scheduled = action.scheduled, date = action.date, time = action.time,
+                    tags = listOfNotNull(action.project), priority = action.priority,
+                ),
+            )
+        } else if (accept && action !is AiAssist.Action.Big) {
+            val task = action.task?.let(::current)
+            if (task == null) {
+                showMessage(tr("หางานนี้ไม่เจอแล้ว อาจถูกแก้หรือลบไป", "That task is gone; it may have been edited or deleted"))
+                return
+            }
+            when (action) {
+                is AiAssist.Action.Move -> setDate(
+                    task,
+                    when (action.kind) { AiAssist.DateKind.DUE -> DateField.DUE; AiAssist.DateKind.SCHEDULED -> DateField.SCHEDULED; AiAssist.DateKind.START -> DateField.START },
+                    action.date,
+                )
+                is AiAssist.Action.Rename -> {
+                    val next = TaskLine.setTitle(task.raw, action.title)
+                    if (next == task.raw) { showMessage(tr("เปลี่ยนชื่อไม่ได้ ลองแก้เองในหน้างาน", "Could not rename it; edit it on the task page")); return }
+                    edit(task) { TaskLine.setTitle(it, action.title) }
+                }
+                is AiAssist.Action.SetPriority -> setPriority(task, action.priority)
+                is AiAssist.Action.Remind -> setReminder(task, action.time, if (task.due == null && task.scheduled != null) ReminderOn.SCHEDULED else ReminderOn.DUE)
+                is AiAssist.Action.Done -> if (task.isOpen) toggleDone(task)
+                is AiAssist.Action.Delete -> deleteTask(task)
+                is AiAssist.Action.Project -> moveTask(task, action.tag)
+                is AiAssist.Action.Stuck -> noteStuck(task, action.reason)
+                is AiAssist.Action.Subtasks -> addSubtasks(task, action.titles)
+                is AiAssist.Action.Add, is AiAssist.Action.Big, is AiAssist.Action.Remember -> Unit
+            }
+        }
+        _state.update {
+            it.copy(chat = it.chat.toMutableList().also { list -> list[index] = item.copy(outcome = item.outcome + (i to accept)) })
+        }
+    }
+
+    /** Several subtasks under [parent], written one after another under the write lock. */
+    private fun addSubtasks(parent: Task, titles: List<String>) {
+        val today = LocalDate.now()
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) { runCatching { titles.filter { it.isNotBlank() }.forEach { repo.addSubtask(parent, QuickAdd.parse(it, today).line(today)) } } }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")) } }
+            if (result.isSuccess) reloadNote(parent) else reload()
+        }
+    }
 
     private fun updateSlots(index: Int, change: (Chat.Slots) -> Chat.Slots) = _state.update {
         val item = it.chat.getOrNull(index) as? Chat.Slots ?: return@update it
@@ -2177,6 +2504,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        /** Where Claude keeps its work log, read into what Gemini sees. */
+        const val CLAUDE_LOG = "📁 Folder/หลังบ้าน/Claude/Claude log.md"
+
+        /** The brief is read again on opening the assistant only when it is older than this. */
+        const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"
         const val KEY_URGENT = "urgentRule"
         const val KEY_FUTURE_COUNT = "futureCount"

@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -90,13 +92,6 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import app.omnitask.time.*
 
-private val EXAMPLES: List<String>
-    get() = listOf(
-        tr("อยากไปวิ่งสัปดาห์นี้ ควรไปตอนไหนดี", "When should I go running this week?"),
-        tr("อยากเขียน proposal 2 ชม. ควรทำตอนไหน", "When should I write the proposal for 2 hours?"),
-        tr("ต้องไปธนาคาร พรุ่งนี้ตอนไหนดี", "When should I go to the bank tomorrow?"),
-    )
-
 /**
  * The assistant from the C+ mockup: it reads the profile note, the tasks and Google Calendar,
  * answers "when should I do X" with ranked slots, and asks before remembering anything.
@@ -104,7 +99,7 @@ private val EXAMPLES: List<String>
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSettings: () -> Unit = {}) {
     val context = LocalContext.current
     val eventActions = rememberEventActions(vm)
     var input by rememberSaveable { mutableStateOf("") }
@@ -129,9 +124,30 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     }
     fun send(text: String = input) {
         if (text.isBlank()) return
-        vm.ask(text.trim())
+        // Gemini answers when a key is in; without one the rules do, as before.
+        vm.askAi(text.trim())
         input = ""
     }
+    // Hands text to the Claude app, on the owner's subscription.
+    fun shareToClaude(text: String) {
+        val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+        try {
+            context.startActivity(Intent(share).setPackage("com.anthropic.claude"))
+        } catch (_: ActivityNotFoundException) {
+            context.startActivity(Intent.createChooser(share, tr("ส่งให้ Claude", "Send to Claude")))
+        }
+    }
+    val inputFocus = remember { FocusRequester() }
+
+    // The overview: Timeline or tree, whose work, and the task picked in it. The brief is read on opening.
+    var view by rememberSaveable { mutableStateOf(AiView.TIMELINE) }
+    var who by rememberSaveable { mutableStateOf(TimelineWho.ALL) }
+    var staleOnly by rememberSaveable { mutableStateOf(false) }
+    var selKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.ai.hasKey, state.tasks.isNotEmpty()) { vm.aiBrief() }
+    val picks = remember(state.ai.brief, state.tasks) { currentPicks(state.ai.brief, state.tasks) }
+    val picked = selKey?.let { k -> state.tasks.firstOrNull { it.key == k } }
+    val stuckCount = remember(state.tasks, state.today) { state.tasks.count { !it.isSubtask && (it.start ?: it.scheduled ?: it.due) != null && needsLook(it, state) } }
     fun askClaude(question: String) {
         val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, question + "\n\n" + snapshot(state, vm.habits()))
         try {
@@ -141,9 +157,19 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
     }
 
+    // Two tabs: the overview of the work, and the conversation. Asking something moves to the conversation.
+    var tab by rememberSaveable { mutableStateOf(if (state.chat.isEmpty()) AiTab.OVERVIEW else AiTab.CHAT) }
+    var seenChat by rememberSaveable { mutableStateOf(state.chat.size) }
+    var picking by remember { mutableStateOf(false) }
+    var briefOpen by rememberSaveable { mutableStateOf(false) }
     val list = rememberLazyListState()
-    LaunchedEffect(state.chat.size) { if (state.chat.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1) }
+    LaunchedEffect(state.chat.size, state.ai.thinking) {
+        if (state.chat.size > seenChat) tab = AiTab.CHAT
+        seenChat = state.chat.size
+        if (tab == AiTab.CHAT && state.chat.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+    }
     val profile = state.profile
+    if (picking) AiModelSheet(state.ai, vm::loadAiModels, vm::setAiModel) { picking = false }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -153,18 +179,17 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             }
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
         }
+        Segmented(
+            listOf(AiTab.OVERVIEW to tr("ภาพรวม", "Overview"), AiTab.CHAT to tr("แชต", "Chat") + state.chat.count { it is Chat.Asked }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()),
+            tab, { tab = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp),
+        )
 
-        LazyColumn(
-            Modifier.weight(1f),
-            state = list,
-            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            when {
-                !profile.exists || interviewing -> item(key = "interview") {
-                    Interview(profile, first = !profile.exists, onSave = { vm.saveProfile(it); interviewing = false }, onCancel = if (profile.exists) ({ interviewing = false }) else null)
-                }
-                profile.stale(state.today) -> item(key = "stale") {
+        // The overview fills the page without scrolling: a one-line brief, the switch and chips, and the map taking
+        // the rest, with the picked task's card floating over the map's lower edge, under the thumb.
+        val insight = state.insight
+        val askCard: (@Composable () -> Unit)? = when {
+            profile.stale(state.today) -> {
+                {
                     AskCard(
                         tr("ชีวิตช่วงนี้ยังเหมือนเดิมไหม?", "Is life still the same lately?"),
                         tr("ไม่ได้ทบทวนมา 30 วัน", "Not reviewed in 30 days"),
@@ -175,37 +200,65 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         tr("ปรับ", "Update"), { interviewing = true }, tr("ยังเหมือนเดิม", "Still the same"), { vm.saveProfile(profile) },
                     )
                 }
-                state.insight != null -> item(key = "insight") {
-                    val ask = state.insight
+            }
+            insight != null -> {
+                {
+                    val ask = insight
                     AskCard(
                         tr("จำไว้ไหม?", "Remember this?"), ask.window, ask.text,
                         tr("ไม่ใช่", "No"), { vm.answerInsight(false) }, tr("ใช่ จำไว้", "Yes, remember"), { vm.answerInsight(true) },
                     )
                 }
             }
-
-            if (state.chat.isEmpty()) {
-                item(key = "examples") {
-                    Card {
-                        Column(Modifier.padding(14.dp)) {
-                            Text(
-                                tr("ถามได้ว่าอยากทำอะไร แล้วผู้ช่วยจะหาช่วงที่เหมาะให้ 3 ช่วง พร้อมเหตุผล", "Say what you want to do and the assistant finds 3 good times, with reasons"),
-                                color = C.text2, fontSize = TS.body, lineHeight = 1.4.em,
-                            )
-                            EXAMPLES.forEach { q ->
-                                Text(
-                                    q,
-                                    Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken)
-                                        .clickable { send(q) }.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    color = C.accentText, fontSize = TS.body,
-                                )
-                            }
-                        }
-                    }
+            else -> null
+        }
+        if (tab == AiTab.OVERVIEW && profile.exists && !interviewing) Column(
+            Modifier.weight(1f).fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            askCard?.invoke()
+            AiBriefLine(state.ai, picks.size, briefOpen, { briefOpen = !briefOpen }, { vm.aiBrief(force = true) }, onSettings)
+            AiViewSwitch(view) { view = it }
+            AiChips(who, staleOnly, stuckCount, { who = it; staleOnly = false }, { staleOnly = !staleOnly })
+            AiLegend(view)
+            AiMap(
+                view, state, vm, onOpen, who, staleOnly, picks.keys, selKey, { selKey = it?.key },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                picked?.let { t ->
+                    AiTaskCard(
+                        t, picks[t.key], state,
+                        onAsk = {
+                            input = tr("เรื่องงาน \"${t.title}\" ควรทำอย่างไรต่อ", "About \"${t.title}\": what should I do next?")
+                            runCatching { inputFocus.requestFocus() }
+                        },
+                        onOpen = { onOpen(t) },
+                        onClose = { selKey = null },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
+                        floating = true,
+                    )
                 }
             }
+        } else LazyColumn(
+            Modifier.weight(1f),
+            state = list,
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (!profile.exists || interviewing) item(key = "interview") {
+                Interview(profile, first = !profile.exists, onSave = { vm.saveProfile(it); interviewing = false }, onCancel = if (profile.exists) ({ interviewing = false }) else null)
+            }
 
-            itemsIndexed(state.chat) { index, item ->
+
+
+            if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {
+                Text(
+                    if (state.ai.hasKey) tr("ถามหรือสั่งงานได้ที่ช่องด้านล่าง เช่น เพิ่มงาน เลื่อนวัน หรือถามว่าอะไรค้างนานสุด", "Ask or give an order below: add a task, move a date, or ask what has sat longest")
+                    else tr("ถามได้ที่ช่องด้านล่าง ใส่ Gemini API key ในตั้งค่าเพื่อให้ผู้ช่วยตอบและแก้งานให้ได้", "Ask below. Add a Gemini API key in Settings for answers and changes from the assistant"),
+                    Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp), color = C.muted, fontSize = TS.body,
+                )
+            }
+            if (tab == AiTab.CHAT) itemsIndexed(state.chat) { index, item ->
                 when (item) {
                     is Chat.Asked -> Bubble(item.text)
                     is Chat.Slots -> SlotsCard(
@@ -223,44 +276,18 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                         vm.acceptProposals(index, which)
                     }
                     is Chat.Ranked -> RankedCard(item, onOpen)
+                    is Chat.AiAnswer -> AiAnswerCard(item, { i, ok -> vm.answerAiAction(index, i, ok) }) { big -> shareToClaude(app.omnitask.model.AiAssist.forClaude(big, state.today)) }
                 }
             }
+            if (tab == AiTab.CHAT && state.ai.thinking) item(key = "ai-thinking") { AiThinking(state.ai.searching) }
 
-            if (state.chat.isEmpty()) item(key = "quick") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickCard(tr("สัปดาห์หน้ามีอะไร", "Next week"), tr("งานและนัดทั้งหมด", "Tasks and events"), Modifier.weight(1f)) {
-                            vm.showAgenda(nextWeek(state.today), tr("สัปดาห์หน้ามีอะไรบ้าง", "What's on next week?"))
-                        }
-                        QuickCard(tr("วางแผนสัปดาห์หน้า", "Plan next week"), tr("จัดงานที่ยังไม่มีวันลงช่องว่าง", "Fit undated work into free time"), Modifier.weight(1f)) {
-                            vm.planRange(nextWeek(state.today), tr("วางแผนสัปดาห์หน้าให้หน่อย", "Plan next week"))
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val morning = state.notify.digestTimes.firstOrNull()?.let { tr("แผนตอนเช้า ${Profile.hm(it)}", "Morning plan ${Profile.hm(it)}") } ?: tr("ตามงานและนัดวันนี้", "From today's tasks and events")
-                        QuickCard(tr("จัดลำดับวันนี้", "Plan today"), morning, Modifier.weight(1f), vm::planToday)
-                        QuickCard(
-                            tr("ทบทวนสัปดาห์", "Weekly review"),
-                            if (state.notify.weeklyReview) tr("ทุกอาทิตย์ 20:00", "Sundays 20:00") else tr("สรุป 7 วันที่ผ่านมา", "The last 7 days"),
-                            Modifier.weight(1f), vm::reviewWeek,
-                        )
-                    }
-                    QuickCard(
-                        tr("ถาม Claude", "Ask Claude"),
-                        tr("ส่งงานและนัดวันนี้ไปที่แอป Claude ใช้ subscription ไม่ต้องจ่าย API", "Send today's tasks and events to the Claude app, on your subscription, no API cost"),
-                        Modifier.fillMaxWidth(),
-                    ) {
-                        askClaude(tr("ช่วยจัดลำดับงานวันนี้ให้หน่อย ตามเวลาว่างในปฏิทิน", "Please order today's tasks around the free time in my calendar"))
-                    }
-                }
-            }
         }
 
         val ime = WindowInsets.isImeVisible
         // While the field is typed in, the ready questions float up above it with the keyboard.
         if (typing) {
             PresetRow(askPresets(state, vm), Modifier.padding(top = 6.dp)) { input = ""; focus.clearFocus() }
-        } else if (state.chat.isNotEmpty() && !ime) {
+        } else if (!ime) {
             // Once the conversation has started the big cards give way to this row, so the chat keeps the space.
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 6.dp),
@@ -283,13 +310,14 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp)
                 .then(if (ime) Modifier.imePadding() else Modifier)
                 .fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(24.dp))
-                .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = if (state.ai.hasKey) 6.dp else 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (state.ai.hasKey) Box(Modifier.padding(end = 8.dp)) { AiModelChip(state.ai.model) { picking = true } }
             BasicTextField(
                 value = input,
                 onValueChange = { input = it },
-                modifier = Modifier.weight(1f).onFocusChanged { typing = it.isFocused },
+                modifier = Modifier.weight(1f).focusRequester(inputFocus).onFocusChanged { typing = it.isFocused },
                 textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                 cursorBrush = SolidColor(C.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -297,7 +325,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 maxLines = 3,
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text(tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body)
+                        if (input.isEmpty()) Text(if (state.ai.hasKey) tr("สั่งหรือถามเรื่องงาน", "Ask, or say what to change") else tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body, maxLines = 1)
                         inner()
                     }
                 },
@@ -324,6 +352,9 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         )
     }
 }
+
+/** The assistant's two tabs. */
+enum class AiTab { OVERVIEW, CHAT }
 
 /** A ready question, offered while typing to the assistant so the common ones need no typing (and are never misread). */
 class AskPreset(val label: String, val run: () -> Unit)
@@ -564,6 +595,7 @@ private fun sources(state: UiState): String {
         if (state.profile.exists) add(Profile.PATH.substringAfterLast('/'))
         add(tr("งาน ${state.tasks.count { it.isOpen }} รายการ", "${state.tasks.count { it.isOpen }} tasks"))
         if (state.calendarAccess == true) add("Google Calendar")
+        if (state.ai.claudeLog) add("Claude log")
     }
     val and = tr("และ", "and")
     return tr("อ่านจาก ", "Reading ") + parts.dropLast(1).joinToString(", ").let { if (it.isEmpty()) parts.last() else "$it $and ${parts.last()}" }
@@ -829,17 +861,6 @@ private fun ReviewCard(item: Chat.Review) {
             Text(item.title, color = C.text, style = MaterialTheme.typography.titleSmall)
             item.lines.forEach { Text(it, Modifier.padding(top = 6.dp), color = C.text2, fontSize = TS.body) }
         }
-    }
-}
-
-@Composable
-private fun QuickCard(title: String, subtitle: String, modifier: Modifier, onClick: () -> Unit) {
-    Column(
-        modifier.clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        Text(title, color = C.text, fontSize = TS.body)
-        Text(subtitle, color = C.muted, fontSize = TS.caption)
     }
 }
 

@@ -81,6 +81,21 @@ private const val READABLE = 0.62f
  * buttons to zoom; tap a world or branch for its actions underneath; tap a task to tick it, long-press to open it.
  * The filter and the folded limbs come from the Projects tab, so they stay while it is open.
  */
+/**
+ * The tree set inside another page (the assistant's): that page owns the chips and the picked task. A tap picks a
+ * task instead of opening it, nothing can be ticked or carried, tasks that do not match are [dim], the assistant's
+ * [picks] get a ring in the accent, each task shows whose turn it is ([mine]: true for the owner, false for Claude)
+ * and how long it has sat ([stale]), and the dashed wait lines say "รอ".
+ */
+class YgdrasilEmbed(
+    val dim: (Task) -> Boolean,
+    val picks: Set<String>,
+    val selKey: String?,
+    val mine: (Task) -> Boolean,
+    val stale: (Task) -> Int?,
+    val onSelect: (Task?) -> Unit,
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun YgdrasilScreen(
@@ -93,6 +108,7 @@ fun YgdrasilScreen(
     onOpen: (Task) -> Unit,
     onOpenProject: (String) -> Unit,
     onBack: () -> Unit,
+    embed: YgdrasilEmbed? = null,
 ) {
     val tree = remember(state.tasks, state.parked, state.branchStates, state.today, state.starred, state.projectOrder, filter) {
         Ygdrasil.grow(state.tasks + state.parked, state.branchStates, state.today, filter, state.starred, state.projectOrder)
@@ -185,13 +201,14 @@ fun YgdrasilScreen(
 
     var naming by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     naming?.let { (title, done) -> MapNameDialog(title, { done(it); naming = null }) { naming = null } }
-    var filtering by remember { mutableStateOf(false) }
-    if (filtering) YgdrasilFilterDialog(filter, onFilter) { filtering = false }
+    // The filter sits under the tree, leaving it in sight: half height with the quick chips, or the whole page.
+    var filtering by rememberSaveable { mutableStateOf(false) }
+    var filterFull by rememberSaveable { mutableStateOf(false) }
 
-    val dock = LocalDockClearance.current
-    FullPage()
+    val dock = if (embed == null) LocalDockClearance.current else 0.dp
+    if (embed == null) FullPage()
     Column(Modifier.fillMaxSize().padding(bottom = dock)) {
-        Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (embed == null) Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text("Project Ygdrasil", style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1)
@@ -205,7 +222,7 @@ fun YgdrasilScreen(
             Row(
                 Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (changed > 0) C.accent else C.card)
                     .border(1.dp, if (changed > 0) C.accent else C.cardBorder, RoundedCornerShape(12.dp))
-                    .clickable { filtering = true }.padding(horizontal = 12.dp),
+                    .clickable { filtering = !filtering; filterFull = false }.padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Ic.filter, null, tint = if (changed > 0) C.onAccent else C.text2, modifier = Modifier.size(16.dp))
@@ -215,7 +232,7 @@ fun YgdrasilScreen(
                 )
             }
         }
-        Box(
+        if (!(filtering && filterFull)) Box(
             Modifier.weight(1f).fillMaxWidth().clipToBounds().background(C.sunken)
                 .onSizeChanged { box = it }
                 .pointerInput(Unit) {
@@ -262,6 +279,16 @@ fun YgdrasilScreen(
                         }
                     }
                 }
+                // Inside the assistant the wait lines say what they mean.
+                if (embed != null) layout.edges.filter { it.kind == Ygdrasil.EdgeKind.LINK || it.kind == Ygdrasil.EdgeKind.LINK_ACROSS }.forEach { e ->
+                    val mx = (e.x1 + 3 * e.cx1 + 3 * e.cx2 + e.x2) / 8f
+                    val my = (e.y1 + 3 * e.cy1 + 3 * e.cy2 + e.y2) / 8f
+                    Text(
+                        tr("รอ", "waits"),
+                        Modifier.offset((mx + 4).dp, (my - 9).dp).clip(RoundedCornerShape(6.dp)).background(C.sunken).padding(horizontal = 3.dp),
+                        color = if (e.kind == Ygdrasil.EdgeKind.LINK_ACROSS) C.amber else C.text2, fontSize = TS.micro, fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 CompositionLocalProvider(LocalViewConfiguration provides quickHold) {
                 layout.spots.forEach { s ->
                     when (s.kind) {
@@ -289,8 +316,11 @@ fun YgdrasilScreen(
                                         if (target) C.amber else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
                                     )
                                     .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else 1f)
-                                    .pointerInput(n.tag) { detectTapGestures(onTap = { selTag = n.tag }) }
-                                    .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x)
+                                    .then(
+                                        if (embed != null) Modifier else Modifier
+                                            .pointerInput(n.tag) { detectTapGestures(onTap = { selTag = n.tag }) }
+                                            .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
+                                    )
                                     .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -311,26 +341,44 @@ fun YgdrasilScreen(
                             val t = s.task!!
                             val from = s.limb!!.node.tag
                             val done = t.status == Status.DONE
+                            val someday = Ygdrasil.isSomeday(t)
+                            val aiPick = embed?.picks?.contains(t.key) == true
+                            val chosen = embed?.selKey == t.key
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .alpha(if (carry?.task == t) 0.35f else 1f)
-                                    // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
-                                    // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
-                                    .pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }
-                                    .carries(Carry(t, from, t.title), s.y - s.h / 2, s.x)
+                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (someday) 0.6f else 1f)
+                                    .then(if (chosen) Modifier.background(C.accentSoft) else Modifier)
+                                    .then(if (aiPick) Modifier.border(2.dp, C.accent, RoundedCornerShape(8.dp)) else Modifier)
+                                    .then(
+                                        if (embed != null) Modifier.pointerInput(t, chosen) { detectTapGestures(onTap = { embed.onSelect(if (chosen) null else t) }) }
+                                        // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
+                                        // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
+                                        else Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }.carries(Carry(t, from, t.title), s.y - s.h / 2, s.x),
+                                    )
                                     .padding(end = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                // The ring is a button of its own, a little larger than it looks.
-                                Box(Modifier.size(28.dp).clip(CircleShape).clickable { vm.toggleDone(t) }, contentAlignment = Alignment.Center) {
+                                // The ring is a button of its own, a little larger than it looks (only a mark inside the assistant).
+                                Box(Modifier.size(28.dp).clip(CircleShape).then(if (embed == null) Modifier.clickable { vm.toggleDone(t) } else Modifier), contentAlignment = Alignment.Center) {
                                     Box(
                                         Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
                                             .border(1.5.dp, if (done) C.lime else priorityTint(t.priority), CircleShape),
                                     )
                                 }
                                 if (!far) Text(
-                                    t.title, Modifier.padding(start = 2.dp), color = if (done) C.faint else C.text2, fontSize = TS.caption,
+                                    t.title, Modifier.padding(start = 2.dp).weight(1f, fill = false), color = if (done || someday) C.faint else C.text2, fontSize = TS.caption,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (done) TextDecoration.LineThrough else null,
+                                )
+                                if (!far && embed != null && !someday) {
+                                    Box(Modifier.padding(start = 5.dp).size(7.dp).clip(CircleShape).background(if (embed.mine(t)) C.tealChip else C.accentText))
+                                    embed.stale(t)?.let { d ->
+                                        Text(tr("$d วัน", "${d}d"), Modifier.padding(start = 5.dp), color = C.amber, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    }
+                                }
+                                if (!far && someday) Text(
+                                    tr("พักไว้", "Someday"),
+                                    Modifier.padding(start = 4.dp).clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 6.dp, vertical = 1.dp),
+                                    color = C.muted, fontSize = TS.micro, maxLines = 1,
                                 )
                             }
                         }
@@ -374,6 +422,13 @@ fun YgdrasilScreen(
             }
         }
 
+        if (embed != null) Unit
+        else if (filtering) {
+            YgdrasilFilterDock(
+                state, vm, filter, onFilter, tree.matched, filterFull, { filterFull = it }, { filtering = false; filterFull = false },
+                if (filterFull) Modifier.weight(1f) else Modifier.height(380.dp),
+            )
+        } else {
         // The trunk or the picked world or branch: what to do with it.
         Column(Modifier.fillMaxWidth().background(C.card).padding(horizontal = 14.dp, vertical = 12.dp).then(if (dock == 0.dp) Modifier.navigationBarsPadding() else Modifier)) {
             val node = sel?.limb?.node
@@ -385,6 +440,7 @@ fun YgdrasilScreen(
                 Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     MapButton(tr("กางทั้งหมด", "Unfold all")) { onFolded(emptySet()) }
                     MapButton(tr("พับทุกโปรเจกต์", "Fold every project")) { onFolded(tree.worlds.map { it.node.tag }.toSet()) }
+                    MapButton(if (filter.links) tr("ซ่อนเส้นงานที่รอกัน", "Hide wait lines") else tr("แสดงเส้นงานที่รอกัน", "Show wait lines")) { onFilter(filter.copy(links = !filter.links)) }
                 }
                 Text(
                     tr("แตะโปรเจกต์หรือกิ่งเพื่อจัดการ เส้นประสีส้มคืองานที่รองานในโปรเจกต์อื่น", "Tap a project or branch. Orange dashes: a task waiting on another project"),
@@ -408,6 +464,7 @@ fun YgdrasilScreen(
                 Text(tr("แตะงานเพื่อติ๊ก กดค้างแล้วลากไปวางบนโปรเจกต์หรือกิ่งอื่นเพื่อย้าย ปล่อยที่เดิมเพื่อเปิด", "Tap a task to tick it. Hold and drag it onto another project or branch to move it, or let go to open it"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
             }
         }
+        }
     }
 }
 
@@ -425,47 +482,63 @@ private fun priorityTint(p: Priority) = when (p) {
     else -> C.faint
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The tree's filter under the tree: the task list's two-layer filter, and the tree's own choices under "more". Half
+ * height keeps the tree in sight and changing as chips are tapped; [full] gives it the page.
+ */
 @Composable
-private fun YgdrasilFilterDialog(filter: Ygdrasil.Filter, onFilter: (Ygdrasil.Filter) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = C.raised,
-        title = { Text(tr("ตัวกรอง", "Filter")) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Segmented(Ygdrasil.Show.entries.map { it to it.label }, filter.show, { onFilter(filter.copy(show = it)) }, Modifier.fillMaxWidth())
-                FilterGroup(tr("วันที่", "Dates")) {
-                    Ygdrasil.Dates.entries.forEach { d -> Chip(d.label, filter.dates == d, { onFilter(filter.copy(dates = d)) }) }
-                }
-                FilterGroup(tr("ความสำคัญ", "Priority")) {
-                    Priority.entries.forEach { p ->
-                        val on = p in filter.priorities
-                        Chip(p.label, on, { onFilter(filter.copy(priorities = if (on) filter.priorities - p else filter.priorities + p)) })
-                    }
-                }
-                FilterGroup(tr("อื่น ๆ", "Other")) {
-                    Chip(tr("ติดรองานอื่น", "Blocked"), filter.blockedOnly, { onFilter(filter.copy(blockedOnly = !filter.blockedOnly)) })
-                    Chip(tr("เฉพาะติดดาว", "Starred only"), filter.starredOnly, { onFilter(filter.copy(starredOnly = !filter.starredOnly)) })
-                    Chip(tr("รวมกิ่งที่พับเก็บ", "Parked branches"), filter.parked, { onFilter(filter.copy(parked = !filter.parked)) })
-                    Chip(tr("เส้นงานที่รอกัน", "Wait lines"), filter.links, { onFilter(filter.copy(links = !filter.links)) })
-                }
-                DialogField(filter.text, tr("ค้นชื่องานหรือ tag", "Search titles or tags")) { onFilter(filter.copy(text = it)) }
+private fun YgdrasilFilterDock(
+    state: UiState,
+    vm: TaskViewModel,
+    filter: Ygdrasil.Filter,
+    onFilter: (Ygdrasil.Filter) -> Unit,
+    shown: Int,
+    full: Boolean,
+    onFull: (Boolean) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier,
+) {
+    var naming by remember { mutableStateOf(false) }
+    if (naming) NameDialog(tr("ตั้งชื่อตัวกรอง", "Name this filter"), { vm.saveFilter(it, filter.query); naming = false }) { naming = false }
+    val extraInUse = listOf(filter.blockedOnly, filter.starredOnly, filter.parked, !filter.someday).count { it }
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)).background(C.card)
+            .border(1.dp, C.cardBorder, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+    ) {
+        // The grip: a tap switches between half and full.
+        Box(Modifier.fillMaxWidth().height(24.dp).clickable { onFull(!full) }, contentAlignment = Alignment.Center) {
+            Box(Modifier.width(40.dp).height(4.dp).clip(CircleShape).background(C.control))
+        }
+        Row(Modifier.padding(start = 18.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("กรอง", "Filter"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = C.text)
+            Text(
+                if (full) tr("ย่อ", "Shrink") else tr("เต็มจอ", "Full screen"),
+                Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, C.control, RoundedCornerShape(16.dp)).clickable { onFull(!full) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                color = C.text2, fontSize = TS.caption,
+            )
+            Text(
+                tr("ล้าง", "Clear"),
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable { onFilter(Ygdrasil.Filter(links = filter.links)) }.padding(horizontal = 10.dp, vertical = 12.dp),
+                color = C.red, fontSize = TS.body,
+            )
+            SquareButton(Ic.close, tr("ปิดตัวกรอง", "Close filter"), onClose)
+        }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 18.dp)) {
+            // The search reads titles and details, as on the Tasks tab.
+            DialogField(filter.query.text, tr("ค้นชื่องานหรือรายละเอียด", "Search titles and details")) { onFilter(filter.copy(query = filter.query.copy(text = it))) }
+            FilterBody(
+                filter.query, { onFilter(filter.copy(query = it)) }, state, vm,
+                expanded = full, onExpanded = onFull, onSave = { naming = true }, shown = shown, onShow = { onFull(false) },
+                extraInUse = extraInUse,
+            ) {
+                Text(tr("เฉพาะ Ygdrasil", "Ygdrasil only"), Modifier.padding(top = 18.dp), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+                FilterSwitch(tr("ติดรองานอื่น", "Waiting on other work"), tr("เฉพาะงานที่รองานอื่นที่ยังไม่เสร็จ", "Only tasks waiting on unfinished work"), filter.blockedOnly) { onFilter(filter.copy(blockedOnly = !filter.blockedOnly)) }
+                FilterSwitch(tr("แสดงงานที่พักไว้", "Show someday work"), tr("งาน #สักวัน เป็นสีจางพร้อมป้าย", "#สักวัน work, greyed with a label"), filter.someday) { onFilter(filter.copy(someday = !filter.someday)) }
+                FilterSwitch(tr("รวมกิ่งที่พับเก็บ", "Parked branches"), null, filter.parked) { onFilter(filter.copy(parked = !filter.parked)) }
+                FilterSwitch(tr("เฉพาะโปรเจกต์ติดดาว", "Starred projects only"), null, filter.starredOnly) { onFilter(filter.copy(starredOnly = !filter.starredOnly)) }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("เสร็จ", "Done"), color = C.accent) } },
-        dismissButton = {
-            if (filter.changed > 0) TextButton(onClick = { onFilter(Ygdrasil.Filter()) }) { Text(tr("ล้างตัวกรอง", "Clear"), color = C.text2) }
-        },
-    )
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun FilterGroup(title: String, content: @Composable () -> Unit) {
-    Column {
-        Text(title, color = C.muted, fontSize = TS.caption, modifier = Modifier.padding(bottom = 6.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+        }
     }
 }
 

@@ -7,6 +7,8 @@ const MORE = '- [x] จองห้องประชุม ✅ 2026-10-08 📅 
 
 async function views(page: Page, opts: Parameters<typeof open>[1] = {}, mode?: string) {
   if (mode) await page.addInitScript((m) => localStorage.setItem('omni.viewMode', m), mode)
+  // The Timeline opens 7 days wide on a narrow screen and 14 on a wide one; the tests count from 14 on both.
+  await page.addInitScript(() => { if (!localStorage.getItem('omni.timelineSpan')) localStorage.setItem('omni.timelineSpan', '14') })
   const opened = await open(page, { note: NOTE + MORE, ...opts })
   await page.evaluate(() => { location.hash = '/views' })
   await expect(page.getByRole('heading', { name: 'งาน', level: 1 })).toBeVisible()
@@ -178,6 +180,7 @@ test('the filter is the task list\'s: priority and tags narrow every view, "hide
   await views(page, {}, 'matrix')
   await page.getByRole('button', { name: 'กรอง', exact: true }).click()
   const panel = page.getByRole('dialog', { name: 'กรอง' })
+  await panel.getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
   await panel.getByRole('button', { name: 'สูงสุด' }).click()
   await expect(panel.getByRole('button', { name: 'แสดง 1 งาน' })).toBeVisible()
   await expect(panel.getByRole('switch', { name: 'ซ่อนงานที่เสร็จและยกเลิก' })).toBeChecked()
@@ -192,22 +195,22 @@ test('"hide done" off brings done work into the calendar and the Kanban column',
   await views(page, { granted: true, events: events() }, 'calendar')
   await expect(page.getByRole('region', { name: 'งานของวันที่เลือก' }).getByText('จองห้องประชุม')).toHaveCount(0)
   await page.getByRole('button', { name: 'กรอง', exact: true }).click()
+  await page.getByRole('button', { name: /ตัวกรองเพิ่มเติม/ }).click()
   await page.getByRole('switch', { name: 'ซ่อนงานที่เสร็จและยกเลิก' }).uncheck()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('region', { name: 'งานของวันที่เลือก' }).getByText('จองห้องประชุม')).toBeVisible()
 })
 
-test('Gantt: bars by project from start to due, paging, and an edge lane for work out of range', async ({ page }) => {
+test('Timeline: bars by project from start to due, paging, zoom, and an edge lane for work out of range', async ({ page }) => {
   await views(page, {}, 'gantt')
-  await page.getByRole('button', { name: '14 วัน', exact: true }).click()
   await expect(page.locator('.grange')).toHaveText('7 ถึง 20 ต.ค.')
   await expect(page.locator('.gcaption', { hasText: 'peddose' })).toBeVisible()
   await expect(page.locator('.gcaption', { hasText: 'ไม่มีโปรเจกต์' })).toBeVisible()
   // The article: dated 6 to 9 Oct. Bars carry the title and the range, or the title sits beside a short bar.
   await expect(page.getByRole('button', { name: /ร่างบทความ/ })).toBeVisible()
   await expect(page.getByText('6 ถึง 9 ต.ค.')).toBeVisible()
-  // Overdue work is red, undated work has no bar.
-  await expect(page.locator('.gbar.late').first()).toBeVisible()
+  // Overdue work says how late it is, undated work has no bar.
+  await expect(page.locator('.gsub.warn', { hasText: /^เลย \d+ วัน$/ }).first()).toBeVisible()
   await expect(page.getByText('ทำเว็บคำนวณยา')).toHaveCount(0)
   await expect(page.getByText('จองห้องประชุม')).toHaveCount(0)
 
@@ -217,11 +220,15 @@ test('Gantt: bars by project from start to due, paging, and an edge lane for wor
   await expect(page.getByText('ยังไม่มีงานที่มีวันที่')).toHaveCount(0)
   await page.getByRole('button', { name: 'วันนี้', exact: true }).click()
   await expect(page.locator('.grange')).toHaveText('7 ถึง 20 ต.ค.')
-  await page.getByRole('button', { name: '30 วัน', exact: true }).click()
+  // − shows more days (14, 21, 30), + fewer.
+  await page.getByRole('button', { name: 'ย่อ ดูภาพกว้าง' }).click()
+  await page.getByRole('button', { name: 'ย่อ ดูภาพกว้าง' }).click()
   await expect(page.locator('.grange')).toHaveText('7 ต.ค. ถึง 5 พ.ย.')
+  await page.getByRole('button', { name: 'ขยาย ดูรายวัน' }).click()
+  await expect(page.locator('.grange')).toHaveText('7 ถึง 27 ต.ค.')
 })
 
-test('Gantt: a bar opens the edit panel; events from Google Calendar can be switched off', async ({ page }) => {
+test('Timeline: a bar picks its task and the card opens it; events from Google Calendar can be switched off', async ({ page }) => {
   await views(page, { granted: true, events: events() }, 'gantt')
   await expect(page.locator('.gcaption', { hasText: 'Google Calendar' })).toBeVisible()
   await expect(page.getByText('ประชุมทีม')).toBeVisible()
@@ -230,6 +237,9 @@ test('Gantt: a bar opens the edit panel; events from Google Calendar can be swit
   await page.getByRole('button', { name: /^นัด(หมาย|จาก Google Calendar)$/ }).click()
   await expect(page.getByText('ประชุมทีม')).toHaveCount(0)
   await page.getByRole('button', { name: /ร่างบทความ/ }).first().click()
+  const card = page.getByRole('region', { name: /งานที่เลือก ร่างบทความ/ })
+  await expect(card).toContainText('6 ถึง 9 ต.ค.')
+  await card.getByRole('button', { name: 'เปิดงาน' }).click()
   await expect(edit(page).getByRole('heading', { name: 'ร่างบทความ' })).toBeVisible()
 })
 
@@ -320,9 +330,9 @@ test('3 days and 1 day: the single day shows the times inside the blocks', async
 
 test('the chosen view is remembered on the device', async ({ page }) => {
   await views(page)
-  await tab(page, 'Gantt').click()
+  await tab(page, 'Timeline').click()
   await page.reload()
-  await expect(tab(page, 'Gantt')).toHaveAttribute('aria-selected', 'true')
+  await expect(tab(page, 'Timeline')).toHaveAttribute('aria-selected', 'true')
 })
 
 test('every change here is a write through the usual path: a conflict is reported, not overwritten', async ({ page }) => {
