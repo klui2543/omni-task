@@ -21,7 +21,7 @@ class AiMemoryTest {
         log = AiMemory.addExchange(log, d21, "08:00", "ตกลงทำระบบป้ายก่อน Flow", listOf("siriraj", "ป้าย"), listOf("ถาม: ทำอะไรก่อน"))
         log = AiMemory.addNote(log, d21, "08:05 ทำแล้ว: เลื่อน \"Flow\" ไป 2026-10-24")
         val lines = log.lines()
-        assertTrue(lines[0].startsWith("# Gemini log"))
+        assertEquals(listOf("---", "format: omni-log/3", "month: 2026-10", "---", "# Gemini log 2026-10"), lines.take(5))
         assertTrue(lines.indexOf("## 2026-10-21") < lines.indexOf("## 2026-10-20"))
         assertTrue("### 08:00 ตกลงทำระบบป้ายก่อน Flow #siriraj #ป้าย" in lines)
         assertTrue(lines.indexOf("- ถาม: ทำอะไรก่อน") < lines.indexOf("- 08:05 ทำแล้ว: เลื่อน \"Flow\" ไป 2026-10-24"))
@@ -69,14 +69,14 @@ class AiMemoryTest {
         val found = AiMemory.byWords(e, "ระบบป้าย ตกลงอะไรไว้", 3)
         assertEquals("ตกลงทำระบบป้ายก่อน Flow", found.first().topic)
         val h = AiMemory.history(e, found)
-        assertTrue(h.startsWith("[สารบัญทุกครั้งที่เคยคุย"))
+        assertTrue(h.startsWith("[สารบัญการคุยช่วงนี้"))
         assertTrue("2026-01-02 11:00 ตกลงทำระบบป้ายก่อน Flow #ป้าย" in h, "the index reaches back to the first one")
         assertTrue("[บทสนทนาเก่าที่เกี่ยวกับคำถามนี้]" in h && "ถาม: ระบบป้าย ตกลงทำก่อน Flow" in h)
         assertTrue(h.length < AiMemory.RECENT + 20_000)
         // A short log goes whole, with nothing to search.
         val short = AiMemory.entries(AiMemory.addExchange(null, d21, "08:00", "ทักทาย", emptyList(), listOf("ถาม: hi")))
         assertTrue(AiMemory.allSent(short))
-        assertTrue("[บทสนทนาทั้งหมด]" in AiMemory.history(short))
+        assertTrue("[บทสนทนาช่วงนี้ทั้งหมด]" in AiMemory.history(short))
     }
 
     @Test

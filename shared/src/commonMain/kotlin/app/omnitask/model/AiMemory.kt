@@ -75,11 +75,21 @@ object AiMemory {
     /** [addExchange] for lines already written as bullets (an exchange moved from another note). */
     fun addEntry(log: String?, day: LocalDate, time: String, topic: String, tags: List<String>, bulletLines: List<String>): String {
         val heading = "### $time " + flat(topic).take(80) + tags.mapNotNull(::tagOf).distinct().joinToString("") { " #$it" }
-        return insert(upgrade(log), day, listOf(heading) + bulletLines)
+        return insert(ready(log, day), day, listOf(heading) + bulletLines)
+    }
+
+    /**
+     * The month note ready to write into: a new one with its header when missing, else in today's form, with the
+     * header added when it was written before headers existed.
+     */
+    private fun ready(log: String?, day: LocalDate): String {
+        if (log.isNullOrBlank()) return AiIndex.newMonth(day)
+        val now = upgrade(log)
+        return if (AiIndex.front(now).isEmpty()) AiIndex.withFront(now, AiIndex.monthKey(day)) else now
     }
 
     /** The log with [line] added at the end of [day], under the newest exchange (what was done after an answer). */
-    fun addNote(log: String?, day: LocalDate, line: String): String = insert(upgrade(log), day, listOf("- " + flat(line)))
+    fun addNote(log: String?, day: LocalDate, line: String): String = insert(ready(log, day), day, listOf("- " + flat(line)))
 
     private fun insert(log: String, day: LocalDate, add: List<String>): String {
         val all = log.trimEnd().lines().toMutableList()
@@ -266,14 +276,22 @@ object AiMemory {
      * What goes to the model as the past: the index of every exchange, the newest ones (all of them while short),
      * and the older ones [found] for this question that are not among the newest.
      */
-    fun history(entries: List<Entry>, found: List<Entry> = emptyList()): String = buildString {
-        if (entries.isEmpty()) return@buildString
+    fun history(entries: List<Entry>, found: List<Entry> = emptyList(), months: String? = null): String = buildString {
+        // The months before these: their summaries, so the model knows what was ever talked about and can ask to look.
+        months?.takeIf { it.isNotBlank() }?.let {
+            appendLine("[สรุปแต่ละเดือนก่อนหน้า ใหม่สุดอยู่บน]")
+            appendLine(it)
+            appendLine()
+        }
+        if (entries.isEmpty() && found.isEmpty()) return@buildString
         val newest = recent(entries)
-        appendLine("[สารบัญทุกครั้งที่เคยคุย ใหม่สุดอยู่บน]")
-        appendLine(index(entries))
-        appendLine()
-        appendLine(if (newest.size == entries.size) "[บทสนทนาทั้งหมด]" else "[บทสนทนาล่าสุด]")
-        newest.forEach { appendLine(it.text); appendLine() }
+        if (entries.isNotEmpty()) {
+            appendLine("[สารบัญการคุยช่วงนี้ ใหม่สุดอยู่บน]")
+            appendLine(index(entries))
+            appendLine()
+            appendLine(if (newest.size == entries.size) "[บทสนทนาช่วงนี้ทั้งหมด]" else "[บทสนทนาล่าสุด]")
+            newest.forEach { appendLine(it.text); appendLine() }
+        }
         val ids = newest.map { it.id }.toSet()
         val older = found.filter { it.id !in ids }
         if (older.isNotEmpty()) {

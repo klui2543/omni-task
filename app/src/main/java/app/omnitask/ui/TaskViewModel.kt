@@ -47,7 +47,8 @@ import app.omnitask.model.AiAssist
 import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
 import app.omnitask.data.Gemini
-import app.omnitask.data.AiRecall
+import app.omnitask.data.AiLibrary
+import app.omnitask.model.AiIndex
 import app.omnitask.model.Swap
 import app.omnitask.notify.Digest
 import kotlinx.datetime.LocalDateTime
@@ -571,6 +572,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             if (_state.value.projectTags == null) {
                 result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
             }
+            // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
+            aiUpkeep()
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -1886,47 +1889,36 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * each time, off the main thread, so a log Obsidian Sync just brought in is used).
      */
     /** The picture, and the assistant's lasting memory and conversation log, read fresh from the vault. */
-    private class AiContext(val picture: AiAssist.Picture, val memory: String?, val entries: List<AiMemory.Entry>)
+    private class AiContext(val picture: AiAssist.Picture, val memory: String?, val entries: List<AiMemory.Entry>, val index: String?)
 
     private suspend fun aiContext(): AiContext {
         val s = _state.value
         fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
-        val (claude, memory, entries) = withContext(Dispatchers.IO) { Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), readAiLog(s.vault)) }
+        val (claude, memory, entries) = withContext(Dispatchers.IO) {
+            Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), s.vault?.let { v -> runCatching { library.recent(v, LocalDate.now()) }.getOrNull() }.orEmpty())
+        }
+        val index = withContext(Dispatchers.IO) { s.vault?.let { v -> library.index(v) } }
         if ((claude != null) != s.ai.claudeLog) _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
-        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries)
-    }
-
-    /** Adds [lines] under today in the conversation log, off the main thread; a failed write only loses the log line. */
-    /**
-     * Every exchange in the conversation log, newest first: the month notes (`Gemini log/2026/10 Oct.md`), found by
-     * listing the folders and also by name for the last three months in case a listing misses them. The first
-     * version's single note is cut into month notes here once, then removed.
-     */
-    private fun readAiLog(vault: Uri?): List<AiMemory.Entry> {
-        if (vault == null) return emptyList()
-        runCatching { moveOldAiLog(vault) }
-        val paths = LinkedHashSet<String>()
-        runCatching {
-            AiMemory.yearFolders(repo.namesIn(vault, AiMemory.LOG_DIR)).forEach { y ->
-                AiMemory.monthNotes(repo.namesIn(vault, "${AiMemory.LOG_DIR}/$y")).forEach { paths += "${AiMemory.LOG_DIR}/$y/$it" }
-            }
-        }
-        val today = LocalDate.now()
-        for (i in 0..2) paths += AiMemory.monthFile(today.minusDays(30L * i))
-        return AiMemory.merge(paths.map { path -> runCatching { repo.readPath(vault, path) }.getOrNull() })
-    }
-
-    private fun moveOldAiLog(vault: Uri) {
-        val old = repo.readPath(vault, AiMemory.LEGACY_LOG_FILE) ?: return
-        val split = AiMemory.splitByMonth(old)
-        // The old note goes only once every month note has what it held; a failure leaves it for the next try.
-        split.forEach { (path, moved) -> repo.editPath(vault, path) { text -> AiMemory.addMoved(text, moved) } }
-        repo.deletePath(vault, AiMemory.LEGACY_LOG_FILE)
+        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries, index)
     }
 
     private val logLock = kotlinx.coroutines.sync.Mutex()
-    private val recall by lazy { AiRecall(getApplication(), gemini) }
+    private val library by lazy { AiLibrary(getApplication(), repo, gemini) }
+    private val upkeeping = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Keeps the assistant's log in order ([AiLibrary.upkeep]), in the background, one run at a time. */
+    fun aiUpkeep(force: Boolean = false) {
+        val vault = _state.value.vault ?: return
+        if (!upkeeping.compareAndSet(false, true)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                logLock.withLock { runCatching { library.upkeep(vault, LocalDate.now(), force) } }
+            } finally {
+                upkeeping.set(false)
+            }
+        }
+    }
 
     /**
      * Changes the conversation log with [change], off the main thread and one write at a time (an answer and the
@@ -1990,18 +1982,22 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching {
                     // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
                     // long to send whole) the older ones closest to this question.
+                    // This month and the last go along (whole while short); older months as their index lines.
                     val entries = ctx.entries
+                    val vault = _state.value.vault
+                    val months = AiIndex.forModel(ctx.index)
                     val whole = AiMemory.allSent(entries)
-                    val found = if (whole) emptyList() else recall.find(entries, text)
-                    val history = AiMemory.history(entries, found)
-                    val first = AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = !whole)), picture)
+                    val canSearch = vault != null && (!whole || months.isNotBlank())
+                    val found = if (whole || vault == null) emptyList() else library.find(vault, text, entries, ctx.index)
+                    val history = AiMemory.history(entries, found, months)
+                    val first = AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch)), picture)
                     val query = first.search
-                    if (query == null || whole) first to false
+                    if (query == null || !canSearch || vault == null) first to false
                     else {
-                        // Gemini asked to look further back: search once more with its own words, then ask again.
+                        // Gemini asked to look further back: search every month once with its own words, then ask again.
                         _state.update { it.copy(ai = it.ai.copy(searching = true)) }
-                        val more = recall.find(entries, query, k = 8)
-                        val again = AiAssist.chatRequest(picture, earlier, text, memory, AiMemory.history(entries, found + more), searched = more.joinToString("\n\n") { it.text })
+                        val more = library.find(vault, query, entries, ctx.index, k = 8)
+                        val again = AiAssist.chatRequest(picture, earlier, text, memory, AiMemory.history(entries, found + more, months), searched = more.joinToString("\n\n") { it.text })
                         AiAssist.parseReply(gemini.generate(again), picture) to true
                     }
                 }

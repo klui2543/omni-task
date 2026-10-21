@@ -2,67 +2,123 @@ package app.omnitask.data
 
 import android.content.Context
 import app.omnitask.model.AiMemory
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.text.BreakIterator
 import java.util.Locale
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
- * Finds the past exchanges a question is about. Each exchange of the conversation log is turned into a vector by
- * Gemini once and kept in a file of the app's own ([FILE]: rebuilt from the log whenever it is lost), so a question
- * is matched by meaning, which works for Thai without spaces between words. Without a key, or when Gemini cannot
- * be reached, it matches by shared words instead, split with the phone's Thai dictionary.
+ * Finds past exchanges by meaning. Each exchange is turned into a vector by Gemini once and kept on this phone, one
+ * small file per month (`ai-recall/2026-10.bin`, a byte per number), so thirty years of talk stays a few megabytes
+ * and a search reads one month at a time. The files are only a cache: lost, from an older embedding model, or out
+ * of date, they are made again from the notes in the vault.
  */
 class AiRecall(private val context: Context, private val gemini: Gemini) {
 
-    private val file get() = File(context.filesDir, FILE)
+    private val dir get() = File(context.filesDir, DIR).apply { mkdirs() }
 
-    private fun load(): MutableMap<String, FloatArray> = runCatching {
-        val o = JSONObject(file.readText())
-        if (o.optInt("dims") != AiMemory.DIMS) return@runCatching mutableMapOf()
-        val items = o.getJSONObject("items")
-        items.keys().asSequence().associateWith { k ->
-            val a = items.getJSONArray(k)
-            FloatArray(a.length()) { a.getDouble(it).toFloat() }
-        }.toMutableMap()
-    }.getOrElse { mutableMapOf() }
+    private fun fileOf(month: String) = File(dir, "$month.bin")
 
-    private fun save(vectors: Map<String, FloatArray>) = runCatching {
-        val items = JSONObject()
-        vectors.forEach { (k, v) -> items.put(k, JSONArray().apply { v.forEach { put(it.toDouble()) } }) }
-        file.writeText(JSONObject().put("dims", AiMemory.DIMS).put("items", items).toString())
+    /** One month's vectors: which embedding model made them, the fingerprint of the month they cover, and the vectors by exchange. */
+    class Shelf(val model: String, val digest: String, val vectors: Map<String, ByteArray>)
+
+    fun load(month: String): Shelf? = read(fileOf(month))
+
+    private fun read(f: File): Shelf? = runCatching {
+        DataInputStream(f.inputStream().buffered()).use { s ->
+            if (s.readInt() != MAGIC) return null
+            val model = s.readUTF()
+            val digest = s.readUTF()
+            val dims = s.readInt()
+            val n = s.readInt()
+            val out = LinkedHashMap<String, ByteArray>(n)
+            repeat(n) { out[s.readUTF()] = ByteArray(dims).also { s.readFully(it) } }
+            Shelf(model, digest, out)
+        }
+    }.getOrNull()
+
+    private fun write(month: String, shelf: Shelf) {
+        val tmp = File(dir, "$month.tmp")
+        DataOutputStream(tmp.outputStream().buffered()).use { s ->
+            s.writeInt(MAGIC)
+            s.writeUTF(shelf.model)
+            s.writeUTF(shelf.digest)
+            s.writeInt(AiMemory.DIMS)
+            s.writeInt(shelf.vectors.size)
+            shelf.vectors.forEach { (id, v) -> s.writeUTF(id); s.write(v) }
+        }
+        tmp.renameTo(fileOf(month))
+    }
+
+    /** The months that have a file, so files of months that are gone can be dropped. */
+    fun months(): List<String> = dir.list().orEmpty().filter { it.endsWith(".bin") }.map { it.removeSuffix(".bin") }
+
+    fun drop(month: String) { fileOf(month).delete() }
+
+    /** Whether [month]'s file is whole and made from the month as it is now ([digest]) by today's embedding model. */
+    fun upToDate(month: String, digest: String): Boolean =
+        load(month)?.let { it.digest == digest && it.model == AiKey.embedModel(context) } == true
+
+    /**
+     * Gives every exchange of [month] a vector: kept ones are reused, at most [budget] new ones are made now (the
+     * rest on the next run). Returns how many were made. Blocking; throws when Gemini cannot be reached.
+     */
+    fun shelve(month: String, entries: List<AiMemory.Entry>, digest: String, budget: Int): Int {
+        val old = load(month)?.takeIf { it.model == AiKey.embedModel(context) }
+        val ids = entries.map { it.id }.toSet()
+        val kept = LinkedHashMap(old?.vectors.orEmpty().filterKeys { it in ids })
+        val missing = entries.filter { it.id !in kept }.take(budget.coerceAtLeast(0))
+        var model = old?.model ?: AiKey.embedModel(context)
+        missing.chunked(BATCH).forEach { batch ->
+            val (used, vectors) = gemini.embed(batch.map(AiMemory::embedText), query = false)
+            if (used != model) { kept.clear(); model = used }
+            vectors.forEachIndexed { i, v -> kept[batch[i].id] = quantize(v) }
+        }
+        val whole = entries.all { it.id in kept }
+        write(month, Shelf(model, if (whole) digest else "", kept))
+        return missing.size
     }
 
     /**
-     * Up to [k] exchanges from [entries] closest to [query], best first. Exchanges not yet turned into vectors are
-     * done now, a batch at a time ([PER_CALL] at most, so the first search over a long log stays quick; the rest
-     * follow on later searches). Blocking: call it off the main thread.
+     * The exchanges closest in meaning to [query] over every month kept (or only [months]), best first, as
+     * (month, exchange id). Blocking; throws when Gemini cannot be reached.
      */
-    fun find(entries: List<AiMemory.Entry>, query: String, k: Int = 6): List<AiMemory.Entry> {
-        if (entries.isEmpty() || query.isBlank()) return emptyList()
-        val byMeaning = runCatching {
-            val known = load()
-            val ids = entries.map { it.id }.toSet()
-            val missing = entries.filter { it.id !in known }.take(PER_CALL)
-            missing.chunked(BATCH).forEach { batch ->
-                gemini.embed(batch.map(AiMemory::embedText), query = false).forEachIndexed { i, v -> known[batch[i].id] = v }
+    fun search(query: String, k: Int, months: Collection<String>? = null, min: Float = 0.55f): List<Pair<String, String>> {
+        val (model, qs) = gemini.embed(listOf(query.take(1000)), query = true)
+        val q = quantize(qs.first())
+        val best = ArrayList<Triple<Float, String, String>>()
+        (months ?: months()).forEach { month ->
+            val shelf = load(month)?.takeIf { it.model == model } ?: return@forEach
+            shelf.vectors.forEach { (id, v) ->
+                val score = cosine(q, v)
+                if (score >= min) best += Triple(score, month, id)
             }
-            // Exchanges deleted from the log leave the cache too.
-            known.keys.retainAll(ids)
-            save(known)
-            val q = gemini.embed(listOf(query.take(1000)), query = true).first()
-            val best = AiMemory.nearest(q, known, k)
-            val byId = entries.associateBy { it.id }
-            best.mapNotNull { byId[it] }
-        }.getOrNull()
-        return byMeaning?.takeIf { it.isNotEmpty() } ?: AiMemory.byWords(entries, query, k, ::thaiWords)
+            if (best.size > k * 4) { best.sortByDescending { it.first }; while (best.size > k) best.removeAt(best.size - 1) }
+        }
+        return best.sortedByDescending { it.first }.take(k).map { it.second to it.third }
     }
 
     companion object {
-        const val FILE = "ai-recall.json"
+        const val DIR = "ai-recall"
+        private const val MAGIC = 0x4f4d5232 // "OMR2"
         private const val BATCH = 100
-        private const val PER_CALL = 300
+
+        /** The vector as one byte per number, scaled to its largest; the angle between vectors stays nearly the same. */
+        fun quantize(v: FloatArray): ByteArray {
+            val top = v.maxOfOrNull { abs(it) }?.takeIf { it > 0f } ?: 1f
+            return ByteArray(v.size) { (v[it] / top * 127f).roundToInt().coerceIn(-127, 127).toByte() }
+        }
+
+        fun cosine(a: ByteArray, b: ByteArray): Float {
+            if (a.isEmpty() || a.size != b.size) return 0f
+            var dot = 0L; var na = 0L; var nb = 0L
+            for (i in a.indices) { val x = a[i].toInt(); val y = b[i].toInt(); dot += x * y; na += x * x; nb += y * y }
+            return if (na == 0L || nb == 0L) 0f else (dot / (sqrt(na.toDouble()) * sqrt(nb.toDouble()))).toFloat()
+        }
 
         /** Words as the phone's dictionary splits them, Thai included. */
         fun thaiWords(text: String): List<String> {

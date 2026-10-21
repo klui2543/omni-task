@@ -43,6 +43,11 @@ object AiKey {
 
     fun setNoThinking(context: Context, model: String) = prefs(context).edit().putBoolean("gemini.noThinking.$model", true).apply()
 
+    /** The embedding model that worked last; vectors from different models cannot be compared. */
+    fun embedModel(context: Context): String = prefs(context).getString("gemini.embedModel", null) ?: Gemini.EMBED_MODELS.first()
+
+    fun setEmbedModel(context: Context, model: String) = prefs(context).edit().putString("gemini.embedModel", model).apply()
+
     /** The last four characters, to show which key is in without showing the key. */
     fun tail(key: String) = key.takeLast(4)
 }
@@ -103,12 +108,19 @@ class Gemini(private val context: Context) {
     }
 
     /**
-     * Vectors for [texts] (documents to keep, or a [query] to look them up with), from Gemini's embedding model;
-     * the next model is tried when one is not offered.
+     * Vectors for [texts] (documents to keep, or a [query] to look them up with), with the embedding model that made
+     * them. The model that worked last is tried first; when Google no longer offers it, the next ones are tried, so
+     * a retired model only means the kept vectors are made again.
      */
-    fun embed(texts: List<String>, query: Boolean, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): List<FloatArray> {
+    fun embed(texts: List<String>, query: Boolean, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): Pair<String, List<FloatArray>> {
         var last: Pair<Int, String>? = null
-        for (model in EMBED_MODELS) {
+        val first = AiKey.embedModel(context)
+        // When every known name is retired, the newest embedding model Google lists for this key is used.
+        val names = sequence {
+            yieldAll((listOf(first) + EMBED_MODELS).distinct())
+            list(key)?.let { newestEmbedding(it) }?.let { yield(it) }
+        }
+        for (model in names.distinct()) {
             val body = app.omnitask.model.AiMemory.embedRequest(model, texts, query)
             val request = Request.Builder().url("$base/models/$model:batchEmbedContents").header("x-goog-api-key", key)
                 .post(body.toRequestBody("application/json; charset=utf-8".toMediaType())).build()
@@ -120,10 +132,19 @@ class Gemini(private val context: Context) {
             if (r.first == 404) { last = r; continue }
             val vectors = app.omnitask.model.AiMemory.parseEmbeddings(check(r))
             if (vectors.size != texts.size) throw AiAssist.Failure(tr("แปลงบันทึกเป็นตัวเลขไม่ครบ", "Some notes were not embedded"))
-            return vectors
+            if (model != first) AiKey.setEmbedModel(context, model)
+            return model to vectors
         }
-        return app.omnitask.model.AiMemory.parseEmbeddings(check(last ?: (404 to "")))
+        check(last ?: (404 to ""))
+        throw AiAssist.Failure(tr("ไม่มีรุ่นแปลงบันทึกเป็นตัวเลขที่ใช้ได้", "No embedding model is available"))
     }
+
+    /** The newest model in a models listing that makes embeddings. */
+    private fun newestEmbedding(listing: String): String? =
+        Regex("\"name\"\\s*:\\s*\"models/([^\"]*embedding[^\"]*)\"").findAll(listing).map { it.groupValues[1] }.maxWithOrNull(compareBy<String>({ it.startsWith("gemini") }, { it }))
+
+    /** A plain text answer to [body] (a summary), through [generate]. */
+    fun text(body: String): String = generate(body)
 
     /** Every text model this key can use, grouped fast to smart. */
     fun models(key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): List<AiAssist.Model> {
