@@ -107,4 +107,24 @@ class AiMemoryTest {
         val ask2 = again["contents"]!!.jsonArray.last().jsonObject["parts"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         assertTrue("ห้ามขอค้นเพิ่ม" in ask2 && "ผลค้น" in ask2)
     }
+
+    @Test
+    fun logsAreKeptPerMonthAndTheOldNoteIsMovedIn() {
+        assertEquals("📁 Folder/หลังบ้าน/Omni/Gemini log/2026/08 Aug.md", AiMemory.monthFile(LocalDate.parse("2026-08-05")))
+        assertEquals("📁 Folder/หลังบ้าน/Omni/Gemini log/2026/12 Dec.md", AiMemory.monthFile(LocalDate.parse("2026-12-31")))
+        assertEquals(listOf("2025", "2026"), AiMemory.yearFolders(listOf("2026", "x", "2025", "Gemini")))
+        assertEquals(listOf("09 Sep.md", "10 Oct.md"), AiMemory.monthNotes(listOf("10 Oct.md", "09 Sep.md", "notes.md")))
+
+        var old: String? = AiMemory.addExchange(null, LocalDate.parse("2026-09-30"), "22:00", "เรื่องเดือนก่อน", listOf("a"), listOf("ถาม: x"))
+        old = AiMemory.addExchange(old, LocalDate.parse("2026-10-01"), "08:00", "เรื่องต้นเดือน", emptyList(), listOf("ถาม: y"))
+        old = AiMemory.addExchange(old, LocalDate.parse("2026-10-02"), "09:00", "เรื่องถัดมา", listOf("b"), listOf("ถาม: z"))
+        val split = AiMemory.splitByMonth(old)
+        assertEquals(setOf(AiMemory.monthFile(LocalDate.parse("2026-09-01")), AiMemory.monthFile(LocalDate.parse("2026-10-01"))), split.keys)
+        val oct = AiMemory.addMoved(null, split.getValue(AiMemory.monthFile(LocalDate.parse("2026-10-01"))))
+        assertEquals(listOf("เรื่องถัดมา", "เรื่องต้นเดือน"), AiMemory.entries(oct).map { it.topic })
+        assertEquals(oct, AiMemory.addMoved(oct, split.getValue(AiMemory.monthFile(LocalDate.parse("2026-10-01")))), "moving twice changes nothing")
+        val sep = AiMemory.addMoved(null, split.getValue(AiMemory.monthFile(LocalDate.parse("2026-09-01"))))
+        assertEquals(listOf("เรื่องถัดมา", "เรื่องต้นเดือน", "เรื่องเดือนก่อน"), AiMemory.merge(listOf(sep, oct)).map { it.topic })
+        assertTrue("- ถาม: y" in oct.lines())
+    }
 }

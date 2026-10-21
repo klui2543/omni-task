@@ -1886,18 +1886,45 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * each time, off the main thread, so a log Obsidian Sync just brought in is used).
      */
     /** The picture, and the assistant's lasting memory and conversation log, read fresh from the vault. */
-    private class AiContext(val picture: AiAssist.Picture, val memory: String?, val log: String?)
+    private class AiContext(val picture: AiAssist.Picture, val memory: String?, val entries: List<AiMemory.Entry>)
 
     private suspend fun aiContext(): AiContext {
         val s = _state.value
         fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
-        val (claude, memory, log) = withContext(Dispatchers.IO) { Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), read(AiMemory.LOG_FILE)) }
+        val (claude, memory, entries) = withContext(Dispatchers.IO) { Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), readAiLog(s.vault)) }
         if ((claude != null) != s.ai.claudeLog) _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
-        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, log)
+        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries)
     }
 
     /** Adds [lines] under today in the conversation log, off the main thread; a failed write only loses the log line. */
+    /**
+     * Every exchange in the conversation log, newest first: the month notes (`Gemini log/2026/10 Oct.md`), found by
+     * listing the folders and also by name for the last three months in case a listing misses them. The first
+     * version's single note is cut into month notes here once, then removed.
+     */
+    private fun readAiLog(vault: Uri?): List<AiMemory.Entry> {
+        if (vault == null) return emptyList()
+        runCatching { moveOldAiLog(vault) }
+        val paths = LinkedHashSet<String>()
+        runCatching {
+            AiMemory.yearFolders(repo.namesIn(vault, AiMemory.LOG_DIR)).forEach { y ->
+                AiMemory.monthNotes(repo.namesIn(vault, "${AiMemory.LOG_DIR}/$y")).forEach { paths += "${AiMemory.LOG_DIR}/$y/$it" }
+            }
+        }
+        val today = LocalDate.now()
+        for (i in 0..2) paths += AiMemory.monthFile(today.minusDays(30L * i))
+        return AiMemory.merge(paths.map { path -> runCatching { repo.readPath(vault, path) }.getOrNull() })
+    }
+
+    private fun moveOldAiLog(vault: Uri) {
+        val old = repo.readPath(vault, AiMemory.LEGACY_LOG_FILE) ?: return
+        val split = AiMemory.splitByMonth(old)
+        // The old note goes only once every month note has what it held; a failure leaves it for the next try.
+        split.forEach { (path, moved) -> repo.editPath(vault, path) { text -> AiMemory.addMoved(text, moved) } }
+        repo.deletePath(vault, AiMemory.LEGACY_LOG_FILE)
+    }
+
     private val logLock = kotlinx.coroutines.sync.Mutex()
     private val recall by lazy { AiRecall(getApplication(), gemini) }
 
@@ -1905,15 +1932,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * Changes the conversation log with [change], off the main thread and one write at a time (an answer and the
      * change confirmed right after it would otherwise read the same old file). A failed write only loses the line.
      */
-    private fun editLog(change: (String?) -> String) {
+    private fun editLog(day: LocalDate, change: (String?) -> String) {
         val vault = _state.value.vault ?: return
-        viewModelScope.launch(Dispatchers.IO) { logLock.withLock { runCatching { repo.editPath(vault, AiMemory.LOG_FILE, change) } } }
+        viewModelScope.launch(Dispatchers.IO) { logLock.withLock { runCatching { repo.editPath(vault, AiMemory.monthFile(day), change) } } }
     }
 
     /** A line under the newest exchange of today: what was done or declined after an answer. */
     private fun logAi(line: String) {
         val today = LocalDate.now()
-        editLog { old -> AiMemory.addNote(old, today, line) }
+        editLog(today) { old -> AiMemory.addNote(old, today, line) }
     }
 
     private fun nowHm(): String = java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
@@ -1963,7 +1990,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching {
                     // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
                     // long to send whole) the older ones closest to this question.
-                    val entries = AiMemory.entries(ctx.log)
+                    val entries = ctx.entries
                     val whole = AiMemory.allSent(entries)
                     val found = if (whole) emptyList() else recall.find(entries, text)
                     val history = AiMemory.history(entries, found)
@@ -1991,7 +2018,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val today = LocalDate.now()
             val time = nowHm()
             val lines = listOf("ถาม: $text", "Gemini (${shortModel(model)}): " + (answer.failed?.let { "ไม่ได้ตอบ: $it" } ?: answer.text))
-            editLog { old -> AiMemory.addExchange(old, today, time, reply?.topic ?: text.take(60), reply?.tags.orEmpty(), lines) }
+            editLog(today) { old -> AiMemory.addExchange(old, today, time, reply?.topic ?: text.take(60), reply?.tags.orEmpty(), lines) }
         }
     }
 

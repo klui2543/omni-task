@@ -27,7 +27,23 @@ import kotlin.math.sqrt
  * Plain bullets only: no checkboxes, so nothing here is ever read as a task.
  */
 object AiMemory {
-    const val LOG_FILE = "${VaultText.OMNI_DIR}/Gemini log.md"
+    /** The conversation log, one note per month: `Gemini log/2026/10 Oct.md` (the number keeps the months in order). */
+    const val LOG_DIR = "${VaultText.OMNI_DIR}/Gemini log"
+
+    /** The single log note of the first version; moved into the month notes by [splitByMonth]. */
+    const val LEGACY_LOG_FILE = "${VaultText.OMNI_DIR}/Gemini log.md"
+
+    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+    /** The note for [day]'s month, such as `…/Gemini log/2026/10 Oct.md`. */
+    fun monthFile(day: LocalDate): String =
+        "$LOG_DIR/${day.year}/${day.monthNumber.toString().padStart(2, '0')} ${MONTHS[day.monthNumber - 1]}.md"
+
+    /** The year folders in a listing of [LOG_DIR]. */
+    fun yearFolders(names: List<String>): List<String> = names.filter { it.length == 4 && it.all(Char::isDigit) }.sorted()
+
+    /** The month notes in a listing of a year folder, oldest first. */
+    fun monthNotes(names: List<String>): List<String> = names.filter { Regex("""^\d{2} [A-Za-z]{3}\.md$""").matches(it) }.sorted()
     const val MEMORY_FILE = "${VaultText.OMNI_DIR}/Gemini memory.md"
 
     /** The whole log goes to the model while it is this short; past that, the newest part and what is found. */
@@ -53,9 +69,13 @@ object AiMemory {
      * The log with one exchange added under [day]: a `### time topic #tags` heading and its [lines] as bullets.
      * Exchanges written before headings existed ([upgrade]) are given one first.
      */
-    fun addExchange(log: String?, day: LocalDate, time: String, topic: String, tags: List<String>, lines: List<String>): String {
+    fun addExchange(log: String?, day: LocalDate, time: String, topic: String, tags: List<String>, lines: List<String>): String =
+        addEntry(log, day, time, topic, tags, lines.map { "- " + flat(it) })
+
+    /** [addExchange] for lines already written as bullets (an exchange moved from another note). */
+    fun addEntry(log: String?, day: LocalDate, time: String, topic: String, tags: List<String>, bulletLines: List<String>): String {
         val heading = "### $time " + flat(topic).take(80) + tags.mapNotNull(::tagOf).distinct().joinToString("") { " #$it" }
-        return insert(upgrade(log), day, listOf(heading) + lines.map { "- " + flat(it) })
+        return insert(upgrade(log), day, listOf(heading) + bulletLines)
     }
 
     /** The log with [line] added at the end of [day], under the newest exchange (what was done after an answer). */
@@ -148,6 +168,28 @@ object AiMemory {
         close()
         // Within a day exchanges are written in time order; newest first overall.
         return out.withIndex().sortedWith(compareByDescending<IndexedValue<Entry>> { it.value.day }.thenByDescending { it.index }).map { it.value }
+    }
+
+    /** The exchanges of several month notes together, newest first. */
+    fun merge(logs: List<String?>): List<Entry> = logs.flatMap { entries(it) }
+        .sortedWith(compareByDescending<Entry> { it.day }.thenByDescending { it.time.padStart(5, '0') })
+
+    /**
+     * An old single log note cut into month notes: the path of each month note and the exchanges that belong in
+     * it (oldest first, as [addEntry] wants them). Days that do not read as dates stay out.
+     */
+    fun splitByMonth(legacy: String?): Map<String, List<Entry>> =
+        entries(legacy).reversed().mapNotNull { e -> runCatching { monthFile(LocalDate.parse(e.day)) to e }.getOrNull() }
+            .groupBy({ it.first }, { it.second })
+
+    /** [month] (a month note's text, or null) with [moved] exchanges put into it. */
+    fun addMoved(month: String?, moved: List<Entry>): String {
+        var out = month
+        moved.forEach { e ->
+            if (entries(out).any { it.day == e.day && it.time == e.time && it.topic == e.topic }) return@forEach
+            out = addEntry(out, LocalDate.parse(e.day), e.time, e.topic, e.tags, e.body.lines().filter { it.isNotBlank() })
+        }
+        return out ?: LOG_HEAD
     }
 
     /** The index: one line per exchange, newest first, so the model sees everything ever talked about. */
