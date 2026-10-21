@@ -7,6 +7,7 @@ format: claude-rules/3
 - Never use the em dash or the middle dot in text Klui reads.
 - Do not start work until Klui says go. Picking an option is not a go: ask "เริ่มเลยไหม?" first.
 - Never ask Klui to paste a token, key or password in chat. Secrets go only in environment settings.
+- Never write a patient's name, hospital number (HN), national ID number, phone number or address into the vault or the logs; write "ผู้ป่วยรายหนึ่ง" or the role.
 
 ## The vault
 - On the cloud the vault is at `~/vault`. Run `vsync` at the start of a session and again after every write. (`vsync` is `ob sync --path ~/vault` with the token built in.)
@@ -24,7 +25,7 @@ format: claude-rules/3
 
 ## At the end of every piece of work
 - Before saying the work is done (or when Klui types `/save`), write to Claude log: the project's line in ภาพรวม, any new or finished งานค้าง, and 2 to 4 plain bullets under today in ไทม์ไลน์ (what was done, what was decided and why, what waits and for whom). Then run `vsync` (cloud only).
-- Write what Klui will need later, not a diary: decisions, what is blocked, what to do next. Keep each bullet to one line.
+- Write what Klui will need later, not a diary: decisions, what is blocked, what to do next. Keep each bullet to one line. Never edit or delete bullets of an earlier day; a correction is a new bullet today starting with `แก้ไข:`.
 - A session that only answered a question and changed nothing does not need an entry.
 
 ## The secretary and /save
