@@ -1,5 +1,5 @@
 ---
-format: secretary/6
+format: secretary/7
 ---
 # Secretary procedure
 
@@ -57,7 +57,7 @@ Privacy, always: never write a patient's name, hospital number (HN), national ID
 9. Backup (first round of the day after 08:00 Bangkok time, and only when steps 2 to 8 worked):
    a. Attach the backup repository with add_repo (owner `klui2543`, repo `klui-vault-backup`, access `push`). If it is refused or missing, add a problem item as in step 7 ("สำรองข้อมูลไม่ได้: <reason>"), once, and skip the rest of step 9.
    b. Clone it to `~/backup` with the command add_repo gives (or `git -C ~/backup pull` when it is already there).
-   c. `rsync -a --delete --max-size=50m --exclude '.obsidian/workspace*' --exclude '.trash/' ~/vault/ ~/backup/vault/`. When `~/backup/README.md` is missing, write one in Thai: this is a daily copy of Klui's Obsidian vault; to restore, download the repository (or an older commit) and copy the `vault` folder into Obsidian; never edit here.
+   c. Make `~/backup/vault` an exact copy of `~/vault`, so files deleted in the vault go from the copy too (git history keeps them): `rm -rf ~/backup/vault && cp -a ~/vault ~/backup/vault && rm -rf ~/backup/vault/.trash ~/backup/vault/.obsidian/workspace*`, then remove any file over 50 MB from the copy (`find ~/backup/vault -size +50M -delete`). (rsync is not installed on the cloud machine.) When `~/backup/README.md` is missing, write one in Thai: this is a daily copy of Klui's Obsidian vault; to restore, download the repository (or an older commit) and copy the `vault` folder into Obsidian; never edit here.
    d. `git -C ~/backup add -A`, commit `backup YYYY-MM-DD` (skip when nothing changed), push. Remember the short commit id.
    A failure here never stops the round: add a problem item as in step 7 and note it in step 10. When the backup works again, tick that item.
 10. Write the round down, only now that everything above is done. "Steps 2 to 8 worked" means none of them failed; a session read only in part does not count as a failure (it is noted instead).
