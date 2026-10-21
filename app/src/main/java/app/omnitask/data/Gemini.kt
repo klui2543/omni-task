@@ -48,6 +48,11 @@ object AiKey {
 
     fun setEmbedModel(context: Context, model: String) = prefs(context).edit().putString("gemini.embedModel", model).apply()
 
+    /** Until when the "secretary stopped" warning stays hidden (epoch ms). */
+    fun secretaryHiddenUntil(context: Context): Long = prefs(context).getLong("secretary.hiddenUntil", 0L)
+
+    fun setSecretaryHiddenUntil(context: Context, at: Long) = prefs(context).edit().putLong("secretary.hiddenUntil", at).apply()
+
     /** The last four characters, to show which key is in without showing the key. */
     fun tail(key: String) = key.takeLast(4)
 }

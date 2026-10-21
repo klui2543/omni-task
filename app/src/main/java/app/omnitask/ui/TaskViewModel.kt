@@ -307,6 +307,9 @@ data class AiUi(
     val modelsError: String? = null,
     /** Whether Claude log.md was found in the vault, so the assistant says it reads it. */
     val claudeLog: Boolean = false,
+    /** When the secretary last wrote Claude log.md (its marker line), and until when its warning is hidden. */
+    val secretaryLast: Long? = null,
+    val secretaryHiddenUntil: Long = 0L,
 )
 
 /** One entry in the assistant conversation. */
@@ -574,6 +577,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
             aiUpkeep()
+            // When the secretary last wrote Claude log, so the today page can say when it stopped.
+            val secretary = withContext(Dispatchers.IO) { runCatching { Secretary.lastRun(repo.readPath(vault, CLAUDE_LOG)) }.getOrNull() }
+            _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -1839,7 +1845,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun readAiKey() {
         val app = getApplication<Application>()
         val key = AiKey.get(app)
-        _state.update { it.copy(ai = it.ai.copy(hasKey = key != null, keyTail = key?.let(AiKey::tail), autoBrief = AiKey.autoBrief(app), model = AiKey.model(app))) }
+        _state.update { it.copy(ai = it.ai.copy(hasKey = key != null, keyTail = key?.let(AiKey::tail), autoBrief = AiKey.autoBrief(app), model = AiKey.model(app), secretaryHiddenUntil = AiKey.secretaryHiddenUntil(app))) }
     }
 
     /** Reads the models Google offers this key, for the picker. */
@@ -1898,13 +1904,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             Triple(read(CLAUDE_LOG), read(AiMemory.MEMORY_FILE), s.vault?.let { v -> runCatching { library.recent(v, LocalDate.now()) }.getOrNull() }.orEmpty())
         }
         val index = withContext(Dispatchers.IO) { s.vault?.let { v -> library.index(v) } }
-        if ((claude != null) != s.ai.claudeLog) _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null)) }
+        _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null, secretaryLast = Secretary.lastRun(claude) ?: it.ai.secretaryLast)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
         return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries, index)
     }
 
     private val logLock = kotlinx.coroutines.sync.Mutex()
     private val library by lazy { AiLibrary(getApplication(), repo, gemini) }
+
+    /** Hides the "secretary stopped" warning for a day. */
+    fun hideSecretaryWarning() {
+        val until = System.currentTimeMillis() + Secretary.STALE_MS
+        AiKey.setSecretaryHiddenUntil(getApplication(), until)
+        _state.update { it.copy(ai = it.ai.copy(secretaryHiddenUntil = until)) }
+    }
     private val upkeeping = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Keeps the assistant's log in order ([AiLibrary.upkeep]), in the background, one run at a time. */

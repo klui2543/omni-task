@@ -77,6 +77,17 @@ internal fun AiKeyGroup(s: AiSettings) {
             }
             OnOff(ai.autoBrief)
         }
+        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                Text(tr("เลขาบันทึกล่าสุด", "Secretary last logged"), color = C.text, fontSize = TS.body)
+                val last = ai.secretaryLast
+                val now = System.currentTimeMillis()
+                Text(
+                    if (last == null) tr("ยังไม่พบเวลาที่เลขาบันทึกใน Claude log", "No secretary time found in Claude log yet") else Secretary.ago(last, now),
+                    color = when { last == null -> C.muted; now - last > Secretary.STALE_MS -> C.amber; else -> C.tealChip }, fontSize = TS.caption,
+                )
+            }
+        }
         Text(
             tr(
                 "รับ key ได้ที่ aistudio.google.com/apikey ควรเปิดแบบจ่ายเงิน (ราว 70 ถึง 250 บาทต่อเดือน) เพราะแบบฟรี Google อาจนำข้อมูลงานไปฝึก AI",
