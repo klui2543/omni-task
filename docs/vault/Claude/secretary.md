@@ -1,5 +1,5 @@
 ---
-format: secretary/2
+format: secretary/3
 ---
 # Secretary procedure
 
@@ -20,7 +20,8 @@ Files (in ~/vault, folder `📁 Folder/หลังบ้าน/Claude/`):
 1. Run `vsync` (if missing, `ob sync --path ~/vault`). If it fails, stop and reply with the error; write nothing. (The Omni app on Klui's phone warns Klui when the marker below gets old, so a failure is never silent.)
 2. Read the main file. Count every line containing 💬 (Klui's comments); never change, move to another meaning, or delete them. The marker line `<!-- secretary-last: ISO-time -->` at the end of the file is the last summary time; without it, use 24 hours ago.
 3. Call list_sessions with mine=true (page through while has_more is true and sessions are newer than the last summary time). Keep sessions whose updated_at is after the last summary time. Skip sessions whose title starts with "เลขา" (yourself) and sessions fired by routines. For each kept session use title, post_turn_summary (status_detail, recent_action, needs_action), repo and branch to know the project and where it stands. Use get_session or list_events only when the summary is unclear. If list_sessions fails, go on with step 6 and add the problem in step 7.
-4. If nothing changed, skip step 5.
+3b. Inbox from Claude Chat and Cowork: with the Google Drive tools, list the files in the Drive folder "Claude inbox" (search `title = 'Claude inbox' and mimeType = 'application/vnd.google-apps.folder'`, then `parentId = '<its id>'`; leave its subfolder `done` alone). For each file, oldest first: read it with download_file_content and exportMimeType `text/plain` (the content comes base64 encoded: decode it as UTF-8, drop a leading BOM, turn CRLF into LF). Only a file whose first line is `omni-inbox/1` counts; it has `from:` (chat or cowork), `saved:` (when), `project:`, and the sections ภาพรวม, งานค้าง, ไทม์ไลน์. Merge it in step 5 like a session: its ภาพรวม line replaces that project's line, its งานค้าง items are added unless one like it exists, and its ไทม์ไลน์ bullets go under the day it was saved (Bangkok date), each starting with `(Chat)` or `(Cowork)`; a day older than 14 days goes straight into its monthly note. Once its text is safely in the vault (after step 10's vsync), move the file into `done` with update_file (parentId = the id of `done`). On the first round of each month, trash files in `done` older than 90 days. A file that is not in this form stays where it is: add it to step 7 once. If this session has no Google Drive tools, add that to step 7 once (`#ระบบ/เลขา`: "อ่านกล่องจดหมาย Chat ไม่ได้ ต้องต่อ Google Drive") and go on.
+4. If nothing changed (no session and no inbox file), skip step 5.
 5. Update the main file in place:
    - ภาพรวม: one line per project: where it stands, then ➜ who acts next (Klui or Claude). Rewrite the line for projects that changed; keep the others.
    - งานค้าง: checkboxes, first tag the project (`#project/topic`), second tag whose turn: `#kluido` or `#claudedo`. Add what a session left waiting (needs_action is Klui's turn). Tick done items with `[x]` and ✅ today's date; do not delete them. Do not duplicate an item that exists.
@@ -42,7 +43,7 @@ Files (in ~/vault, folder `📁 Folder/หลังบ้าน/Claude/`):
 7. Problems: if any step after step 1 failed (list_sessions, a file too big to read, a monthly note you could not write), add or update one item in งานค้าง: `- [ ] #ระบบ/เลขา #kluido เลขามีปัญหา: <what failed, one line> ➕ YYYY-MM-DD`. Tick it with ✅ when a later round works again. Never add a second open item for the same problem.
 8. Replace or add the final marker line of the main file: `<!-- secretary-last: ISO-time-now-UTC -->`.
 9. Check: count the 💬 lines in the main file plus all monthly notes you touched; it must equal the count from step 2, each unchanged. If not, restore the original main file (and remove what you added to monthly notes) and report.
-10. Run `vsync` again, then reply with 3 to 6 short Thai lines: which projects changed, what moved or closed, and what waits on Klui first.
+10. Run `vsync` again, move the inbox files merged this round into `done`, then reply with 3 to 6 short Thai lines: which projects changed, what moved or closed, and what waits on Klui first.
 
 ## Form of `log/index.md`
 

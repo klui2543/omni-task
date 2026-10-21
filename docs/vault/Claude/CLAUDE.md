@@ -32,7 +32,7 @@ format: claude-rules/3
 - When Klui says the secretary stopped (or "ซ่อมเลขา"), follow "ซ่อมเลขา" in `Claude/README.md`.
 - The secretary sees only the short summary the system keeps for each session, so it misses reasons and details. Klui types `/save` (optionally with a note) to make this session write its own state into Claude log at once, also when the work is not finished. The command file is `Claude/commands/save.md` in the vault.
 - When Klui says "เลขา สรุปงาน": do the secretary's round now, following `Claude/secretary.md`.
-- Claude chat and Cowork cannot be read. Say so if Klui expects something from there, and ask Klui to paste the conclusion.
+- Claude Chat and Cowork cannot be read directly. There Klui types "บันทึก": the `save-to-log` skill drops a summary into the Google Drive folder `Claude inbox`, and the secretary merges it into Claude log (bullets marked `(Chat)` or `(Cowork)`). If Klui expects something from a chat that is not in the log yet, say so and ask Klui to type "บันทึก" there.
 - The first time Claude writes the log in a new place, write one test line and ask Klui to confirm it shows on the phone before writing the rest.
 
 ## Klui's own notes
