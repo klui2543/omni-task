@@ -217,8 +217,8 @@ object AiAssist {
             put("responseSchema", schema)
             put("temperature", 0.4)
             put("maxOutputTokens", 2048)
-            // Long thinking made answers slow enough to time out on the phone; a little is enough here.
-            putJsonObject("thinkingConfig") { put("thinkingLevel", "low") }
+            // Thinking made answers slow on the phone; task questions need almost none.
+            putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
         }
     }.toString()
 

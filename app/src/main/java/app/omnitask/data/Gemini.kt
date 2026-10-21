@@ -38,6 +38,11 @@ object AiKey {
 
     fun setAutoBrief(context: Context, on: Boolean) = prefs(context).edit().putBoolean(AUTO, on).apply()
 
+    /** Whether [model] turned the thinking setting down before. */
+    fun noThinking(context: Context, model: String): Boolean = prefs(context).getBoolean("gemini.noThinking.$model", false)
+
+    fun setNoThinking(context: Context, model: String) = prefs(context).edit().putBoolean("gemini.noThinking.$model", true).apply()
+
     /** The last four characters, to show which key is in without showing the key. */
     fun tail(key: String) = key.takeLast(4)
 }
@@ -58,9 +63,13 @@ class Gemini(private val context: Context) {
      * [AiAssist] to read. When the model is not found, picks the newest Flash from Google's list once and retries.
      */
     fun generate(body: String, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): String {
-        var first = post(AiKey.model(context), body, key)
-        // A model that does not take the thinking setting says so: ask again without it.
-        if (first.first == 400 && first.second.contains("thinking", ignoreCase = true)) first = post(AiKey.model(context), AiAssist.withoutThinking(body), key)
+        // A model that does not take the thinking setting says so once; after that it is left out, so no call is made twice.
+        val model = AiKey.model(context)
+        var first = post(model, if (AiKey.noThinking(context, model)) AiAssist.withoutThinking(body) else body, key)
+        if (first.first == 400 && first.second.contains("thinking", ignoreCase = true)) {
+            AiKey.setNoThinking(context, model)
+            first = post(model, AiAssist.withoutThinking(body), key)
+        }
         if (first.first != 404) return check(first)
         val newest = list(key)?.let(AiAssist::newestFlash) ?: return check(first)
         AiKey.setModel(context, newest)
@@ -69,8 +78,10 @@ class Gemini(private val context: Context) {
 
     /** A tiny call that proves the key works; returns the model it used. */
     fun test(key: String): String {
-        generate("""{"contents":[{"role":"user","parts":[{"text":"ตอบคำว่า ok"}]}]}""", key)
-        return AiKey.model(context)
+        val started = System.currentTimeMillis()
+        generate("""{"contents":[{"role":"user","parts":[{"text":"ตอบคำว่า ok"}]}],"generationConfig":{"thinkingConfig":{"thinkingLevel":"minimal"}}}""", key)
+        val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
+        return AiKey.model(context) + tr(", ตอบใน $seconds วินาที", ", answered in $seconds s")
     }
 
     private fun post(model: String, body: String, key: String): Pair<Int, String> {

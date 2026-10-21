@@ -71,7 +71,7 @@ class AiAssistTest {
         val config = body["generationConfig"]!!.jsonObject
         assertEquals("application/json", config["responseMimeType"]!!.jsonPrimitive.content)
         assertTrue("picks" in config["responseSchema"]!!.jsonObject["properties"]!!.jsonObject)
-        assertEquals("low", config["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
+        assertEquals("minimal", config["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
         val plain = Json.parseToJsonElement(AiAssist.withoutThinking(AiAssist.briefRequest(picture()))).jsonObject
         assertTrue("thinkingConfig" !in plain["generationConfig"]!!.jsonObject)
         assertTrue("responseSchema" in plain["generationConfig"]!!.jsonObject)
