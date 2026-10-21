@@ -166,6 +166,27 @@ class AiAssistTest {
     }
 
     @Test
+    fun thePictureListsEveryProjectAndBranchToFileWorkUnder() {
+        val lines = listOf(
+            "- [ ] ทำหน้าเว็บ #peddose/แอป",
+            "- [ ] ส่งรายงาน #peddose",
+            "- [x] ออกแบบโลโก้ #peddose/โลโก้ ✅ 2026-10-01",
+            "- [ ] ซื้อของ #บ้าน",
+        )
+        val all = VaultText.parseFile("f", "Omni note.md", lines.joinToString("\n"))
+        val before = Projects.chosen
+        try {
+            Projects.chosen = setOf("peddose", "siriraj")
+            val list = AiAssist.projectList(all)
+            assertEquals(listOf("- peddose (2 งาน) กิ่ง: peddose/แอป (1), peddose/โลโก้ (0)", "- siriraj (0 งาน)"), list.lines())
+            assertTrue("[โปรเจกต์และกิ่งที่มี" in AiAssist.picture(all, { emptyList() }, today).text)
+            assertTrue("ห้ามแต่งชื่อใหม่" in AiAssist.chatRequest(AiAssist.picture(all, { emptyList() }, today), emptyList(), "เพิ่มงาน"))
+        } finally {
+            Projects.chosen = before
+        }
+    }
+
+    @Test
     fun errorsFromGeminiAreSaidInItsOwnWords() {
         val e = assertFailsWith<AiAssist.Failure> { AiAssist.parseBrief("""{"error":{"code":400,"message":"API key not valid."}}""", picture()) }
         assertEquals("API key not valid.", e.message)
