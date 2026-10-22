@@ -6,6 +6,8 @@ import { FilterBody, SaveFilter, moreInUse } from '../ListTools'
 import { RingButton } from './bits'
 import { STATE_COLOR, STATE_LABEL } from './MindMap'
 import { usePanZoom } from './panZoom'
+import { HomePicker, StrayTray } from './StrayTray'
+import { today } from '../../core'
 
 /** The tree's plain filter: the task list's default query, someday work shown, wait lines on. */
 export const PLAIN_FILTER: YgFilter = {
@@ -162,6 +164,10 @@ export function Ygdrasil(p: {
   onMove: (t: Task, from: string, tag: string) => void
   /** A project or branch [from] dropped on [to] (empty: the trunk), to hang under it. */
   onGraft: (from: string, to: string) => void
+  /** A task with no project given one (from the tray): [tag] goes in front of its tags. */
+  onHome: (t: Task, tag: string) => void
+  /** A tag that is not a project made one, from the tray. */
+  onMakeProject: (tag: string) => void
 }) {
   const [selTag, setSelTag] = useState('')
   const [filtering, setFiltering] = useState(false)
@@ -172,7 +178,19 @@ export function Ygdrasil(p: {
   const changes = filterChanges(p.filter)
   const fold = (tag: string) => p.onFolded(p.folded.includes(tag) ? p.folded.filter((t) => t !== tag) : [...p.folded, tag])
   // A task, project or branch being carried: where the pointer is, and the branch (or the trunk, "") under it.
-  const [carry, setCarry] = useState<{ task?: Task; from: string; label: string; x: number; y: number; moved: boolean } | null>(null)
+  // [stray]: a task from the tray, which has no project yet.
+  const [carry, setCarry] = useState<{ task?: Task; stray?: boolean; from: string; label: string; x: number; y: number; moved: boolean } | null>(null)
+  // The tray of tasks with no project, under the tree, and the task whose new home is being picked.
+  const strayCount = p.out.strays.reduce((n, g) => n + g.due.length, 0)
+  const [trayOpen, setTrayOpen] = useState(false)
+  const [picking, setPicking] = useState<Task | null>(null)
+  const tray = useRef<HTMLElement | null>(null)
+  useEffect(() => { if (strayCount === 0) setTrayOpen(false) }, [strayCount])
+  // Folded branches opened for a moment while something is held over them; folded again when it is let go.
+  const sprung = useRef<string[]>([])
+  const foldedNow = useRef(p.folded)
+  foldedNow.current = p.folded
+  const at = useRef({ x: 0, y: 0 })
   const [dropTag, setDropTag] = useState<string | null>(null)
   const carrying = useRef(carry)
   carrying.current = carry
@@ -182,6 +200,7 @@ export function Ygdrasil(p: {
     if (!carry) return
     map.freeze(true)
     const move = (e: PointerEvent) => {
+      at.current = { x: e.clientX, y: e.clientY }
       const c = carrying.current!
       const moved = c.moved || Math.hypot(e.clientX - c.x, e.clientY - c.y) > 6
       setCarry({ ...c, x: e.clientX, y: e.clientY, moved })
@@ -191,7 +210,10 @@ export function Ygdrasil(p: {
     const up = () => {
       const c = carrying.current!
       const to = dropping.current
-      if (c.task) {
+      if (c.task && c.stray) {
+        if (to) p.onHome(c.task, to)
+        else if (!c.moved) setPicking(c.task)
+      } else if (c.task) {
         if (to && to !== c.from) p.onMove(c.task, c.from, to)
         else if (!c.moved) p.onOpen(c.task)
       } else if (to !== null && graftable(c.from, to)) p.onGraft(c.from, to)
@@ -201,13 +223,42 @@ export function Ygdrasil(p: {
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', up)
+    // Held near the top of the tree, or just above the tray, the tree slides to bring more of it in reach; not while
+    // over a project or branch, so the one under the finger stays put.
+    let frame = requestAnimationFrame(function slide() {
+      const box = map.boxEl()
+      if (box && dropping.current === null) {
+        const r = box.getBoundingClientRect()
+        const bottom = tray.current ? tray.current.getBoundingClientRect().top : r.bottom
+        const { x, y } = at.current
+        const dy = y > r.top - 20 && y < r.top + 48 ? 8 : y > bottom - 48 && y < bottom + 8 ? -8 : 0
+        if (dy && x > r.left && x < r.right) {
+          map.panBy(0, dy)
+          setDropTag(host.at(x, y)?.closest('[data-yg-tag]')?.getAttribute('data-yg-tag') ?? null)
+        }
+      }
+      frame = requestAnimationFrame(slide)
+    })
     return () => {
+      cancelAnimationFrame(frame)
+      if (sprung.current.length) p.onFolded([...new Set([...foldedNow.current, ...sprung.current])])
+      sprung.current = []
       map.freeze(false)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
     }
   }, [carry !== null])
+
+  // Held over a folded project or branch for a moment, it opens to show its branches.
+  useEffect(() => {
+    if (!carry || !dropTag || !p.folded.includes(dropTag)) return
+    const t = setTimeout(() => {
+      sprung.current = [...sprung.current, dropTag]
+      p.onFolded(foldedNow.current.filter((x) => x !== dropTag))
+    }, 600)
+    return () => clearTimeout(t)
+  }, [dropTag, carry !== null])
 
   // Zoomed far out, tasks show as their rings only.
   const far = map.scale < 0.45
@@ -220,6 +271,11 @@ export function Ygdrasil(p: {
           <h1 class="pj-h1-small">Project Ygdrasil</h1>
           <span class="small muted">{p.out.worlds} โปรเจกต์, {p.out.matched} งาน{p.out.links > 0 ? `, งานที่รอกัน ${p.out.links} เส้น` : ''}</span>
         </div>
+        {strayCount > 0 && (
+          <button class={`yg-stray-btn${trayOpen ? ' on' : ''}`} aria-expanded={trayOpen} onClick={() => setTrayOpen(!trayOpen)}>
+            ยังไม่มีบ้าน <span class="yg-tray-count">{strayCount}</span>
+          </button>
+        )}
         <button class={changes ? 'primary' : 'ghost'} aria-expanded={filtering} onClick={() => setFiltering(!filtering)}>
           ตัวกรอง{changes ? ` (${changes})` : ''}
         </button>
@@ -227,6 +283,7 @@ export function Ygdrasil(p: {
 
       {filtering && <FilterPanel filter={p.filter} tags={p.tags ?? []} onFilter={p.onFilter} />}
 
+      <div class="yg-stage">
       <div class="pj-map" {...map.boxProps}>
         <div class={`pj-map-layer${far ? ' far' : ''}`} data-testid="yg-layer" style={map.layerStyle}>
           <svg class="pj-edges" width={p.out.width} height={p.out.height} aria-hidden="true">
@@ -274,13 +331,24 @@ export function Ygdrasil(p: {
         </div>
         {p.out.worlds === 0 && <p class="yg-empty muted">ไม่มีงานตรงกับตัวกรอง</p>}
       </div>
+      {trayOpen && strayCount > 0 && (
+        <StrayTray strays={p.out.strays} task={p.task} today={today()} low={!!carry} trayRef={tray} onClose={() => setTrayOpen(false)}
+          onPick={setPicking} onMakeProject={p.onMakeProject}
+          onLift={(t, x, y) => { at.current = { x, y }; setCarry({ task: t, stray: true, from: '', label: t.title, x, y, moved: false }) }} />
+      )}
+      </div>
+
+      {picking && (
+        <HomePicker task={picking} stray={picking.tags.find((g) => p.out.strays.some((s) => s.tag && (g === s.tag || g.startsWith(s.tag + '/'))))?.split('/')[0]}
+          tags={p.out.tags} onCancel={() => setPicking(null)} onMove={(tag) => { const t = picking; setPicking(null); p.onHome(t, tag) }} />
+      )}
 
       {carry && (
         <div class="yg-ghost" aria-hidden="true" style={{ left: `${carry.x - host.origin().left + 14}px`, top: `${carry.y - host.origin().top + 10}px` }}>
           {carry.label}
           <span class="small">
             {carry.task
-              ? dropTag && dropTag !== carry.from ? `ย้ายไป #${dropTag}` : 'ลากไปวางบนกิ่ง'
+              ? dropTag && dropTag !== carry.from ? `ย้ายไป #${dropTag}` : carry.stray ? 'ลากขึ้นไปวางบนกิ่ง' : 'ลากไปวางบนกิ่ง'
               : dropTag !== null && graftable(carry.from, dropTag)
                 ? dropTag === '' ? 'แยกเป็นโปรเจกต์ของตัวเอง' : `ไปไว้ใต้ #${dropTag}`
                 : 'ลากไปวางบนโปรเจกต์ กิ่ง หรือลำต้น'}

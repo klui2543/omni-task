@@ -201,3 +201,55 @@ test('a tap on a task card opens it; only its ring ticks it', async ({ page }) =
   await expect(page.getByRole('dialog', { name: 'แก้ไขงาน' }).getByRole('heading', { name: 'ทำหน้าคำนวณ' })).toBeVisible()
   expect(file.text).toContain('- [ ] ทำหน้าคำนวณ #peddose/แอป/มือถือ')
 })
+
+test('a task with no project waits in the tray, and the picker gives it a new branch', async ({ page }) => {
+  const { file } = await start(page)
+  await page.getByRole('button', { name: /ยังไม่มีบ้าน/ }).click()
+  const tray = page.getByRole('region', { name: 'งานที่ยังไม่มีบ้าน' })
+  await expect(tray).toContainText('ไม่มี tag')
+  await tray.getByRole('button', { name: 'ย้าย ซื้อนม' }).click()
+  const picker = page.getByRole('dialog', { name: 'ย้ายไปไว้ที่' })
+  await picker.getByRole('tab', { name: 'สร้างกิ่งย่อย' }).click()
+  await picker.getByRole('button', { name: '#peddose', exact: true }).click()
+  await picker.getByRole('textbox', { name: 'ชื่อกิ่งใหม่' }).fill('ของใช้')
+  await expect(picker).toContainText('- [ ] ซื้อนม #peddose/ของใช้')
+  await expect(picker).toContainText('กิ่งใหม่ใต้ #peddose')
+  await picker.getByRole('button', { name: 'สร้างแล้วย้าย' }).click()
+  await expect.poll(() => file.text).toContain('- [ ] ซื้อนม #peddose/ของใช้\n')
+  await expect(page.getByRole('status')).toContainText('ย้าย "ซื้อนม" ไป #peddose/ของใช้ แล้ว')
+  // Nothing is left without a home, so the tray and its button go.
+  await expect(page.getByRole('button', { name: /ยังไม่มีบ้าน/ })).toHaveCount(0)
+  await expect(limb(page, 'ของใช้')).toBeVisible()
+})
+
+test('a task dragged up from the tray onto a project goes there, its own tags kept after', async ({ page }) => {
+  // Projects chosen on this device before, so #ของกิน is a plain tag and its task has no project.
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('omni.projects')) localStorage.setItem('omni.projects', JSON.stringify({ projectTags: ['peddose', 'Siriraj'] }))
+  })
+  const ctx = await open(page, { now: at(9, 20), note: NOTE.replace('- [ ] ซื้อนม', '- [ ] ซื้อนม #ของกิน') })
+  await page.evaluate(() => { location.hash = '/projects' })
+  await page.getByRole('button', { name: /Project Ygdrasil/ }).click()
+  await page.getByRole('button', { name: /ยังไม่มีบ้าน/ }).click()
+  const tray = page.getByRole('region', { name: 'งานที่ยังไม่มีบ้าน' })
+  await expect(tray).toContainText('#ของกิน')
+  const trayTop = (await tray.boundingBox())!.y
+  const map = (await page.locator('.pj-map').boundingBox())!
+  // The tree still moves above the tray: bring #Siriraj above it.
+  for (let i = 0; i < 12; i++) {
+    const b = (await limb(page, '#Siriraj').boundingBox())!
+    if (b.y + b.height < trayTop - 30 && b.y > map.y + 60) break
+    await page.mouse.move(map.x + 40, map.y + 40)
+    await page.mouse.wheel(0, b.y + b.height >= trayTop - 30 ? 60 : -60)
+  }
+  const row = (await tray.getByRole('button', { name: 'ย้าย ซื้อนม' }).boundingBox())!
+  const to = (await limb(page, '#Siriraj').boundingBox())!
+  await page.mouse.move(row.x + 40, row.y + row.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(row.x + 60, row.y - 10, { steps: 4 })
+  await expect(page.locator('.yg-ghost')).toContainText('ซื้อนม')
+  await page.mouse.move(to.x + 40, to.y + to.height / 2, { steps: 8 })
+  await expect(page.locator('.yg-ghost')).toContainText('ย้ายไป #Siriraj')
+  await page.mouse.up()
+  await expect.poll(() => ctx.file.text).toContain('- [ ] ซื้อนม #Siriraj #ของกิน\n')
+})

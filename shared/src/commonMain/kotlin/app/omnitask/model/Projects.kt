@@ -43,6 +43,9 @@ object Projects {
     /** The project a task belongs to: its project tag up to the first slash, so branches stay in their project. */
     fun projectOf(t: Task): String? = tagOf(t)?.substringBefore('/')
 
+    /** For a task with no project: its first tag that could name one, up to the first slash; null when it has none. */
+    fun looseTag(t: Task): String? = t.tags.firstOrNull(::plain)?.substringBefore('/')?.takeIf { it.isNotEmpty() }
+
     /** The projects as every first tag named them before the owner chose: what [chosen] starts from. */
     fun seed(tasks: List<Task>): Set<String> =
         tasks.filter { it.status != Status.CANCELLED }.mapNotNull { t -> t.tags.firstOrNull(::plain)?.substringBefore('/') }.toSet()

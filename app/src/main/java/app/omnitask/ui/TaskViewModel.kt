@@ -1222,6 +1222,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * A task with no project gets one (from the tray under Ygdrasil): [tag] goes in front of its tags, which stay. A
+     * new project's name is made a project, so the task shows on the tree at once.
+     */
+    fun homeTask(task: Task, tag: String) {
+        edit(task) { TaskLine.homeTag(it, tag) }
+        val root = tag.substringBefore('/')
+        _state.value.projectTags?.let { if (root !in it) saveProjectTags(it + root) }
+    }
+
+    /**
      * Dragging between quadrants changes importance only (priority ⏫ in, 🔼 out).
      * Urgency comes from the dates, so a move across the urgent / not-urgent line is refused.
      */

@@ -77,6 +77,8 @@ object WebApi {
     fun ygdrasil(fileKey: String, path: String, text: String, notes: String, state: String, filter: String, folded: String, today: String): String =
         WebYgdrasil.build(fileKey, path, text, notes, state, filter, folded, today)
 
+    fun ygdrasilHomeLine(raw: String, tag: String): String = WebYgdrasil.homeLine(raw, tag)
+
     fun ygdrasilLink(text: String, blocker: String, waiting: String): String = WebYgdrasil.link(text, blocker, waiting)
 
     fun ygdrasilUnlink(text: String, blocker: String, waiting: String): String = WebYgdrasil.unlink(text, blocker, waiting)

@@ -112,6 +112,10 @@ export function usePanZoom(width: number, height: number, minScale = 0.3, readab
     zoomBy,
     fit,
     freeze: (on: boolean) => { frozen.current = on },
+    /** Slides the map by [dx], [dy] pixels (while something is carried to its edge). */
+    panBy: (dx: number, dy: number) => apply(view.current.scale, { x: view.current.pan.x + dx, y: view.current.pan.y + dy }),
+    /** The box itself, to measure. */
+    boxEl: () => box.current,
     /** Spread on the box that holds the map. */
     boxProps: {
       ref: box,

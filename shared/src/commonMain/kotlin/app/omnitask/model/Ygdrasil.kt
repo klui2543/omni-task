@@ -143,6 +143,36 @@ object Ygdrasil {
         return Tree(worlds, links)
     }
 
+    // ---- Tasks with no project yet ----
+
+    /** Tasks with no project, gathered by the first tag they have ([tag] null: no tag at all). */
+    data class Strays(val tag: String?, val tasks: List<Task>)
+
+    /** How the tray orders a group: nearest date first, oldest added first, or by name. */
+    enum class StraySort { DUE, OLD, AZ }
+
+    fun straySorted(tasks: List<Task>, sort: StraySort): List<Task> = tasks.sortedWith(
+        when (sort) {
+            StraySort.DUE -> compareBy<Task>({ !it.isOpen }, { it.due ?: it.scheduled ?: LocalDate.LATEST }, { it.priority.ordinal }, { it.lineIndex })
+            StraySort.OLD -> compareBy<Task>({ it.created ?: LocalDate.LATEST }, { it.lineIndex })
+            StraySort.AZ -> compareBy<Task>({ it.title.lowercase() }, { it.lineIndex })
+        },
+    )
+
+    /**
+     * The tray under the tree: the tasks that passed [filter] but have no project, so the tree cannot show them.
+     * Tasks with no tag come first, then each tag that is not a project, most tasks first. Subtasks stay with their
+     * parent, list items and the stand-in rounds of repeating tasks are left out.
+     */
+    fun strays(tasks: List<Task>, today: LocalDate, filter: Filter, sort: StraySort = StraySort.DUE): List<Strays> {
+        val live = tasks.filter { !it.todayCopy && it.status != Status.CANCELLED && it.parent == null && it.list == null }
+        val blocked = Projects.blocked(live)
+        return live.filter { Projects.projectOf(it) == null && passes(it, filter, today, blocked) }
+            .groupBy { Projects.looseTag(it) }
+            .map { (tag, list) -> Strays(tag, straySorted(list, sort)) }
+            .sortedWith(compareBy<Strays>({ it.tag != null }, { -it.tasks.size }, { it.tag?.lowercase() }))
+    }
+
     // ---- Layout ----
 
     /** Sizes on the tree, in dp (Android) or pixels (web), the same as the project mind map. */
