@@ -46,6 +46,7 @@ import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
 import app.omnitask.model.VoiceNotes
 import app.omnitask.data.VoiceRec
+import app.omnitask.data.CalendarCheck
 import app.omnitask.data.Gemini
 import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
@@ -83,6 +84,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.omnitask.time.*
@@ -443,22 +445,37 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     // Tasks spoken into the phone (see VoiceRecorder.kt and VoiceNotes).
 
-    /** What the voice sheet and the focus page show: a recording, Gemini at work, tasks to check, or files left over. */
+    /**
+     * What the voice sheet and the focus page show: a recording with its words and the tasks heard so far, the last
+     * tidy after it stops, the tasks to check, or recordings left over.
+     */
     data class VoiceUi(
         val recording: VoiceRec.Recording? = null,
+        val words: String = "",
+        val live: List<VoiceNotes.Live> = emptyList(),
+        /** Pieces sent and not answered yet, and pieces that could not be written down (no network). */
+        val sending: Int = 0,
+        val unsent: Int = 0,
         val busy: Boolean = false,
         val review: VoiceReview? = null,
         val waiting: List<java.io.File> = emptyList(),
         val failed: String? = null,
     )
 
-    /** The tasks Gemini heard in [file], to check before they go to the tray. [dup] is an open task each may repeat. */
-    data class VoiceReview(val file: java.io.File, val seconds: Long, val items: List<VoiceItem>)
+    /** The tasks heard in the recording in [dir], to check before they go to the tray. [dup] is an open task each may repeat. */
+    data class VoiceReview(val dir: java.io.File, val seconds: Long, val items: List<VoiceItem>)
 
     data class VoiceItem(val text: String, val dup: Task?)
 
     private val _voice = MutableStateFlow(VoiceUi())
     val voice: StateFlow<VoiceUi> = _voice
+
+    /** Tasks the owner took out while recording; Gemini is told so it does not bring them back. */
+    private val voiceRemoved = mutableListOf<String>()
+    private var voiceNextId = 1
+
+    /** One piece at a time, in order, so each is sent with the words and the list before it. */
+    private val voiceLock = kotlinx.coroutines.sync.Mutex()
 
     /** Titles saved from a recording, with when, so the tray can show them first for a day. */
     private val voiceFresh get() = getApplication<Application>().getSharedPreferences("omni-voice", android.content.Context.MODE_PRIVATE)
@@ -476,43 +493,105 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             voiceFresh.edit().putBoolean("voice.hinted", true).apply()
             showMessage(tr("ใหม่: กดค้างที่ปุ่ม + เพื่อจดงานด้วยเสียง", "New: hold the + button to note tasks by voice"))
         }
-        viewModelScope.launch { VoiceRec.now.collect { r -> _voice.update { it.copy(recording = r, waiting = VoiceRec.waiting(app)) } } }
-        viewModelScope.launch { VoiceRec.done.collect { transcribe(it) } }
+        viewModelScope.launch {
+            VoiceRec.now.collect { r ->
+                if (r != null) {
+                    voiceRemoved.clear()
+                    voiceNextId = 1
+                    _voice.update { it.copy(recording = r, words = "", live = emptyList(), sending = 0, unsent = 0, review = null, failed = null) }
+                } else _voice.update { it.copy(recording = null, waiting = VoiceRec.waiting(app)) }
+            }
+        }
+        viewModelScope.launch { VoiceRec.pieces.collect { piece -> launch { sendPiece(piece) } } }
+        viewModelScope.launch { VoiceRec.done.collect { dir -> launch { finish(dir) } } }
         viewModelScope.launch { VoiceRec.failed.collect { showMessage(it) } }
     }
 
-    fun startVoice() {
-        _voice.update { it.copy(failed = null) }
-        VoiceRec.start(getApplication())
-    }
+    fun startVoice() = VoiceRec.start(getApplication())
 
     fun stopVoice() = VoiceRec.stop(getApplication())
 
     fun discardRecording() = VoiceRec.discard(getApplication())
 
-    /** Sends [file] to Gemini; on success its tasks wait in [VoiceUi.review], on failure the file waits for another try. */
-    fun transcribe(file: java.io.File) {
-        if (_voice.value.busy) return
+    /** Writes one piece down and lays Gemini's list over the live one; false when it could not be sent. */
+    private suspend fun sendPiece(piece: java.io.File): Boolean {
         val app = getApplication<Application>()
-        _voice.update { it.copy(busy = true, failed = null) }
-        viewModelScope.launch {
+        _voice.update { it.copy(sending = it.sending + 1) }
+        return voiceLock.withLock {
+            val v = _voice.value
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val audio = android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP)
-                    VoiceNotes.parse(AiAssist.answerText(Gemini(app).generate(VoiceNotes.request(audio, "audio/mp4"))))
+                    val audio = android.util.Base64.encodeToString(piece.readBytes(), android.util.Base64.NO_WRAP)
+                    val body = VoiceNotes.pieceRequest(audio, "audio/wav", v.words, v.live.map { it.text }, voiceRemoved.toList())
+                    VoiceNotes.parsePiece(AiAssist.answerText(Gemini(app).generate(body))).also { (text, _) -> VoiceRec.keepHeard(piece, text) }
                 }
             }
-            val seconds = runCatching { file.name.removePrefix("voice-").removeSuffix(".m4a").toLong() }.getOrNull()
-                ?.let { (file.lastModified() - it).coerceAtLeast(0) / 1000 } ?: 0L
             result.fold(
-                { titles ->
-                    val open = _state.value.tasks
-                    val items = titles.map { VoiceItem(it, VoiceNotes.duplicateOf(it, open)) }
-                    _voice.update { it.copy(busy = false, review = VoiceReview(file, seconds, items), waiting = VoiceRec.waiting(app)) }
+                { (text, tasks) ->
+                    _voice.update { now ->
+                        val merged = VoiceNotes.merge(now.live, tasks, voiceRemoved, voiceNextId)
+                        voiceNextId = (merged.maxOfOrNull { it.id } ?: 0).coerceAtLeast(voiceNextId - 1) + 1
+                        now.copy(words = listOf(now.words, text).filter { it.isNotBlank() }.joinToString(" "), live = merged, sending = now.sending - 1)
+                    }
+                    true
                 },
-                { e -> _voice.update { it.copy(busy = false, failed = e.message ?: tr("ถอดเสียงไม่ได้", "Could not write the recording down"), waiting = VoiceRec.waiting(app)) } },
+                { e -> _voice.update { it.copy(sending = it.sending - 1, unsent = it.unsent + 1, failed = e.message) }; false },
             )
         }
+    }
+
+    /** The owner changed a task's words while recording or checking: later pieces leave it as written. */
+    fun editLive(id: Int, text: String) = _voice.update { v -> v.copy(live = v.live.map { if (it.id == id) it.copy(text = text, locked = true, fresh = false) else it }) }
+
+    fun removeLive(id: Int) = _voice.update { v ->
+        v.live.firstOrNull { it.id == id }?.let { voiceRemoved += it.heard; if (it.text != it.heard) voiceRemoved += it.text }
+        v.copy(live = v.live.filterNot { it.id == id })
+    }
+
+    /**
+     * After a recording stops (or when one left over is tried again): pieces not written down yet are sent, the
+     * words are read once more to tidy the list, then the tasks wait in [VoiceUi.review].
+     */
+    private suspend fun finish(dir: java.io.File, again: Boolean = false) {
+        val app = getApplication<Application>()
+        _voice.update { it.copy(busy = true, failed = null) }
+        if (again) {
+            // A recording from an earlier launch: rebuild its words from the pieces already written down.
+            voiceRemoved.clear()
+            voiceNextId = 1
+            _voice.update { it.copy(words = VoiceRec.pieces(dir).mapNotNull(VoiceRec::heard).filter { t -> t.isNotBlank() }.joinToString(" "), live = emptyList(), sending = 0, unsent = 0) }
+        }
+        // Pieces cut just before the stop may still be on their way: wait for them, so none is sent twice.
+        if (!again) { kotlinx.coroutines.delay(400); _voice.first { it.sending <= 0 } }
+        val missing = VoiceRec.pieces(dir).filter { VoiceRec.heard(it) == null }
+        var ok = true
+        for (p in missing) if (!sendPieceAgain(p, again)) ok = false
+        if (!ok) {
+            _voice.update { it.copy(busy = false, waiting = VoiceRec.waiting(app), failed = it.failed ?: tr("ถอดเสียงไม่ครบ", "Some of it was not written down")) }
+            return
+        }
+        val v = _voice.value
+        val tidy = withContext(Dispatchers.IO) {
+            runCatching { VoiceNotes.parse(AiAssist.answerText(Gemini(app).generate(VoiceNotes.tidyRequest(v.words, v.live.map { it.text }, voiceRemoved.toList())))) }
+        }.getOrNull()
+        val live = if (tidy != null) VoiceNotes.merge(v.live, tidy, voiceRemoved, voiceNextId) else v.live
+        val since = VoiceRec.since(dir) ?: dir.lastModified()
+        val seconds = (VoiceRec.pieces(dir).maxOfOrNull { it.lastModified() } ?: since).minus(since).coerceAtLeast(0) / 1000
+        val open = _state.value.tasks
+        val items = live.map { VoiceItem(it.text, VoiceNotes.duplicateOf(it.text, open)) }
+        _voice.update { it.copy(busy = false, live = live, unsent = 0, review = VoiceReview(dir, seconds, items), waiting = VoiceRec.waiting(app)) }
+    }
+
+    /** Sends a piece that was missed: during a recording's own finish its unsent count goes back down. */
+    private suspend fun sendPieceAgain(piece: java.io.File, again: Boolean): Boolean {
+        if (!again) _voice.update { it.copy(unsent = (it.unsent - 1).coerceAtLeast(0)) }
+        return sendPiece(piece)
+    }
+
+    /** Tries a left-over recording again. */
+    fun transcribe(dir: java.io.File) {
+        if (_voice.value.busy || _voice.value.recording != null) return
+        viewModelScope.launch { finish(dir, again = true) }
     }
 
     /** Puts the checked tasks at the end of the task note as bare lines (the no-project tray), then drops the recording. */
@@ -532,12 +611,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             result.fold(
                 {
-                    review.file.delete()
+                    review.dir.deleteRecursively()
                     val now = System.currentTimeMillis()
                     val stale = voiceFresh.all.filter { (it.value as? Long)?.let { at -> now - at > 2 * 24 * 60 * 60 * 1000L } == true }.keys
                     voiceFresh.edit().apply { stale.forEach { remove(it) }; titles.forEach { putLong(it, now) } }.apply()
                     titles.forEach { noteCreated(VoiceNotes.line(it, LocalDate.now())) }
-                    _voice.update { it.copy(review = null, waiting = VoiceRec.waiting(app)) }
+                    _voice.update { it.copy(review = null, live = emptyList(), words = "", waiting = VoiceRec.waiting(app)) }
                     showMessage(tr("บันทึก ${titles.size} งานไว้ในถาด ยังไม่มีบ้าน", "Saved ${titles.size} tasks to the no-project tray"))
                     reload()
                 },
@@ -547,10 +626,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Throws away a recording that is under review or waiting. */
-    fun dropVoice(file: java.io.File) {
+    fun dropVoice(dir: java.io.File) {
         val app = getApplication<Application>()
-        file.delete()
-        _voice.update { v -> v.copy(review = v.review?.takeIf { it.file != file }, failed = null, waiting = VoiceRec.waiting(app)) }
+        dir.deleteRecursively()
+        _voice.update { v -> v.copy(review = v.review?.takeIf { it.dir != dir }, live = emptyList(), words = "", failed = null, waiting = VoiceRec.waiting(app)) }
     }
 
     /** Closes the check without saving: the recording waits on the focus page. */
@@ -646,6 +725,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private var calendarChecked = false
+
     fun reload() {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
@@ -688,6 +769,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
             checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
+            // Once a launch: the calendar report Claude reads to see why a calendar's events do not show.
+            if (!calendarChecked) {
+                calendarChecked = true
+                launch(Dispatchers.IO) { runCatching { CalendarCheck.report(app)?.let { repo.writePath(vault, CalendarCheck.PATH, it) } } }
+            }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }

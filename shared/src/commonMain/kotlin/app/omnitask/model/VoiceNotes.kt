@@ -55,6 +55,105 @@ object VoiceNotes {
         }
     }.toString()
 
+    // Live notes: the recording goes to Gemini a few seconds at a time, each piece with what came before, so the
+    // words and the task list show while the owner speaks.
+
+    private const val LIVE_RULES = """เจ้าของงานกำลังพูดงานที่ต้องทำ ไฟล์เสียงนี้คือช่วงล่าสุดไม่กี่วินาที เป็นภาษาไทยปนอังกฤษ
+- text: ถอดเสียงช่วงนี้ตามที่พูดจริง ต่อจากข้อความก่อนหน้า ไม่ต้องซ้ำข้อความก่อนหน้า ถ้าเงียบให้เป็นข้อความว่าง
+- tasks: รายการงานทั้งหมดหลังฟังช่วงนี้ คงงานเดิมไว้ เพิ่มงานใหม่ที่เพิ่งพูด ถ้าช่วงนี้พูดแก้งานเดิมให้แก้งานนั้น
+- ใช้คำของเจ้าของงาน ตัดคำเติมอย่าง เอ่อ อ่า ออก ถ้าพูดถึงวันหรือเวลาให้คงไว้ในข้อความ ไม่ใส่วันที่ แท็ก หรืออีโมจิ
+- ห้ามใส่งานที่เจ้าของงานลบทิ้งแล้วกลับมา"""
+
+    private fun context(before: String, tasks: List<String>, removed: List<String>) = buildString {
+        if (before.isNotBlank()) append("ข้อความก่อนหน้า (ท้ายสุด): ").append(before.takeLast(600)).append('\n')
+        append("รายการงานตอนนี้:\n").append(if (tasks.isEmpty()) "(ยังไม่มี)" else tasks.joinToString("\n") { "- $it" }).append('\n')
+        if (removed.isNotEmpty()) append("งานที่เจ้าของงานลบทิ้ง ห้ามใส่กลับ:\n").append(removed.joinToString("\n") { "- $it" }).append('\n')
+    }
+
+    private fun schema(withText: Boolean) = buildJsonObject {
+        put("type", "OBJECT")
+        putJsonObject("properties") {
+            if (withText) putJsonObject("text") { put("type", "STRING") }
+            putJsonObject("tasks") { put("type", "ARRAY"); putJsonObject("items") { put("type", "STRING") } }
+        }
+        putJsonArray("required") { if (withText) add(JsonPrimitive("text")); add(JsonPrimitive("tasks")) }
+    }
+
+    private fun body(parts: kotlinx.serialization.json.JsonArray, withText: Boolean) = buildJsonObject {
+        putJsonArray("contents") { add(buildJsonObject { put("role", "user"); put("parts", parts) }) }
+        putJsonObject("generationConfig") {
+            put("responseMimeType", "application/json")
+            put("responseSchema", schema(withText))
+            put("temperature", 0.2)
+            put("maxOutputTokens", 4096)
+            putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
+        }
+    }.toString()
+
+    /** One piece of a live recording, with the words before it, the list so far and what the owner took out. */
+    fun pieceRequest(audioBase64: String, mime: String, before: String, tasks: List<String>, removed: List<String>): String =
+        body(
+            kotlinx.serialization.json.buildJsonArray {
+                add(buildJsonObject { put("text", LIVE_RULES + "\n\n" + context(before, tasks, removed)) })
+                add(buildJsonObject { putJsonObject("inlineData") { put("mimeType", mime); put("data", audioBase64) } })
+            },
+            withText = true,
+        )
+
+    /** The words of a whole recording read once more, to tidy the list when the owner stops. */
+    fun tidyRequest(transcript: String, tasks: List<String>, removed: List<String>): String =
+        body(
+            kotlinx.serialization.json.buildJsonArray {
+                add(buildJsonObject {
+                    put(
+                        "text",
+                        "นี่คือข้อความทั้งหมดที่เจ้าของงานพูด อ่านอีกรอบแล้วตอบ tasks เป็นรายการงานทั้งหมด " +
+                            "คงงานในรายการตอนนี้ เก็บตกงานที่ยังขาด รวมงานที่ซ้ำกัน ใช้คำของเจ้าของงาน ไม่ใส่วันที่ แท็ก หรืออีโมจิ\n\n" +
+                            "ข้อความ: " + transcript + "\n\n" + context("", tasks, removed),
+                    )
+                })
+            },
+            withText = false,
+        )
+
+    /** The words heard in a piece and the task list after it. */
+    fun parsePiece(answer: String): Pair<String, List<String>> {
+        val body = answer.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
+            ?: throw AiAssist.Failure(tr("คำตอบของ Gemini ไม่ใช่รูปแบบที่ตกลงไว้", "Gemini answered in an unexpected form"))
+        val text = (root["text"] as? JsonPrimitive)?.contentOrNull?.let { AiAssist.clean(it) }?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+        return text to parse(body)
+    }
+
+    /**
+     * A task in the live list. [heard] is how Gemini last put it, to find it again; [locked] once the owner edited
+     * it, so later pieces leave its words alone; [fresh] while it is new.
+     */
+    data class Live(val id: Int, val text: String, val heard: String = text, val locked: Boolean = false, val fresh: Boolean = false)
+
+    /**
+     * The list after a piece: Gemini's [heard] list laid over [current]. An item the owner edited stays as they wrote
+     * it; an item Gemini still lists takes its newest words; one it no longer lists goes; a task like one in
+     * [removed] never comes back; the rest are new, numbered from [nextId].
+     */
+    fun merge(current: List<Live>, heard: List<String>, removed: List<String>, nextId: Int): List<Live> {
+        val left = heard.map(::clean).filter { h -> h.isNotEmpty() && removed.none { similar(h, it) } }.toMutableList()
+        val out = ArrayList<Live>()
+        for (c in current) {
+            if (c.locked) {
+                out += c.copy(fresh = false)
+                left.removeAll { similar(it, c.heard) || similar(it, c.text) }
+                continue
+            }
+            val match = left.firstOrNull { similar(it, c.heard) || similar(it, c.text) } ?: continue
+            out += c.copy(text = match, heard = match, fresh = false)
+            left.remove(match)
+        }
+        var id = nextId
+        left.distinct().forEach { out += Live(id++, it, fresh = true) }
+        return out
+    }
+
     /** The tasks in the model's [answer] (the JSON it wrote), cleaned; empty when it heard none. */
     fun parse(answer: String): List<String> {
         val body = answer.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()

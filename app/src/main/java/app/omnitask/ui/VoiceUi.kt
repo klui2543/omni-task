@@ -60,9 +60,9 @@ fun VoiceSheet(v: TaskViewModel.VoiceUi, vm: TaskViewModel) {
     ) {
         Column(Modifier.padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
             when {
-                recording != null -> Recording(recording.since, vm)
+                recording != null -> Recording(v, recording.since, vm)
                 v.busy -> Text(
-                    tr("กำลังถอดเสียงและแยกเป็นงาน...", "Writing it down and splitting it into tasks..."),
+                    tr("กำลังเก็บตกและจัดรายการงาน...", "Catching what was missed and tidying the list..."),
                     Modifier.padding(vertical = 32.dp).align(Alignment.CenterHorizontally), color = C.text2, fontSize = TS.body,
                 )
                 review != null -> Review(review, vm)
@@ -72,29 +72,82 @@ fun VoiceSheet(v: TaskViewModel.VoiceUi, vm: TaskViewModel) {
 }
 
 @Composable
-private fun Recording(since: Long, vm: TaskViewModel) {
+private fun Recording(v: TaskViewModel.VoiceUi, since: Long, vm: TaskViewModel) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(since) { while (true) { now = System.currentTimeMillis(); delay(500) } }
     val secs = ((now - since) / 1000).coerceAtLeast(0)
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(12.dp).clip(CircleShape).background(C.red))
-            Text(tr("กำลังอัด", "Recording"), Modifier.padding(start = 10.dp), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text(tr("กำลังอัด", "Recording"), Modifier.padding(start = 10.dp).weight(1f), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text("%02d:%02d".format(secs / 60, secs % 60), color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
         }
-        Text("%02d:%02d".format(secs / 60, secs % 60), color = C.text, fontSize = 40.sp, fontWeight = FontWeight.Medium)
+        // The words heard so far, newest at the end; a few seconds behind the voice, as each piece is written down.
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.bg).border(1.dp, C.cardBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(tr("ได้ยินว่า", "Heard"), color = C.muted, fontSize = TS.micro)
+            Text(
+                when {
+                    v.words.isNotBlank() -> "..." + v.words.takeLast(160)
+                    v.sending > 0 -> tr("กำลังฟัง...", "Listening...")
+                    else -> tr("พูดงานได้เลย คำจะขึ้นทุกครั้งที่หยุดพูดสั้นๆ", "Go ahead. The words show each time you pause")
+                },
+                color = if (v.words.isNotBlank()) C.text2 else C.muted, fontSize = TS.body, maxLines = 4,
+            )
+            if (v.unsent > 0) Text(
+                tr("ส่งไม่ได้ ${v.unsent} ช่วง จะลองอีกครั้งตอนหยุด", "${v.unsent} piece(s) not sent; tried again when you stop"),
+                color = C.amber, fontSize = TS.caption,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("งานที่จับได้ ${v.live.size}", "Tasks heard: ${v.live.size}"), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+            Text(tr("  อัปเดตเองระหว่างพูด แตะเพื่อแก้", "  Updates as you speak. Tap to fix"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption, maxLines = 1)
+        }
+        Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            v.live.forEach { item ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (item.fresh) C.accentSoft else C.bg)
+                        .border(1.dp, if (item.fresh) C.accentLine else C.cardBorder, RoundedCornerShape(12.dp))
+                        .padding(start = 12.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicTextField(
+                        item.text, { vm.editLive(item.id, it) }, Modifier.weight(1f).padding(vertical = 10.dp),
+                        textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont), cursorBrush = SolidColor(C.accent),
+                    )
+                    if (item.fresh) Text(
+                        tr("เพิ่งจับได้", "Just heard"), Modifier.padding(start = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.card).padding(horizontal = 8.dp),
+                        color = C.accentText, fontSize = TS.caption,
+                    )
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).clickable(onClickLabel = tr("ไม่เอางานนี้", "Leave this one out")) { vm.removeLive(item.id) },
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Ic.close, tr("ไม่เอางานนี้", "Leave this one out"), tint = C.muted, modifier = Modifier.size(16.dp)) }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                tr("ทิ้งทั้งหมด", "Throw all away"),
+                Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.discardRecording() }.padding(horizontal = 14.dp, vertical = 14.dp),
+                color = C.muted, fontSize = TS.body,
+            )
+            Box(Modifier.weight(1f))
+            Row(
+                Modifier.heightIn(min = 56.dp).clip(RoundedCornerShape(28.dp)).background(C.red)
+                    .clickable(onClickLabel = tr("หยุดอัด", "Stop recording")) { vm.stopVoice() }.padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(16.dp).clip(RoundedCornerShape(3.dp)).background(C.bg))
+                Text(tr("หยุดและตรวจ", "Stop and check"), Modifier.padding(start = 10.dp), color = C.bg, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+            }
+        }
         Text(
-            tr("พูดงานได้เรื่อยๆ ไม่ต้องใส่วันที่\nปิดจอหรือสลับแอปได้ ยังอัดต่อ", "Say your tasks, no dates needed.\nThe screen can go off; it keeps recording."),
-            color = C.muted, fontSize = TS.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        Box(
-            Modifier.padding(top = 6.dp).size(76.dp).clip(CircleShape).background(C.red).clickable(onClickLabel = tr("หยุดอัด", "Stop recording")) { vm.stopVoice() },
-            contentAlignment = Alignment.Center,
-        ) { Box(Modifier.size(26.dp).clip(RoundedCornerShape(5.dp)).background(C.bg)) }
-        Text(tr("กดหยุด แล้ว Gemini แยกเป็นงานให้", "Stop, and Gemini splits it into tasks"), color = C.text2, fontSize = TS.caption)
-        Text(
-            tr("ทิ้งเสียงนี้", "Throw this away"),
-            Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.discardRecording() }.padding(horizontal = 18.dp, vertical = 12.dp),
-            color = C.muted, fontSize = TS.body,
+            tr("กดหยุดแล้ว Gemini อ่านทั้งหมดอีกรอบ เก็บตกงานที่ขาด ปิดจอได้ ยังอัดต่อ", "When you stop, Gemini reads it all once more. The screen can go off"),
+            Modifier.align(Alignment.CenterHorizontally), color = C.muted, fontSize = TS.caption,
         )
     }
 }
@@ -102,8 +155,8 @@ private fun Recording(since: Long, vm: TaskViewModel) {
 @Composable
 private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
     // Edits and removals stay here until saved; a new recording brings a new list.
-    val texts = remember(review.file) { mutableStateListOf(*review.items.map { it.text }.toTypedArray()) }
-    val dups = remember(review.file) { mutableStateListOf(*review.items.map { it.dup }.toTypedArray()) }
+    val texts = remember(review.dir) { mutableStateListOf(*review.items.map { it.text }.toTypedArray()) }
+    val dups = remember(review.dir) { mutableStateListOf(*review.items.map { it.dup }.toTypedArray()) }
     val minutes = (review.seconds + 59) / 60
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
@@ -139,7 +192,7 @@ private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostButton(tr("ทิ้งทั้งหมด", "Throw all away"), { vm.dropVoice(review.file) }, Modifier.weight(1f))
+            GhostButton(tr("ทิ้งทั้งหมด", "Throw all away"), { vm.dropVoice(review.dir) }, Modifier.weight(1f))
             if (texts.any { it.isNotBlank() }) PrimaryButton(
                 tr("บันทึก ${texts.count { it.isNotBlank() }} งานลงถาด", "Save ${texts.count { it.isNotBlank() }} to the tray"),
                 { vm.saveVoice(texts.toList()) }, Modifier.weight(2f),
@@ -157,7 +210,7 @@ private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
 fun VoiceWaitingCard(v: TaskViewModel.VoiceUi, vm: TaskViewModel) {
     val file = v.waiting.firstOrNull() ?: return
     if (v.recording != null || v.busy || v.review != null) return
-    val at = runCatching { file.name.removePrefix("voice-").removeSuffix(".m4a").toLong() }.getOrNull()
+    val at = app.omnitask.data.VoiceRec.since(file)
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.amberSoft)
             .border(1.dp, C.amber.copy(alpha = 0.35f), RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
