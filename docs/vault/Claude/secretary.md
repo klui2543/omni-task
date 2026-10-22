@@ -1,5 +1,5 @@
 ---
-format: secretary/7
+format: secretary/8
 ---
 # Secretary procedure
 
@@ -22,6 +22,7 @@ Privacy, always: never write a patient's name, hospital number (HN), national ID
 ## Steps
 
 1. Run `vsync` (if missing, `ob sync --path ~/vault`). If it fails, stop and reply with the error; write nothing. (The Omni app on Klui's phone warns Klui when the marker below gets old, so a failure is never silent.)
+1b. Skip a scheduled round that comes too soon after another: when this round was started by the schedule (the prompt begins "รอบเลขา: รัน vsync", not a message Klui typed in the room) and `last_attempt` in `system/health.md` is less than 90 minutes ago (compare with the current UTC time), reply "ข้ามรอบนี้ เพราะเพิ่งทำเมื่อ <time>" and stop. Write nothing, change no file, and do not count it as a failure. A round Klui asks for by hand is never skipped.
 2. Read the main file and `system/secretary-state.json`. Count every line containing 💬 (Klui's comments); never change, move to another meaning, or delete them. The last summary time is `last_success` in the state file; without it, the marker line `<!-- secretary-last: ISO-time -->` at the end of the main file; without either, 24 hours ago.
 3. Call list_sessions with mine=true (page through while has_more is true and sessions are newer than the last summary time). Keep sessions whose updated_at is after the last summary time. Skip sessions whose title starts with "เลขา" (yourself) and sessions fired by routines. For each kept session:
    a. Use title, post_turn_summary (status_detail, recent_action, needs_action), repo and branch to know the project and where it stands.
