@@ -44,9 +44,11 @@ import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
+import app.omnitask.model.VoiceNotes
+import app.omnitask.data.VoiceRec
+import app.omnitask.data.Gemini
 import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
-import app.omnitask.data.Gemini
 import app.omnitask.data.AiLibrary
 import app.omnitask.model.AiIndex
 import app.omnitask.model.Swap
@@ -438,6 +440,124 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.registerOnSharedPreferenceChangeListener(settingsListener)
         runCatching { getApplication<Application>().contentResolver.registerContentObserver(CalendarContract.CONTENT_URI, true, calendarObserver) }
     }
+
+    // Tasks spoken into the phone (see VoiceRecorder.kt and VoiceNotes).
+
+    /** What the voice sheet and the focus page show: a recording, Gemini at work, tasks to check, or files left over. */
+    data class VoiceUi(
+        val recording: VoiceRec.Recording? = null,
+        val busy: Boolean = false,
+        val review: VoiceReview? = null,
+        val waiting: List<java.io.File> = emptyList(),
+        val failed: String? = null,
+    )
+
+    /** The tasks Gemini heard in [file], to check before they go to the tray. [dup] is an open task each may repeat. */
+    data class VoiceReview(val file: java.io.File, val seconds: Long, val items: List<VoiceItem>)
+
+    data class VoiceItem(val text: String, val dup: Task?)
+
+    private val _voice = MutableStateFlow(VoiceUi())
+    val voice: StateFlow<VoiceUi> = _voice
+
+    /** Titles saved from a recording, with when, so the tray can show them first for a day. */
+    private val voiceFresh get() = getApplication<Application>().getSharedPreferences("omni-voice", android.content.Context.MODE_PRIVATE)
+
+    fun freshVoiceTitles(): Set<String> {
+        val cut = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        return voiceFresh.all.filter { (it.value as? Long ?: 0L) > cut }.keys
+    }
+
+    private fun watchVoice() {
+        val app = getApplication<Application>()
+        _voice.update { it.copy(waiting = VoiceRec.waiting(app)) }
+        // Once, after the update that brought it: how to start.
+        if (!voiceFresh.getBoolean("voice.hinted", false)) {
+            voiceFresh.edit().putBoolean("voice.hinted", true).apply()
+            showMessage(tr("ใหม่: กดค้างที่ปุ่ม + เพื่อจดงานด้วยเสียง", "New: hold the + button to note tasks by voice"))
+        }
+        viewModelScope.launch { VoiceRec.now.collect { r -> _voice.update { it.copy(recording = r, waiting = VoiceRec.waiting(app)) } } }
+        viewModelScope.launch { VoiceRec.done.collect { transcribe(it) } }
+        viewModelScope.launch { VoiceRec.failed.collect { showMessage(it) } }
+    }
+
+    fun startVoice() {
+        _voice.update { it.copy(failed = null) }
+        VoiceRec.start(getApplication())
+    }
+
+    fun stopVoice() = VoiceRec.stop(getApplication())
+
+    fun discardRecording() = VoiceRec.discard(getApplication())
+
+    /** Sends [file] to Gemini; on success its tasks wait in [VoiceUi.review], on failure the file waits for another try. */
+    fun transcribe(file: java.io.File) {
+        if (_voice.value.busy) return
+        val app = getApplication<Application>()
+        _voice.update { it.copy(busy = true, failed = null) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val audio = android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP)
+                    VoiceNotes.parse(AiAssist.answerText(Gemini(app).generate(VoiceNotes.request(audio, "audio/mp4"))))
+                }
+            }
+            val seconds = runCatching { file.name.removePrefix("voice-").removeSuffix(".m4a").toLong() }.getOrNull()
+                ?.let { (file.lastModified() - it).coerceAtLeast(0) / 1000 } ?: 0L
+            result.fold(
+                { titles ->
+                    val open = _state.value.tasks
+                    val items = titles.map { VoiceItem(it, VoiceNotes.duplicateOf(it, open)) }
+                    _voice.update { it.copy(busy = false, review = VoiceReview(file, seconds, items), waiting = VoiceRec.waiting(app)) }
+                },
+                { e -> _voice.update { it.copy(busy = false, failed = e.message ?: tr("ถอดเสียงไม่ได้", "Could not write the recording down"), waiting = VoiceRec.waiting(app)) } },
+            )
+        }
+    }
+
+    /** Puts the checked tasks at the end of the task note as bare lines (the no-project tray), then drops the recording. */
+    fun saveVoice(texts: List<String>) {
+        val review = _voice.value.review ?: return
+        val vault = _state.value.vault ?: return
+        val app = getApplication<Application>()
+        val titles = texts.map(VoiceNotes::clean).filter { it.isNotEmpty() }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (titles.isNotEmpty()) {
+                        val today = LocalDate.now()
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, titles.joinToString("\n") { VoiceNotes.line(it, today) })
+                    }
+                }
+            }
+            result.fold(
+                {
+                    review.file.delete()
+                    val now = System.currentTimeMillis()
+                    val stale = voiceFresh.all.filter { (it.value as? Long)?.let { at -> now - at > 2 * 24 * 60 * 60 * 1000L } == true }.keys
+                    voiceFresh.edit().apply { stale.forEach { remove(it) }; titles.forEach { putLong(it, now) } }.apply()
+                    titles.forEach { noteCreated(VoiceNotes.line(it, LocalDate.now())) }
+                    _voice.update { it.copy(review = null, waiting = VoiceRec.waiting(app)) }
+                    showMessage(tr("บันทึก ${titles.size} งานไว้ในถาด ยังไม่มีบ้าน", "Saved ${titles.size} tasks to the no-project tray"))
+                    reload()
+                },
+                { e -> showMessage(tr("บันทึกไม่ได้: ${e.message}", "Could not save: ${e.message}")) },
+            )
+        }
+    }
+
+    /** Throws away a recording that is under review or waiting. */
+    fun dropVoice(file: java.io.File) {
+        val app = getApplication<Application>()
+        file.delete()
+        _voice.update { v -> v.copy(review = v.review?.takeIf { it.file != file }, failed = null, waiting = VoiceRec.waiting(app)) }
+    }
+
+    /** Closes the check without saving: the recording waits on the focus page. */
+    fun closeVoiceReview() = _voice.update { it.copy(review = null) }
+
+    // After the voice properties above, which an init block placed earlier would find not yet set.
+    init { watchVoice() }
 
     override fun onCleared() {
         prefs.unregisterOnSharedPreferenceChangeListener(settingsListener)

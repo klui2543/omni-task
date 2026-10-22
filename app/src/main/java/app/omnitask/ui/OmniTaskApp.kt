@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.omnitask.ui
 
 import androidx.activity.compose.BackHandler
@@ -6,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,6 +126,20 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
+
+    // Holding + records tasks by voice; the mic is asked for the first time.
+    val voice by vm.voice.collectAsStateWithLifecycle()
+    val micContext = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.startVoice() else vm.showMessage(tr("ต้องอนุญาตไมค์ก่อน ถึงจะจดด้วยเสียงได้", "Allow the microphone to note tasks by voice"))
+    }
+    fun startVoice() {
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        if (voice.recording != null) return
+        val granted = micContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) vm.startVoice() else askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
 
     // The frames and emoji page and the settings pages are drawn alone, in place of the tabs and their sheets. What a
     // widget asks for closes them first, or quick add or the calendar would wait behind them.
@@ -303,7 +320,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         // Room at the end of the lists for the assistant button floating at the bottom corner.
         CompositionLocalProvider(LocalNavClearance provides 76.dp) {
             Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
-                NavRail(screen, onAdd = { adding = QuickAddRequest() }) { screen = it }
+                NavRail(screen, onAdd = { adding = QuickAddRequest() }, onVoice = ::startVoice) { screen = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     content()
                     assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
@@ -323,7 +340,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 content()
                 if (fullPage.intValue == 0) DockNav(
                     selected = screen, showAsk = askShown,
-                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.askAi(it); screen = Screen.AI },
+                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onVoice = ::startVoice, onAsk = { vm.askAi(it); screen = Screen.AI },
                     presets = askPresets(state, vm),
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
@@ -365,6 +382,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     adding?.let { r ->
         QuickAddSheet(state, vm, r.voice, r.status, r.text, r.link, onAskAssistant = { vm.askAi(it); screen = Screen.AI }) { adding = null }
     }
+    VoiceSheet(voice, vm)
 }
 
 /**
@@ -398,7 +416,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: Tas
 
 /** The same destinations as a vertical pill on the left, for wide screens. */
 @Composable
-private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> Unit) {
+private fun NavRail(selected: Screen, onAdd: () -> Unit, onVoice: () -> Unit, onSelect: (Screen) -> Unit) {
     // A phone on its side is short: smaller items, and the rail scrolls rather than clips.
     val itemH = if (LocalConfiguration.current.screenHeightDp < 440) 46.dp else 56.dp
     Column(
@@ -413,7 +431,8 @@ private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> U
         ) {
             // Adding a task, where the bottom bar of a phone has it in the middle.
             Box(
-                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent)
+                    .combinedClickable(onClick = onAdd, onLongClick = onVoice, onLongClickLabel = tr("จดด้วยเสียง", "Note by voice")),
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             Screen.entries.filter { it != Screen.MORE }.forEach { s ->
@@ -457,6 +476,7 @@ private fun DockNav(
     showAsk: Boolean,
     onSelect: (Screen) -> Unit,
     onAdd: () -> Unit,
+    onVoice: () -> Unit,
     onAsk: (String) -> Unit,
     presets: List<AskPreset>,
     modifier: Modifier = Modifier,
@@ -525,7 +545,8 @@ private fun DockNav(
             // Adding a task, in the middle of the tabs where it always was.
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 Box(
-                    Modifier.size(width = 56.dp, height = 38.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                    Modifier.size(width = 56.dp, height = 38.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent)
+                        .combinedClickable(onClick = onAdd, onLongClick = onVoice, onLongClickLabel = tr("จดด้วยเสียง", "Note by voice")),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp)) }
             }

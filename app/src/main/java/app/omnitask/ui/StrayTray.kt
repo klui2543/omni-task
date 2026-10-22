@@ -76,6 +76,7 @@ fun StrayTray(
     onMakeProject: (String) -> Unit,
     drag: StrayDrag,
     modifier: Modifier = Modifier,
+    fresh: Set<String> = emptySet(),
 ) {
     var shut by remember { mutableStateOf(setOf<String>()) }
     var all by remember { mutableStateOf(setOf<String>()) }
@@ -114,7 +115,17 @@ fun StrayTray(
             }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp).padding(bottom = 12.dp)) {
-            strays.forEach { g ->
+            // Tasks just spoken in (see VoiceUi.kt) come first for a day, marked new, and leave their tag group meanwhile.
+            val spoken = strays.flatMap { it.tasks }.filter { it.title in fresh }
+            if (spoken.isNotEmpty()) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+                Text(
+                    tr("จดด้วยเสียงเมื่อกี้", "Just spoken in"), Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+                    color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold,
+                )
+                spoken.forEach { t -> StrayRow(t, today, { onPick(t) }, drag, new = true) }
+            }
+            strays.map { g -> g.copy(tasks = g.tasks.filter { it.title !in fresh }) }.filter { it.tasks.isNotEmpty() }.forEach { g ->
                 val id = g.tag ?: ""
                 val closed = id in shut
                 Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
@@ -149,7 +160,7 @@ fun StrayTray(
 }
 
 @Composable
-private fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayDrag) {
+private fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayDrag, new: Boolean = false) {
     var at by remember { mutableStateOf(Offset.Zero) }
     val date = t.due ?: t.scheduled
     Row(
@@ -170,6 +181,10 @@ private fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayD
     ) {
         Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).border(1.5.dp, C.control, RoundedCornerShape(4.dp)))
         Text(t.title, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (new) Text(
+            tr("ใหม่", "New"), Modifier.padding(start = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.accentSoft).padding(horizontal = 8.dp),
+            color = C.accentText, fontSize = TS.caption,
+        )
         if (date != null) Text(
             MonthGrid.dayMonth(date), Modifier.padding(start = 8.dp),
             color = if (t.due?.let { it < today } == true) C.red else C.faint, fontSize = TS.caption,

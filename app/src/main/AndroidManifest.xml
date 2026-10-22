@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- The month widget's reload runs in a short foreground service (see MonthTapService). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Lets the app find ColorOS's auto-start screen on OPPO phones. -->
     <queries>
@@ -82,6 +84,12 @@
             android:name=".widget.MonthTapService"
             android:exported="false"
             android:foregroundServiceType="shortService" />
+
+        <!-- Tasks spoken into the phone: records until the owner stops it, screen off or not (see VoiceRecorder.kt). -->
+        <service
+            android:name=".data.VoiceRecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <receiver
             android:name=".widget.QuickAddWidgetReceiver"

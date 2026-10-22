@@ -516,6 +516,7 @@ fun YgdrasilScreen(
             strays, state.today, straySort, { straySort = it }, { trayOpen = false }, { picking = it },
             { tag -> vm.setProject(tag, true) }, strayDrag,
             Modifier.align(Alignment.BottomCenter).fillMaxHeight(if (carry != null) 0.22f else 0.46f).onSizeChanged { trayHeight = it.height },
+            fresh = remember(state.tasks) { vm.freshVoiceTitles() },
         )
         }
 

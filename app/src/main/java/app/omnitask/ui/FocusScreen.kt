@@ -61,6 +61,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import java.time.format.DateTimeFormatter
 import app.omnitask.time.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
@@ -69,6 +70,7 @@ private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit) {
     var picking by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
+    val voice by vm.voice.collectAsStateWithLifecycle()
     if (picking) FuturePicker(state, vm) { picking = false }
     if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
     // The calendar choice, opened from an event (its calendar pointed out) or from the line under the day.
@@ -137,6 +139,11 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 // The assistant is the floating button now; only the wide layout's menu is left up here.
                 menu()
             }
+        }
+
+        // Recordings not written down yet (no network, or the check was closed): try again or throw away.
+        if (voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
+            item { VoiceWaitingCard(voice, vm) }
         }
 
         // The secretary stopped writing Claude log (over a day since its last round): say so until it is back or hidden.
