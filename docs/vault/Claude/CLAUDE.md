@@ -37,7 +37,7 @@ format: claude-rules/3
 - The first time Claude writes the log in a new place, write one test line and ask Klui to confirm it shows on the phone before writing the rest.
 
 ## Klui's own notes
-- `📁 Folder/หลังบ้าน/Omni/Omni note.md` belongs to Klui. Claude only appends, and only a task Klui must do, tagged with its project first and `#kluido` second. Never edit or delete Klui's lines.
+- `📁 Folder/หลังบ้าน/Omni/Omni note.md` belongs to Klui. Claude only appends, and only a task Klui must do, tagged with its project first and `#kluido` second. One exception: a task from a file Klui attached in the secretary room is added as a bare line `- [ ] task ➕ date` (no tag), so it shows in the app's "ยังไม่มีบ้าน" tray. Never edit or delete Klui's lines.
 
 ## Gemini in the Omni app (agreed 2026-10-19, widened 2026-10-21)
 - The assistant in Omni (Gemini, typing) reads Klui's tasks and this Claude log, and can propose any change to tasks. Klui confirms each change with a tap, so nothing changes without a tap. Deleting is shown in red.
