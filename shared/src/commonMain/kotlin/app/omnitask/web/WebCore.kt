@@ -275,6 +275,11 @@ object WebCore {
                 val tag = value ?: return fail("empty")
                 line { TaskLine.retag(it, op.field, tag) }
             }
+            // A task with no project given one from the tray under Ygdrasil: the tag goes first, its tags stay.
+            "homeTo" -> {
+                val tag = value ?: return fail("empty")
+                line { TaskLine.homeTag(it, tag) }
+            }
             "status" -> line { TaskLine.setStatus(it, Status.valueOf(op.value!!), day) }
             // The kind tag (#รอ, #อนาคต, #สักวัน) is swapped for the new one, as Android's kind picker does.
             "kind" -> {

@@ -94,6 +94,8 @@ export type EditOp =
   | { op: 'addTag' | 'removeTag'; value: string }
   /** To another project or branch: [field] is the tag the task had. */
   | { op: 'moveTo'; value: string; field: string }
+  /** A task with no project given one: the tag goes in front, its own tags stay. */
+  | { op: 'homeTo'; value: string }
   | { op: 'status'; value: Task['status'] }
   | { op: 'kind'; value: Kind; who?: string; custom?: string[] }
   | { op: 'customKind'; value: string; custom: string[] }
@@ -385,6 +387,16 @@ export interface YgOut {
   links: number
   /** Every limb's tag, for folding them all. */
   tags: string[]
+  /** Tasks that passed the filter with no project, for the tray under the tree. */
+  strays: YgStray[]
+}
+
+/** A group in the tray of tasks with no project: its tag (none: no tag at all) and its task keys in each order. */
+export interface YgStray {
+  tag?: string
+  due: string[]
+  old: string[]
+  az: string[]
 }
 
 /** A list note read from Drive: its id, path in the vault and text. */

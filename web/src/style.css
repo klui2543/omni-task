@@ -772,6 +772,46 @@ body:has(.page.pj.mapping) .dock { display: none; }
 .pj-node.yg-drop { border: 2px dashed var(--amber); background: var(--amber-soft); }
 .yg-ghost { position: fixed; z-index: 50; pointer-events: none; display: flex; flex-direction: column; gap: 2px; max-width: 260px; padding: 8px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--accent); box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: 13px; }
 .yg-ghost .small { color: var(--muted); }
+/* The tray of tasks with no project: it rises from the bottom of the tree, which still moves above it. */
+.yg-stage { position: relative; flex: 1; min-height: 280px; display: flex; flex-direction: column; }
+.yg-stage > .pj-map { flex: 1; }
+.yg-stray-btn { display: inline-flex; align-items: center; gap: 6px; }
+.yg-stray-btn.on { border-color: var(--amber); }
+.yg-tray-count { background: var(--amber-soft); color: var(--amber-text); border-radius: 99px; padding: 0 8px; font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }
+.yg-tray { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 16px 16px 12px 12px; box-shadow: 0 -8px 24px rgb(0 0 0 / .12); transition: height .18s ease; overflow: hidden; z-index: 3; }
+.yg-tray.low { height: 22%; }
+@media (prefers-reduced-motion: reduce) { .yg-tray { transition: none; } }
+.yg-tray-grip { width: 40px; height: 4px; border-radius: 4px; background: var(--control); margin: 8px auto 0; flex: none; }
+.yg-tray-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px 2px 16px; }
+.yg-tray-x { border: 0; background: transparent; color: var(--muted); font-size: 20px; width: 36px; height: 36px; border-radius: 10px; }
+.yg-tray-hint { padding: 0 16px 6px; }
+.yg-tray-sort { display: flex; gap: 6px; padding: 0 16px 8px; flex-wrap: wrap; }
+.yg-tray-sort button { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--card); color: var(--muted); }
+.yg-tray-sort button.on { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-line); }
+.yg-tray-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 14px; align-content: start; overscroll-behavior: contain; }
+.yg-tray-group { border-top: 1px solid var(--divider); padding: 4px 0; min-width: 0; }
+.yg-tray-ghead { display: flex; align-items: center; gap: 6px; }
+.yg-tray-gtoggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 8px 6px; text-align: left; color: var(--text); }
+.yg-tray-make { border: 0; border-radius: 8px; background: var(--accent-soft); color: var(--accent-text); font-size: 12px; padding: 4px 10px; flex: none; }
+.yg-stray-row { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; border-radius: 8px; padding: 8px 6px 8px 20px; text-align: left; color: var(--text); font-size: 13.5px; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.yg-stray-row:hover { background: var(--raised); }
+.yg-stray-box { width: 14px; height: 14px; border: 1.5px solid var(--control); border-radius: 4px; flex: none; }
+.yg-late { color: var(--red-text); }
+.yg-tray-more { border: 0; background: transparent; color: var(--accent-text); font-size: 12.5px; padding: 4px 20px; text-align: left; }
+.yg-pick { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.yg-pick-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.yg-pick-tabs button { font-size: 12.5px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--muted); }
+.yg-pick-tabs button.on { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-line); font-weight: 600; }
+.yg-pick-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow-y: auto; }
+.yg-pick-chips button { font-size: 12.5px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent-text); }
+.yg-pick-chips button.on { background: var(--accent); color: var(--card); border-color: var(--accent); }
+.yg-pick-sub { display: flex; align-items: center; gap: 4px; }
+.yg-pick-sub input { flex: 1; min-width: 0; }
+.yg-pick-use { align-self: flex-start; border: 0; background: transparent; color: var(--accent-text); font-size: 12.5px; padding: 0; text-decoration: underline; }
+.yg-pick-preview { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; align-items: baseline; }
+.yg-pick-preview code { font-size: 12px; background: var(--raised); border-radius: 6px; padding: 4px 7px; overflow-wrap: anywhere; color: var(--text); }
+.yg-pick-new { grid-column: 2; color: var(--lime-text); }
+.yg-pick-acts { display: flex; gap: 8px; justify-content: flex-end; }
 .yg-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; pointer-events: none; }
 
 /* A list */

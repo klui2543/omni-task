@@ -75,6 +75,10 @@ object WebYgdrasil {
         val waiting: String? = null,
     )
 
+    /** A group in the tray of tasks with no project: its tag (null: no tag) and the task keys in each order. */
+    @Serializable
+    data class StrayOut(val tag: String? = null, val due: List<String>, val old: List<String>, val az: List<String>)
+
     @Serializable
     data class Out(
         val spots: List<SpotOut>,
@@ -86,6 +90,8 @@ object WebYgdrasil {
         val links: Int,
         /** Every limb's tag, for folding them all. */
         val tags: List<String>,
+        /** The tasks that passed the filter with no project, for the tray under the tree. */
+        val strays: List<StrayOut> = emptyList(),
     )
 
     private fun n(v: Float): String = ((v * 10).toInt() / 10.0).toString()
@@ -103,10 +109,15 @@ object WebYgdrasil {
 
         val filter = json.decodeFromString<FilterIn>(filterJson).toFilter()
         val folded = json.decodeFromString<List<String>>(foldedJson).toSet()
-        val tree = Ygdrasil.grow(
-            WebNotes.tasks(fileKey, path, text), Branches.parse(st.branches.toSet()), LocalDate.parse(today), filter,
-            st.starred.toSet(), st.order,
-        )
+        val tasks = WebNotes.tasks(fileKey, path, text)
+        val day = LocalDate.parse(today)
+        val tree = Ygdrasil.grow(tasks, Branches.parse(st.branches.toSet()), day, filter, st.starred.toSet(), st.order)
+        val strays = Ygdrasil.strays(tasks, day, filter).map { g ->
+            StrayOut(
+                g.tag, g.tasks.map { it.key }, Ygdrasil.straySorted(g.tasks, Ygdrasil.StraySort.OLD).map { it.key },
+                Ygdrasil.straySorted(g.tasks, Ygdrasil.StraySort.AZ).map { it.key },
+            )
+        }
         val layout = Ygdrasil.layout(tree, folded)
         return json.encodeToString(
             Out(
@@ -127,9 +138,13 @@ object WebYgdrasil {
                 },
                 width = layout.width, height = layout.height, matched = tree.matched, worlds = tree.worlds.size, links = tree.links.size,
                 tags = tree.worlds.flatMap { w -> w.flatten().map { it.node.tag } },
+                strays = strays,
             ),
         )
     }
+
+    /** The line as it would read once the task with no project goes to [tag] (TaskLine.homeTag), for the picker. */
+    fun homeLine(raw: String, tag: String): String = TaskLine.homeTag(raw, tag)
 
     // ---- Waits drawn by hand (an arrow from one task to another in Excalidraw) ----
 
