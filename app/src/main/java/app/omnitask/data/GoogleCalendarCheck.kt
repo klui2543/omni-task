@@ -84,12 +84,18 @@ object GoogleCalendarCheck {
         runCatching {
             context.contentResolver.query(
                 CalendarContract.Calendars.CONTENT_URI,
-                arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.OWNER_ACCOUNT, CalendarContract.Calendars.ACCOUNT_TYPE),
+                arrayOf(
+                    CalendarContract.Calendars._ID, CalendarContract.Calendars.OWNER_ACCOUNT, CalendarContract.Calendars.ACCOUNT_TYPE,
+                    CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+                ),
                 null, null, null,
             )?.use { c ->
                 while (c.moveToNext()) {
                     val owner = c.getString(1)
-                    if (c.getString(2) == "com.google" && !owner.isNullOrBlank()) calendars[c.getLong(0)] = owner
+                    // Only calendars the owner owns: Google lists a shared calendar's events only in part (free/busy, or
+                    // no listing at all), so every event of it would look deleted and vanish from every view.
+                    val owns = c.getInt(3) >= CalendarContract.Calendars.CAL_ACCESS_OWNER
+                    if (c.getString(2) == "com.google" && !owner.isNullOrBlank() && owns) calendars[c.getLong(0)] = owner
                 }
             }
         }
