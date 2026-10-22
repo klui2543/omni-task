@@ -139,6 +139,13 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
+        // The secretary stopped writing Claude log (over a day since its last round): say so until it is back or hidden.
+        val nowMs = now.let { System.currentTimeMillis() }
+        val secretaryLast = state.ai.secretaryLast
+        if (secretaryLast != null && Secretary.warns(secretaryLast, state.ai.secretaryHiddenUntil, nowMs)) {
+            item { SecretaryWarning(secretaryLast, nowMs, vm::hideSecretaryWarning) }
+        }
+
         // Items that draw nothing would still take a gap in the column, so they are only added when they show.
         if (calendarConnectShows(state)) item { CalendarConnect(state, vm) }
 

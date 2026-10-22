@@ -1,5 +1,9 @@
 package app.omnitask.ui
 
+import androidx.compose.ui.geometry.Size
+
+import androidx.compose.ui.draw.drawWithContent
+
 import android.content.ContentUris
 import android.content.Intent
 import android.provider.CalendarContract
@@ -95,7 +99,20 @@ private val GanttClock = DateTimeFormatter.ofPattern("HH:mm")
 private val GanttEventColors get() = GanttColors(C.teal, C.teal.copy(alpha = 0.16f), C.eventText, C.tealText)
 
 /** Whose work the Timeline shows: everyone's, mine (all but Claude's), or Claude's. */
-private enum class TimelineWho { ALL, ME, CLAUDE }
+enum class TimelineWho { ALL, ME, CLAUDE }
+
+/**
+ * The Timeline set inside another page (the assistant's): that page owns the chips and the picked task, rings the
+ * tasks in [picks] in the accent, and shows its own card for the picked task, so the Timeline drops its header,
+ * chips, events and card. A picked bar is tinted rather than edged in white.
+ */
+class TimelineEmbed(
+    val who: TimelineWho,
+    val staleOnly: Boolean,
+    val picks: Set<String>,
+    val selKey: String?,
+    val onSelect: (Task?) -> Unit,
+)
 
 /** Days an open task has sat since it was made or last moved (a note, a subtask ticked), when that is long. */
 private fun staleDays(t: Task, subtasks: List<Task>, today: LocalDate): Long? {
@@ -112,14 +129,19 @@ private fun staleDays(t: Task, subtasks: List<Task>, today: LocalDate): Long? {
  * offers to open it or note why it is stuck.
  */
 @Composable
-fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Task) -> Unit, embed: TimelineEmbed? = null) {
     var span by rememberSaveable { mutableFloatStateOf(14f) }
     // The first day shown, in days from today (fractions while sliding).
     var start by rememberSaveable { mutableFloatStateOf(-1f) }
-    var showEvents by rememberSaveable { mutableStateOf(true) }
-    var who by rememberSaveable { mutableStateOf(TimelineWho.ALL) }
-    var staleOnly by rememberSaveable { mutableStateOf(false) }
-    var selKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var showEventsOwn by rememberSaveable { mutableStateOf(true) }
+    var whoOwn by rememberSaveable { mutableStateOf(TimelineWho.ALL) }
+    var staleOnlyOwn by rememberSaveable { mutableStateOf(false) }
+    var selKeyOwn by rememberSaveable { mutableStateOf<String?>(null) }
+    // Inside the assistant's page that page owns these; the Timeline tab keeps its own.
+    val showEvents = embed == null && showEventsOwn
+    val who = embed?.who ?: whoOwn
+    val staleOnly = embed?.staleOnly ?: staleOnlyOwn
+    val selKey = if (embed != null) embed.selKey else selKeyOwn
     var noting by remember { mutableStateOf<Task?>(null) }
     val today = state.today
     val whole = kotlin.math.floor(start).toLong()
@@ -179,7 +201,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
         val shift = dayW * frac
         val density = LocalDensity.current.density
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (embed == null) Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).padding(end = 10.dp)) {
                     Text(ganttRange(today.plusDays(kotlin.math.round(start).toLong()), today.plusDays(kotlin.math.round(start + span).toLong() - 1), today), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(spanText(span), color = C.muted, fontSize = TS.micro, maxLines = 1)
@@ -189,16 +211,16 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                 Box(Modifier.width(6.dp))
                 SquareButton(Ic.next, tr("ถัดไป", "Later"), { start += maxOf(1f, span * 0.75f) })
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(tr("ทั้งหมด", "All"), who == TimelineWho.ALL && !staleOnly, { who = TimelineWho.ALL; staleOnly = false })
-                Chip(tr("ฉัน", "Me"), who == TimelineWho.ME && !staleOnly, { who = TimelineWho.ME; staleOnly = false }, dot = C.tealChip)
-                Chip("Claude", who == TimelineWho.CLAUDE && !staleOnly, { who = TimelineWho.CLAUDE; staleOnly = false }, dot = C.accentText)
-                Chip(tr("ค้างนาน ${pool.count { needs(it) }}", "Stuck ${pool.count { needs(it) }}"), staleOnly, { staleOnly = !staleOnly }, dot = C.amber)
-                if (state.calendarAccess == true) Chip(tr("นัดหมาย", "Events"), showEvents, { showEvents = !showEvents }, dot = C.teal)
+            if (embed == null) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(tr("ทั้งหมด", "All"), who == TimelineWho.ALL && !staleOnly, { whoOwn = TimelineWho.ALL; staleOnlyOwn = false })
+                Chip(tr("ฉัน", "Me"), who == TimelineWho.ME && !staleOnly, { whoOwn = TimelineWho.ME; staleOnlyOwn = false }, dot = C.tealChip)
+                Chip("Claude", who == TimelineWho.CLAUDE && !staleOnly, { whoOwn = TimelineWho.CLAUDE; staleOnlyOwn = false }, dot = C.accentText)
+                Chip(tr("ค้างนาน ${pool.count { needs(it) }}", "Stuck ${pool.count { needs(it) }}"), staleOnly, { staleOnlyOwn = !staleOnlyOwn }, dot = C.amber)
+                if (state.calendarAccess == true) Chip(tr("นัดหมาย", "Events"), showEvents, { showEventsOwn = !showEventsOwn }, dot = C.teal)
             }
 
             Box(
-                Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp).clipToBounds()
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = if (embed == null) 14.dp else 0.dp).clipToBounds()
                     // One finger slides through the days; the list still scrolls up and down.
                     .pointerInput(span) {
                         detectHorizontalDragGestures { change, amount ->
@@ -233,7 +255,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                     val todayAt = ChronoUnit.DAYS.between(first, today).toInt()
                     Column(
                         Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                            .padding(top = 2.dp, bottom = NavClearance + if (sel != null) 160.dp else 0.dp)
+                            .padding(top = 2.dp, bottom = if (embed != null) 8.dp else NavClearance + if (sel != null) 160.dp else 0.dp)
                             .drawBehind {
                                 // Week starts as faint guides, and today as an accent line, behind the bars.
                                 val stroke = 1.dp.toPx()
@@ -291,7 +313,12 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                                     note = note, waiting = blocker != null, stuck = days0 != null,
                                     dim = sel != null && t.key !in related,
                                     picked = t.key == selKey,
-                                ) { selKey = if (selKey == t.key) null else t.key }
+                                    embedded = embed != null,
+                                    aiPick = embed?.picks?.contains(t.key) == true,
+                                ) {
+                                    val next = if (selKey == t.key) null else t.key
+                                    if (embed != null) embed.onSelect(if (next == null) null else t) else selKeyOwn = next
+                                }
                             }
                         }
                         if (groups.isEmpty() && eventRows.isEmpty()) {
@@ -306,7 +333,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
         }
 
         // The picked task: when it runs, why it waits, and what to do with it.
-        if (sel != null) {
+        if (sel != null && embed == null) {
             val blocker = blockerOf(sel)
             val waiters = pool.filter { t -> t.isOpen && t.dependsOn.any { byId[it] === sel } }
             val days0 = stale[sel]
@@ -322,7 +349,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                         Modifier.clip(RoundedCornerShape(10.dp)).background(if (isClaude(sel)) C.accentSoft else C.tealSoft).padding(horizontal = 8.dp, vertical = 2.dp),
                         color = if (isClaude(sel)) C.accentText else C.tealChip, fontSize = TS.micro,
                     )
-                    Box(Modifier.size(44.dp).clip(CircleShape).clickable { selKey = null }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).clickable { selKeyOwn = null }, contentAlignment = Alignment.Center) {
                         Icon(Ic.close, tr("ปิด", "Close"), tint = C.muted, modifier = Modifier.size(18.dp))
                     }
                 }
@@ -426,7 +453,8 @@ private fun GanttCaption(text: String, color: Color) {
 @Composable
 private fun GanttTaskLane(
     s: GanttSpan, first: LocalDate, days: Int, today: LocalDate, dayW: Dp, rowW: Dp,
-    colors: GanttColors, note: String?, waiting: Boolean, stuck: Boolean, dim: Boolean, picked: Boolean, onClick: () -> Unit,
+    colors: GanttColors, note: String?, waiting: Boolean, stuck: Boolean, dim: Boolean, picked: Boolean,
+    embedded: Boolean = false, aiPick: Boolean = false, onClick: () -> Unit,
 ) {
     val date = note ?: ganttRange(s.start, s.end, today)
     val from = ChronoUnit.DAYS.between(first, s.start)
@@ -437,7 +465,10 @@ private fun GanttTaskLane(
             from >= days -> GanttEdgeLane(s.task.title, date, colors, before = false, onClick = onClick)
             else -> {
                 val bar = GanttBar(from.coerceAtLeast(0L).toInt(), to.coerceAtMost(days - 1L).toInt(), date, onClick = onClick)
-                GanttLane(s.task.title, listOf(bar), colors, dayW, rowW, onClick, dashed = waiting, stripe = if (stuck) C.amber else null, picked = picked)
+                GanttLane(
+                    s.task.title, listOf(bar), colors, dayW, rowW, onClick, dashed = waiting, stripe = if (stuck) C.amber else null,
+                    picked = picked && !embedded, tinted = picked && embedded, ring = if (aiPick) C.accent else null,
+                )
             }
         }
     }
@@ -448,7 +479,7 @@ private fun GanttTaskLane(
 @Composable
 private fun GanttLane(
     title: String, bars: List<GanttBar>, colors: GanttColors, dayW: Dp, rowW: Dp, onClick: () -> Unit, onLongClick: (() -> Unit)? = null,
-    dashed: Boolean = false, stripe: Color? = null, picked: Boolean = false,
+    dashed: Boolean = false, stripe: Color? = null, picked: Boolean = false, tinted: Boolean = false, ring: Color? = null,
 ) {
     // A sliver between neighbouring days, thinner when thirty days share a phone.
     val inset = if (dayW < 20.dp) 1.dp else 2.dp
@@ -460,7 +491,7 @@ private fun GanttLane(
         placed.forEach { p ->
             Row(
                 Modifier.align(Alignment.CenterStart).offset(x = p.x).width(p.width).height(GanttBarH)
-                    .alpha(if (p.bar.dim) 0.55f else 1f).clip(GanttBarShape).background(colors.fill)
+                    .alpha(if (p.bar.dim) 0.55f else 1f).clip(GanttBarShape).background(if (tinted) colors.accent.copy(alpha = 0.4f) else colors.fill)
                     // Waiting on other work: a dashed edge. Picked: a solid light edge.
                     .then(
                         if (dashed || picked) Modifier.drawBehind {
@@ -469,6 +500,14 @@ private fun GanttLane(
                                 if (picked) C.text else colors.accent, cornerRadius = CornerRadius(10.dp.toPx()),
                                 style = Stroke(w, pathEffect = if (picked) null else PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))),
                             )
+                        } else Modifier,
+                    )
+                    // The assistant's pick: a ring in the accent, over any other edge.
+                    .then(
+                        if (ring != null) Modifier.drawWithContent {
+                            drawContent()
+                            val w = 2.dp.toPx()
+                            drawRoundRect(ring, topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w), cornerRadius = CornerRadius(10.dp.toPx()), style = Stroke(w))
                         } else Modifier,
                     )
                     .combinedClickable(onClick = p.bar.onClick, onLongClick = p.bar.onLongClick),

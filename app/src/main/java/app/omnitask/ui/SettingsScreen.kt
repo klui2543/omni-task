@@ -103,6 +103,7 @@ fun SettingsScreen(
     archive: ArchiveSettings? = null,
     calendars: CalendarChoices? = null,
     drive: DriveSettings? = null,
+    ai: AiSettings? = null,
     head: (@Composable () -> Unit)? = null,
     tail: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
@@ -161,6 +162,7 @@ fun SettingsScreen(
             }
         }
         head?.let { item { it() } }
+        if (ai != null) item { AiKeyGroup(ai) }
         item {
             SettingsGroup(tr("ภาษา", "Language")) {
                 // Each language is named in itself, so it can be found whichever one is showing.
