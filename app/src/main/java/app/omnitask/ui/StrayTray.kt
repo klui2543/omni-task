@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.omnitask.data.TaskLine
 import app.omnitask.model.Branches
-import app.omnitask.model.MonthMarks
+import app.omnitask.model.MonthGrid
 import app.omnitask.model.Task
 import app.omnitask.model.Ygdrasil
 import app.omnitask.model.tr
@@ -127,9 +127,10 @@ fun StrayTray(
                         Text(g.tag?.let { "#$it" } ?: tr("ไม่มี tag", "No tag"), Modifier.padding(start = 6.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
                         Text("${g.tasks.size}", Modifier.padding(start = 6.dp), color = C.faint, fontSize = TS.caption)
                     }
-                    if (g.tag != null) Text(
+                    val tag = g.tag
+                    if (tag != null) Text(
                         tr("ตั้งเป็นโปรเจกต์", "Make it a project"),
-                        Modifier.clip(RoundedCornerShape(8.dp)).background(C.accentSoft).clickable { onMakeProject(g.tag) }.padding(horizontal = 10.dp, vertical = 5.dp),
+                        Modifier.clip(RoundedCornerShape(8.dp)).background(C.accentSoft).clickable { onMakeProject(tag) }.padding(horizontal = 10.dp, vertical = 5.dp),
                         color = C.accentText, fontSize = TS.caption,
                     )
                 }
@@ -170,8 +171,8 @@ private fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayD
         Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).border(1.5.dp, C.control, RoundedCornerShape(4.dp)))
         Text(t.title, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (date != null) Text(
-            MonthMarks.dayMonth(date), Modifier.padding(start = 8.dp),
-            color = if (t.due != null && t.due < today) C.red else C.faint, fontSize = TS.caption,
+            MonthGrid.dayMonth(date), Modifier.padding(start = 8.dp),
+            color = if (t.due?.let { it < today } == true) C.red else C.faint, fontSize = TS.caption,
         )
     }
 }
