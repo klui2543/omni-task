@@ -296,15 +296,16 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
             })
         }
         putJsonArray("required") { add(JsonPrimitive("summary")); add(JsonPrimitive("picks")) }
+        putJsonArray("propertyOrdering") { add(JsonPrimitive("summary")); add(JsonPrimitive("picks")) }
     }
 
     private val KINDS = listOf("add", "move", "rename", "priority", "remind", "done", "delete", "project", "stuck", "subtasks", "remember", "big")
 
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
-            put("answer", str(800))
             put("topic", str(80))
             put("tags", obj("ARRAY") { put("maxItems", 5); put("items", str()) })
+            put("answer", str(800))
             put("search", str(120))
             put("actions", obj("ARRAY") {
                 put("maxItems", 8)
@@ -319,7 +320,10 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
                 })
             })
         }
-        putJsonArray("required") { add(JsonPrimitive("answer")); add(JsonPrimitive("actions")) }
+        putJsonArray("required") { listOf("topic", "tags", "answer", "actions").forEach { add(JsonPrimitive(it)) } }
+        // The short fields first and the list of changes last, so the answer ends when that list closes. With the
+        // topic last, Gemini went on writing polite sign-offs in it until it was cut off (seen in ตรวจ Gemini.md).
+        putJsonArray("propertyOrdering") { listOf("topic", "tags", "answer", "search", "actions").forEach { add(JsonPrimitive(it)) } }
     }
 
     private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?): String = buildJsonObject {
