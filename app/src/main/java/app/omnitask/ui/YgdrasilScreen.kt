@@ -119,7 +119,7 @@ fun YgdrasilScreen(
     val tree = remember(state.tasks, state.parked, state.branchStates, state.today, state.starred, state.projectOrder, filter) {
         Ygdrasil.grow(state.tasks + state.parked, state.branchStates, state.today, filter, state.starred, state.projectOrder)
     }
-    // Opened, every project folds but those with work in the chosen reach (work past its 📅 date always opens one); the
+    // Opened, every project folds but those with work in the chosen reach (work past its 📅 date or its own ⏳ target always opens one); the
     // owner's own folds then hold until the reach changes or the tree is opened again. A folded project tells its next task.
     val reach = state.treeReach
     val notes = remember(tree, reach, state.today, embed) { if (embed == null) Ygdrasil.urgencies(tree, reach, state.today) else emptyMap() }
@@ -449,7 +449,7 @@ fun YgdrasilScreen(
                             }
                             // An open project says why it opened on its own.
                             val note = notes[n.tag]
-                            if (world && !s.folded && note != null && (note.opens || note.targetLate > 0)) {
+                            if (world && !s.folded && note != null && note.opens) {
                                 Box(Modifier.offset(s.x.dp, (s.y + s.h / 2 + 4).dp)) { TreeBadges(note, reach) }
                             }
                         }
@@ -575,8 +575,8 @@ fun YgdrasilScreen(
                 }
                 Text(
                     tr(
-                        "แตะโปรเจกต์หรือกิ่งเพื่อจัดการ เส้นประสีส้มคืองานที่รองานในโปรเจกต์อื่น งานที่เลยกำหนด (📅) กางโปรเจกต์เสมอ งานที่เลยเป้าตัวเอง (⏳) ขึ้นเป็นป้าย",
-                        "Tap a project or branch. Orange dashes: a task waiting on another project. Work past its 📅 date always opens its project; past a ⏳ target it shows a tag",
+                        "แตะโปรเจกต์หรือกิ่งเพื่อจัดการ เส้นประสีส้มคืองานที่รองานในโปรเจกต์อื่น งานที่เลยกำหนด (📅) หรือเลยเป้าตัวเอง (⏳) กางโปรเจกต์เสมอ",
+                        "Tap a project or branch. Orange dashes: a task waiting on another project. Work past its 📅 date or its own ⏳ target always opens its project",
                     ),
                     Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
                 )

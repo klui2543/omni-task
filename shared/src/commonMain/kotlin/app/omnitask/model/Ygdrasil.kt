@@ -147,7 +147,7 @@ object Ygdrasil {
     // ---- Worlds that open on their own ----
 
     /**
-     * How far ahead a world's work opens it when the tree is shown: work past its 📅 date always does; [TODAY],
+     * How far ahead a world's work opens it when the tree is shown: work past its 📅 date or its own ⏳ target always does; [TODAY],
      * [WEEK] (to Sunday) and [MONTH] (to the month's end) add work whose 📅 or ⏳ date falls in that reach.
      */
     enum class Reach(private val th: String, private val en: String) {
@@ -173,11 +173,11 @@ object Ygdrasil {
 
     /**
      * What a world tells while the tree is shown: its open work past the 📅 date ([late]), past the owner's own ⏳
-     * target only ([targetLate], told but never opening it), dated within the reach ([within]), and the task to do
+     * target only ([targetLate], a world that opens too, with its own tag), dated within the reach ([within]), and the task to do
      * [next].
      */
     data class Urgency(val late: Int, val targetLate: Int, val within: Int, val next: Task?) {
-        val opens get() = late > 0 || within > 0
+        val opens get() = late > 0 || targetLate > 0 || within > 0
     }
 
     fun urgency(world: Limb, reach: Reach, today: LocalDate): Urgency {
