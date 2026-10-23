@@ -192,4 +192,33 @@ class YgdrasilTest {
         assertEquals("- [ ] งาน #omni #อ่าน", TaskLine.homeTag("- [ ] งาน #อ่าน #omni", "omni"))
         assertEquals("- [ ] งาน #omni #remind-at-due ⏰ 09:00 📅 2026-10-20", TaskLine.homeTag("- [ ] งาน #remind-at-due ⏰ 09:00 📅 2026-10-20", "omni"))
     }
+
+    @Test
+    fun worldsOpenByTheirReachAndPastTargetsOnlyTell() {
+        val wed = LocalDate.parse("2026-10-21")
+        val work = VaultText.parseFile(
+            "g", "Omni note.md",
+            listOf(
+                "- [ ] เลยกำหนด #a 📅 2026-10-20",
+                "- [ ] เลยเป้าตัวเอง #b ⏳ 2026-10-19",
+                "- [ ] เสาร์นี้ #c 📅 2026-10-24",
+                "- [ ] ปลายเดือน #d ⏳ 2026-10-30",
+                "- [ ] ไม่มีวัน #e",
+            ).joinToString("\n"),
+        )
+        val tree = Ygdrasil.grow(work, emptyMap(), wed, Ygdrasil.Filter())
+        fun open(r: Ygdrasil.Reach) = tree.worlds.map { it.node.tag }.toSet() - Ygdrasil.autoFolded(tree, r, wed)
+        assertEquals(setOf("a"), open(Ygdrasil.Reach.LATE))
+        assertEquals(setOf("a"), open(Ygdrasil.Reach.TODAY))
+        assertEquals(setOf("a", "c"), open(Ygdrasil.Reach.WEEK))
+        assertEquals(setOf("a", "c", "d"), open(Ygdrasil.Reach.MONTH))
+        val notes = Ygdrasil.urgencies(tree, Ygdrasil.Reach.WEEK, wed)
+        assertEquals(1, notes.getValue("b").targetLate)
+        assertFalse(notes.getValue("b").opens)
+        assertEquals("เสาร์นี้", notes.getValue("c").next?.title)
+        // A folded branch inside a world stays folded; a folded world with a note is one wide row.
+        assertTrue("a/x" in Ygdrasil.autoFolded(tree, Ygdrasil.Reach.WEEK, wed, kept = setOf("a/x", "c")))
+        val wide = Ygdrasil.layout(tree, setOf("e"), notes = notes).spots.first { it.limb?.node?.tag == "e" }
+        assertEquals(Ygdrasil.WIDE_W, wide.w)
+    }
 }

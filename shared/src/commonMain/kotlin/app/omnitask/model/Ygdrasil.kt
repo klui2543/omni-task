@@ -2,6 +2,7 @@ package app.omnitask.model
 
 import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
+import kotlinx.datetime.isoDayNumber
 
 /**
  * Project Ygdrasil: every project in one tree. The trunk holds each project as a world, each world its branches
@@ -143,6 +144,65 @@ object Ygdrasil {
         return Tree(worlds, links)
     }
 
+    // ---- Worlds that open on their own ----
+
+    /**
+     * How far ahead a world's work opens it when the tree is shown: work past its 📅 date always does; [TODAY],
+     * [WEEK] (to Sunday) and [MONTH] (to the month's end) add work whose 📅 or ⏳ date falls in that reach.
+     */
+    enum class Reach(private val th: String, private val en: String) {
+        LATE("เฉพาะที่เลยกำหนด", "Past due only"),
+        TODAY("วันนี้", "Today"),
+        WEEK("สัปดาห์นี้", "This week"),
+        MONTH("เดือนนี้", "This month");
+
+        val label get() = tr(th, en)
+
+        /** The last day this reach takes in, or null for past-due work only. */
+        fun end(today: LocalDate): LocalDate? = when (this) {
+            LATE -> null
+            TODAY -> today
+            WEEK -> today.plusDays((7 - today.dayOfWeek.isoDayNumber).toLong())
+            MONTH -> LocalDate(today.year, today.month, 1).plusMonths(1).minusDays(1)
+        }
+
+        companion object {
+            fun of(name: String?): Reach = entries.firstOrNull { it.name == name } ?: WEEK
+        }
+    }
+
+    /**
+     * What a world tells while the tree is shown: its open work past the 📅 date ([late]), past the owner's own ⏳
+     * target only ([targetLate], told but never opening it), dated within the reach ([within]), and the task to do
+     * [next].
+     */
+    data class Urgency(val late: Int, val targetLate: Int, val within: Int, val next: Task?) {
+        val opens get() = late > 0 || within > 0
+    }
+
+    fun urgency(world: Limb, reach: Reach, today: LocalDate): Urgency {
+        val open = world.flatten().flatMap { it.tasks }.filter { it.isOpen }
+        val end = reach.end(today)
+        val late = open.count { t -> t.due?.let { it < today } == true }
+        val targetLate = open.count { t -> t.due?.let { it < today } != true && t.scheduled?.let { it < today } == true }
+        val within = if (end == null) 0 else open.count { t ->
+            t.due?.let { it < today } != true && listOfNotNull(t.due, t.scheduled).any { it in today..end }
+        }
+        val next = open.minWithOrNull(compareBy<Task>({ it.due ?: it.scheduled ?: LocalDate.LATEST }, { it.priority.ordinal }, { it.lineIndex }))
+        return Urgency(late, targetLate, within, next)
+    }
+
+    /** Every world and what it tells, by its tag. */
+    fun urgencies(tree: Tree, reach: Reach, today: LocalDate): Map<String, Urgency> =
+        tree.worlds.associate { it.node.tag to urgency(it, reach, today) }
+
+    /**
+     * The folds when the tree is shown: every world folded but those with work in [reach]; the branches folded
+     * inside a world ([kept], tags with a slash) stay as they were.
+     */
+    fun autoFolded(tree: Tree, reach: Reach, today: LocalDate, kept: Set<String> = emptySet()): Set<String> =
+        kept.filter { '/' in it }.toSet() + tree.worlds.filter { !urgency(it, reach, today).opens }.map { it.node.tag }
+
     // ---- Tasks with no project yet ----
 
     /** Tasks with no project, gathered by the first tag they have ([tag] null: no tag at all). */
@@ -183,6 +243,9 @@ object Ygdrasil {
     const val TASK_W = 190f
     const val TASK_H = 32f
     const val TASKS_SHOWN = 6
+    /** A folded world that tells its next task. */
+    const val WIDE_W = NODE_W + COL
+    const val WIDE_H = 58f
 
     enum class Kind { TRUNK, LIMB, TASK, MORE }
 
@@ -222,7 +285,7 @@ object Ygdrasil {
      * middle of the rows its tasks and sub-limbs take. Limbs whose tag is in [folded] keep their tasks and sub-limbs in.
      * A link whose task is folded away ends at the nearest limb that shows.
      */
-    fun layout(tree: Tree, folded: Set<String>, tasksShown: Int = TASKS_SHOWN): Layout {
+    fun layout(tree: Tree, folded: Set<String>, tasksShown: Int = TASKS_SHOWN, notes: Map<String, Urgency> = emptyMap()): Layout {
         val spots = ArrayList<Spot>()
         val edges = ArrayList<Edge>()
         val limbAt = HashMap<String, Spot>()
@@ -241,8 +304,13 @@ object Ygdrasil {
                 if (shown.isNotEmpty() && l.children.isNotEmpty()) y += 6f
                 l.children.forEachIndexed { i, k -> if (i > 0) y += 12f; y += place(k, depth + 1, y) }
             }
-            val h = maxOf(NODE_H, y - top)
-            val s = Spot(Kind.LIMB, depth * COL, top + h / 2, NODE_W, NODE_H, limb = l, count = if (closed) l.matched else 0, folded = closed)
+            // A folded world with a note is one wide row: its name, then the task to do next.
+            val wide = closed && depth == 1 && l.node.tag in notes
+            val h = maxOf(if (wide) WIDE_H else NODE_H, y - top)
+            val s = Spot(
+                Kind.LIMB, depth * COL, top + h / 2, if (wide) WIDE_W else NODE_W, if (wide) WIDE_H else NODE_H,
+                limb = l, count = if (closed) l.matched else 0, folded = closed,
+            )
             spots += s
             limbAt[l.node.tag] = s
             return h

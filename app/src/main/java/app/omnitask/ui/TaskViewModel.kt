@@ -30,6 +30,7 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.Ygdrasil
 import app.omnitask.model.Behavior
 import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Insight
@@ -212,6 +213,8 @@ data class UiState(
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
+    /** How far ahead a project's work opens it in Ygdrasil (work past its 📅 date always does). */
+    val treeReach: Ygdrasil.Reach = Ygdrasil.Reach.WEEK,
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
     /** The Gemini assistant: the key, the brief at the top of the assistant page, and calls under way. */
@@ -417,6 +420,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
         strictProjects = prefs.getStringSet(KEY_STRICT, emptySet()).orEmpty().toSet(),
+        treeReach = Ygdrasil.Reach.of(prefs.getString(KEY_TREE_REACH, null)),
         savedFilters = prefs.getStringSet(KEY_SAVED_FILTERS, emptySet()).orEmpty()
             .associate { it.substringBefore('\t') to it.substringAfter('\t', "") },
     )
@@ -1656,6 +1660,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putStringSet(KEY_PROJECT_TASKS, next.map { (k, v) -> k + "\t" + v.joinToString("\u001F") }.toSet()).apply()
         _state.update { it.copy(projectTaskOrder = next) }
         if (project in _state.value.strictProjects) writeChain(ordered, on = true)
+    }
+
+    fun setTreeReach(reach: Ygdrasil.Reach) {
+        prefs.edit().putString(KEY_TREE_REACH, reach.name).apply()
+        _state.update { it.copy(treeReach = reach) }
     }
 
     /** Turns "do in order" on (each task waits for the one before it, via 🆔/⛔ in the file) or off. */
@@ -2928,6 +2937,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_OFF_PROJECTS = "declinedProjects"
+        const val KEY_TREE_REACH = "treeReach"
         /** The single countdown (a task title) kept before there could be several; read once, then removed. */
         const val KEY_COUNTDOWN = "focus.countdown"
         const val KEY_COUNTDOWNS = "focus.countdowns"

@@ -36,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -118,7 +119,15 @@ fun YgdrasilScreen(
     val tree = remember(state.tasks, state.parked, state.branchStates, state.today, state.starred, state.projectOrder, filter) {
         Ygdrasil.grow(state.tasks + state.parked, state.branchStates, state.today, filter, state.starred, state.projectOrder)
     }
-    val layout = remember(tree, folded) { Ygdrasil.layout(tree, folded) }
+    // Opened, every project folds but those with work in the chosen reach (work past its 📅 date always opens one); the
+    // owner's own folds then hold until the reach changes or the tree is opened again. A folded project tells its next task.
+    val reach = state.treeReach
+    val notes = remember(tree, reach, state.today, embed) { if (embed == null) Ygdrasil.urgencies(tree, reach, state.today) else emptyMap() }
+    var applied by rememberSaveable { mutableStateOf<String?>(null) }
+    val auto = embed == null && applied != reach.name
+    val shownFolded = if (auto) Ygdrasil.autoFolded(tree, reach, state.today, folded) else folded
+    SideEffect { if (auto) { applied = reach.name; onFolded(shownFolded) } }
+    val layout = remember(tree, shownFolded, notes) { Ygdrasil.layout(tree, shownFolded, notes = notes) }
     // The tray of tasks with no project, under the tree, and the task whose new home is being picked.
     var straySort by remember { mutableStateOf(Ygdrasil.StraySort.DUE) }
     val strays = remember(state.tasks, state.today, state.projectTags, filter, straySort) { Ygdrasil.strays(state.tasks, state.today, filter, straySort) }
@@ -407,14 +416,27 @@ fun YgdrasilScreen(
                                     .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else 1f)
                                     .then(
                                         if (embed != null) Modifier else Modifier
-                                            .pointerInput(n.tag) { detectTapGestures(onTap = { selTag = n.tag }) }
+                                            // A tap on a folded project opens it as well.
+                                            .pointerInput(n.tag, s.folded) { detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) }) }
                                             .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
                                     )
                                     .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 if (!world) Box(Modifier.size(8.dp).clip(CircleShape).background(n.state.color))
-                                Text(
+                                val note = notes[n.tag]
+                                if (world && s.folded && note != null && s.w > Ygdrasil.NODE_W) Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "#" + n.name, Modifier.weight(1f, fill = false).padding(end = 6.dp), color = C.accentText, fontSize = TS.caption,
+                                            fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        )
+                                        TreeBadges(note, reach)
+                                    }
+                                    note.next?.let {
+                                        Text(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                } else Text(
                                     if (world) "#" + n.name else n.name, Modifier.weight(1f).padding(start = if (world) 0.dp else 7.dp),
                                     color = if (world) C.accentText else C.text, fontSize = TS.caption,
                                     fontWeight = if (world) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -424,6 +446,11 @@ fun YgdrasilScreen(
                                 } else if (n.all.isNotEmpty()) {
                                     Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
                                 }
+                            }
+                            // An open project says why it opened on its own.
+                            val note = notes[n.tag]
+                            if (world && !s.folded && note != null && (note.opens || note.targetLate > 0)) {
+                                Box(Modifier.offset(s.x.dp, (s.y + s.h / 2 + 4).dp)) { TreeBadges(note, reach) }
                             }
                         }
                         Ygdrasil.Kind.TASK -> {
@@ -540,8 +567,17 @@ fun YgdrasilScreen(
                     MapButton(tr("พับทุกโปรเจกต์", "Fold every project")) { onFolded(tree.worlds.map { it.node.tag }.toSet()) }
                     MapButton(if (filter.links) tr("ซ่อนเส้นงานที่รอกัน", "Hide wait lines") else tr("แสดงเส้นงานที่รอกัน", "Show wait lines")) { onFilter(filter.copy(links = !filter.links)) }
                 }
+                Text(tr("กางเองเมื่อมีงานถึง", "Open on their own with work up to"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
+                Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(Ygdrasil.Reach.TODAY, Ygdrasil.Reach.WEEK, Ygdrasil.Reach.MONTH, Ygdrasil.Reach.LATE).forEach { r ->
+                        MapButton(r.label, filled = r == reach) { vm.setTreeReach(r) }
+                    }
+                }
                 Text(
-                    tr("แตะโปรเจกต์หรือกิ่งเพื่อจัดการ เส้นประสีส้มคืองานที่รองานในโปรเจกต์อื่น", "Tap a project or branch. Orange dashes: a task waiting on another project"),
+                    tr(
+                        "แตะโปรเจกต์หรือกิ่งเพื่อจัดการ เส้นประสีส้มคืองานที่รองานในโปรเจกต์อื่น งานที่เลยกำหนด (📅) กางโปรเจกต์เสมอ งานที่เลยเป้าตัวเอง (⏳) ขึ้นเป็นป้าย",
+                        "Tap a project or branch. Orange dashes: a task waiting on another project. Work past its 📅 date always opens its project; past a ⏳ target it shows a tag",
+                    ),
                     Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
                 )
             } else {
@@ -655,4 +691,19 @@ fun YgdrasilEntry(onClick: () -> Unit) {
             Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
         }
     }
+}
+
+/** Why a project opened on its own, or what it holds while folded: past due, due within the reach, past the owner's target. */
+@Composable
+private fun TreeBadges(u: Ygdrasil.Urgency, reach: Ygdrasil.Reach) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (u.late > 0) TreeBadge(tr("เลยกำหนด ${u.late}", "${u.late} past due"), C.red, C.redSoft)
+        if (u.within > 0) TreeBadge("${reach.label} ${u.within}", C.accentText, C.accentSoft)
+        if (u.targetLate > 0) TreeBadge(tr("เลยเป้า ${u.targetLate}", "${u.targetLate} past target"), C.amber, C.amberSoft)
+    }
+}
+
+@Composable
+private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color, bg: androidx.compose.ui.graphics.Color) {
+    Text(text, Modifier.clip(RoundedCornerShape(8.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp), color = color, fontSize = TS.micro, maxLines = 1)
 }
