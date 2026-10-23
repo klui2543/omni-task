@@ -255,7 +255,7 @@ object AiAssist {
 - picks: งานที่ควรทำก่อน 1 ถึง 4 งาน เรียงตามลำดับที่ควรทำ งานแรกคือ "ทำก่อน" งานที่สองคือ "แล้วต่อ" แต่ละงานมี reason สั้นไม่เกิน 10 คำ ว่าทำไมงานนี้ (เช่น มีคนรอ 2 วัน, กำหนดจริงพรุ่งนี้)
 - งานที่เลยแค่วัน "นัดทำ" (เป้าที่เจ้าของตั้งเอง) ไม่ด่วนเท่างานที่เลย "กำหนด" (กำหนดจริง)"""
 
-    private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer
+    private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer ไม่เกิน 3 ประโยค คิดคำนวณวันและเวลาว่างในใจ ห้ามเขียนวิธีคิดหรือไล่วันทีละวันลงในคำตอบ
 เจ้าของสั่งแก้งานได้ทุกอย่าง ใส่สิ่งที่จะแก้ใน actions (ไม่เกิน 8 ข้อ) แอปจะแสดงให้เจ้าของกดยืนยันทีละข้อก่อนแก้จริง ใน answer ให้บอกสั้น ๆ ว่าเตรียมอะไรไว้ให้ยืนยัน ห้ามบอกว่าทำเสร็จแล้ว
 - "add": เพิ่มงานใหม่ ชื่อใน text, date (YYYY-MM-DD) ถ้ามี, field "scheduled" ถ้าเป็นวันนัดทำ ไม่ใช่วันกำหนดส่ง, time (HH:mm) ถ้าต้องการเตือน, priority ถ้าระบุ, project ต้องมีทุกครั้ง (ดูกติกาโปรเจกต์ด้านล่าง)
 - "move": เปลี่ยนวันของงาน ref เป็น date, field "due" (กำหนดส่ง ค่าเริ่มต้น) หรือ "scheduled" (วันนัดทำ) หรือ "start" (วันเริ่ม), date ว่างคือลบวันนั้น
@@ -282,15 +282,15 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private fun obj(type: String, block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}) = buildJsonObject { put("type", type); block() }
-    private fun str() = obj("STRING")
+    private fun str(max: Int? = null) = obj("STRING") { max?.let { put("maxLength", it) } }
 
     private val briefSchema = obj("OBJECT") {
         putJsonObject("properties") {
-            put("summary", str())
+            put("summary", str(300))
             put("picks", obj("ARRAY") {
                 put("maxItems", 4)
                 put("items", obj("OBJECT") {
-                    putJsonObject("properties") { put("ref", str()); put("reason", str()) }
+                    putJsonObject("properties") { put("ref", str(8)); put("reason", str(120)) }
                     putJsonArray("required") { add(JsonPrimitive("ref")); add(JsonPrimitive("reason")) }
                 })
             })
@@ -302,16 +302,16 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
 
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
-            put("answer", str())
-            put("topic", str())
+            put("answer", str(800))
+            put("topic", str(80))
             put("tags", obj("ARRAY") { put("maxItems", 5); put("items", str()) })
-            put("search", str())
+            put("search", str(120))
             put("actions", obj("ARRAY") {
                 put("maxItems", 8)
                 put("items", obj("OBJECT") {
                     putJsonObject("properties") {
                         put("kind", obj("STRING") { putJsonArray("enum") { KINDS.forEach { add(JsonPrimitive(it)) } } })
-                        put("ref", str()); put("text", str()); put("date", str()); put("field", str())
+                        put("ref", str(8)); put("text", str(300)); put("date", str(10)); put("field", str(12))
                         put("time", str()); put("project", str()); put("priority", str())
                         put("items", obj("ARRAY") { put("maxItems", 12); put("items", str()) })
                     }
@@ -349,8 +349,9 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
             // No temperature: Gemini 3 models loop (repeat until cut off, or refuse as recitation) below their default.
             // Thai takes many tokens, and a model that thinks counts its thinking here too: room for a long proposal.
             put("maxOutputTokens", 8192)
-            // Thinking made answers slow on the phone; task questions need almost none.
-            putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
+            // Low, not minimal: with almost no thinking Flash-Lite worked dates out inside the answer itself and ran on
+            // past 20,000 characters (cut off, or refused as recitation).
+            putJsonObject("thinkingConfig") { put("thinkingLevel", "low") }
         }
     }.toString()
 
