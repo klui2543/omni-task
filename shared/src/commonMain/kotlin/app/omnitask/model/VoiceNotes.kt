@@ -49,7 +49,6 @@ object VoiceNotes {
                 }
                 putJsonArray("required") { add(JsonPrimitive("tasks")) }
             }
-            put("temperature", 0.2)
             put("maxOutputTokens", 4096)
             putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
         }
@@ -84,7 +83,6 @@ object VoiceNotes {
         putJsonObject("generationConfig") {
             put("responseMimeType", "application/json")
             put("responseSchema", schema(withText))
-            put("temperature", 0.2)
             put("maxOutputTokens", 4096)
             putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
         }

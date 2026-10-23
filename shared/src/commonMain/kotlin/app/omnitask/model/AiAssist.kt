@@ -288,6 +288,7 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonObject("properties") {
             put("summary", str())
             put("picks", obj("ARRAY") {
+                put("maxItems", 4)
                 put("items", obj("OBJECT") {
                     putJsonObject("properties") { put("ref", str()); put("reason", str()) }
                     putJsonArray("required") { add(JsonPrimitive("ref")); add(JsonPrimitive("reason")) }
@@ -303,15 +304,16 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonObject("properties") {
             put("answer", str())
             put("topic", str())
-            put("tags", obj("ARRAY") { put("items", str()) })
+            put("tags", obj("ARRAY") { put("maxItems", 5); put("items", str()) })
             put("search", str())
             put("actions", obj("ARRAY") {
+                put("maxItems", 8)
                 put("items", obj("OBJECT") {
                     putJsonObject("properties") {
                         put("kind", obj("STRING") { putJsonArray("enum") { KINDS.forEach { add(JsonPrimitive(it)) } } })
                         put("ref", str()); put("text", str()); put("date", str()); put("field", str())
                         put("time", str()); put("project", str()); put("priority", str())
-                        put("items", obj("ARRAY") { put("items", str()) })
+                        put("items", obj("ARRAY") { put("maxItems", 12); put("items", str()) })
                     }
                     putJsonArray("required") { add(JsonPrimitive("kind")) }
                 })
@@ -320,7 +322,7 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonArray("required") { add(JsonPrimitive("answer")); add(JsonPrimitive("actions")) }
     }
 
-    private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?, temperature: Double = 0.4): String = buildJsonObject {
+    private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?): String = buildJsonObject {
         // What stays the same between calls goes first, so Google can reuse it (cheaper and quicker).
         val system = buildString {
             append(RULES)
@@ -344,7 +346,7 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonObject("generationConfig") {
             put("responseMimeType", "application/json")
             put("responseSchema", schema)
-            put("temperature", temperature)
+            // No temperature: Gemini 3 models loop (repeat until cut off, or refuse as recitation) below their default.
             // Thai takes many tokens, and a model that thinks counts its thinking here too: room for a long proposal.
             put("maxOutputTokens", 8192)
             // Thinking made answers slow on the phone; task questions need almost none.
@@ -369,7 +371,7 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
             else if (canSearch) append("\n").append(SEARCH_ASK)
             append("\n\nคำถาม: ").append(question)
         }
-        return request(picture, earlier.takeLast(8), ask, replySchema, memory, history, temperature = if (short) 0.8 else 0.4)
+        return request(picture, earlier.takeLast(8), ask, replySchema, memory, history)
     }
 
     /** The same request without the thinking setting, for a model that does not take it. */
