@@ -27,6 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.tr
 import androidx.compose.runtime.setValue
@@ -112,10 +115,29 @@ fun CalendarRows(choices: CalendarChoices, mark: Long? = null) {
                 Text(cal.name.ifBlank { cal.account }, color = if (cal.id == mark) C.accentText else C.text, fontSize = TS.body)
                 val notes = listOfNotNull(
                     CalendarStyles.label(cal.id)?.let { tr("ป้าย: $it", "Label: $it") },
-                    cal.account.takeIf { it.isNotBlank() && it != cal.name },
+                    // Which of the same-named calendars this is: the account's own (Google) or the one DAVx5 brings.
+                    cal.source?.let { s -> cal.account.takeIf { it.isNotBlank() && it != cal.name }?.let { "$s, $it" } ?: s }
+                        ?: cal.account.takeIf { it.isNotBlank() && it != cal.name },
                     if (cal.id == mark) tr("นัดที่แตะมาจากปฏิทินนี้", "The event you tapped is in this one") else null,
                 )
                 if (notes.isNotEmpty()) Text(notes.joinToString("\n"), color = C.muted, fontSize = TS.caption)
+                // Sync switched off for a calendar that has an account: its new events never reach the phone.
+                if (!cal.sync && cal.source != null) {
+                    Text(tr("ปิดซิงก์อยู่ นัดใหม่จะไม่เข้าเครื่อง", "Sync is off, so new events do not reach the phone"), color = C.amber, fontSize = TS.caption)
+                    Text(
+                        tr("เปิดซิงก์", "Turn sync on"),
+                        Modifier.padding(top = 2.dp).clip(RoundedCornerShape(8.dp)).clickable {
+                            val ok = CalendarReader.enableSync(context, cal.id)
+                            android.widget.Toast.makeText(
+                                context,
+                                if (ok) tr("เปิดซิงก์แล้ว รอสักครู่ให้นัดเข้ามา", "Sync is on. Give it a moment.") else tr("เปิดไม่ได้ ลองในแอปปฏิทินของเครื่อง", "Could not turn it on. Try the phone's calendar app."),
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                            choices.onPermissionChanged()
+                        }.padding(vertical = 8.dp, horizontal = 2.dp),
+                        color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.Medium,
+                    )
+                }
             }
             Box(Modifier.width(12.dp))
             OnOff(on)
