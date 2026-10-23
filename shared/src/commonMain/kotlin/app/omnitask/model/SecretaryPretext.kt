@@ -54,7 +54,8 @@ object SecretaryPretext {
             else if (title == null) head.appendLine(line) else body.appendLine(line)
         }
         flush()
-        val defaults = parse(DEFAULT).takeIf { text != DEFAULT }
+        // The defaults fill a part the owner's note lacks (read only for another text, or it would never end).
+        val defaults = if (text != DEFAULT) parse(DEFAULT) else null
         return Note(
             head.toString().trim().ifBlank { defaults?.head.orEmpty() },
             parts.firstOrNull { it.title == BASE }?.body ?: defaults?.base.orEmpty(),
