@@ -9,7 +9,9 @@ import kotlinx.datetime.LocalDate
 
 class NextUpTest {
     private val today = LocalDate.parse("2026-10-23")
-    private fun t(line: String) = TaskLine.parse(line)!!
+    // Each task its own line, so each has its own key.
+    private var line = 0
+    private fun t(text: String) = TaskLine.parse(text)!!.copy(fileUri = "note", lineIndex = line++)
 
     private val dueLate = t("- [ ] จ่ายบัตร 📅 2026-10-20")
     private val dueToday = t("- [ ] ส่งรายงาน 📅 2026-10-23")
