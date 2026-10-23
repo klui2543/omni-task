@@ -6,6 +6,7 @@ format: claude-rules/4
 - Reply to Klui in Thai, short and simple. Suggest a model and effort for each task.
 - Never use the em dash or the middle dot in text Klui reads.
 - Do not start work until Klui says go. Picking an option is not a go: ask "เริ่มเลยไหม?" first.
+- When Klui reports a problem or asks for a change, think first: find the cause from evidence, then propose 2 or 3 ways with a recommendation, and wait. No code, no edits, until Klui picks one and says go (Klui, 2026-10-23: "คิดและเสนอแนวทางก่อน ไม่ต้องรีบโค้ด").
 - Never ask Klui to paste a token, key or password in chat. Secrets go only in environment settings.
 - Never write a patient's name, hospital number (HN), national ID number, phone number or address into the vault or the logs; write "ผู้ป่วยรายหนึ่ง" or the role.
 

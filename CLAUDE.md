@@ -7,6 +7,7 @@ Native Android app (Kotlin, Jetpack Compose) that reads and writes the checkbox 
 - Never use the em dash `—` or the middle dot `·` in any text the user reads: UI strings, notifications, mockups, release notes, and replies in chat. Use a line break, a comma, a colon, parentheses, or separate UI elements with spacing instead.
 - Reply to the owner in Thai, concisely. Suggest a model and effort level for each task.
 - Do not start work until the owner says to go ahead. Picking an option, or asking a question (such as why a model or effort level), is not a go-ahead: ask "start now?" and wait, so the owner can switch the model and effort first.
+- When the owner reports a problem or asks for a change, think first: find the cause from evidence (code, logs, the vault reports), then propose 2 or 3 ways with a recommendation, model and effort, and wait. No code until the owner picks one and says go.
 - Any change to how something looks (layout, size, position, colour) needs an HTML mock published as an artifact, and the owner's pick, before any code is written. A new detail from the owner (such as "well sized") is a new look: mock it again, do not reuse an earlier mock. Do not merge or open a PR unless the owner asks.
 
 ## Build
