@@ -272,8 +272,7 @@ object AiAssist {
 กติกาโปรเจกต์: project ต้องเป็นชื่อจากรายการ [โปรเจกต์และกิ่งที่มี] เท่านั้น สะกดตรงตัว เลือกกิ่งที่ตรงที่สุด เช่น "peddose/แอป" ถ้ามีกิ่งนั้น ไม่งั้นใช้ชื่อโปรเจกต์ ห้ามแต่งชื่อใหม่ ห้ามแปลหรือย่อ ถ้าไม่แน่ใจว่าเข้าโปรเจกต์ไหน ให้ถามใน answer พร้อมเสนอ 2 ถึง 3 ชื่อจากรายการ และยังไม่ต้องใส่ action นั้น ใช้ชื่อที่ไม่อยู่ในรายการได้เฉพาะเมื่อเจ้าของพิมพ์ชื่อโปรเจกต์ใหม่นั้นเอง
 วันที่แบบ "พรุ่งนี้" หรือ "ศุกร์นี้" ให้คิดจากวันนี้ในภาพรวมงาน ถ้าคำสั่งกำกวม เช่น มีหลายงานชื่อคล้ายกัน ให้ถามกลับใน answer และไม่ต้องใส่ actions
 ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง
-topic: หัวข้อสั้นของการคุยครั้งนี้ ไม่เกิน 8 คำ เช่น "ตกลงทำระบบป้ายก่อน Flow"
-tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปรเจกต์หรือแท็กที่มีอยู่ในภาพรวมงานก่อน แล้วค่อยเป็นเรื่อง เช่น siriraj, ป้าย"""
+เขียน answer ครั้งเดียวแล้วจบ ห้ามคำลงท้ายซ้ำ ๆ เช่น ขอบคุณครับ ยินดีให้บริการ"""
 
     private const val SEARCH_ASK = """ถ้าสารบัญบอกว่าเคยคุยเรื่องที่ถาม แต่รายละเอียดไม่อยู่ในบทสนทนาที่ให้มา ให้ใส่คำค้นสั้น ๆ ใน search แล้วเว้น answer และ actions ว่างไว้ แอปจะค้นบันทึกเก่าแล้วส่งผลกลับมาให้ตอบ ถ้ามีข้อมูลพอแล้ว ให้ search ว่าง"""
 
@@ -303,8 +302,6 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
 
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
-            put("topic", str(80))
-            put("tags", obj("ARRAY") { put("maxItems", 5); put("items", str()) })
             put("answer", str(800))
             put("search", str(120))
             put("actions", obj("ARRAY") {
@@ -320,10 +317,10 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
                 })
             })
         }
-        putJsonArray("required") { listOf("topic", "tags", "answer", "actions").forEach { add(JsonPrimitive(it)) } }
-        // The short fields first and the list of changes last, so the answer ends when that list closes. With the
-        // topic last, Gemini went on writing polite sign-offs in it until it was cut off (seen in ตรวจ Gemini.md).
-        putJsonArray("propertyOrdering") { listOf("topic", "tags", "answer", "search", "actions").forEach { add(JsonPrimitive(it)) } }
+        putJsonArray("required") { add(JsonPrimitive("answer")); add(JsonPrimitive("actions")) }
+        // No free text after the list of changes: Gemini ran on in a trailing topic field with polite sign-offs until
+        // it was cut off (seen in ตรวจ Gemini.md). The topic now comes from the question; the answer ends with the list.
+        putJsonArray("propertyOrdering") { listOf("answer", "search", "actions").forEach { add(JsonPrimitive(it)) } }
     }
 
     private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?): String = buildJsonObject {
@@ -351,8 +348,9 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
             put("responseMimeType", "application/json")
             put("responseSchema", schema)
             // No temperature: Gemini 3 models loop (repeat until cut off, or refuse as recitation) below their default.
-            // Thai takes many tokens, and a model that thinks counts its thinking here too: room for a long proposal.
-            put("maxOutputTokens", 8192)
+            // Room for a full proposal in Thai with some thinking, but a reply that runs on stops within seconds and is
+            // read as far as it got (see salvage) instead of running to the phone's time limit.
+            put("maxOutputTokens", 4096)
             // Low, not minimal: with almost no thinking Flash-Lite worked dates out inside the answer itself and ran on
             // past 20,000 characters (cut off, or refused as recitation).
             putJsonObject("thinkingConfig") { put("thinkingLevel", "low") }
@@ -390,7 +388,14 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
     class Failure(message: String) : Exception(message)
 
     /** The JSON the model wrote, out of a generateContent response, or a [Failure]. */
-    fun answerText(response: String): String {
+    fun answerText(response: String): String = answerTextOrCut(response).also { (_, cut) ->
+        if (cut) throw Failure(CUT)
+    }.first
+
+    private val CUT get() = tr("คำตอบยาวเกินจนถูกตัดกลางทาง ลองถามทีละไม่กี่งาน", "The answer ran too long and was cut off. Ask about fewer tasks at a time.")
+
+    /** The text the model wrote, and whether it was cut off at the length limit (then it is kept, to read what it can). */
+    fun answerTextOrCut(response: String): Pair<String, Boolean> {
         val root = runCatching { json.parseToJsonElement(response).jsonObject }.getOrElse { throw Failure(tr("ตอบกลับมาอ่านไม่ออก", "Could not read the reply")) }
         (root["error"] as? JsonObject)?.let { e -> throw Failure(e["message"]?.jsonPrimitive?.contentOrNull ?: tr("Gemini ตอบว่าผิดพลาด", "Gemini returned an error")) }
         val cand = (root["candidates"] as? JsonArray)?.firstOrNull()?.jsonObject
@@ -400,11 +405,36 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         }
         val parts = (cand["content"] as? JsonObject)?.get("parts") as? JsonArray
         val text = parts?.mapNotNull { p -> (p as? JsonObject)?.takeIf { it["thought"]?.jsonPrimitive?.contentOrNull != "true" }?.get("text")?.jsonPrimitive?.contentOrNull }?.joinToString("")
-        if (cand["finishReason"]?.jsonPrimitive?.contentOrNull == "MAX_TOKENS") {
-            throw Failure(tr("คำตอบยาวเกินจนถูกตัดกลางทาง ลองถามทีละไม่กี่งาน", "The answer ran too long and was cut off. Ask about fewer tasks at a time."))
+        val cut = cand["finishReason"]?.jsonPrimitive?.contentOrNull == "MAX_TOKENS"
+        if (text.isNullOrBlank()) throw if (cut) Failure(CUT) else Failure(tr("Gemini ไม่ได้ตอบอะไรกลับมา", "Gemini sent nothing back") + " (${cand["finishReason"]?.jsonPrimitive?.contentOrNull ?: "?"})")
+        return text to cut
+    }
+
+    /**
+     * What can be read from a reply that broke off or ran on: the answer (or its first part) and every proposed change
+     * that was written out whole. Null when not even that is there.
+     */
+    internal fun salvage(text: String): JsonObject? {
+        val answer = Regex("\"answer\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(text)?.groupValues?.get(1)
+            ?.let { runCatching { json.parseToJsonElement("\"$it\"").jsonPrimitive.content }.getOrNull() }
+            ?: Regex("\"answer\"\\s*:\\s*\"").find(text)?.let { m -> text.substring(m.range.last + 1).take(400).substringBeforeLast(' ') }
+        val actions = mutableListOf<JsonObject>()
+        val start = text.indexOf("\"actions\"").takeIf { it >= 0 }?.let { text.indexOf('[', it) } ?: -1
+        if (start >= 0) {
+            var depth = 0; var inString = false; var escaped = false; var from = -1
+            for (i in start + 1 until text.length) {
+                val c = text[i]
+                if (inString) { if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false; continue }
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> { if (depth == 0) from = i; depth++ }
+                    '}' -> { depth--; if (depth == 0 && from >= 0) runCatching { json.parseToJsonElement(text.substring(from, i + 1)).jsonObject }.getOrNull()?.let(actions::add) }
+                    ']' -> if (depth == 0) break
+                }
+            }
         }
-        if (text.isNullOrBlank()) throw Failure(tr("Gemini ไม่ได้ตอบอะไรกลับมา", "Gemini sent nothing back") + " (${cand["finishReason"]?.jsonPrimitive?.contentOrNull ?: "?"})")
-        return text
+        if (answer.isNullOrBlank() && actions.isEmpty()) return null
+        return buildJsonObject { put("answer", answer.orEmpty()); put("actions", JsonArray(actions)) }
     }
 
     private fun parseObject(text: String): JsonObject {
@@ -444,7 +474,9 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
      * needs (a date, a title), is dropped.
      */
     fun parseReply(response: String, picture: Picture): Reply {
-        val o = parseObject(answerText(response))
+        // A reply cut off or broken partway is read as far as it goes rather than thrown away.
+        val (text, cut) = answerTextOrCut(response)
+        val o = runCatching { parseObject(text) }.getOrNull() ?: salvage(text) ?: throw if (cut) Failure(CUT) else Failure(tr("คำตอบของ Gemini ไม่ใช่รูปแบบที่ตกลงไว้", "Gemini answered in an unexpected form"))
         val actions = (o["actions"] as? JsonArray).orEmpty().mapNotNull { e ->
             val a = e as? JsonObject ?: return@mapNotNull null
             val task = picture.refs[a["ref"].s()]
