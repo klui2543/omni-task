@@ -171,99 +171,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                     }
                 }
                 Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
-                if (night != null) {
-                    // Tap to move tonight's bedtime; the usual one is in settings.
-                    val color = when {
-                        night.sleep < 5 * 60 -> C.red
-                        night.sleep < 7 * 60 -> C.amber
-                        else -> C.lime
-                    }
-                    // Bed and wake as two tiles to tap, the hours of sleep beside them, why the wake time is what it is,
-                    // then the alarm on the watch.
-                    val wake = night.wakeAt.toLocalTime()
-                    val alarm = state.alarmSet?.takeIf { it.first == eve }
-                    // Set for tonight and the wake time moved (picked again, or a new morning event): send the new one.
-                    LaunchedEffect(alarm, night.wakeAt) {
-                        if (alarm != null && alarm.second != wake) vm.setWakeAlarm(eve, night.wakeAt, night.sleep)
-                    }
-                    Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
-                        if (lastNight != null) {
-                            Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(tr("เมื่อคืนได้นอน ${hm(lastNight)}", "${hm(lastNight)} of sleep last night"), color = C.muted, fontSize = TS.caption)
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(tr("คืนนี้", "Tonight"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
-                            Text(
-                                tr("ได้นอน ${hm(night.sleep)}", "${hm(night.sleep)} of sleep"),
-                                Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 2.dp),
-                                color = color, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1,
-                            )
-                        }
-                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SleepTile(tr("นอน", "Bed"), night.bedAt.format(HM), Modifier.weight(1f)) {
-                                pickSystemTime(context, bedtime) { vm.setTonightBedtime(eve, it) }
-                            }
-                            // In the daytime the wake time is tomorrow's; say so, or it reads as this morning's.
-                            val tomorrow = night.wakeAt.toLocalDate() > today
-                            SleepTile(tr("ตื่น", "Up"), night.wakeAt.format(HM), Modifier.weight(1f), if (tomorrow) tr("พรุ่งนี้", "tomorrow") else null) {
-                                pickSystemTime(context, wake) { vm.setTonightWake(eve, it) }
-                            }
-                        }
-                        // Why the wake time is what it is: an event in the morning, or picked for tonight.
-                        val why = when {
-                            pickedWake != null && state.wakeFromWatch -> tr("ตั้งจากนาฬิกา", "Set on the watch")
-                            pickedWake != null -> tr("ตั้งเองสำหรับคืนนี้", "Picked for tonight")
-                            night.because != null -> tr("เผื่อ 1 ชม. ก่อน ${night.because!!.begin.format(HM)}: ${night.because!!.title}", "An hour before ${night.because!!.begin.format(HM)}: ${night.because!!.title}")
-                            else -> null
-                        }
-                        if (why != null) {
-                            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(why, Modifier.weight(1f), color = C.faint, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (pickedWake != null) {
-                                    Text(
-                                        tr("ใช้เวลาปกติ", "Use usual"),
-                                        Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.setTonightWake(eve, null) }.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        color = C.accentText, fontSize = TS.micro,
-                                    )
-                                }
-                            }
-                        }
-                        // The watch alarm, for any day and time; tapping opens it set like a clock's, starting from
-                        // tonight's wake time when there is none.
-                        val alarmAt = state.alarmAt?.takeIf { it > now }
-                        val on = alarmAt != null && !state.alarmFailed
-                        val tint = when { on -> C.lime; state.alarmFailed -> C.red; else -> C.accentText }
-                        var editingAlarm by remember { mutableStateOf(false) }
-                        if (editingAlarm) AlarmDialog(
-                            initial = alarmAt ?: night.wakeAt, isSet = alarmAt != null,
-                            onSet = { at -> vm.setAlarm(at, if (at == night.wakeAt) night.sleep else 0) },
-                            onOff = { vm.setAlarm(null) },
-                        ) { editingAlarm = false }
-                        Row(
-                            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(if (on) C.lime.copy(alpha = 0.12f) else C.raised)
-                                .clickable { editingAlarm = true }
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                when {
-                                    state.alarmFailed -> tr("ส่งไม่ถึงนาฬิกา แตะเพื่อลองใหม่", "Did not reach the watch, tap to retry")
-                                    alarmAt != null -> tr(
-                                        "นาฬิกาจะปลุก${alarmDay(alarmAt.date, today)} ${alarmAt.format(HM)}",
-                                        "The watch rings ${alarmDay(alarmAt.date, today)} at ${alarmAt.format(HM)}",
-                                    )
-                                    else -> tr("ตั้งปลุกที่นาฬิกา", "Set the watch alarm")
-                                },
-                                Modifier.weight(1f), color = if (on || state.alarmFailed) tint else C.text,
-                                fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                            if (alarmAt != null && !state.alarmFailed) Text(tr("อีก ${untilAlarm(alarmAt, now)}", "in ${untilAlarm(alarmAt, now)}"), color = C.muted, fontSize = TS.caption, maxLines = 1)
-                        }
-                    }
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
-                }
+                // Tonight's bed and wake times are no longer shown or set here: the free time above works them out
+                // from the day's events and the owner's usual rhythm.
                 run {
                     // The pinned countdowns, soonest first: a ring for a task, the timeline's bar for an event. Any of
                     // them opens the picker.
@@ -538,18 +447,6 @@ private fun DoneRing(done: Int, total: Int) {
     }
 }
 
-/** One of tonight's two times, big enough to tap; [day] says which day when it is not today. */
-@Composable
-private fun SleepTile(label: String, time: String, modifier: Modifier, day: String? = null, onClick: () -> Unit) {
-    Column(modifier.clip(RoundedCornerShape(12.dp)).background(C.raised).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text(label, color = C.muted, fontSize = TS.micro)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(time, color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
-            if (day != null) Text(day, Modifier.padding(start = 4.dp, bottom = 1.dp), color = C.muted, fontSize = TS.micro)
-        }
-    }
-}
-
 /** The line under the summary: tonight's sleep, or the pinned countdown during the day. */
 @Composable
 private fun FooterRow(onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
@@ -683,7 +580,8 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onCl
                 }
                 .padding(start = if (C.calm) 0.dp else 10.dp, end = 10.dp, top = if (running) 8.dp else 4.dp, bottom = if (running) 8.dp else 4.dp),
         ) {
-            Box(Modifier.width(3.dp).fillMaxHeight().background(if (past) C.faint else C.teal))
+            val mine = CalendarStyles.color(e.calendarId)
+            Box(Modifier.width(3.dp).fillMaxHeight().background(if (past) C.faint else mine ?: C.teal))
             if (running) {
                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
                     Text(e.title, color = C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
@@ -692,6 +590,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onCl
             } else {
                 Row(Modifier.weight(1f).fillMaxHeight().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(e.title, Modifier.weight(1f), color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    CalendarStyles.label(e.calendarId)?.let { Text(it, Modifier.padding(start = 8.dp), color = if (past) C.faint else mine ?: C.tealText, fontSize = TS.caption, maxLines = 1) }
                     Text(range, Modifier.padding(start = 8.dp), color = if (past) C.faint else C.tealText, fontSize = TS.caption, maxLines = 1)
                 }
             }

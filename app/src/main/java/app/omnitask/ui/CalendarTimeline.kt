@@ -268,9 +268,10 @@ fun CalendarTimeline(state: UiState, pool: List<Task>, vm: TaskViewModel, days: 
                                 val e = b.event
                                 val t = b.task
                                 if (e != null) {
+                                    val tone = CalendarStyles.color(e.calendarId) ?: C.teal
                                     TimeBlock(
                                         e.title, if (days == 1) eventTime(e) else null,
-                                        bar = C.teal, tint = C.teal.copy(alpha = 0.25f), fg = EventText, timeColor = C.tealText,
+                                        bar = tone, tint = tone.copy(alpha = 0.25f), fg = EventText, timeColor = C.tealText,
                                         size = textSize, height = h, done = false, onClick = { eventActions.open(e) }, onLongClick = { eventActions.inspect(e) }, modifier = place,
                                     )
                                 } else if (t != null) {
@@ -347,7 +348,7 @@ private fun TimeBlock(
 private fun AllDayPill(item: AllDayItem, size: TextUnit, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val task = item.task
     val done = task != null && !task.isOpen
-    val bg = if (task == null) C.teal.copy(alpha = 0.25f) else if (done) C.faint.copy(alpha = 0.12f) else task.priority.tint.copy(alpha = 0.22f)
+    val bg = if (task == null) ((item.event?.let { CalendarStyles.color(it.calendarId) }) ?: C.teal).copy(alpha = 0.25f) else if (done) C.faint.copy(alpha = 0.12f) else task.priority.tint.copy(alpha = 0.22f)
     Text(
         item.title,
         Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(bg).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 5.dp, vertical = 2.dp),

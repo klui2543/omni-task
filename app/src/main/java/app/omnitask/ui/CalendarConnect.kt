@@ -29,6 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.tr
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import app.omnitask.notify.CalendarEvent
 
 /**
@@ -96,12 +100,18 @@ fun CalendarRows(choices: CalendarChoices, mark: Long? = null) {
     if (visible.isEmpty()) {
         Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var styling by remember { mutableStateOf<Long?>(null) }
     visible.forEach { cal ->
         val on = !CalendarReader.isHidden(cal.id, choices.hidden)
         Row(Modifier.fillMaxWidth().clickable { choices.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The calendar's colour and label: whose events these are, at a glance (see CalendarStyles).
+            CalendarDot(cal.id) { styling = if (styling == cal.id) null else cal.id }
+            Box(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(cal.name.ifBlank { cal.account }, color = if (cal.id == mark) C.accentText else C.text, fontSize = TS.body)
                 val notes = listOfNotNull(
+                    CalendarStyles.label(cal.id)?.let { tr("ป้าย: $it", "Label: $it") },
                     cal.account.takeIf { it.isNotBlank() && it != cal.name },
                     if (cal.id == mark) tr("นัดที่แตะมาจากปฏิทินนี้", "The event you tapped is in this one") else null,
                 )
@@ -110,6 +120,7 @@ fun CalendarRows(choices: CalendarChoices, mark: Long? = null) {
             Box(Modifier.width(12.dp))
             OnOff(on)
         }
+        if (styling == cal.id) CalendarStyleEditor(context, cal.id)
     }
 }
 

@@ -39,6 +39,10 @@ import app.omnitask.model.Task
 import app.omnitask.model.Ygdrasil
 import app.omnitask.model.tr
 import app.omnitask.time.*
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Which picture of the work the assistant shows: the Timeline or the Ygdrasil tree. */
 enum class AiView { TIMELINE, YGDRASIL }
@@ -159,6 +163,45 @@ internal fun AiViewSwitch(view: AiView, onView: (AiView) -> Unit) {
             if (view == AiView.TIMELINE) tr("ถ่างสองนิ้วเพื่อซูม", "Pinch to zoom") else tr("ลากเพื่อเลื่อนดูกิ่ง", "Drag to move"),
             Modifier.weight(1f).padding(start = 10.dp), color = C.faint, fontSize = TS.micro, maxLines = 2,
         )
+    }
+}
+
+/**
+ * The overview's one row of controls: the view switch, the two filters used most (mine, sat too long) and a "?" that
+ * opens the rest: everyone's or Claude's work, what each mark means, and how to move around.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun AiViewBar(
+    view: AiView, onView: (AiView) -> Unit,
+    who: TimelineWho, staleOnly: Boolean, stuck: Int, onWho: (TimelineWho) -> Unit, onStale: () -> Unit,
+) {
+    var help by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Segmented(listOf(AiView.TIMELINE to "Timeline", AiView.YGDRASIL to "Ygdrasil"), view, onView, Modifier.width(190.dp))
+        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip(tr("ฉัน", "Me"), who == TimelineWho.ME && !staleOnly, { onWho(if (who == TimelineWho.ME) TimelineWho.ALL else TimelineWho.ME) }, dot = C.tealChip)
+            Chip(tr("ค้าง $stuck", "Stuck $stuck"), staleOnly, onStale, dot = C.amber)
+        }
+        Box(
+            Modifier.size(32.dp).clip(CircleShape).border(1.dp, C.cardBorder, CircleShape).clickable(onClickLabel = tr("ตัวกรองอื่นและความหมาย", "More filters and what the marks mean")) { help = true },
+            contentAlignment = Alignment.Center,
+        ) { Text("?", color = C.muted, fontSize = TS.body) }
+    }
+    if (help) androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = { help = false }, containerColor = C.card, contentColor = C.text,
+    ) {
+        Column(Modifier.padding(horizontal = 18.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(tr("ตัวกรองและความหมาย", "Filters and marks"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text(tr("งานของใคร", "Whose work"), color = C.muted, fontSize = TS.caption)
+            AiChips(who, staleOnly, stuck, onWho, onStale)
+            Text(tr("สัญลักษณ์", "Marks"), color = C.muted, fontSize = TS.caption)
+            AiLegend(view)
+            Text(
+                if (view == AiView.TIMELINE) tr("ถ่างสองนิ้วเพื่อซูม", "Pinch to zoom") else tr("ลากเพื่อเลื่อนดูกิ่ง", "Drag to move"),
+                color = C.faint, fontSize = TS.caption,
+            )
+        }
     }
 }
 

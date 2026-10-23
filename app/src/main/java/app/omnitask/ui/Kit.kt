@@ -89,6 +89,8 @@ object Ic {
     val back = icon("back", "M15 6l-6 6 6 6", width = 2f)
     val next = icon("next", "M9 6l6 6-6 6", width = 2f)
     val send = icon("send", "M5 12h14M13 6l6 6-6 6", width = 2.2f)
+    /** A speech bubble: the assistant line's way to its page while nothing is typed. */
+    val chat = icon("chat", "M5 5h14v10H10l-5 4Z")
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
     val pen = icon("pen", "M4 20l1-4 11-11 3 3-11 11Z", "M14 7l3 3")
     val archive = icon("archive", "M3.5 4.5h17v4h-17Z", "M5 8.5v11h14v-11", "M10 12.5h4")

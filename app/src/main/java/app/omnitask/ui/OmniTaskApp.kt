@@ -111,6 +111,8 @@ enum class Screen(private val th: String, private val en: String, val icon: Imag
 @Composable
 fun OmniTaskApp(vm: TaskViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // Each calendar's colour and label, read once (see CalendarStyles).
+    CalendarStyles.load(LocalContext.current)
     val pickVault = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setVault(uri)
     }
@@ -508,12 +510,6 @@ private fun DockNav(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Opens the assistant's page without typing first.
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
-                    .clickable { focus.clearFocus(); onSelect(Screen.AI) },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.spark, tr("เปิดหน้าผู้ช่วย", "Open the assistant"), tint = C.accentText, modifier = Modifier.size(20.dp)) }
             BasicTextField(
                 value = question,
                 onValueChange = { question = it },
@@ -532,10 +528,16 @@ private fun DockNav(
                     }
                 },
             )
+            // On the right: with nothing typed, a speech bubble that opens the assistant's page; once typed, send.
             if (question.isNotBlank()) Box(
                 Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable { send() },
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.send, tr("ส่งถึงผู้ช่วย", "Send to the assistant"), tint = C.onAccent, modifier = Modifier.size(20.dp)) }
+            else Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
+                    .clickable { focus.clearFocus(); onSelect(Screen.AI) },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.chat, tr("เปิดหน้าผู้ช่วย", "Open the assistant"), tint = C.accentText, modifier = Modifier.size(20.dp)) }
         }
         if (keyboard) return@Column
         if (showAsk) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(C.divider))
