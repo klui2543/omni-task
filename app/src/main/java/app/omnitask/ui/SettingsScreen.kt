@@ -248,6 +248,7 @@ fun SettingsScreen(
                 }
             }
         }
+        item { NewLookSetting(context) }
         item {
             SettingsGroup(tr("ธีม", "Theme")) {
                 Segmented(

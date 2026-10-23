@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
+import app.omnitask.model.NextUp
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
 import app.omnitask.model.Projects
@@ -90,6 +91,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     val total = openToday + doneToday
     // Read off the plan, so the numbers match the overdue card and the timeline below.
     val overdue = DayPlan.lateCount(plan)
+    // The new look keeps red for real deadlines (📅) gone by; a slipped own target (⏳) alone is not red.
+    val realLate = state.tasks.any { it.isOpen && it.due.let { d -> d != null && d < today } }
     val eventCount = DayPlan.eventCount(plan)
     // The clock the timeline follows: it moves on at every minute, so the now line and the running event keep up with real time.
     var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -141,6 +144,20 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
+        // The new look (Settings switch): one task to do next, at the top.
+        if (NewLook.on) {
+            NextUp.ranked(state.tasks, today, NewLook.skippedFor(today)).firstOrNull()?.let { pick ->
+                item(key = "next-up") {
+                    NextUpCard(
+                        pick, if (free > 0) hours(free) else null, onOpen,
+                        onStart = { vm.setStatus(pick.task, Status.IN_PROGRESS) },
+                        onDone = { vm.toggleDone(pick.task) },
+                        onSkip = { NewLook.skip(context, pick.task.key, today) },
+                    )
+                }
+            }
+        }
+
         // Recordings not written down yet (no network, or the check was closed): try again or throw away.
         if (voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
             item { VoiceWaitingCard(voice, vm) }
@@ -161,7 +178,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     DoneRing(doneToday, total)
                     Row(Modifier.weight(1f).padding(start = 12.dp).height(IntrinsicSize.Min)) {
-                        Stat("$overdue", tr("ค้างอยู่", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
+                        Stat("$overdue", tr("ค้างอยู่", "Overdue"), if (overdue > 0 && (!NewLook.on || realLate)) C.red else C.text, Modifier.weight(1f))
                         Stat("$eventCount", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
                         if (night != null && isNight) {
                             Stat(hm(night.toBed), tr("ก่อนนอน", "Until bed"), if (night.toBed < 30) C.amber else C.text, Modifier.weight(1f))
@@ -268,7 +285,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         if (overdueSection != null) item {
             Card {
                 Box(Modifier.height(6.dp))
-                PlanHead(overdueSection.part.label, C.red, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
+                PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
                 overdueSection.items.forEach { item ->
                     if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
                 }
@@ -529,7 +546,11 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
             ).joinToString(", ")
             val clock = if (done) null else item.time
-            if (clock != null || lateText != null || rest.isNotEmpty()) {
+            // The new look: a slipped own target (⏳, no 📅 gone by) says so quietly.
+            val targetText = if (NewLook.on && !done && lateText == null && NextUp.onlyTargetLate(t, today)) {
+                t.scheduled?.let { tr("เลยเป้า ${ChronoUnit.DAYS.between(it, today)} วัน", "target ${ChronoUnit.DAYS.between(it, today)} days ago") }
+            } else null
+            if (clock != null || lateText != null || targetText != null || rest.isNotEmpty()) {
                 Row(
                     Modifier.padding(top = 1.dp).then(if (stuck) Modifier.clip(RoundedCornerShape(6.dp)).clickable { explaining = true } else Modifier),
                     verticalAlignment = Alignment.CenterVertically,
@@ -539,7 +560,8 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                         Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", color = C.muted, fontSize = TS.caption)
                     }
                     if (lateText != null) Text(lateText, color = C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                    if (rest.isNotEmpty()) Text((if (lateText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (targetText != null) Text(targetText, color = C.muted, fontSize = TS.caption)
+                    if (rest.isNotEmpty()) Text((if (lateText != null || targetText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
