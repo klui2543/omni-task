@@ -308,11 +308,18 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
         add(Meta(text, if (late) C.redSoft else Color.Transparent, if (late) C.red else C.muted))
     }
     if (t.due == null || !compact) t.scheduled?.let { d ->
-        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), Color.Transparent, C.muted))
+        // The new look names a slipped own target as such, in grey: it is not a deadline.
+        val text = when {
+            NewLook.on && open && d < today -> tr("เลยเป้า ${ChronoUnit.DAYS.between(d, today)} วัน", "target ${ChronoUnit.DAYS.between(d, today)} days ago")
+            d == today -> tr("นัดวันนี้", "Sched. today")
+            else -> tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}")
+        }
+        add(Meta(text, Color.Transparent, C.muted))
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
-    t.reminderTime?.let { add(Meta(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
-    t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
+    // The new look leaves the reminder and repeat out of the row; the task sheet still shows them.
+    if (!NewLook.on) t.reminderTime?.let { add(Meta(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
+    if (!NewLook.on) t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
     if (!compact) {
         val project = Projects.projectOf(t)
         val tags = t.tags.filterNot { it.startsWith("remind-at-") }

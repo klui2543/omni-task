@@ -1,5 +1,7 @@
 package app.omnitask.ui
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -203,7 +205,30 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             shown.forEachIndexed { i, p ->
                 item(key = p.name) {
                     val lifted = dragging == p.name
-                    Card(
+                    // The new look: a row, not a card. Name, steps done, a thin bar, and the next step.
+                    if (NewLook.on && !arranging) {
+                        val tint = RING[i % RING.size]
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { openName = p.name }.padding(start = 4.dp, end = 0.dp, top = 4.dp, bottom = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(8.dp).clip(CircleShape).background(tint))
+                                Text(p.name, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${p.done}/${p.tasks.size}", color = C.muted, fontSize = TS.caption)
+                                val on = p.name in state.starred
+                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
+                            }
+                            Box(Modifier.padding(start = 18.dp, end = 12.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.divider)) {
+                                Box(Modifier.fillMaxWidth(p.ratio.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(tint))
+                            }
+                            Row(Modifier.padding(start = 18.dp, top = 6.dp, end = 12.dp)) {
+                                Text(
+                                    p.next?.let { tr("ถัดไป: ", "Next: ") + it.title } ?: tr("ไม่มีงานค้าง", "Nothing open"),
+                                    Modifier.weight(1f, fill = false), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                if (p.overdue > 0) Text(tr("  เลยกำหนดจริง ${p.overdue}", "  ${p.overdue} past deadline"), color = C.red, fontSize = TS.caption, maxLines = 1)
+                            }
+                            Box(Modifier.padding(top = 12.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                        }
+                    } else Card(
                         Modifier.zIndex(if (lifted) 1f else 0f)
                             .graphicsLayer { translationY = if (lifted) dragOffset else 0f; shadowElevation = if (lifted) 16f else 0f }
                             .clickable(enabled = !arranging) { openName = p.name },
@@ -275,7 +300,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             if (!arranging) listCards(state, { openListPath = it.path }) { creatingList = true }
         } else {
             item(key = "views") { ProjectViewSwitch(null) { projectView = it } }
-            item {
+            if (!NewLook.on) item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatCard("${(open.ratio * 100).toInt()}%", tr("เสร็จแล้ว", "Done"), C.lime, Modifier.weight(1f))
                     StatCard("${open.overdue}", tr("เลยกำหนด", "Overdue"), if (open.overdue > 0) C.red else C.text, Modifier.weight(1f))
@@ -392,5 +417,25 @@ private fun IconTap(icon: androidx.compose.ui.graphics.vector.ImageVector, descr
 /** Overview, or one of the views over just this project's tasks. */
 @Composable
 private fun ProjectViewSwitch(selected: Mode?, modifier: Modifier = Modifier, onSelect: (Mode?) -> Unit) {
+    // The new look: one button for the view, as on the Tasks page, instead of six side by side.
+    if (NewLook.on) {
+        val views = listOf<Pair<Mode?, String>>(null to tr("ขั้นตอน", "Steps")) + Mode.entries.map { it to it.label }
+        var choosing by remember { mutableStateOf(false) }
+        Box(modifier) {
+            Row(
+                Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).background(C.card).clickable { choosing = true }.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) { Text(tr("มุมมอง: ", "View: ") + views.first { it.first == selected }.second, color = C.text2, fontSize = TS.body) }
+            androidx.compose.material3.DropdownMenu(choosing, { choosing = false }, containerColor = C.raised) {
+                views.forEach { (m, label) ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(label, color = if (m == selected) C.accentText else C.text, fontSize = TS.body, fontWeight = if (m == selected) FontWeight.SemiBold else FontWeight.Normal) },
+                        onClick = { choosing = false; onSelect(m) },
+                    )
+                }
+            }
+        }
+        return
+    }
     Segmented(listOf<Pair<Mode?, String>>(null to tr("ภาพรวม", "Overview")) + Mode.entries.map { it to it.label }, selected, onSelect, modifier.fillMaxWidth())
 }

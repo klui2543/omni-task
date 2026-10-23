@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -118,6 +120,66 @@ fun NewLookSetting(context: Context) {
                 )
             }
             OnOff(NewLook.on)
+        }
+    }
+}
+
+/**
+ * The day's brief at the top of the secretary's chat, in the new look: a small head with the time and a refresh, the
+ * day in one line, then the task to do first and the one after, each with its reason and opening on a tap. Own
+ * targets that slipped are one quiet line, with an offer to find them new dates.
+ */
+@Composable
+fun BriefCard(
+    ai: AiUi, picks: List<Pair<Task, String>>, lateTargets: Int,
+    onOpen: (Task) -> Unit, onRefresh: () -> Unit, onSettings: () -> Unit, onAsk: (String) -> Unit,
+) {
+    Card {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("สรุปวันนี้", "Today's brief"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                if (ai.hasKey) Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(20.dp)).clickable(enabled = !ai.briefing, onClick = onRefresh),
+                    contentAlignment = Alignment.Center,
+                ) { androidx.compose.material3.Icon(Ic.refresh, tr("อ่านใหม่", "Read again"), tint = C.faint, modifier = Modifier.size(16.dp)) }
+                else Box(Modifier.size(40.dp))
+            }
+            Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val brief = ai.brief
+                val line = when {
+                    !ai.hasKey -> tr("ใส่ Gemini API key ในตั้งค่า แล้วเลขาจะสรุปวันให้", "Add a Gemini API key in Settings for a daily brief")
+                    brief == null && ai.briefing -> tr("กำลังอ่านงานทั้งหมด...", "Reading all your work...")
+                    brief == null && ai.briefError != null -> ai.briefError
+                    brief == null -> tr("แตะปุ่มอ่านใหม่ เพื่อให้เลขาสรุปวันนี้", "Tap read again for today's brief")
+                    else -> brief.summary
+                }
+                if (!line.isNullOrBlank()) Text(
+                    line, color = if (brief == null && ai.briefError != null) C.amber else C.text2, fontSize = TS.body,
+                    modifier = if (!ai.hasKey) Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onSettings) else Modifier,
+                )
+                picks.take(2).forEachIndexed { i, (t, reason) ->
+                    Row {
+                        Text(
+                            if (i == 0) tr("ทำก่อน", "First") else tr("แล้วต่อ", "Then"),
+                            Modifier.width(64.dp).padding(top = 1.dp), color = if (i == 0) C.accentText else C.muted, fontSize = TS.caption, fontWeight = FontWeight.SemiBold,
+                        )
+                        Column(Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).clickable { onOpen(t) }) {
+                            Text(t.title, color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (reason.isNotBlank()) Text(reason, color = C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                if (lateTargets > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(tr("เลยเป้าที่ตั้งเอง $lateTargets งาน ไม่ต้องทำวันนี้", "$lateTargets own targets slipped, not for today"), Modifier.weight(1f), color = C.faint, fontSize = TS.caption)
+                    Text(
+                        tr("เสนอวันใหม่", "New dates"),
+                        Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                            onAsk(tr("ช่วยเสนอวันใหม่ให้งานที่เลยเป้าที่ตั้งเอง $lateTargets งาน ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Suggest new dates for the $lateTargets slipped own targets from my real free time, not all on one day"))
+                        }.padding(horizontal = 8.dp, vertical = 8.dp),
+                        color = C.accentText, fontSize = TS.caption,
+                    )
+                }
+            }
         }
     }
 }

@@ -255,7 +255,9 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             if (NewLook.on && profile.exists && !interviewing) {
                 askCard?.let { card -> item(key = "ask-card") { card() } }
                 item(key = "brief-line") {
-                    AiBriefLine(state.ai, 0, briefOpen, { briefOpen = !briefOpen }, { vm.aiBrief(force = true) }, onSettings)
+                    val ordered = picks.mapNotNull { (k, why) -> state.tasks.firstOrNull { it.key == k }?.let { it to why } }
+                    val lateTargets = state.tasks.count { !it.isSubtask && it.list == null && app.omnitask.model.NextUp.onlyTargetLate(it, state.today) }
+                    BriefCard(state.ai, ordered, lateTargets, onOpen, { vm.aiBrief(force = true) }, onSettings) { vm.askAi(it) }
                 }
             }
             if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {

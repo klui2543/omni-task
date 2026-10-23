@@ -246,8 +246,9 @@ object AiAssist {
 - แยกให้ชัดว่าอะไรคือข้อเท็จจริงจากข้อมูล อะไรคือคำแนะนำของคุณ"""
 
     private const val BRIEF_ASK = """สรุปภาพรวมงานตอนนี้ให้เจ้าของงานเห็นใน 3 วินาที
-- summary: 1 ถึง 2 ประโยค บอกว่างานติดที่ไหน (ที่เจ้าของ ที่ Claude หรือเลยกำหนด) และควรเริ่มตรงไหน
-- picks: งานที่ควรดูก่อน 1 ถึง 4 งาน เรียงจากสำคัญสุด แต่ละงานมี reason สั้นไม่เกิน 1 ประโยค ว่าทำไมควรดูและควรทำอะไรต่อ"""
+- summary: ประโยคเดียวสั้น ๆ บอกสภาพวันนี้ เช่น ว่างถึงกี่โมง หรือพรุ่งนี้เข้าเวรอะไร ห้ามพูดกว้าง ๆ ว่า "ควรเริ่มจากงานที่เลยกำหนด" เพราะชื่องานที่ควรทำอยู่ใน picks แล้ว
+- picks: งานที่ควรทำก่อน 1 ถึง 4 งาน เรียงตามลำดับที่ควรทำ งานแรกคือ "ทำก่อน" งานที่สองคือ "แล้วต่อ" แต่ละงานมี reason สั้นไม่เกิน 10 คำ ว่าทำไมงานนี้ (เช่น มีคนรอ 2 วัน, กำหนดจริงพรุ่งนี้)
+- งานที่เลยแค่วัน "นัดทำ" (เป้าที่เจ้าของตั้งเอง) ไม่ด่วนเท่างานที่เลย "กำหนด" (กำหนดจริง)"""
 
     private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer
 เจ้าของสั่งแก้งานได้ทุกอย่าง ใส่สิ่งที่จะแก้ใน actions (ไม่เกิน 8 ข้อ) แอปจะแสดงให้เจ้าของกดยืนยันทีละข้อก่อนแก้จริง ใน answer ให้บอกสั้น ๆ ว่าเตรียมอะไรไว้ให้ยืนยัน ห้ามบอกว่าทำเสร็จแล้ว
@@ -339,7 +340,8 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
             put("responseMimeType", "application/json")
             put("responseSchema", schema)
             put("temperature", 0.4)
-            put("maxOutputTokens", 2048)
+            // Thai takes many tokens, and a model that thinks counts its thinking here too: room for a long proposal.
+            put("maxOutputTokens", 8192)
             // Thinking made answers slow on the phone; task questions need almost none.
             putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
         }
@@ -383,6 +385,9 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         }
         val parts = (cand["content"] as? JsonObject)?.get("parts") as? JsonArray
         val text = parts?.mapNotNull { p -> (p as? JsonObject)?.takeIf { it["thought"]?.jsonPrimitive?.contentOrNull != "true" }?.get("text")?.jsonPrimitive?.contentOrNull }?.joinToString("")
+        if (cand["finishReason"]?.jsonPrimitive?.contentOrNull == "MAX_TOKENS") {
+            throw Failure(tr("คำตอบยาวเกินจนถูกตัดกลางทาง ลองถามทีละไม่กี่งาน", "The answer ran too long and was cut off. Ask about fewer tasks at a time."))
+        }
         if (text.isNullOrBlank()) throw Failure(tr("Gemini ไม่ได้ตอบอะไรกลับมา", "Gemini sent nothing back") + " (${cand["finishReason"]?.jsonPrimitive?.contentOrNull ?: "?"})")
         return text
     }
