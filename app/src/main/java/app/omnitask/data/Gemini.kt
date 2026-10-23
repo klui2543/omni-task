@@ -62,8 +62,8 @@ class Gemini(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(150, TimeUnit.SECONDS)
-        .callTimeout(180, TimeUnit.SECONDS)
+        .readTimeout(75, TimeUnit.SECONDS)
+        .callTimeout(90, TimeUnit.SECONDS)
         .build()
 
     private val base = "https://generativelanguage.googleapis.com/v1beta"
@@ -74,8 +74,26 @@ class Gemini(private val context: Context) {
      * once and retries.
      */
     fun generate(body: String, key: String = AiKey.get(context) ?: throw AiAssist.Failure(NO_KEY)): String {
-        // A model that does not take the thinking setting says so once; after that it is left out, so no call is made twice.
         val model = AiKey.model(context)
+        usedModel = model
+        // Google busy (5xx), the free quota used up, or no answer in time: the newest Flash-Lite answers instead,
+        // once, without changing the model the owner picked. The chat shows which model answered.
+        val first = runCatching { attempt(model, body, key) }
+        if (first.exceptionOrNull() !is Busy) return first.getOrThrow()
+        val lite = list(key)?.let(AiAssist::fallbackModel)?.takeIf { it != model } ?: return first.getOrThrow()
+        usedModel = lite
+        return attempt(lite, body, key)
+    }
+
+    /** The model that answered the last [generate]: the one picked, or the Flash-Lite that stood in for it. */
+    @Volatile var usedModel: String? = null
+        private set
+
+    /** Google could not answer now (busy, quota, too slow); another model may. */
+    class Busy(message: String) : AiAssist.Failure(message)
+
+    private fun attempt(model: String, body: String, key: String): String {
+        // A model that does not take the thinking setting says so once; after that it is left out, so no call is made twice.
         var first = post(model, if (AiKey.noThinking(context, model)) AiAssist.withoutThinking(body) else body, key)
         if (first.first == 400 && first.second.contains("thinking", ignoreCase = true)) {
             AiKey.setNoThinking(context, model)
@@ -106,7 +124,7 @@ class Gemini(private val context: Context) {
         } catch (e: java.io.InterruptedIOException) {
             // A read or call timeout: the connection worked, the answer was slow. A connect timeout is the network.
             if (e.message?.contains("connect", ignoreCase = true) == true) throw AiAssist.Failure(NO_NET)
-            throw AiAssist.Failure(SLOW)
+            throw Busy(SLOW)
         } catch (e: IOException) {
             throw AiAssist.Failure(NO_NET + (e.message?.let { " ($it)" } ?: ""))
         }
@@ -167,12 +185,12 @@ class Gemini(private val context: Context) {
         val (code, text) = r
         if (code in 200..299) return text
         val said = runCatching { AiAssist.answerText(text) }.exceptionOrNull()?.message
+        if (code == 429) throw Busy(QUOTA)
+        if (code in 500..599) throw Busy(tr("Gemini ขัดข้องชั่วคราว ($code)", "Gemini is having trouble ($code)") + (said?.let { ": $it" } ?: ""))
         throw AiAssist.Failure(
             when (code) {
                 400 -> if (said?.contains("API key", ignoreCase = true) == true) BAD_KEY else said ?: tr("Gemini ไม่รับคำขอ ($code)", "Gemini refused the request ($code)")
                 401, 403 -> BAD_KEY
-                429 -> QUOTA
-                in 500..599 -> tr("Gemini ขัดข้องชั่วคราว ลองใหม่อีกครั้ง", "Gemini is having trouble. Try again")
                 else -> said ?: tr("Gemini ตอบว่าผิดพลาด ($code)", "Gemini returned an error ($code)")
             },
         )

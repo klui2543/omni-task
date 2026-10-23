@@ -385,7 +385,7 @@ object AiAssist {
     }
 
     /** What went wrong, from Gemini's own words where it gave them. */
-    class Failure(message: String) : Exception(message)
+    open class Failure(message: String) : Exception(message)
 
     /** The JSON the model wrote, out of a generateContent response, or a [Failure]. */
     fun answerText(response: String): String = answerTextOrCut(response).also { (_, cut) ->

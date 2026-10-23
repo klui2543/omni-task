@@ -2220,6 +2220,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val picture = ctx.picture
             val memory = AiMemory.memoryForModel(ctx.memory)
             val started = System.currentTimeMillis()
+            var brokenKept = false
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
@@ -2238,6 +2239,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val raw = generate(short = false)
                     val first = runCatching { AiAssist.parseReply(raw, picture) }.getOrElse { e ->
                         if (e !is AiAssist.Failure || "\"candidates\"" !in raw) throw e
+                        brokenKept = true
                         if (vault != null) runCatching {
                             repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น ${AiKey.model(getApplication())}\nปัญหา ${e.message}\nคำถาม $text\n\n```\n${raw.take(8000)}\n```\n")
                         }
@@ -2255,7 +2257,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
-            val model = AiKey.model(getApplication())
+            // The model that answered: the one picked, or the Flash-Lite that stood in while it was busy.
+            val model = gemini.usedModel ?: AiKey.model(getApplication())
+            // Every failure is noted in ตรวจ Gemini.md (a broken answer already wrote its text there), so Claude
+            // can always see what went wrong, also when Google sent no answer at all.
+            r.exceptionOrNull()?.let { e ->
+                val vault = _state.value.vault
+                if (vault != null && !brokenKept) launch(Dispatchers.IO) {
+                    runCatching { repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น $model\nใช้เวลา $seconds วินาที\nปัญหา ${e.message}\nคำถาม $text\n\n(Google ไม่ได้ส่งคำตอบมา)\n") }
+                }
+            }
             val answer = r.fold(
                 { (reply, searched) -> Chat.AiAnswer(reply.text, reply.actions, model = model, seconds = seconds, searched = searched) },
                 { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
