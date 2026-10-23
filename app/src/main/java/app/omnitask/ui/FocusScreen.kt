@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,7 +69,13 @@ private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
-fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit) {
+fun FocusScreen(
+    state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
+    onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {},
+) {
+    // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
+    val nl = NewLook.on
+    var lateOpen by rememberSaveable { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
     val voice by vm.voice.collectAsStateWithLifecycle()
@@ -130,10 +137,20 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
+        verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
-        item {
+        if (nl) item {
+            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("วันนี้", "Today"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
+                    Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
+                }
+                menu()
+                SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
+            }
+        }
+        if (!nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
@@ -175,7 +192,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
         item {
             Card {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (!nl) Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     DoneRing(doneToday, total)
                     Row(Modifier.weight(1f).padding(start = 12.dp).height(IntrinsicSize.Min)) {
                         Stat("$overdue", tr("ค้างอยู่", "Overdue"), if (overdue > 0 && (!NewLook.on || realLate)) C.red else C.text, Modifier.weight(1f))
@@ -187,7 +204,7 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                     }
                 }
-                Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+                if (!nl) Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
                 // Tonight's bed and wake times are no longer shown or set here: the free time above works them out
                 // from the day's events and the owner's usual rhythm.
                 run {
@@ -227,9 +244,10 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 "A sync clash left a copy: ${path.substringAfterLast('/')}\nThe app skips it. Check it for anything the main note lacks, then delete it.",
             )
         }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
-        brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
+        // The new look leaves out the nudges ("3 days without touching..."): the secretary brings them up in its chat.
+        if (!nl) brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
-        if (state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
+        if (!nl && state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
 
         // Overdue work is not part of the day's timeline: it sits in its own card below it.
         val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
@@ -282,7 +300,33 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
-        if (overdueSection != null) item {
+        // The new look folds overdue work into one line: open it to see the list, or hand it to the secretary.
+        if (nl && overdueSection != null) item {
+            val n = overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
+            Card {
+                Row(Modifier.fillMaxWidth().clickable { lateOpen = !lateOpen }.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("ค้าง $n งาน", "$n open from before"), color = if (realLate) C.red else C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
+                        Text(if (lateOpen) tr("แตะเพื่อพับ", "Tap to fold") else tr("แตะเพื่อดูรายการ", "Tap to see them"), color = C.muted, fontSize = TS.caption)
+                    }
+                    Text(
+                        tr("ให้เลขาจัด", "Ask the secretary"),
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable {
+                            onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
+                        }.padding(horizontal = 10.dp, vertical = 10.dp),
+                        color = C.accentText, fontSize = TS.body,
+                    )
+                }
+                if (lateOpen) {
+                    overdueSection.items.forEach { item ->
+                        if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
+                    }
+                    Box(Modifier.height(8.dp))
+                }
+            }
+        }
+
+        if (!nl && overdueSection != null) item {
             Card {
                 Box(Modifier.height(6.dp))
                 PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
@@ -316,8 +360,27 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         }
 
         // Either card goes when its kind is hidden; the other then takes the row.
-        val showWaiting = TaskKind.WAITING !in state.hiddenKinds
-        val showFuture = TaskKind.FUTURE !in state.hiddenKinds
+        // The new look: real deadlines (📅) in the next week, instead of the waiting and future cards.
+        if (nl) {
+            val soon = state.tasks.filter { it.isOpen && it.list == null && it.due.let { d -> d != null && d > today && d <= today.plusDays(7) } }
+                .sortedBy { it.due }.take(3)
+            if (soon.isNotEmpty()) item {
+                Column {
+                    Text(tr("กำหนดจริงใน 7 วัน", "Real deadlines this week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                    Card {
+                        soon.forEachIndexed { i, t ->
+                            if (i > 0) Divider(start = 14.dp)
+                            Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(t.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(t.due!!.format(SHORT_DATE), Modifier.padding(start = 10.dp), color = C.amber, fontSize = TS.caption)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
+        val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
         if (showWaiting || showFuture) item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Each card shows one task at a time: swipe for the next, or tap the head to see them all at once.

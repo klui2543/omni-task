@@ -31,7 +31,9 @@ import kotlinx.datetime.LocalDate
 
 /**
  * The new look, tried one piece at a time behind a switch in Settings so the owner can go back at once.
- * For now: one "do next" card at the top of Focus, and red kept for real deadlines (📅) only.
+ * So far: Today with one "do next" card and no scores or nudges, red kept for real deadlines (📅), a Secretary tab in
+ * place of the assistant line (Settings behind a gear on Today), the secretary opening on its chat, one button for the
+ * task views, and quieter task rows. The calendar is left as it is.
  * Kept on this phone, as Compose state so the screens follow the switch at once.
  */
 object NewLook {
@@ -106,9 +108,12 @@ fun NewLookSetting(context: Context) {
     SettingsGroup(tr("ลองหน้าตาใหม่", "Try the new look")) {
         Row(Modifier.fillMaxWidth().clickable { NewLook.set(context, !NewLook.on) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(tr("การ์ด ทำต่อไป บนหน้าโฟกัส", "A do next card on Focus"), color = C.text, fontSize = TS.body)
+                Text(tr("หน้าวันนี้ แท็บเลขา และหน้าตาที่สงบขึ้น", "Today, a Secretary tab and a calmer look"), color = C.text, fontSize = TS.body)
                 Text(
-                    tr("สีแดงเฉพาะกำหนดจริง (📅) เป้าที่ตั้งเอง (⏳) ที่เลยมาเป็นสีเทา ปิดเมื่อไหร่ก็กลับเป็นแบบเดิม", "Red only for real deadlines (📅); slipped own targets (⏳) turn grey. Switch off to go back."),
+                    tr(
+                        "แท็บ วันนี้ งาน + โปรเจกต์ เลขา (ตั้งค่าอยู่ที่เฟืองบนหน้าวันนี้) การ์ด ทำต่อไป, แดงเฉพาะกำหนดจริง (📅), งานค้างพับเป็นบรรทัดเดียว, เลขาเปิดที่แชต, มุมมองงานรวมเป็นปุ่มเดียว ปฏิทินเหมือนเดิม ปิดเมื่อไหร่ก็กลับเป็นแบบเดิม",
+                        "Tabs Today, Tasks, +, Projects, Secretary (Settings is the gear on Today). A do next card, red only for real deadlines (📅), overdue folded to one line, the secretary opens on its chat, one button for the task views. The calendar is unchanged. Switch off to go back.",
+                    ),
                     color = C.muted, fontSize = TS.caption,
                 )
             }

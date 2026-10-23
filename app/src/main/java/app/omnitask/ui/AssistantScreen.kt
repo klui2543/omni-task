@@ -176,9 +176,10 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
     Column(Modifier.fillMaxSize()) {
         // One line: the title, the two tabs beside it, and starting over once there is a conversation.
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("ผู้ช่วย", "Assistant"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
+            Text(if (NewLook.on) tr("เลขา", "Secretary") else tr("ผู้ช่วย", "Assistant"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
-            Segmented(
+            // The new look opens on the conversation only: the overview's map repeated Today and Projects.
+            if (!NewLook.on) Segmented(
                 listOf(AiTab.OVERVIEW to tr("ภาพรวม", "Overview"), AiTab.CHAT to tr("แชต", "Chat") + state.chat.count { it is Chat.Asked }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()),
                 tab, { tab = it }, Modifier.padding(start = 8.dp).width(190.dp),
             )
@@ -212,6 +213,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             }
             else -> null
         }
+        if (NewLook.on && tab != AiTab.CHAT) tab = AiTab.CHAT
         if (tab == AiTab.OVERVIEW && profile.exists && !interviewing) Column(
             Modifier.weight(1f).fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -249,6 +251,13 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
 
 
 
+            // The new look: what the overview said up top (the day's brief, a question to answer) opens the chat.
+            if (NewLook.on && profile.exists && !interviewing) {
+                askCard?.let { card -> item(key = "ask-card") { card() } }
+                item(key = "brief-line") {
+                    AiBriefLine(state.ai, 0, briefOpen, { briefOpen = !briefOpen }, { vm.aiBrief(force = true) }, onSettings)
+                }
+            }
             if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {
                 Text(
                     if (state.ai.hasKey) tr("ถามหรือสั่งงานได้ที่ช่องด้านล่าง เช่น เพิ่มงาน เลื่อนวัน หรือถามว่าอะไรค้างนานสุด", "Ask or give an order below: add a task, move a date, or ask what has sat longest")

@@ -315,7 +315,11 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
     t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
     if (!compact) {
         val project = Projects.projectOf(t)
-        t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
+        val tags = t.tags.filterNot { it.startsWith("remind-at-") }
+        // The new look keeps tags quiet and to two, so the title is what the eye finds first.
+        if (NewLook.on) tags.sortedBy { it != project }.take(2).forEach { tag ->
+            add(Meta(if (tag == project) tag else "#$tag", Color.Transparent, if (tag == project) C.muted else C.faint))
+        } else tags.forEach { tag ->
             if (tag == project) add(Meta(tag, Color.Transparent, C.tealText)) else add(Meta("#$tag", Color.Transparent, C.accentText))
         }
     }
@@ -344,6 +348,7 @@ fun TaskRow(
                     task.title,
                     Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (NewLook.on && !done) FontWeight.Medium else null,
                     color = if (done || blockedBy != null) C.muted else C.text,
                     textDecoration = if (done) TextDecoration.LineThrough else null,
                     maxLines = if (compact) 2 else 4,

@@ -251,7 +251,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val fullPage = remember { mutableIntStateOf(0) }
     // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
-    val askShown = screen != Screen.AI
+    // The new look leaves the assistant line out: the secretary has its own tab instead.
+    val askShown = screen != Screen.AI && !NewLook.on
     val dockHeight = DOCK_HEIGHT + 1.dp + if (askShown) ASK_HEIGHT else 0.dp
     val dock = if (rail || fullPage.intValue > 0) 0.dp else dockHeight + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -268,7 +269,13 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
                     Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
                     when (screen) {
-                        Screen.FOCUS -> PullToReload(state.loading, vm::pullRefresh) { FocusScreen(state, vm, open, menu) }
+                        Screen.FOCUS -> PullToReload(state.loading, vm::pullRefresh) {
+                            FocusScreen(
+                                state, vm, open, menu,
+                                onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE },
+                                onAsk = { vm.askAi(it); screen = Screen.AI },
+                            )
+                        }
                         Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }
                         Screen.PROJECTS -> PullToReload(state.loading, vm::pullRefresh) { ProjectsScreen(state, vm, open) }
                         Screen.AI -> AssistantScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
@@ -543,7 +550,8 @@ private fun DockNav(
         if (keyboard) return@Column
         if (showAsk) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(C.divider))
         Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            DockItem(Screen.FOCUS.label, selected == Screen.FOCUS, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
+            // The new look: Today, Tasks, add, Projects and the secretary; Settings moves to the gear on Today.
+            DockItem(if (NewLook.on) tr("วันนี้", "Today") else Screen.FOCUS.label, selected == Screen.FOCUS, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
             DockItem(Screen.TASKS.label, selected == Screen.TASKS, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
             // Adding a task, in the middle of the tabs where it always was.
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
@@ -554,7 +562,8 @@ private fun DockNav(
                 ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp)) }
             }
             DockItem(tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
-            DockItem(Screen.MORE.label, selected == Screen.MORE, { onSelect(Screen.MORE) }, Modifier.weight(1f))
+            if (NewLook.on) DockItem(tr("เลขา", "Secretary"), selected == Screen.AI, { onSelect(Screen.AI) }, Modifier.weight(1f))
+            else DockItem(Screen.MORE.label, selected == Screen.MORE, { onSelect(Screen.MORE) }, Modifier.weight(1f))
         }
     }
 }
