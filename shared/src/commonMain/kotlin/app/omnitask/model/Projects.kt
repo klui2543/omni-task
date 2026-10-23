@@ -50,6 +50,16 @@ object Projects {
     fun seed(tasks: List<Task>): Set<String> =
         tasks.filter { it.status != Status.CANCELLED }.mapNotNull { t -> t.tags.firstOrNull(::plain)?.substringBefore('/') }.toSet()
 
+    /**
+     * Project names a task added in the last [days] days brings that are not projects yet (and were not taken off
+     * by the owner, [declined]): the secretary writes a task with its project's tag, and the project then grows
+     * its own branch in Ygdrasil without the owner making it by hand.
+     */
+    fun newOnes(tasks: List<Task>, made: Set<String>, declined: Set<String>, today: LocalDate, days: Int = 3): Set<String> =
+        tasks.filter { it.isOpen && it.list == null && it.created?.let { c -> c >= today.plusDays(-days.toLong()) } == true }
+            .mapNotNull { t -> t.tags.firstOrNull(::plain)?.substringBefore('/')?.takeIf { it.isNotEmpty() } }
+            .filter { it !in made && it !in declined }.toSet()
+
     /** Tags on [tasks] that are not projects and could be made one, with how many tasks carry each; most used first. */
     fun others(tasks: List<Task>): List<Pair<String, Int>> {
         val made = chosen ?: return emptyList()

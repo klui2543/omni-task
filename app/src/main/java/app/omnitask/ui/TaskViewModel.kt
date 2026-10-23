@@ -929,6 +929,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
             if (_state.value.projectTags == null) {
                 result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
+            } else {
+                // A task the secretary just wrote with a new project's tag: that project gets its branch.
+                val fresh = result.getOrNull()?.tasks?.let { Projects.newOnes(it, _state.value.projectTags.orEmpty(), prefs.getStringSet(KEY_DECLINED, null).orEmpty(), LocalDate.now()) }.orEmpty()
+                if (fresh.isNotEmpty()) saveProjectTags(_state.value.projectTags.orEmpty() + fresh)
             }
             // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
             aiUpkeep()
@@ -1615,6 +1619,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setProject(tag: String, on: Boolean) {
         val s = _state.value
         val now = s.projectTags ?: Projects.seed(s.tasks + s.parked)
+        // Taking a project off is remembered, so a new task with its tag does not bring it back.
+        val root = tag.substringBefore('/')
+        val declined = prefs.getStringSet(KEY_DECLINED, null).orEmpty()
+        prefs.edit().putStringSet(KEY_DECLINED, if (on) declined - root else declined + root).apply()
         saveProjectTags(if (on) now + tag else now - tag)
     }
 
@@ -2919,6 +2927,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_TAGS = "projectTags"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
+        const val KEY_DECLINED = "declinedProjects"
         /** The single countdown (a task title) kept before there could be several; read once, then removed. */
         const val KEY_COUNTDOWN = "focus.countdown"
         const val KEY_COUNTDOWNS = "focus.countdowns"
