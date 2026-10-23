@@ -163,7 +163,17 @@ fun FocusScreen(
 
         // The new look (Settings switch): one task to do next, at the top.
         if (NewLook.on) {
-            NextUp.ranked(state.tasks, today, NewLook.skippedFor(today)).firstOrNull()?.let { pick ->
+            val skippedToday = NewLook.skippedFor(today)
+            val next = NextUp.ranked(state.tasks, today, skippedToday).firstOrNull()
+            // Everything put off with "not now": say so, one tap from seeing them again.
+            if (next == null && skippedToday.isNotEmpty() && NextUp.ranked(state.tasks, today).isNotEmpty()) item(key = "next-up-skipped") {
+                Text(
+                    tr("ข้ามงานถัดไปไว้ ${skippedToday.size} งานวันนี้ แตะเพื่อดูอีกครั้ง", "${skippedToday.size} tasks put off today. Tap to see them again"),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { NewLook.clearSkips(context) }.padding(horizontal = 4.dp, vertical = 10.dp),
+                    color = C.muted, fontSize = TS.caption,
+                )
+            }
+            next?.let { pick ->
                 item(key = "next-up") {
                     NextUpCard(
                         pick, if (free > 0) hours(free) else null, onOpen,

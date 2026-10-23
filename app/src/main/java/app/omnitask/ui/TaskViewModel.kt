@@ -91,6 +91,9 @@ import app.omnitask.time.*
 
 const val DEFAULT_ARCHIVE_DAYS = 7
 
+/** Where a broken Gemini answer is kept, for Claude to read. */
+private const val GEMINI_CHECK = "${app.omnitask.data.VaultText.OMNI_DIR}/ตรวจ Gemini.md"
+
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
     val bucket: DateBucket? = null,
@@ -2132,7 +2135,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val index = withContext(Dispatchers.IO) { s.vault?.let { v -> library.index(v) } }
         _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null, secretaryLast = Secretary.lastRun(claude) ?: it.ai.secretaryLast)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
-        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries, index)
+        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude, calendarOf = { CalendarStyles.label(it.calendarId) }), memory, entries, index)
     }
 
     private val logLock = kotlinx.coroutines.sync.Mutex()
@@ -2229,7 +2232,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val canSearch = vault != null && (!whole || months.isNotBlank())
                     val found = if (whole || vault == null) emptyList() else library.find(vault, text, entries, ctx.index)
                     val history = AiMemory.history(entries, found, months)
-                    val first = AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch)), picture)
+                    fun generate(short: Boolean) = gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch, short = short))
+                    // An answer that came back but broken (cut off, repeating, refused as recitation) gets one shorter
+                    // try; the broken one is kept in the vault so Claude can see what went wrong.
+                    val raw = generate(short = false)
+                    val first = runCatching { AiAssist.parseReply(raw, picture) }.getOrElse { e ->
+                        if (e !is AiAssist.Failure || "\"candidates\"" !in raw) throw e
+                        if (vault != null) runCatching {
+                            repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น ${AiKey.model(getApplication())}\nปัญหา ${e.message}\nคำถาม $text\n\n```\n${raw.take(8000)}\n```\n")
+                        }
+                        AiAssist.parseReply(generate(short = true), picture)
+                    }
                     val query = first.search
                     if (query == null || !canSearch || vault == null) first to false
                     else {

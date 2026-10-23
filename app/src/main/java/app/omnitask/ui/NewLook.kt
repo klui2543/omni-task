@@ -65,6 +65,11 @@ object NewLook {
 
     fun skippedFor(today: LocalDate): Set<String> = if (skippedOn == today.toString()) skipped else emptySet()
 
+    fun clearSkips(context: Context) {
+        skipped = emptySet()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("skipped").remove("skippedOn").apply()
+    }
+
     fun skip(context: Context, key: String, today: LocalDate) {
         skipped = skippedFor(today) + key
         skippedOn = today.toString()

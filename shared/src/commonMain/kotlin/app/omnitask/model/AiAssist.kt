@@ -131,6 +131,8 @@ object AiAssist {
         events: List<CalendarEvent> = emptyList(),
         profile: List<String> = emptyList(),
         claudeLog: String? = null,
+        /** Whose calendar an event is in, where the owner labelled it (such as "แฟน"); null for the owner's own. */
+        calendarOf: (CalendarEvent) -> String? = { null },
     ): Picture {
         val open = tasks.filter { it.isOpen && !it.isSubtask }
         // Parked (someday) work is only counted: it is not stuck, and leaving it out keeps the request small and quick.
@@ -154,9 +156,12 @@ object AiAssist {
             val week = events.filter { e -> e.begin.date >= today && e.begin.date <= today.plusDays(7) }.sortedBy { it.begin }
             if (week.isNotEmpty()) {
                 appendLine("[นัดหมาย 7 วันข้างหน้า]")
+                if (week.any { calendarOf(it) != null }) {
+                    appendLine("นัดที่มี (ปฏิทินของ ...) เป็นนัดของคนนั้น ไม่ใช่ของเจ้าของงาน ห้ามบอกว่าเจ้าของมีนัดนั้น ใช้แค่รู้ว่าคนนั้นไม่ว่าง")
+                }
                 week.take(40).forEach { e ->
                     val time = if (e.allDay) "ทั้งวัน" else "${hm(e.begin.time.hour, e.begin.time.minute)} ถึง ${hm(e.end.time.hour, e.end.time.minute)}"
-                    appendLine("- ${e.begin.date} $time ${e.title}")
+                    appendLine("- ${e.begin.date} $time ${e.title}" + (calendarOf(e)?.let { " (ปฏิทินของ $it)" } ?: ""))
                 }
             }
             projectList(tasks).takeIf { it.isNotBlank() }?.let {
@@ -315,7 +320,7 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonArray("required") { add(JsonPrimitive("answer")); add(JsonPrimitive("actions")) }
     }
 
-    private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?): String = buildJsonObject {
+    private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?, temperature: Double = 0.4): String = buildJsonObject {
         // What stays the same between calls goes first, so Google can reuse it (cheaper and quicker).
         val system = buildString {
             append(RULES)
@@ -339,7 +344,7 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonObject("generationConfig") {
             put("responseMimeType", "application/json")
             put("responseSchema", schema)
-            put("temperature", 0.4)
+            put("temperature", temperature)
             // Thai takes many tokens, and a model that thinks counts its thinking here too: room for a long proposal.
             put("maxOutputTokens", 8192)
             // Thinking made answers slow on the phone; task questions need almost none.
@@ -354,14 +359,17 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
     fun chatRequest(
         picture: Picture, earlier: List<Turn>, question: String, memory: String? = null, history: String? = null,
         canSearch: Boolean = false, searched: String? = null,
+        /** A second try after an answer came back broken: keep it short and do not repeat. */
+        short: Boolean = false,
     ): String {
         val ask = buildString {
             append(CHAT_ASK)
+            if (short) append("\n\nคำตอบรอบก่อนยาวเกินหรือวนซ้ำจนใช้ไม่ได้ รอบนี้ answer ไม่เกิน 2 ประโยค actions ไม่เกิน 5 ข้อ text ของแต่ละข้อสั้น ห้ามพูดซ้ำ")
             if (searched != null) append("\n\n").append(SEARCHED).append("\n[ผลค้นบันทึกเก่า]\n").append(searched.ifBlank { "(ไม่เจอ)" })
             else if (canSearch) append("\n").append(SEARCH_ASK)
             append("\n\nคำถาม: ").append(question)
         }
-        return request(picture, earlier.takeLast(8), ask, replySchema, memory, history)
+        return request(picture, earlier.takeLast(8), ask, replySchema, memory, history, temperature = if (short) 0.8 else 0.4)
     }
 
     /** The same request without the thinking setting, for a model that does not take it. */
