@@ -273,12 +273,14 @@ fun OmniTaskApp(vm: TaskViewModel) {
                             FocusScreen(
                                 state, vm, open, menu,
                                 onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE },
-                                onAsk = { vm.askAi(it); screen = Screen.AI },
+                                onAsk = { if (NewLook.on) vm.deskType(it) else vm.askAi(it); screen = Screen.AI },
                             )
                         }
                         Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }
                         Screen.PROJECTS -> PullToReload(state.loading, vm::pullRefresh) { ProjectsScreen(state, vm, open) }
-                        Screen.AI -> AssistantScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
+                        // The new look's secretary answers by rules and hands the rest to Claude; the old one is the Gemini chat.
+                        Screen.AI -> if (NewLook.on) DeskScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
+                            else AssistantScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
                         // The Settings tab: the settings, with the assistant, notifications, urgency and the vault around them.
                         Screen.MORE -> SettingsScreen(
                             profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,

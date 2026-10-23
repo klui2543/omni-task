@@ -200,7 +200,7 @@ object AiAssist {
      * What goes to the model from Claude log.md: the overview and the open work in full, and the newest two
      * sessions of the timeline, cut to a few thousand characters.
      */
-    fun claudeDigest(text: String, max: Int = 3000): String {
+    fun claudeDigest(text: String, max: Int = 3000, days: Int = 2): String {
         val out = StringBuilder()
         var inTimeline = false
         var sessions = 0
@@ -208,7 +208,7 @@ object AiAssist {
             val t = line.trimEnd()
             if (t.startsWith("# ")) inTimeline = t.contains("ไทม์ไลน์") || t.contains("Timeline", ignoreCase = true)
             if (inTimeline && t.startsWith("## ")) sessions++
-            if (inTimeline && sessions > 2) continue
+            if (inTimeline && sessions > days) continue
             if (t.isBlank() || t.trim() == "- 💬 Klui:" || t.trim() == "💬 Klui:") continue
             out.appendLine(t)
         }
@@ -491,8 +491,15 @@ object AiAssist {
                 "move" -> task?.let { t ->
                     val kind = when (a["field"].s()?.lowercase()) { "scheduled" -> DateKind.SCHEDULED; "start" -> DateKind.START; else -> DateKind.DUE }
                     val d = date(a["date"].s())
-                    // An empty date clears it; a date that does not read is a mistake, not a clear.
-                    if (d == null && a["date"].s() != null) null else Action.Move(t, d, kind)
+                    // Only an empty date ("") clears it. A date that does not read is a mistake, and a missing date
+                    // too: Flash-Lite said "to tomorrow" and left the date out, which would have wiped it.
+                    val raw = (a["date"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    when {
+                        raw == null -> null
+                        raw.isEmpty() -> Action.Move(t, null, kind)
+                        d == null -> null
+                        else -> Action.Move(t, d, kind)
+                    }
                 }
                 "rename" -> task?.let { t -> text?.takeIf { it != t.title }?.let { Action.Rename(t, it) } }
                 "priority" -> task?.let { t -> priority(a["priority"].s())?.let { Action.SetPriority(t, it) } }

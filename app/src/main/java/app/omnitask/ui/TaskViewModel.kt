@@ -63,6 +63,8 @@ import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.StuckLog
+import app.omnitask.model.SecretaryDesk
+import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
@@ -93,6 +95,9 @@ const val DEFAULT_ARCHIVE_DAYS = 7
 
 /** Where a broken Gemini answer is kept, for Claude to read. */
 private const val GEMINI_CHECK = "${app.omnitask.data.VaultText.OMNI_DIR}/ตรวจ Gemini.md"
+
+/** The secretary chat's taps, a line each, for the secretary to learn habits from. */
+private const val DESK_STATS = "${app.omnitask.data.VaultText.OMNI_DIR}/สถิติเลขา.md"
 
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
@@ -482,6 +487,147 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Titles saved from a recording, with when, so the tray can show them first for a day. */
     private val voiceFresh get() = getApplication<Application>().getSharedPreferences("omni-voice", android.content.Context.MODE_PRIVATE)
+
+    // ---- The secretary's own chat (new look): answers by rules, buttons for what comes next, Claude for the rest. ----
+
+    /** One turn of the secretary chat: the owner's words, or the secretary's [reply]. [done] once its changes were made. */
+    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false)
+
+    val desk = androidx.compose.runtime.mutableStateListOf<DeskTurn>()
+    private var deskOffered = emptySet<String>()
+
+    private fun deskCtx(): SecretaryDesk.Ctx {
+        val s = _state.value
+        return SecretaryDesk.Ctx(
+            s.tasks, s.events, s.today, LocalDateTime.now(), NewLook.skippedFor(s.today),
+            othersEvent = { CalendarStyles.label(it.calendarId) != null },
+        )
+    }
+
+    /** Opens the chat with a greeting and the first buttons, unless it has been used in the last hour. */
+    fun deskOpen() {
+        val last = desk.lastOrNull()
+        if (last != null && System.currentTimeMillis() - deskOpenedAt < 60 * 60 * 1000L) return
+        deskOpenedAt = System.currentTimeMillis()
+        deskOffered = emptySet()
+        desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
+    }
+    private var deskOpenedAt = 0L
+
+    /** The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. */
+    fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList()) {
+        val ctx = deskCtx()
+        val lastReply = desk.lastOrNull { it.reply != null }?.reply
+        desk.add(DeskTurn(mine = chip.label))
+        deskNote(chip.label + (lastReply?.task?.let { ": ${it.title}" } ?: ""))
+        val reply: SecretaryDesk.Reply = when (chip.ask) {
+            SecretaryDesk.Ask.OPEN -> SecretaryDesk.opening(ctx)
+            SecretaryDesk.Ask.NEXT -> SecretaryDesk.next(ctx).also { r -> r.task?.let { deskOffered = setOf(it.key) } }
+            SecretaryDesk.Ask.OTHER, SecretaryDesk.Ask.LIGHT -> {
+                lastReply?.task?.let { NewLook.skip(getApplication(), it.key, ctx.today) }
+                SecretaryDesk.next(ctx, deskOffered, light = chip.ask == SecretaryDesk.Ask.LIGHT).also { r -> r.task?.let { deskOffered = deskOffered + it.key } }
+            }
+            SecretaryDesk.Ask.START -> {
+                lastReply?.task?.let { setStatus(it, Status.IN_PROGRESS) }
+                SecretaryDesk.Reply(listOf(tr("เริ่มแล้ว ทำเสร็จกด เสร็จแล้ว", "Started. Tap Done when finished")), listOf(SecretaryDesk.Chip(tr("เสร็จแล้ว", "Done"), SecretaryDesk.Ask.DONE), SecretaryDesk.Chip(tr("ติดอยู่ ขออันอื่น", "Stuck, something else"), SecretaryDesk.Ask.OTHER)), task = lastReply?.task)
+            }
+            SecretaryDesk.Ask.DONE -> {
+                lastReply?.task?.let { t -> if (t.isOpen) toggleDone(t) }
+                val after = SecretaryDesk.next(deskCtx(), deskOffered)
+                after.copy(lines = listOf(tr("เก่งมาก ต่อไป:", "Nice. Next:")) + after.lines)
+            }
+            SecretaryDesk.Ask.LATE -> SecretaryDesk.late(ctx)
+            SecretaryDesk.Ask.APPLY -> {
+                val moves = lastReply?.moves.orEmpty()
+                moves.forEach { m -> current(m.task)?.let { setDate(it, m.field, m.date) } }
+                markLastDone(lastReply)
+                SecretaryDesk.Reply(listOf(tr("ลงวันใหม่แล้ว ${moves.size} งาน", "${moves.size} tasks moved")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT), SecretaryDesk.Chip(tr("สัปดาห์นี้", "This week"), SecretaryDesk.Ask.WEEK)))
+            }
+            SecretaryDesk.Ask.STEP_BY_STEP -> SecretaryDesk.Reply(
+                listOf(tr("แตะแต่ละงานในรายการด้านบนเพื่อเปิดแล้วเลือกวันเอง", "Tap each task above to open it and pick its day")),
+                listOf(SecretaryDesk.Chip(tr("ลงตามนี้", "Apply"), SecretaryDesk.Ask.APPLY)), moves = lastReply?.moves.orEmpty(),
+            )
+            SecretaryDesk.Ask.TOMORROW -> SecretaryDesk.tomorrow(ctx)
+            SecretaryDesk.Ask.WEEK -> SecretaryDesk.week(ctx)
+            SecretaryDesk.Ask.SPLIT -> SecretaryDesk.split(ctx, lastReply?.task)
+            SecretaryDesk.Ask.APPLY_SPLIT -> {
+                val parent = lastReply?.task?.let { current(it) }
+                if (parent != null && picked.isNotEmpty()) addSubtasks(parent, picked)
+                markLastDone(lastReply)
+                SecretaryDesk.Reply(listOf(tr("ใส่เป็นงานย่อยแล้ว ${picked.size} ข้อ เริ่มที่ข้อแรกพอ", "${picked.size} subtasks added. Start with the first")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)), task = parent)
+            }
+            SecretaryDesk.Ask.CLAUDE -> return
+        }
+        desk.add(DeskTurn(reply = reply))
+    }
+
+    /** A typed question: answered by the rules when they know it, else offered to Claude with the chat so far. */
+    fun deskType(text: String) {
+        val ask = SecretaryDesk.match(text)
+        if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask)); return }
+        desk.add(DeskTurn(mine = text))
+        desk.add(DeskTurn(reply = SecretaryDesk.Reply(
+            listOf(
+                tr("เรื่องนี้ต้องชั่งหลายอย่าง กติกาของผมตอบได้ไม่ดีพอ", "This needs weighing up; my rules cannot answer it well"),
+                tr("ส่งให้ Claude คุยต่อดีกว่า บทสนทนานี้ งาน และที่ Claude รู้จักคุณจะติดไปด้วย", "Better with Claude: this chat, your work and what Claude knows about you go along"),
+            ),
+            listOf(SecretaryDesk.Chip(tr("คุยต่อกับ Claude", "Continue with Claude"), SecretaryDesk.Ask.CLAUDE), SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
+        )))
+    }
+
+    private fun markLastDone(reply: SecretaryDesk.Reply?) {
+        val i = desk.indexOfLast { it.reply === reply }
+        if (i >= 0) desk[i] = desk[i].copy(done = true)
+    }
+
+    /** The chat so far in plain lines, for Claude to carry on from. */
+    fun deskTranscript(): List<String> = desk.flatMap { t ->
+        t.mine?.let { listOf("Klui: $it") } ?: t.reply?.let { r ->
+            listOf("เลขา: " + (r.lines + listOfNotNull(r.task?.title?.let { "($it)" })).joinToString(" ")) +
+                r.moves.map { "  เสนอ ${it.task.title} ไป ${it.date}" }
+        }.orEmpty()
+    }
+
+    /** The pretext note; written from the defaults the first time it is missing. */
+    suspend fun pretext(): SecretaryPretext.Note {
+        val vault = _state.value.vault ?: return SecretaryPretext.parse(null)
+        val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryPretext.PATH) }.getOrNull() }
+        if (text == null) withContext(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.PATH, SecretaryPretext.DEFAULT) } }
+        return SecretaryPretext.parse(text)
+    }
+
+    fun savePretext(note: SecretaryPretext.Note) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.PATH, note.render()) } }
+    }
+
+    /** Everything Claude gets for [situation]: the pretext, what it knows of the owner, the log, work and calendar, this chat. */
+    suspend fun claudePack(note: SecretaryPretext.Note, situation: SecretaryPretext.Part?): String {
+        val s = _state.value
+        fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
+        val (knows, log) = withContext(Dispatchers.IO) { read(SecretaryPretext.KNOWS_PATH) to read(CLAUDE_LOG) }
+        deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
+        return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript())
+    }
+
+    /** What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md). */
+    private fun deskNote(what: String) {
+        val vault = _state.value.vault ?: return
+        val line = "- ${LocalDate.now()} ${nowHm()} $what"
+        viewModelScope.launch(Dispatchers.IO) {
+            deskLock.withLock {
+                runCatching {
+                    val old = repo.readPath(vault, DESK_STATS) ?: "# สถิติเลขา\n\nสิ่งที่กดในแชตเลขาของ Omni บรรทัดละครั้ง ใหม่สุดอยู่ล่าง เลขาอ่านเพื่อเรียนรู้นิสัย แล้วเขียนสิ่งที่พบลง Claude รู้จักคุณ.md\n"
+                    // Keep the last 400 taps; older ones have been read by then.
+                    val lines = (old.trimEnd() + "\n" + line).lines()
+                    val head = lines.takeWhile { !it.startsWith("- ") }
+                    val taps = lines.filter { it.startsWith("- ") }.takeLast(400)
+                    repo.writePath(vault, DESK_STATS, (head + taps).joinToString("\n") + "\n")
+                }
+            }
+        }
+    }
+    private val deskLock = kotlinx.coroutines.sync.Mutex()
 
     fun freshVoiceTitles(): Set<String> {
         val cut = System.currentTimeMillis() - 24 * 60 * 60 * 1000L

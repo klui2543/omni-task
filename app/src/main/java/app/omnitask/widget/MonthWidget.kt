@@ -448,10 +448,10 @@ internal class MonthSource(
         val listed = if (selected == null || selected == today) listOf(today, today.plusDays(1)) else listOf(selected)
         fun tasksOn(d: LocalDate) = tasks.filter { (it.due ?: it.scheduled) == d }
         fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
-        val work = MonthData.work(days, month, ::tasksOn, ::eventsOn, today)
+        val work = MonthData.work(days, month, ::tasksOn, ::eventsOn, today, colorOf = ::calendarArgb)
         val agenda = listed.map { d ->
             val events: List<MonthData.Item> = eventsOn(d).sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map {
-                MonthData.Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time))
+                MonthData.Item.Event(it.title, if (it.allDay || it.begin.date != d) tr("ทั้งวัน", "All day") else hm(it.begin.time), calendarArgb(it.calendarId))
             }
             // Today also carries the work past its deadline, as on Focus and the Today widget, after today's own.
             val overdue = if (d == today) tasks.filter { t -> t.due?.let { it < today } == true }.sortedBy { it.due }
@@ -502,6 +502,7 @@ internal class MonthSource(
         private fun readNow(context: Context, offset: Int, stamp: Long): MonthSource {
             Lang.load(context)
             Appearance.load(context)
+            app.omnitask.ui.CalendarStyles.load(context)
             val today = LocalDate.now()
             val center = today.withDayOfMonth(1).plusMonths(offset.toLong())
             val from = minOf(MonthGrid.start(center.minusMonths(3)), today)
@@ -535,10 +536,10 @@ internal class MonthData(
      * Compared by value, so the widget keeps its picture when a tap leaves the work as it was. [late] is open work on a
      * day already gone, drawn red.
      */
-    data class Mark(val title: String, val event: Boolean, val late: Boolean = false)
+    data class Mark(val title: String, val event: Boolean, val late: Boolean = false, val color: Int? = null)
 
     sealed interface Item {
-        class Event(val title: String, val time: String) : Item
+        class Event(val title: String, val time: String, val color: Int? = null) : Item
         /** [late] is how many days past its deadline an overdue task is, listed under today. */
         class Todo(val task: Task, val late: Long = 0) : Item
     }
@@ -556,13 +557,15 @@ internal class MonthData(
             eventsOn: (LocalDate) -> List<CalendarEvent>,
             /** Open work on a day before this one is marked late. */
             today: LocalDate? = null,
+            /** The colour the owner gave an event's calendar (ARGB), as the app shows it; null for the default. */
+            colorOf: (Long) -> Int? = { null },
         ): Map<LocalDate, List<Mark>> {
             val events = days.associateWith(eventsOn)
             val inMonth = days.filter { it.monthNumber == month.monthNumber }
             val routine = DayWork.routine(inMonth.associateWith { d -> events[d].orEmpty().map { it.title } }, inMonth)
             return days.associateWith { d ->
                 events[d].orEmpty().filter { it.title.trim() !in routine }
-                    .sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map { Mark(it.title, true) } +
+                    .sortedWith(compareBy<CalendarEvent>({ !it.allDay }, { it.begin })).map { Mark(it.title, true, color = colorOf(it.calendarId)) } +
                     tasksOn(d).filter { it.isOpen }.map { Mark(it.title, false, late = today != null && d < today) }
             }.filterValues { it.isNotEmpty() }
         }
@@ -749,7 +752,7 @@ private fun AgendaLine(context: Context, day: LocalDate, item: MonthData.Item) {
     Row(GlanceModifier.fillMaxWidth().height(30.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         when (item) {
             is MonthData.Item.Event -> {
-                Box(GlanceModifier.width(3.dp).height(16.dp).cornerRadius(2.dp).background(cp { it.teal })) {}
+                Box(GlanceModifier.width(3.dp).height(16.dp).cornerRadius(2.dp).background(item.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
                 Label(item.title, cp { it.text }, 13.5.sp, modifier = GlanceModifier.defaultWeight().padding(start = 10.dp).clickable(openCalendar(context, day)))
                 Label(item.time, cp { it.muted }, 11.5.sp)
             }
@@ -911,7 +914,8 @@ internal class MonthPainter(
                 items.take(shown).forEach { m ->
                     when {
                         m.late -> { barBg.color = p.red.toArgb(); barBg.alpha = 92 }
-                        m.event -> { barBg.color = p.accent.toArgb(); barBg.alpha = 80 }
+                        // An event in the colour the owner gave its calendar in the app, else the accent.
+                        m.event -> { barBg.color = m.color ?: p.accent.toArgb(); barBg.alpha = if (m.color != null) 110 else 80 }
                         else -> { barBg.color = p.lime.toArgb(); barBg.alpha = 74 }
                     }
                     val box = RectF(r.left + dp(2f), y, r.right - dp(2f), y + bh)
@@ -957,3 +961,6 @@ internal class MonthPainter(
         val TINT_ALPHA = intArrayOf(0, 34, 66, 107)
     }
 }
+
+/** The colour the owner gave a calendar in the app (see CalendarStyles), as ARGB for the widget's drawing. */
+internal fun calendarArgb(calendarId: Long): Int? = app.omnitask.ui.CalendarStyles.color(calendarId)?.toArgb()
