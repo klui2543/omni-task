@@ -1,5 +1,5 @@
 ---
-format: claude-rules/3
+format: claude-rules/4
 ---
 # Klui: rules for every Claude session
 
@@ -16,6 +16,7 @@ format: claude-rules/3
 
 ## Work log: `📁 Folder/หลังบ้าน/Claude/Claude log.md`
 - Read its **ภาพรวม** and **งานค้าง** at the start of every session, plus any 💬 lines Klui added since the last session. If the session is about a project, check that project's line first.
+- Also read `📁 Folder/หลังบ้าน/Omni/Claude รู้จักคุณ.md` (what Claude knows about how Klui works and lives) at the start, together with Claude log. When you learn something lasting about how Klui works or lives (a habit, his energy, a bottleneck, what helps; not a single task), add one line at the top of its `## ที่ Claude รู้` list: `- <สิ่งที่รู้ ประโยคเดียว> (YYYY-MM-DD, จาก <ที่มา>)`. Never edit or delete Klui's lines there.
 - **ภาพรวม**: one line per project, rewritten each session: where it stands, then ➜ who acts next (Klui or Claude).
 - **งานค้าง**: open work as checkboxes. First tag is the project (`#<project>/<topic>`), second tag is whose turn: `#kluido` (Klui must act) or `#claudedo` (Claude does it next session). Add ⏳ or 📅 when there is a plan for when. Tick (`[x]` with ✅ date) what is done; do not delete it.
 - **ไทม์ไลน์**: newest day on top, plain bullets only (no checkboxes), so Omni does not count them as tasks. Keep only the last 14 days here.
@@ -33,7 +34,7 @@ format: claude-rules/3
 - When Klui says the secretary stopped (or "ซ่อมเลขา"), follow "ซ่อมเลขา" in `Claude/README.md`.
 - Klui types `/save` (optionally with a note) to make this session write its own state into Claude log at once, also when the work is not finished; otherwise the secretary picks it up within 3 hours. The command file is `Claude/commands/save.md` in the vault.
 - When Klui says "เลขา สรุปงาน": do the secretary's round now, following `Claude/secretary.md`.
-- Claude Chat and Cowork cannot be read directly. There Klui types "บันทึก": the `save-to-log` skill drops a summary into the Google Drive folder `Claude inbox`, and the secretary merges it into Claude log (bullets marked `(Chat)` or `(Cowork)`). If Klui expects something from a chat that is not in the log yet, say so and ask Klui to type "บันทึก" there.
+- Claude Chat and Cowork cannot be read directly. There Klui types (or says, at the end of a voice chat) "บันทึก": the `save-to-log` skill drops a summary into the Google Drive folder `Claude inbox`, and the secretary merges it into Claude log (bullets marked `(Chat)` or `(Cowork)`). If Klui expects something from a chat that is not in the log yet, say so and ask Klui to type "บันทึก" there.
 - The first time Claude writes the log in a new place, write one test line and ask Klui to confirm it shows on the phone before writing the rest.
 
 ## Klui's own notes
