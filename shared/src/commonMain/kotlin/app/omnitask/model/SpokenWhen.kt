@@ -28,7 +28,7 @@ object SpokenWhen {
 
     // Times said plainly, most exact first; each gives the hour and minute from its match.
     private val TIMES: List<Pair<Regex, (MatchResult) -> LocalTime?>> = listOf(
-        Regex("(\\d{1,2})[:.](\\d{2})\\s*(?:น\\.|นาฬิกา)?") to { m -> t(m.groupValues[1].toInt(), m.groupValues[2].toInt()) },
+        Regex("(\\d{1,2})[.:](\\d{2})\\s*(?:น\\.|นาฬิกา)?") to { m -> t(m.groupValues[1].toInt(), m.groupValues[2].toInt()) },
         Regex("บ่าย\\s*${N}?\\s*โมง\\s*(ครึ่ง)?") to { m -> t(12 + (m.groupValues[1].ifEmpty { "1" }.let(::n)), half(m.groupValues[2])) },
         Regex("${N}\\s*โมง\\s*เย็น\\s*(ครึ่ง)?") to { m -> t(12 + n(m.groupValues[1]), half(m.groupValues[2])) },
         Regex("${N}\\s*ทุ่ม\\s*(ครึ่ง)?") to { m -> t(18 + n(m.groupValues[1]), half(m.groupValues[2])) },
