@@ -960,7 +960,29 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val vault = _state.value.vault ?: return
         val app = getApplication<Application>()
         val today = LocalDate.now()
-        val kept = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
+        val all = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
+        // "ลงปฏิทิน" items go to the calendar quick add uses (an hour at the time said, or all day).
+        val events = all.filter { it.heard.event && it.heard.date != null }
+        val kept = all.filter { !it.heard.event }
+        if (events.isNotEmpty()) {
+            val cals = _state.value.calendars.filter { it.writable && it.visible }
+            val chosen = CalendarReader.addTo(app)
+            val cal = cals.firstOrNull { it.id == chosen } ?: cals.firstOrNull { it.isGoogle && it.name == it.account } ?: cals.firstOrNull { it.isGoogle } ?: cals.firstOrNull()
+            if (cal == null || !CalendarReader.canWrite(app)) {
+                showMessage(tr("ลงปฏิทินไม่ได้: ยังไม่มีปฏิทินที่เพิ่มนัดได้ หรือยังไม่อนุญาต ลองเพิ่มนัดจากปุ่ม + ก่อนหนึ่งครั้ง", "No calendar to add events to yet: add one event from + first"))
+                return
+            }
+            events.forEach { e ->
+                val h = e.heard
+                val t = h.time
+                if (t == null) addEvent(cal.id, h.title, kotlinx.datetime.LocalDateTime(h.date!!, kotlinx.datetime.LocalTime(0, 0)), kotlinx.datetime.LocalDateTime(h.date!!, kotlinx.datetime.LocalTime(0, 0)), true)
+                else {
+                    val start = kotlinx.datetime.LocalDateTime(h.date!!, t)
+                    val endDay = if (t.hour == 23) h.date!!.plusDays(1) else h.date!!
+                    addEvent(cal.id, h.title, start, kotlinx.datetime.LocalDateTime(endDay, kotlinx.datetime.LocalTime((t.hour + 1) % 24, t.minute)), false)
+                }
+            }
+        }
         val lines = kept.map { SpokenWhen.line(it.heard, it.project, today) }
         val titles = kept.map { it.heard.title }
         viewModelScope.launch {
@@ -975,7 +997,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     voiceFresh.edit().apply { stale.forEach { remove(it) }; titles.forEach { putLong(it, now) } }.apply()
                     lines.forEach { noteCreated(it) }
                     _voice.update { it.copy(review = null, live = emptyList(), words = "", waiting = VoiceRec.waiting(app)) }
-                    showMessage(tr("บันทึก ${lines.size} งานแล้ว", "Saved ${lines.size} tasks"))
+                    showMessage(tr("บันทึก ${lines.size} งาน ${events.size} นัดแล้ว", "Saved ${lines.size} tasks, ${events.size} events"))
                     reload()
                 },
                 { e -> showMessage(tr("บันทึกไม่ได้: ${e.message}", "Could not save: ${e.message}")) },

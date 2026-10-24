@@ -183,6 +183,11 @@ private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
                         .border(1.dp, if (dup != null) C.amber.copy(alpha = 0.5f) else C.cardBorder, RoundedCornerShape(12.dp))
                         .padding(start = 12.dp, end = 2.dp, top = 4.dp, bottom = 8.dp),
                 ) {
+                    // Event or task, picked by "ลงปฏิทิน" in the words; a tap switches it (owner's pick, 2026-10-24).
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        KindChip(tr("นัด", "Event"), h.event) { drafts[i] = d.copy(heard = h.copy(event = true)) }
+                        KindChip(tr("งาน", "Task"), !h.event) { drafts[i] = d.copy(heard = h.copy(event = false)) }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicTextField(
                             h.title, { drafts[i] = d.copy(heard = h.copy(title = it)) }, Modifier.weight(1f).padding(vertical = 8.dp),
@@ -195,7 +200,12 @@ private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
                     }
                     FlowRow(Modifier.padding(end = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         val date = h.date
-                        if (date != null) {
+                        if (h.event) {
+                            if (date != null) WhenChip(
+                                dayWord(date, today) + (h.time?.let { " %02d:%02d ถึง %02d:%02d".format(it.hour, it.minute, (it.hour + 1) % 24, it.minute) } ?: tr(" ทั้งวัน", " all day")),
+                                C.accentText, C.accentSoft, { whenOf = i }, null,
+                            ) else WhenChip(tr("เลือกวันก่อน", "Pick a day first"), C.red, C.redSoft, { whenOf = i }, null)
+                        } else if (date != null) {
                             val due = h.field == app.omnitask.data.TaskLine.DateField.DUE
                             val label = (if (due) "📅 " else "⏳ ") + dayWord(date, today) + (h.time?.let { " %02d:%02d".format(it.hour, it.minute) } ?: "")
                             WhenChip(label, if (due) C.red else C.amber, if (due) C.redSoft else C.amberSoft, { whenOf = i }) {
@@ -203,7 +213,8 @@ private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
                             }
                         } else WhenChip(tr("+ วัน", "+ Day"), C.muted, C.raised, { whenOf = i }, null)
                         val project = d.project
-                        if (project != null) WhenChip("#$project", C.accentText, C.accentSoft, { projectOf = i }) { drafts[i] = d.copy(project = null) }
+                        if (h.event) Unit
+                        else if (project != null) WhenChip("#$project", C.accentText, C.accentSoft, { projectOf = i }) { drafts[i] = d.copy(project = null) }
                         else WhenChip(tr("+ โปรเจกต์", "+ Project"), C.muted, C.raised, { projectOf = i }, null)
                     }
                     if (dup != null) Text(
@@ -216,11 +227,16 @@ private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton(tr("ทิ้งทั้งหมด", "Throw all away"), { vm.dropVoice(review.dir) }, Modifier.weight(1f))
-            val n = drafts.count { it.heard.title.isNotBlank() }
-            val homed = drafts.all { it.project != null }
-            if (n > 0) PrimaryButton(
-                if (homed) tr("บันทึก $n งาน", "Save $n") else tr("บันทึก $n งานลงถาด", "Save $n to the tray"),
-                { vm.saveVoice(drafts.toList()) }, Modifier.weight(2f),
+            val n = drafts.count { it.heard.title.isNotBlank() && !it.heard.event }
+            val events = drafts.count { it.heard.title.isNotBlank() && it.heard.event }
+            val ready = drafts.none { it.heard.event && it.heard.date == null }
+            val homed = drafts.filter { !it.heard.event }.all { it.project != null }
+            if (n + events > 0) PrimaryButton(
+                listOfNotNull(
+                    n.takeIf { it > 0 }?.let { if (homed) tr("$it งาน", "$it tasks") else tr("$it งานลงถาด", "$it to the tray") },
+                    events.takeIf { it > 0 }?.let { tr("$it นัด", "$it events") },
+                ).joinToString(" ", prefix = tr("บันทึก ", "Save ")),
+                { if (ready) vm.saveVoice(drafts.toList()) else vm.showMessage(tr("นัดที่ยังไม่มีวัน เลือกวันก่อน", "Pick a day for each event first")) }, Modifier.weight(2f),
             )
         }
         Text(tr("บันทึกแล้วลบไฟล์เสียงทิ้ง", "The recording is deleted once saved"), Modifier.align(Alignment.CenterHorizontally), color = C.muted, fontSize = TS.caption)
@@ -264,6 +280,16 @@ private fun dayWord(d: LocalDate, today: LocalDate): String = when (d) {
 }
 
 /** A detail under a heard task: a tap changes it, the cross ([onClear], when there is one) takes it off. */
+@Composable
+private fun KindChip(label: String, on: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        Modifier.heightIn(min = 32.dp).clip(RoundedCornerShape(14.dp)).background(if (on) C.accent else C.bg).border(1.dp, if (on) C.accent else C.cardBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp),
+        color = if (on) C.onAccent else C.muted, fontSize = TS.caption, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+    )
+}
+
 @Composable
 private fun WhenChip(label: String, color: Color, bg: Color, onClick: () -> Unit, onClear: (() -> Unit)?) {
     Row(

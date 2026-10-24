@@ -137,6 +137,16 @@ fun YgdrasilScreen(
     val strays = remember(state.tasks, state.today, state.projectTags, filter, straySort) { Ygdrasil.strays(state.tasks, state.today, filter, straySort) }
     val strayCount = strays.sumOf { it.tasks.size }
     var trayOpen by rememberSaveable { mutableStateOf(false) }
+    // The tasks with no project, as one more (pretend) project under the tree (owner's pick, 2026-10-24): open by default.
+    var inboxOpen by rememberSaveable { mutableStateOf(true) }
+    var inboxAll by remember { mutableStateOf(setOf<String>()) }
+    val inboxRows = if (embed != null || strayCount == 0) 0 else if (!inboxOpen) 0 else strays.sumOf { g ->
+        val tag = g.tag ?: ""
+        1 + (if (tag in inboxAll) g.tasks.size else minOf(g.tasks.size, INBOX_SHOWN)) + (if (tag !in inboxAll && g.tasks.size > INBOX_SHOWN) 1 else 0)
+    }
+    val inboxTop = layout.height + 40f
+    val inboxH = if (embed != null || strayCount == 0) 0f else 40f + 64f + inboxRows * Ygdrasil.TASK_H + 16f
+    val treeH = layout.height + inboxH
     LaunchedEffect(strayCount) { if (strayCount == 0) trayOpen = false }
     var picking by remember { mutableStateOf<Task?>(null) }
     var trayHeight by remember { mutableStateOf(0) }
@@ -155,15 +165,15 @@ fun YgdrasilScreen(
     fun place() {
         if (box.width == 0) return
         val pad = 24f * density
-        val s = minOf(1.2f, (box.width - pad * 2) / (layout.width * density), (box.height - pad * 2) / (layout.height * density))
-        val trunkY = layout.spots.firstOrNull { it.kind == Ygdrasil.Kind.TRUNK }?.y ?: (layout.height / 2f)
+        val s = minOf(1.2f, (box.width - pad * 2) / (layout.width * density), (box.height - pad * 2) / (treeH * density))
+        val trunkY = layout.spots.firstOrNull { it.kind == Ygdrasil.Kind.TRUNK }?.y ?: (treeH / 2f)
         if (!whole && s < READABLE) {
             scale = READABLE
             pan = Offset(pad, box.height / 2f - trunkY * density * READABLE)
         } else {
             val k = s.coerceIn(0.15f, 2.5f)
             scale = k
-            pan = Offset((box.width - layout.width * density * k) / 2f, (box.height - layout.height * density * k) / 2f)
+            pan = Offset((box.width - layout.width * density * k) / 2f, (box.height - treeH * density * k) / 2f)
         }
         touched = false
     }
@@ -175,7 +185,7 @@ fun YgdrasilScreen(
         touched = true
     }
     // Until the owner moves it, the tree keeps fitting the screen as filters and folds change its size.
-    LaunchedEffect(layout.width, layout.height, box) { if (!touched) place() }
+    LaunchedEffect(layout.width, treeH, box) { if (!touched) place() }
     // Zoomed far out, tasks show as their rings only.
     val far by remember { derivedStateOf { scale < 0.45f } }
 
@@ -308,8 +318,11 @@ fun YgdrasilScreen(
             }
             if (strayCount > 0) Row(
                 Modifier.padding(end = 8.dp).height(40.dp).clip(RoundedCornerShape(12.dp)).background(C.card)
-                    .border(1.dp, if (trayOpen) C.amber else C.cardBorder, RoundedCornerShape(12.dp))
-                    .clickable { trayOpen = !trayOpen; if (trayOpen) filtering = false }.padding(horizontal = 10.dp),
+                    .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp))
+                    .clickable {
+                        inboxOpen = true; filtering = false
+                        pan = Offset(24f * density - Ygdrasil.COL * density * scale + 0f, 120f * density - inboxTop * density * scale); touched = true
+                    }.padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(tr("ยังไม่มีบ้าน", "No project"), color = C.text2, fontSize = TS.caption, maxLines = 1)
@@ -349,7 +362,7 @@ fun YgdrasilScreen(
                 Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).graphicsLayer {
                     transformOrigin = TransformOrigin(0f, 0f)
                     translationX = pan.x; translationY = pan.y; scaleX = scale; scaleY = scale
-                }.size(layout.width.dp, layout.height.dp),
+                }.size(maxOf(layout.width, Ygdrasil.COL + 300f).dp, treeH.dp),
             ) {
                 val line = C.control
                 val faintLine = C.cardBorder
@@ -522,6 +535,12 @@ fun YgdrasilScreen(
                         )
                     }
                 }
+                if (inboxH > 0f) InboxBranch(
+                    strays, state.today, inboxTop, inboxOpen, { inboxOpen = !inboxOpen }, inboxAll, { inboxAll = inboxAll + it }, { picking = it },
+                    // Rows sit inside the scaled tree, so their moves are in tree units already: back to screen pixels for the drag.
+                    StrayDrag(strayDrag.onStart, { strayDrag.onDrag(it * scale) }, strayDrag.onEnd, strayDrag.onCancel),
+                    faint = { lit != null && !Ygdrasil.inReach(it, reach, state.today) },
+                )
                 // What is carried, under the finger, saying where it would go.
                 carry?.let { c ->
                     Column(
@@ -727,5 +746,48 @@ private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(color))
         Text(text, Modifier.padding(start = 4.dp), color = color, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** Rows an inbox group shows before "and N more". */
+private const val INBOX_SHOWN = 5
+
+/**
+ * The tasks with no project, drawn as a pretend project under the tree (dashed, never a real project): grouped by
+ * their first tag; a tap picks a home, a held task is dragged up onto a project or branch, as from the old tray.
+ */
+@Composable
+private fun InboxBranch(
+    strays: List<Ygdrasil.Strays>, today: kotlinx.datetime.LocalDate, top: Float, open: Boolean, onToggle: () -> Unit,
+    all: Set<String>, onAll: (String) -> Unit, onPick: (Task) -> Unit, drag: StrayDrag, faint: (Task) -> Boolean,
+) {
+    val count = strays.sumOf { it.tasks.size }
+    Row(
+        Modifier.offset(Ygdrasil.COL.dp, (top + 4).dp).width(Ygdrasil.NODE_W.dp).height(52.dp).clip(RoundedCornerShape(10.dp))
+            .border(1.5.dp, C.amber, RoundedCornerShape(10.dp)).clickable(onClick = onToggle).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(tr("ยังไม่มีบ้าน", "No project yet"), color = C.amber, fontSize = TS.caption, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(tr("ลากขึ้นไปจัดบ้าน", "Drag up to a project"), color = C.muted, fontSize = TS.micro, maxLines = 1)
+        }
+        Text(if (open) "$count" else "+$count", color = C.text2, fontSize = TS.micro)
+    }
+    if (!open) return
+    Column(Modifier.offset((Ygdrasil.COL * 2).dp, (top + 4).dp).width(Ygdrasil.TASK_W.dp + 80.dp)) {
+        strays.forEach { g ->
+            val id = g.tag ?: ""
+            Text(
+                (g.tag?.let { "#$it" } ?: tr("ไม่มีแท็ก", "No tag")) + " ${g.tasks.size}",
+                Modifier.height(Ygdrasil.TASK_H.dp).padding(top = 8.dp), color = C.muted, fontSize = TS.micro,
+            )
+            val shown = if (id in all) g.tasks else g.tasks.take(INBOX_SHOWN)
+            shown.forEach { t -> Box(Modifier.height(Ygdrasil.TASK_H.dp).alpha(if (faint(t)) 0.35f else 1f)) { StrayRow(t, today, { onPick(t) }, drag, compact = true) } }
+            if (g.tasks.size > shown.size) Text(
+                tr("+${g.tasks.size - shown.size} งาน", "+${g.tasks.size - shown.size} more"),
+                Modifier.height(Ygdrasil.TASK_H.dp).clip(RoundedCornerShape(8.dp)).clickable { onAll(id) }.padding(start = 14.dp, top = 6.dp),
+                color = C.accentText, fontSize = TS.caption,
+            )
+        }
     }
 }

@@ -160,7 +160,7 @@ fun StrayTray(
 }
 
 @Composable
-private fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayDrag, new: Boolean = false) {
+internal fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayDrag, new: Boolean = false, compact: Boolean = false) {
     var at by remember { mutableStateOf(Offset.Zero) }
     val date = t.due ?: t.scheduled
     Row(
@@ -176,7 +176,7 @@ private fun StrayRow(t: Task, today: LocalDate, onPick: () -> Unit, drag: StrayD
                     onDragCancel = drag.onCancel,
                 )
             }
-            .padding(start = 26.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = if (compact) 6.dp else 26.dp, end = 6.dp, top = if (compact) 6.dp else 10.dp, bottom = if (compact) 6.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).border(1.5.dp, C.control, RoundedCornerShape(4.dp)))
