@@ -347,7 +347,7 @@ private fun Answer(
 }
 
 /** [task] as it is now (ticked or not), when it is still in the vault. */
-private fun now(task: Task, tasks: List<Task>): Task = tasks.firstOrNull { it.key == task.key && it.title == task.title } ?: task
+private fun latest(task: Task, tasks: List<Task>): Task = tasks.firstOrNull { it.key == task.key && it.title == task.title } ?: task
 
 /**
  * The morning brief, short (the owner's pick, mock B): one row per thing waiting on the owner, with a circle to tick it
@@ -362,7 +362,7 @@ private fun BriefCard(b: SecretaryBook.Brief, tasks: List<Task>, onOpen: (Task) 
             .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
     ) {
         b.waiting.forEachIndexed { i, item ->
-            val t = now(item.task, tasks)
+            val t = latest(item.task, tasks)
             val done = !t.isOpen
             val expanded = open == item.task.key
             if (i > 0) Box(Modifier.fillMaxWidth().padding(start = 48.dp).height(1.dp).background(C.divider))
@@ -437,7 +437,7 @@ private fun BriefMoreSheet(b: SecretaryBook.Brief, tasks: List<Task>, onTick: (T
                 Text(tr("เลขาปิดให้แล้ว ${b.closed.size} ข้อ", "Closed for you: ${b.closed.size}"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
                 Text(tr("ปิดเฉพาะข้อที่มีหลักฐาน ผิดก็เปิดกลับได้", "Closed only on evidence. Open it again if it was wrong"), color = C.muted, fontSize = TS.caption)
                 b.closed.forEach { c ->
-                    val t = now(c.task, tasks)
+                    val t = latest(c.task, tasks)
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).padding(start = 14.dp, end = 6.dp, top = 12.dp)) {
                         Projects.projectOf(t)?.let { Text(it, color = C.muted, fontSize = TS.caption) }
                         Text(t.title, color = if (t.isOpen) C.text else C.text2, fontSize = TS.body, textDecoration = if (t.isOpen) null else TextDecoration.LineThrough)
