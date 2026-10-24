@@ -1,5 +1,6 @@
 package app.omnitask.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -8,11 +9,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.tr
@@ -46,6 +49,31 @@ fun VaultLinks(onReload: () -> Unit, onVault: () -> Unit) {
         MoreRow(tr("โหลดใหม่", "Reload"), onClick = onReload)
         Divider(start = 16.dp)
         MoreRow(tr("เปลี่ยนโฟลเดอร์ตู้โน้ต", "Change vault folder"), onClick = onVault)
+    }
+}
+
+/** Only the notifications row (the assistant is a tab of its own in the new look). */
+@Composable
+fun NotifyLink(onNotify: () -> Unit) {
+    Card { MoreRow(tr("แจ้งเตือน", "Notifications"), onClick = onNotify) }
+}
+
+/** A row that opens a page: its name, a line under it, an arrow; [badge] says what needs a look. */
+@Composable
+internal fun NavRow(title: String, sub: String, badge: String? = null, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+            Text(title, color = C.text, fontSize = TS.title)
+            Text(sub, Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption)
+        }
+        if (badge != null) Text(
+            badge, Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)).background(C.amberSoft).padding(horizontal = 8.dp, vertical = 2.dp),
+            color = C.amber, fontSize = TS.micro,
+        )
+        Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(16.dp))
     }
 }
 

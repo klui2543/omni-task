@@ -9,6 +9,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -45,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.omnitask.model.Projects
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.Task
@@ -95,10 +99,12 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         vm.deskAsk(chip, picks[i]?.toList() ?: steps)
     }
 
+    var sending by remember { mutableStateOf<Pair<SecretaryPretext.Note, SecretaryPretext.Part?>?>(null) }
     if (claudeOpen) ClaudeSheet(vm, { claudeOpen = false }) { note, part ->
         claudeOpen = false
-        scope.launch { shareToClaude(context, vm.claudePack(note, part)) }
+        sending = note to part
     }
+    sending?.let { (note, part) -> SendSheet(vm, note, part) { sending = null } }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -112,7 +118,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         ) {
             itemsIndexed(turns) { i, t ->
                 t.mine?.let { Mine(it) }
-                t.reply?.let { r -> Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen) }
+                t.reply?.let { r -> Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves) }
             }
         }
         val chips = turns.lastOrNull { it.reply != null }?.reply?.chips.orEmpty()
@@ -171,7 +177,7 @@ private fun Mine(text: String) {
 }
 
 @Composable
-private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit) {
+private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit, onApplyMoves: (List<SecretaryDesk.Move>) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(tr("เลขา", "Secretary"), color = C.faint, fontSize = TS.micro)
         Column(
@@ -188,14 +194,30 @@ private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, o
                     fontWeight = if (isTask) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
-            if (r.moves.isNotEmpty()) Column {
-                r.moves.forEach { m ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(m.task) }.padding(vertical = 6.dp)) {
-                        Text(m.date.format(SHORT_DATE), Modifier.width(64.dp), color = C.accentText, fontSize = TS.body)
-                        Column(Modifier.weight(1f)) {
-                            Text(m.task.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(m.note, color = C.muted, fontSize = TS.caption)
+            if (r.moves.isNotEmpty()) {
+                // The moves by project, each with its own button, so a long answer reads as a few short ones.
+                val groups = r.moves.groupBy { Projects.projectOf(it.task) ?: "" }
+                val grouped = groups.size > 1
+                groups.forEach { (project, moves) ->
+                    Column(Modifier.fillMaxWidth().then(if (grouped) Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(C.raised).padding(10.dp) else Modifier)) {
+                        if (grouped) Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(project.ifEmpty { tr("ยังไม่มีบ้าน", "No project yet") }, Modifier.weight(1f), color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                            Text(tr("${moves.size} งาน", "${moves.size} tasks"), color = C.faint, fontSize = TS.caption)
                         }
+                        moves.forEach { m ->
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(m.task) }.padding(vertical = 6.dp)) {
+                                Text(m.date.format(SHORT_DATE), Modifier.width(64.dp), color = C.accentText, fontSize = TS.body)
+                                Column(Modifier.weight(1f)) {
+                                    Text(m.task.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(m.note, color = C.muted, fontSize = TS.caption)
+                                }
+                            }
+                        }
+                        if (grouped && !done) Text(
+                            tr("จัดวันให้ ${moves.size} งาน", "Set dates for ${moves.size}"),
+                            Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(C.accentDeep).clickable { onApplyMoves(moves) }.padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = C.text, fontSize = TS.caption,
+                        )
                     }
                 }
             }
@@ -220,69 +242,160 @@ private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, o
 }
 
 /**
- * Talking to Claude: the situations from the pretext note, one tap to send. Hold one to change or delete it, or add
- * a new one; the note in Obsidian changes with it.
+ * Talking to Claude: every part of the pretext note is here to read and change with its pencil: the base (sent first,
+ * every time), each situation, and the ending (sent last); the note in Obsidian changes with it. A tap on a situation
+ * (or the button below) picks where the file goes ([onSend] null: only changing, as from Settings).
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ClaudeSheet(vm: TaskViewModel, onDismiss: () -> Unit, onSend: (SecretaryPretext.Note, SecretaryPretext.Part?) -> Unit) {
+internal fun ClaudeSheet(vm: TaskViewModel, onDismiss: () -> Unit, onSend: ((SecretaryPretext.Note, SecretaryPretext.Part?) -> Unit)?) {
     var note by remember { mutableStateOf<SecretaryPretext.Note?>(null) }
     LaunchedEffect(Unit) { note = vm.pretext() }
+    // What is being changed: the base, the ending, or a situation (its old title; null: a new one).
     var editing by remember { mutableStateOf<Pair<String?, SecretaryPretext.Part>?>(null) }
+    var which by remember { mutableStateOf("") }
+    var previewing by remember { mutableStateOf<String?>(null) }
+    var knowsOpen by remember { mutableStateOf(false) }
+    val knowsCount by produceState(0, knowsOpen) { value = vm.knows().lines().count { it.startsWith("- ") } }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.raised) {
-        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tr("คุยเสียงกับ Claude", "Talk to Claude"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                tr("เลือกเรื่อง แอปส่ง pretext, ที่ Claude รู้จักคุณ, งาน, นัด และแชตนี้ไปให้ คุยจบพูดว่า บันทึก กดค้างที่เรื่องเพื่อแก้หรือลบ", "Pick a topic. The pretext, what Claude knows of you, your work, calendar and this chat go along. Say บันทึก to finish. Hold a topic to edit or delete it."),
+                if (onSend != null) tr("คุยเสียงกับ Claude", "Talk to Claude") else tr("ข้อความที่ส่งให้ Claude", "What is sent to Claude"),
+                color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (onSend != null) tr("แตะเรื่องเพื่อส่ง แตะดินสอเพื่อแก้ ทุกอย่างที่ส่งไปแก้ได้ที่นี่", "Tap a topic to send it, the pencil to change it. Everything that is sent can be changed here")
+                else tr("แตะดินสอเพื่อแก้ ทุกอย่างที่ส่งไปแก้ได้ที่นี่ และตรงกับไฟล์ เลขา pretext.md ใน Obsidian", "Tap the pencil to change. It matches the file เลขา pretext.md in Obsidian"),
                 color = C.muted, fontSize = TS.caption,
             )
             val n = note
             if (n == null) Text(tr("กำลังอ่าน pretext...", "Reading the pretext..."), color = C.muted, fontSize = TS.body)
             else {
-                n.situations.forEach { p ->
-                    Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp))
-                            .combinedClickable(onClick = { onSend(n, p) }, onLongClick = { editing = p.title to p }).padding(horizontal = 14.dp, vertical = 10.dp),
-                    ) {
-                        Text(p.title, color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
-                        Text(p.body.lines().firstOrNull().orEmpty(), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                if (onSend != null) Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        tr("จะส่ง: พื้นฐาน, เรื่องที่เลือก, Claude รู้จักคุณ $knowsCount ข้อ, งาน, นัด 14 วัน, แชตนี้", "Sends: the base, the topic, what Claude knows of you ($knowsCount lines), tasks, 14 days of events, this chat"),
+                        Modifier.weight(1f), color = C.text2, fontSize = TS.caption,
+                    )
+                    Text(
+                        tr("ดูข้อความ", "Preview"),
+                        Modifier.padding(start = 8.dp).clip(RoundedCornerShape(8.dp)).clickable { previewing = "" }.padding(4.dp),
+                        color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold,
+                    )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { editing = null to SecretaryPretext.Part("", "") }) { Text(tr("+ เพิ่มเรื่อง", "+ Add topic"), color = C.accentText) }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { onSend(n, null) }) { Text(tr("ส่งโดยไม่เลือกเรื่อง", "Send without a topic"), color = C.text2) }
+                PartRow(tr("พื้นฐาน (ส่งทุกครั้ง)", "Base (always sent)"), n.base.lines().firstOrNull().orEmpty(), null) { which = SecretaryPretext.BASE; editing = SecretaryPretext.BASE to SecretaryPretext.Part(SecretaryPretext.BASE, n.base) }
+                n.situations.forEach { p ->
+                    PartRow(p.title, p.body.lines().firstOrNull().orEmpty(), onSend?.let { { it(n, p) } }) { which = ""; editing = p.title to p }
+                }
+                PartRow(tr("ตอนจบ (ส่งทุกครั้ง)", "Ending (always sent)"), n.ending.lines().firstOrNull().orEmpty(), null) { which = SecretaryPretext.ENDING; editing = SecretaryPretext.ENDING to SecretaryPretext.Part(SecretaryPretext.ENDING, n.ending) }
+                PartRow(tr("Claude รู้จักคุณ", "What Claude knows of you"), tr("$knowsCount ข้อ อ่านและแก้ได้", "$knowsCount lines, read and change"), null) { knowsOpen = true }
+                TextButton(onClick = { which = ""; editing = null to SecretaryPretext.Part("", "") }) { Text(tr("+ เพิ่มเรื่อง", "+ Add topic"), color = C.accentText) }
+                if (onSend != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable { onSend(n, null) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(tr("ส่งเป็นไฟล์ .md", "Send as a .md file"), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold) }
+                    Box(
+                        Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp)).background(C.card).clickable { onSend(n, null) }.padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(tr("ส่งโดยไม่เลือกเรื่อง", "Send without a topic"), color = C.text2, fontSize = TS.body) }
                 }
             }
         }
     }
+    if (knowsOpen) KnowsDialog(vm) { knowsOpen = false }
+    previewing?.let { _ ->
+        var text by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(Unit) { note?.let { text = vm.claudePack(it, null, log = false) } }
+        AlertDialog(
+            onDismissRequest = { previewing = null },
+            containerColor = C.raised,
+            title = { Text(tr("ข้อความที่จะส่ง", "What will be sent")) },
+            text = { Text(text ?: "...", Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), color = C.text2, fontSize = TS.caption) },
+            confirmButton = { TextButton(onClick = { previewing = null }) { Text(tr("ปิด", "Close"), color = C.accent) } },
+        )
+    }
     editing?.let { (old, part) ->
         var title by remember(old) { mutableStateOf(part.title) }
         var body by remember(old) { mutableStateOf(part.body) }
+        val fixed = old == SecretaryPretext.BASE || old == SecretaryPretext.ENDING
         AlertDialog(
             onDismissRequest = { editing = null },
             containerColor = C.raised,
-            title = { Text(if (old == null) tr("เพิ่มเรื่อง", "Add a topic") else tr("แก้เรื่อง", "Edit topic")) },
+            title = { Text(if (fixed) tr("แก้ ${part.title}", "Change ${part.title}") else if (old == null) tr("เพิ่มเรื่อง", "Add a topic") else tr("แก้เรื่อง", "Edit topic")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Field(title, { title = it }, tr("ชื่อปุ่ม เช่น ก่อนประชุม", "Button name"), single = true)
+                    if (fixed) Text(
+                        if (old == SecretaryPretext.BASE) tr("ส่งเป็นส่วนแรกทุกครั้ง ไม่ว่าเลือกเรื่องไหน", "Sent first, every time") else tr("ส่งเป็นส่วนท้ายทุกครั้ง", "Sent last, every time"),
+                        color = C.muted, fontSize = TS.caption,
+                    )
+                    else Field(title, { title = it }, tr("ชื่อปุ่ม เช่น ก่อนประชุม", "Button name"), single = true)
                     Field(body, { body = it }, tr("บอก Claude ว่าเรื่องนี้ต้องช่วยแบบไหน", "Tell Claude how to help with this"), single = false)
                 }
             },
             confirmButton = {
-                TextButton(enabled = title.isNotBlank() && body.isNotBlank(), onClick = {
-                    note?.with(old, SecretaryPretext.Part(title.trim(), body.trim()))?.let { note = it; vm.savePretext(it) }
+                TextButton(enabled = (fixed || title.isNotBlank()) && body.isNotBlank(), onClick = {
+                    val next = when (old) {
+                        SecretaryPretext.BASE -> note?.copy(base = body.trim())
+                        SecretaryPretext.ENDING -> note?.copy(ending = body.trim())
+                        else -> note?.with(old, SecretaryPretext.Part(title.trim(), body.trim()))
+                    }
+                    next?.let { note = it; vm.savePretext(it) }
                     editing = null
                 }) { Text(tr("บันทึก", "Save"), color = C.accent) }
             },
             dismissButton = {
                 Row {
-                    if (old != null) TextButton(onClick = { note?.with(old, null)?.let { note = it; vm.savePretext(it) }; editing = null }) { Text(tr("ลบ", "Delete"), color = C.red) }
+                    if (fixed) {
+                        val d = SecretaryPretext.parse(SecretaryPretext.DEFAULT)
+                        TextButton(onClick = { body = if (old == SecretaryPretext.BASE) d.base else d.ending }) { Text(tr("ใช้ค่าตั้งต้น", "Use the default"), color = C.amber) }
+                    } else if (old != null) TextButton(onClick = { note?.with(old, null)?.let { note = it; vm.savePretext(it) }; editing = null }) { Text(tr("ลบ", "Delete"), color = C.red) }
                     TextButton(onClick = { editing = null }) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) }
                 }
             },
         )
     }
+}
+
+/** One part of the pretext: its name and first line; a tap on the row does [onTap] (when there is one), the pencil changes it. */
+@Composable
+private fun PartRow(title: String, line: String, onTap: (() -> Unit)?, onEdit: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp))
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier.clickable(onClick = onEdit))
+            .padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
+            Text(line, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.raised).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
+            Icon(Ic.pen, tr("แก้", "Edit"), tint = C.text2, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/** What Claude has learned of the owner (Claude รู้จักคุณ.md): the lines, to read and change. */
+@Composable
+internal fun KnowsDialog(vm: TaskViewModel, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { text = vm.knows() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("Claude รู้จักคุณ", "What Claude knows of you")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("เลขาเติมให้จากที่คุยกัน ข้อที่ไม่ใช่แล้ว ลบหรือแก้ได้เลย", "The secretary adds to it from your talks. Change or delete what is no longer true"), color = C.muted, fontSize = TS.caption)
+                text?.let { t -> Field(t, { text = it }, tr("ยังไม่มีข้อ", "Nothing yet"), single = false) }
+            }
+        },
+        confirmButton = { TextButton(enabled = text != null, onClick = { text?.let(vm::saveKnows); onDismiss() }) { Text(tr("บันทึก", "Save"), color = C.accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+    )
 }
 
 @Composable
@@ -297,6 +410,84 @@ private fun Field(value: String, onChange: (String) -> Unit, hint: String, singl
     )
 }
 
+/**
+ * Where the file for Claude goes: the Claude app (to talk on), the secretary's room (attach it and type "รอบเลขา" for an
+ * urgent round), the vault to keep, or plain text when a file cannot be attached.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SendSheet(vm: TaskViewModel, note: SecretaryPretext.Note, part: SecretaryPretext.Part?, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var text by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { text = vm.claudePack(note, part) }
+    val name = remember {
+        val n = java.time.LocalDateTime.now()
+        "เลขา %04d-%02d-%02d %02d%02d.md".format(n.year, n.monthValue, n.dayOfMonth, n.hour, n.minute)
+    }
+    fun toast(t: String) = android.widget.Toast.makeText(context, t, android.widget.Toast.LENGTH_LONG).show()
+    fun asText(t: String) { shareToClaude(context, t); onDismiss() }
+    fun file(t: String, claudeApp: Boolean, hint: String?) {
+        if (shareFile(context, name, t, claudeApp)) { hint?.let(::toast); onDismiss() } else { toast(tr("แนบไฟล์ไม่ได้ ส่งเป็นข้อความแทน", "Could not attach the file, sending text instead")); asText(t) }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.raised) {
+        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                if (part != null) tr("ส่งเรื่อง ${part.title}", "Send ${part.title}") else tr("ส่งให้ Claude", "Send to Claude"),
+                color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold,
+            )
+            val t = text
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(name, color = C.text, fontSize = TS.body)
+                Text(if (t == null) tr("กำลังเตรียม...", "Preparing...") else tr("${(t.toByteArray().size + 1023) / 1024} KB พร้อมส่ง", "${(t.toByteArray().size + 1023) / 1024} KB, ready"), color = C.muted, fontSize = TS.caption)
+            }
+            SendOption("1", tr("ส่งไปแอป Claude", "To the Claude app"), tr("แนบไฟล์ .md แล้วคุยเสียงต่อ แนะนำ", "Attach the .md file and talk on (recommended)"), true, t != null) { file(t!!, true, null) }
+            SendOption("2", tr("ส่งเข้าห้องเลขา", "To the secretary's room"), tr("แนบไฟล์ แล้วพิมพ์ รอบเลขา สำหรับงานด่วน เลขาจะอ่านทันที", "Attach it and type รอบเลขา for an urgent round"), false, t != null) {
+                file(t!!, false, tr("เปิดห้องเลขา แนบไฟล์ แล้วพิมพ์ รอบเลขา", "Open the secretary's room, attach the file and type รอบเลขา"))
+            }
+            SendOption("3", tr("บันทึกไว้ในคลัง", "Keep in the vault"), tr("เก็บที่ Omni/ส่งเลขา ไว้ดูหรือส่งทีหลัง", "Kept in Omni/ส่งเลขา to read or send later"), false, t != null) {
+                vm.keepSendFile(name, t!!); toast(tr("เก็บไว้ที่ Omni/ส่งเลขา แล้ว", "Kept in Omni/ส่งเลขา")); onDismiss()
+            }
+            SendOption("4", tr("ส่งเป็นข้อความ", "Send as text"), tr("เฉพาะเมื่อแนบไฟล์ไม่ได้ ข้อความยาวอาจถูกตัด", "Only when a file cannot be attached; a long text may be cut"), false, t != null) { asText(t!!) }
+        }
+    }
+}
+
+@Composable
+private fun SendOption(n: String, title: String, sub: String, main: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (main) C.accentDeep else C.card).border(1.dp, if (main) C.accentLine else C.cardBorder, RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(34.dp).clip(CircleShape).background(if (main) C.accent else C.raised), contentAlignment = Alignment.Center) {
+            Text(n, color = if (main) C.onAccent else C.text2, fontWeight = FontWeight.Bold)
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = C.muted, fontSize = TS.caption)
+        }
+    }
+}
+
+/** Shares [text] as a .md file (kept in the cache for a day); to the Claude app when [claudeApp], else wherever the owner picks. False if it cannot. */
+internal fun shareFile(context: Context, name: String, text: String, claudeApp: Boolean): Boolean = runCatching {
+    val dir = java.io.File(context.cacheDir, "send").also { it.mkdirs() }
+    dir.listFiles()?.filter { it.lastModified() < System.currentTimeMillis() - 86_400_000L }?.forEach { it.delete() }
+    val file = java.io.File(dir, name.replace(Regex("[^\\w ก-๙.-]"), "-"))
+    file.writeText(text)
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
+    val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    share.clipData = android.content.ClipData.newRawUri(name, uri)
+    val toClaude = Intent(share).setPackage("com.anthropic.claude").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (claudeApp) {
+        try { context.startActivity(toClaude) } catch (_: ActivityNotFoundException) {
+            context.startActivity(Intent.createChooser(share, tr("ส่งให้ Claude", "Send to Claude")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    } else context.startActivity(Intent.createChooser(share, tr("ส่งเข้าห้องเลขา", "Send to the secretary's room")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    true
+}.getOrDefault(false)
+
 /** Opens Claude's app with [text] ready to send; another app can take it when Claude's is not installed. */
 internal fun shareToClaude(context: Context, text: String) {
     val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
@@ -305,4 +496,19 @@ internal fun shareToClaude(context: Context, text: String) {
     } catch (_: ActivityNotFoundException) {
         context.startActivity(Intent.createChooser(share, tr("ส่งให้ Claude", "Send to Claude")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+}
+
+
+/** In Settings, Secretary and AI: the parts of what is sent to Claude, and what it knows, each to open and change. */
+@Composable
+fun ClaudeSettingsRows(vm: TaskViewModel) {
+    var pretext by remember { mutableStateOf(false) }
+    var knows by remember { mutableStateOf(false) }
+    Card {
+        NavRow(tr("ข้อความที่ส่งให้ Claude", "What is sent to Claude"), tr("พื้นฐาน เรื่องที่คุย และตอนจบ แก้ได้ทั้งหมด", "The base, the topics and the ending, all can be changed")) { pretext = true }
+        Divider(start = 16.dp)
+        NavRow(tr("Claude รู้จักคุณ", "What Claude knows of you"), tr("ที่ Claude เรียนรู้จากการคุย อ่านและแก้ได้", "What Claude learned from your talks, read and change")) { knows = true }
+    }
+    if (pretext) ClaudeSheet(vm, { pretext = false }, null)
+    if (knows) KnowsDialog(vm) { knows = false }
 }

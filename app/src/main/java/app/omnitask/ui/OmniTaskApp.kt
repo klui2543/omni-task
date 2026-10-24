@@ -221,6 +221,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
             calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
             drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive, vm::putBackClash, vm::dismissClash),
             ai = AiSettings(state.ai, vm::setAiKey, vm::testAiKey, vm::setAutoBrief),
+            urgent = { UrgentGroup(state.urgentRule, vm::setUrgentRule) },
+            notifyLink = { NotifyLink { notifyOpen = true } },
+            claudeRows = { ClaudeSettingsRows(vm) },
         ) { settingsOpen = false }
         return
     }
@@ -295,6 +298,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
                                 }
                             },
                             tail = { VaultLinks(onReload = vm::reload, onVault = { pickVault.launch(state.vault) }) },
+                            urgent = { UrgentGroup(state.urgentRule, vm::setUrgentRule) },
+                            notifyLink = { NotifyLink { notifyOpen = true } },
+                            claudeRows = { ClaudeSettingsRows(vm) },
                         )
                     }
                     }

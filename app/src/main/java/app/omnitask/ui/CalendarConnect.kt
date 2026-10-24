@@ -98,14 +98,24 @@ fun calendarConnectShows(state: UiState): Boolean {
  * the list was opened from: it is pointed out by id, since two calendars can carry the same name.
  */
 @Composable
-fun CalendarRows(choices: CalendarChoices, mark: Long? = null) {
+fun CalendarRows(choices: CalendarChoices, mark: Long? = null, byAccount: Boolean = false) {
     val visible = choices.calendars.filter { it.visible }
     if (visible.isEmpty()) {
         Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
     }
     val context = androidx.compose.ui.platform.LocalContext.current
     var styling by remember { mutableStateOf<Long?>(null) }
-    visible.forEach { cal ->
+    var lastAccount: String? = null
+    val shown = if (byAccount) visible.sortedBy { it.account.lowercase() } else visible
+    shown.forEach { cal ->
+        // By account: a heading each time the account changes, so whose calendars these are is clear.
+        if (byAccount && cal.account != lastAccount) {
+            lastAccount = cal.account
+            Text(
+                cal.account.ifBlank { tr("ไม่ระบุบัญชี", "No account") } + (cal.source?.let { " ($it)" } ?: ""),
+                Modifier.padding(top = 10.dp), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold,
+            )
+        }
         val on = !CalendarReader.isHidden(cal.id, choices.hidden)
         Row(Modifier.fillMaxWidth().clickable { choices.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             // The calendar's colour and label: whose events these are, at a glance (see CalendarStyles).

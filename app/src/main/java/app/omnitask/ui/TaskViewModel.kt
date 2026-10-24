@@ -47,7 +47,6 @@ import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
 import app.omnitask.model.VoiceNotes
 import app.omnitask.data.VoiceRec
-import app.omnitask.data.CalendarCheck
 import app.omnitask.data.Gemini
 import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
@@ -600,17 +599,40 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return SecretaryPretext.parse(text)
     }
 
+    /** What Claude has learned about the owner (Claude รู้จักคุณ.md), for the owner to read and change. */
+    suspend fun knows(): String {
+        val vault = _state.value.vault ?: return ""
+        return withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryPretext.KNOWS_PATH) }.getOrNull().orEmpty() }
+    }
+
+    fun saveKnows(text: String) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.KNOWS_PATH, text.trimEnd() + "\n") } }
+    }
+
+    /** The file handed to Claude, kept in the vault ("ส่งเลขา") to read or send again later. */
+    fun keepSendFile(name: String, text: String) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, "${app.omnitask.data.VaultText.OMNI_DIR}/ส่งเลขา/$name", text) } }
+    }
+
+    /** The dates of one project's moves from the secretary's answer, taken together. */
+    fun deskApplyMoves(moves: List<SecretaryDesk.Move>) {
+        moves.forEach { m -> current(m.task)?.let { setDate(it, m.field, m.date) } }
+        desk.add(DeskTurn(reply = SecretaryDesk.Reply(listOf(tr("ลงวันใหม่แล้ว ${moves.size} งาน", "${moves.size} tasks moved")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)))))
+    }
+
     fun savePretext(note: SecretaryPretext.Note) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.PATH, note.render()) } }
     }
 
     /** Everything Claude gets for [situation]: the pretext, what it knows of the owner, the log, work and calendar, this chat. */
-    suspend fun claudePack(note: SecretaryPretext.Note, situation: SecretaryPretext.Part?): String {
+    suspend fun claudePack(note: SecretaryPretext.Note, situation: SecretaryPretext.Part?, log: Boolean = true): String {
         val s = _state.value
         fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
         val (knows, log) = withContext(Dispatchers.IO) { read(SecretaryPretext.KNOWS_PATH) to read(CLAUDE_LOG) }
-        deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
+        if (log) deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
         return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript())
     }
 
@@ -878,7 +900,108 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private var calendarChecked = false
+
+    fun reload() {
+        val vault = _state.value.vault ?: return
+        _state.update { it.copy(loading = true) }
+        viewModelScope.launch {
+            // Settings saved from another phone (or before the app was cleared) come in first.
+            val imported = withContext(Dispatchers.IO) {
+                runCatching {
+                    SettingsSync.tidy(repo, vault)
+                    SettingsSync.load(getApplication(), repo, vault).also { loaded ->
+                        // First run with this vault: start the file from what this phone has.
+                        if (!loaded && SettingsSync.read(repo, vault) == null) SettingsSync.save(getApplication(), repo, vault)
+                    }
+                }.getOrDefault(false)
+            }
+            // The month widget's frames and emoji, saved on another phone or before the app was cleared.
+            withContext(Dispatchers.IO) { runCatching { MonthMarksStore.sync(getApplication(), repo, vault) } }
+            if (imported) {
+                Lang.load(getApplication())
+                Appearance.load(getApplication())
+                _state.update { fromPrefs(it) }
+            }
+            // What the owner did on every device, for the assistant to learn from; what this phone kept goes out first.
+            behavior = withContext(Dispatchers.IO) {
+                runCatching { BehaviorLog.sync(getApplication(), repo, vault) }.getOrElse { (behavior + BehaviorLog.waiting(getApplication())).distinctBy { e -> e.id } }
+            }
+            val swept = withContext(Dispatchers.IO) { runCatching { sweepIfDue(vault) }.getOrDefault(emptyList()) }
+            val result = withContext(Dispatchers.IO) {
+                runCatching { repo.load(vault) }.onSuccess { snap ->
+                    // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
+                    // Tasks in parked branches stay quiet.
+                    val states = _state.value.branchStates
+                    runCatching { Scheduler.reschedule(getApplication(), snap.tasks.filterNot { Branches.isParked(it, states) }) }
+                }
+            }
+            val app = getApplication<Application>()
+            launch { runCatching { OmniWidgets.refresh(app) } }
+            val events = withContext(Dispatchers.IO) {
+                runCatching { CalendarReader.requestSync(app) }
+                loadEvents(app)
+            }
+            checkWithGoogle()
+            val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
+            val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
+            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned) }
+            // A sync that changed nothing leaves the widgets as they are.
+            runCatching { withContext<Unit>(Dispatchers.IO) { CalendarPrint.refreshIfChanged(app, "app saw the calendar") } }
+        }
+    }
+
+    val state: StateFlow<UiState> = _state
+
+    fun setVault(uri: Uri) {
+        getApplication<Application>().contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
+        prefs.edit().putString(KEY_VAULT, uri.toString()).apply()
+        _state.update { it.copy(vault = uri, vaultName = null) }
+        reload()
+    }
+
+    fun setUrgentRule(rule: UrgentRule) {
+        prefs.edit().putString(KEY_URGENT, rule.name).apply()
+        _state.update { it.copy(urgentRule = rule) }
+    }
+
+    fun setFilters(filters: Filters) = _state.update { it.copy(filters = filters) }
+
+    fun clearMessage() = _state.update { it.copy(message = null) }
+    fun showMessage(text: String) = _state.update { it.copy(message = text) }
+
+    fun showCrash(report: String) = _state.update { it.copy(crash = report) }
+
+    fun dismissCrash() {
+        CrashLog.clear(getApplication())
+        _state.update { it.copy(crash = null) }
+    }
+
+    /** Pull to refresh: asks Google Calendar to sync now, past the once-a-minute limit, then reloads everything. */
+    fun pullRefresh() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { runCatching { CalendarReader.requestSync(app, force = true) } }
+        reload()
+        checkWithGoogle(force = true)
+    }
+
+    /**
+     * Asks Google which events still exist and hides the ones the phone kept after they were deleted there
+     * ([GoogleCalendarCheck]); when that changes anything, the calendar and the widgets are read again.
+     */
+    private fun checkWithGoogle(force: Boolean = false) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val changed = withContext(Dispatchers.IO) { runCatching { GoogleCalendarCheck.refresh(app, force) }.getOrDefault(false) }
+            if (changed) {
+                refreshEvents()
+                launch { runCatching { OmniWidgets.refresh(app) } }
+            }
+        }
+    }
+
 
     fun reload() {
         val vault = _state.value.vault ?: return

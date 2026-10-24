@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -106,12 +107,21 @@ fun SettingsScreen(
     ai: AiSettings? = null,
     head: (@Composable () -> Unit)? = null,
     tail: (@Composable () -> Unit)? = null,
+    // The new look's pages: what the old Settings tab holds around the settings, set apart by the page it belongs to.
+    urgent: (@Composable () -> Unit)? = null,
+    notifyLink: (@Composable () -> Unit)? = null,
+    claudeRows: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     // Without onBack it is the Settings tab of the bottom bar, inside the app's frame; with it, a page of its own.
     val tab = onBack == null
-    BackHandler(enabled = !tab) { onBack?.invoke() }
+    // The new look: five pages instead of one long list. Home lists them; a page shows only its own groups.
+    val newLook = NewLook.on
+    var page by rememberSaveable { mutableStateOf<String?>(null) }
+    fun show(p: String) = !newLook || page == p
+    BackHandler(enabled = newLook && page != null) { page = null }
+    BackHandler(enabled = !tab && !(newLook && page != null)) { onBack?.invoke() }
     // Bumped after the permission prompt closes so the section re-reads whether access is granted.
     var permissionTick by remember { mutableIntStateOf(0) }
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -154,16 +164,34 @@ fun SettingsScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onBack != null) SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
+                if (newLook && page != null) SquareButton(Ic.back, tr("กลับ", "Back")) { page = null }
+                else if (onBack != null) SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
                 Text(
-                    tr("ตั้งค่า", "Settings"), Modifier.padding(start = if (tab) 4.dp else 12.dp),
+                    if (newLook && page != null) PAGES.first { it.first == page }.second else tr("ตั้งค่า", "Settings"), Modifier.padding(start = if (tab && !(newLook && page != null)) 4.dp else 12.dp),
                     style = if (tab) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge, color = C.text,
                 )
             }
         }
-        head?.let { item { it() } }
-        if (ai != null) item { AiKeyGroup(ai) }
-        item {
+        if (!newLook) head?.let { item { it() } }
+        if (newLook && page == null) item {
+            Card {
+                val off = calendars?.calendars?.count { it.visible && !it.sync && it.source != null } ?: 0
+                NavRow(PAGES[0].second, tr("Gemini, ข้อความที่ส่งให้ Claude, เลขาบันทึกล่าสุด", "Gemini, what is sent to Claude, when the secretary last logged"), null) { page = PAGES[0].first }
+                Divider(start = 16.dp)
+                NavRow(PAGES[1].second, tr("งานด่วน, การนอน, งานที่เสร็จแล้ว", "Urgent work, sleep, finished tasks"), null) { page = PAGES[1].first }
+                Divider(start = 16.dp)
+                NavRow(PAGES[2].second, tr("จัดกลุ่มตามบัญชี เลือกปฏิทินที่แสดง", "By account, pick what shows"), if (off > 0) tr("ปิดซิงก์ $off", "$off not syncing") else null) { page = PAGES[2].first }
+                Divider(start = 16.dp)
+                NavRow(PAGES[3].second, tr("ธีม ฟอนต์ ขนาดตัวอักษร ภาษา ลองหน้าตาใหม่", "Theme, font, text size, language, the new look"), null) { page = PAGES[3].first }
+                Divider(start = 16.dp)
+                NavRow(PAGES[4].second, tr("Google Drive, แจ้งเตือน, โหลดใหม่", "Google Drive, notifications, reload"), null) { page = PAGES[4].first }
+            }
+        }
+        if (newLook && page == "tasks") urgent?.let { item { it() } }
+        if (newLook && page == "system") notifyLink?.let { item { it() } }
+        if (newLook && page == "ai") claudeRows?.let { item { it() } }
+        if (ai != null && show("ai")) item { AiKeyGroup(ai) }
+        if (show("look")) item {
             SettingsGroup(tr("ภาษา", "Language")) {
                 // Each language is named in itself, so it can be found whichever one is showing.
                 Segmented(
@@ -179,10 +207,10 @@ fun SettingsScreen(
                 )
             }
         }
-        if (drive != null) {
+        if (drive != null && show("system")) {
             item { DriveGroup(drive) }
         }
-        if (profile != null) {
+        if (profile != null && show("tasks")) {
             item {
                 // The usual night; tonight alone can be moved from the Focus screen.
                 SettingsGroup(tr("การนอน", "Sleep")) {
@@ -195,7 +223,7 @@ fun SettingsScreen(
                 }
             }
         }
-        if (archive != null) {
+        if (archive != null && show("tasks")) {
             item {
                 SettingsGroup(tr("งานที่เสร็จแล้ว", "Finished tasks")) {
                     Text(tr("ย้ายเข้าคลังอัตโนมัติหลัง", "Move to the archive after"), Modifier.padding(top = 8.dp), color = C.text, fontSize = TS.body)
@@ -221,7 +249,7 @@ fun SettingsScreen(
                 }
             }
         }
-        if (calendars != null) {
+        if (calendars != null && show("cal")) {
             item {
                 SettingsGroup(tr("ปฏิทินที่แสดง", "Calendars shown")) {
                     val granted = permissionTick >= 0 && app.omnitask.data.CalendarReader.hasPermission(context)
@@ -236,7 +264,7 @@ fun SettingsScreen(
                             Modifier.padding(top = 8.dp, bottom = 12.dp),
                         )
                     } else {
-                        CalendarRows(calendars)
+                        CalendarRows(calendars, byAccount = newLook)
                         Text(
                             tr(
                                 "เลือกได้เฉพาะปฏิทินที่เปิดแสดงไว้ในแอปปฏิทินของเครื่อง ปฏิทินที่ปิดตรงนี้จะไม่โผล่ในปฏิทินเดือน แกนต์ ไทม์ไลน์ วิดเจ็ต การแจ้งเตือน และผู้ช่วย",
@@ -248,8 +276,8 @@ fun SettingsScreen(
                 }
             }
         }
-        item { NewLookSetting(context) }
-        item {
+        if (show("look")) item { NewLookSetting(context) }
+        if (show("look")) item {
             SettingsGroup(tr("ธีม", "Theme")) {
                 Segmented(
                     ThemeMode.entries.map { it to it.label },
@@ -265,7 +293,7 @@ fun SettingsScreen(
                 )
             }
         }
-        item {
+        if (show("look")) item {
             SettingsGroup(tr("ฟอนต์", "Font")) {
                 Column(Modifier.selectableGroup().padding(top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FontChoice.entries.forEach { choice ->
@@ -274,7 +302,7 @@ fun SettingsScreen(
                 }
             }
         }
-        item {
+        if (show("look")) item {
             SettingsGroup(tr("ขนาดตัวอักษร", "Text size")) {
                 Segmented(
                     Appearance.SCALES.map { it to "${(it * 100).roundToInt()}%" },
@@ -285,9 +313,18 @@ fun SettingsScreen(
                 SizePreview(Modifier.padding(top = 10.dp, bottom = 12.dp))
             }
         }
-        tail?.let { item { it() } }
+        if (show("system")) tail?.let { item { it() } }
     }
 }
+
+/** The new look's settings pages: their keys and names. */
+private val PAGES get() = listOf(
+    "ai" to tr("เลขาและ AI", "Secretary and AI"),
+    "tasks" to tr("งานของฉัน", "My tasks"),
+    "cal" to tr("ปฏิทิน", "Calendars"),
+    "look" to tr("หน้าตา", "Look"),
+    "system" to tr("เชื่อมต่อและระบบ", "Connections and system"),
+)
 
 /** Connecting the Omni folder on Google Drive, and how it is going once connected. */
 @Composable
