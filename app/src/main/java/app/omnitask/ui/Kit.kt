@@ -89,6 +89,8 @@ object Ic {
     val back = icon("back", "M15 6l-6 6 6 6", width = 2f)
     val next = icon("next", "M9 6l6 6-6 6", width = 2f)
     val send = icon("send", "M5 12h14M13 6l6 6-6 6", width = 2.2f)
+    /** A speech bubble: the assistant line's way to its page while nothing is typed. */
+    val chat = icon("chat", "M5 5h14v10H10l-5 4Z")
     val refresh = icon("refresh", "M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7")
     val pen = icon("pen", "M4 20l1-4 11-11 3 3-11 11Z", "M14 7l3 3")
     val archive = icon("archive", "M3.5 4.5h17v4h-17Z", "M5 8.5v11h14v-11", "M10 12.5h4")
@@ -98,7 +100,12 @@ object Ic {
     val up = icon("up", "M6 15l6-6 6 6", width = 2f)
     val down = icon("down", "M6 9l6 6 6-6", width = 2f)
     val mic = icon("mic", "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
-    val gear = icon("gear", "M12 8.5a3.5 3.5 0 1 0 0.01 0Z", "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8")
+    // A cog (Feather's "settings" shape): eight teeth round a hub, so it reads as settings, not a sun.
+    val gear = icon(
+        "gear", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+        "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z",
+        width = 1.6f,
+    )
     // The detailed add page's row icons: thin, and drawn without fill.
     val clock = icon("clock", "M12 3.5a8.5 8.5 0 1 0 0.01 0Z", "M12 7.5V12l3 2", width = 1.6f)
     val repeat = icon("repeat", "M4 11V9a3 3 0 0 1 3-3h11l-3-3", "M20 13v2a3 3 0 0 1-3 3H6l3 3", width = 1.6f)
@@ -306,14 +313,25 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
         add(Meta(text, if (late) C.redSoft else Color.Transparent, if (late) C.red else C.muted))
     }
     if (t.due == null || !compact) t.scheduled?.let { d ->
-        add(Meta(if (d == today) tr("นัดวันนี้", "Sched. today") else tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}"), Color.Transparent, C.muted))
+        // The new look names a slipped own target as such, in grey: it is not a deadline.
+        val text = when {
+            NewLook.on && open && d < today -> tr("เลยเป้า ${ChronoUnit.DAYS.between(d, today)} วัน", "target ${ChronoUnit.DAYS.between(d, today)} days ago")
+            d == today -> tr("นัดวันนี้", "Sched. today")
+            else -> tr("นัด ${d.format(SHORT_DATE)}", "Sched. ${d.format(SHORT_DATE)}")
+        }
+        add(Meta(text, Color.Transparent, C.muted))
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
-    t.reminderTime?.let { add(Meta(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
-    t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
+    // The new look leaves the reminder and repeat out of the row; the task sheet still shows them.
+    if (!NewLook.on) t.reminderTime?.let { add(Meta(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
+    if (!NewLook.on) t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
     if (!compact) {
         val project = Projects.projectOf(t)
-        t.tags.filterNot { it.startsWith("remind-at-") }.forEach { tag ->
+        val tags = t.tags.filterNot { it.startsWith("remind-at-") }
+        // The new look keeps tags quiet and to two, so the title is what the eye finds first.
+        if (NewLook.on) tags.sortedBy { it != project }.take(2).forEach { tag ->
+            add(Meta(if (tag == project) tag else "#$tag", Color.Transparent, if (tag == project) C.muted else C.faint))
+        } else tags.forEach { tag ->
             if (tag == project) add(Meta(tag, Color.Transparent, C.tealText)) else add(Meta("#$tag", Color.Transparent, C.accentText))
         }
     }
@@ -342,6 +360,7 @@ fun TaskRow(
                     task.title,
                     Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (NewLook.on && !done) FontWeight.Medium else null,
                     color = if (done || blockedBy != null) C.muted else C.text,
                     textDecoration = if (done) TextDecoration.LineThrough else null,
                     maxLines = if (compact) 2 else 4,

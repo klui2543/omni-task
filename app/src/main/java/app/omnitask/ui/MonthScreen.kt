@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.PointerInputChange
@@ -158,7 +159,7 @@ fun MonthScreen(request: MonthRequest, state: UiState, onClose: (LocalDate) -> U
     val days = MonthGrid.days(month)
     fun tasksOn(d: LocalDate) = state.tasks.filter { it.isOpen && (it.due ?: it.scheduled) == d }
     fun eventsOn(d: LocalDate) = events.filter { MonthData.onDay(it, d) }
-    val work = remember(state.tasks, events, month, state.today) { MonthData.work(days, month, ::tasksOn, ::eventsOn, state.today) }
+    val work = remember(state.tasks, events, month, state.today) { MonthData.work(days, month, ::tasksOn, ::eventsOn, state.today, colorOf = { CalendarStyles.color(it)?.toArgb() }) }
     // Events on most days of the month (a workout): left out of the cells, listed faint under a day.
     val routine = remember(events, month) {
         val inMonth = days.filter { it.monthNumber == month.monthNumber }

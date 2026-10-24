@@ -30,6 +30,9 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.SpokenWhen
+import app.omnitask.model.TimeWords
+import app.omnitask.model.Ygdrasil
 import app.omnitask.model.Behavior
 import app.omnitask.model.BehaviorEvent
 import app.omnitask.model.Insight
@@ -44,9 +47,11 @@ import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
+import app.omnitask.model.VoiceNotes
+import app.omnitask.data.VoiceRec
+import app.omnitask.data.Gemini
 import app.omnitask.model.AiMemory
 import app.omnitask.data.AiKey
-import app.omnitask.data.Gemini
 import app.omnitask.data.AiLibrary
 import app.omnitask.model.AiIndex
 import app.omnitask.model.Swap
@@ -60,6 +65,8 @@ import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.StuckLog
+import app.omnitask.model.SecretaryDesk
+import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
@@ -81,11 +88,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.omnitask.time.*
 
 const val DEFAULT_ARCHIVE_DAYS = 7
+
+/** Where a broken Gemini answer is kept, for Claude to read. */
+private const val GEMINI_CHECK = "${app.omnitask.data.VaultText.OMNI_DIR}/ตรวจ Gemini.md"
+
+/** The secretary chat's taps, a line each, for the secretary to learn habits from. */
+private const val DESK_STATS = "${app.omnitask.data.VaultText.OMNI_DIR}/สถิติเลขา.md"
 
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
@@ -200,6 +214,10 @@ data class UiState(
     /** Each project's task order (by title) and the projects whose order is enforced with 🆔/⛔. */
     val projectTaskOrder: Map<String, List<String>> = emptyMap(),
     val strictProjects: Set<String> = emptySet(),
+    /** How far ahead a project's work opens it in Ygdrasil (work past its 📅 date always does). */
+    val treeReach: Ygdrasil.Reach = Ygdrasil.Reach.WEEK,
+    /** The owner's time words for spoken tasks ("เย็น" is 17:00), from กฎเวลา.md. */
+    val timeWords: List<TimeWords.Word> = TimeWords.DEFAULT,
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
     /** The Gemini assistant: the key, the brief at the top of the assistant page, and calls under way. */
@@ -405,6 +423,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             e.substringBefore('\t') to e.substringAfter('\t', "").split('\u001F').filter { it.isNotEmpty() }
         },
         strictProjects = prefs.getStringSet(KEY_STRICT, emptySet()).orEmpty().toSet(),
+        treeReach = Ygdrasil.Reach.of(prefs.getString(KEY_TREE_REACH, null)),
         savedFilters = prefs.getStringSet(KEY_SAVED_FILTERS, emptySet()).orEmpty()
             .associate { it.substringBefore('\t') to it.substringAfter('\t', "") },
     )
@@ -438,6 +457,399 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.registerOnSharedPreferenceChangeListener(settingsListener)
         runCatching { getApplication<Application>().contentResolver.registerContentObserver(CalendarContract.CONTENT_URI, true, calendarObserver) }
     }
+
+    // Tasks spoken into the phone (see VoiceRecorder.kt and VoiceNotes).
+
+    /**
+     * What the voice sheet and the focus page show: a recording with its words and the tasks heard so far, the last
+     * tidy after it stops, the tasks to check, or recordings left over.
+     */
+    data class VoiceUi(
+        val recording: VoiceRec.Recording? = null,
+        val words: String = "",
+        val live: List<VoiceNotes.Live> = emptyList(),
+        /** Pieces sent and not answered yet, and pieces that could not be written down (no network). */
+        val sending: Int = 0,
+        val unsent: Int = 0,
+        val busy: Boolean = false,
+        val review: VoiceReview? = null,
+        val waiting: List<java.io.File> = emptyList(),
+        val failed: String? = null,
+    )
+
+    /** The tasks heard in the recording in [dir], to check before they go to the tray. [dup] is an open task each may repeat. */
+    data class VoiceReview(val dir: java.io.File, val seconds: Long, val items: List<VoiceItem>)
+
+    /** A heard task: its words, the day and time read from them ([heard]), and an open task it may repeat. */
+    data class VoiceItem(val text: String, val dup: Task?, val heard: SpokenWhen.Heard)
+
+    /** A heard task as the owner leaves it in the check: the words, the day, time and kind of date, and a project. */
+    data class VoiceDraft(val heard: SpokenWhen.Heard, val project: String? = null)
+
+    private val _voice = MutableStateFlow(VoiceUi())
+    val voice: StateFlow<VoiceUi> = _voice
+
+    /** Tasks the owner took out while recording; Gemini is told so it does not bring them back. */
+    private val voiceRemoved = mutableListOf<String>()
+    private var voiceNextId = 1
+
+    /** One piece at a time, in order, so each is sent with the words and the list before it. */
+    private val voiceLock = kotlinx.coroutines.sync.Mutex()
+
+    /** Titles saved from a recording, with when, so the tray can show them first for a day. */
+    private val voiceFresh get() = getApplication<Application>().getSharedPreferences("omni-voice", android.content.Context.MODE_PRIVATE)
+
+    // ---- The secretary's own chat (new look): answers by rules, buttons for what comes next, Claude for the rest. ----
+
+    /** One turn of the secretary chat: the owner's words, or the secretary's [reply]. [done] once its changes were made. */
+    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false)
+
+    val desk = androidx.compose.runtime.mutableStateListOf<DeskTurn>()
+    private var deskOffered = emptySet<String>()
+
+    private fun deskCtx(): SecretaryDesk.Ctx {
+        val s = _state.value
+        return SecretaryDesk.Ctx(
+            s.tasks, s.events, s.today, LocalDateTime.now(), NewLook.skippedFor(s.today),
+            othersEvent = { CalendarStyles.label(it.calendarId) != null },
+        )
+    }
+
+    /** Opens the chat with a greeting and the first buttons, unless it has been used in the last hour. */
+    fun deskOpen() {
+        val last = desk.lastOrNull()
+        if (last != null && System.currentTimeMillis() - deskOpenedAt < 60 * 60 * 1000L) return
+        deskOpenedAt = System.currentTimeMillis()
+        deskOffered = emptySet()
+        desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
+    }
+    private var deskOpenedAt = 0L
+
+    /** The chat as it was before "start over", for "undo". */
+    private var deskBefore: List<DeskTurn> = emptyList()
+
+    /** Starts the secretary's chat over: today's greeting only, so what goes to Claude no longer carries the old talk. */
+    fun deskReset() {
+        deskBefore = desk.toList()
+        desk.clear()
+        deskOffered = emptySet()
+        deskOpenedAt = System.currentTimeMillis()
+        desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
+    }
+
+    fun deskUndoReset() {
+        if (deskBefore.isEmpty()) return
+        desk.clear()
+        desk.addAll(deskBefore)
+        deskBefore = emptyList()
+    }
+
+    /** The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. */
+    fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList()) {
+        val ctx = deskCtx()
+        val lastReply = desk.lastOrNull { it.reply != null }?.reply
+        desk.add(DeskTurn(mine = chip.label))
+        deskNote(chip.label + (lastReply?.task?.let { ": ${it.title}" } ?: ""))
+        val reply: SecretaryDesk.Reply = when (chip.ask) {
+            SecretaryDesk.Ask.OPEN -> SecretaryDesk.opening(ctx)
+            SecretaryDesk.Ask.NEXT -> SecretaryDesk.next(ctx).also { r -> r.task?.let { deskOffered = setOf(it.key) } }
+            SecretaryDesk.Ask.OTHER, SecretaryDesk.Ask.LIGHT -> {
+                lastReply?.task?.let { NewLook.skip(getApplication(), it.key, ctx.today) }
+                SecretaryDesk.next(ctx, deskOffered, light = chip.ask == SecretaryDesk.Ask.LIGHT).also { r -> r.task?.let { deskOffered = deskOffered + it.key } }
+            }
+            SecretaryDesk.Ask.START -> {
+                lastReply?.task?.let { setStatus(it, Status.IN_PROGRESS) }
+                SecretaryDesk.Reply(listOf(tr("เริ่มแล้ว ทำเสร็จกด เสร็จแล้ว", "Started. Tap Done when finished")), listOf(SecretaryDesk.Chip(tr("เสร็จแล้ว", "Done"), SecretaryDesk.Ask.DONE), SecretaryDesk.Chip(tr("ติดอยู่ ขออันอื่น", "Stuck, something else"), SecretaryDesk.Ask.OTHER)), task = lastReply?.task)
+            }
+            SecretaryDesk.Ask.DONE -> {
+                lastReply?.task?.let { t -> if (t.isOpen) toggleDone(t) }
+                val after = SecretaryDesk.next(deskCtx(), deskOffered)
+                after.copy(lines = listOf(tr("เก่งมาก ต่อไป:", "Nice. Next:")) + after.lines)
+            }
+            SecretaryDesk.Ask.LATE -> SecretaryDesk.late(ctx)
+            SecretaryDesk.Ask.APPLY -> {
+                val moves = lastReply?.moves.orEmpty()
+                moves.forEach { m -> current(m.task)?.let { setDate(it, m.field, m.date) } }
+                markLastDone(lastReply)
+                SecretaryDesk.Reply(listOf(tr("ลงวันใหม่แล้ว ${moves.size} งาน", "${moves.size} tasks moved")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT), SecretaryDesk.Chip(tr("สัปดาห์นี้", "This week"), SecretaryDesk.Ask.WEEK)))
+            }
+            SecretaryDesk.Ask.STEP_BY_STEP -> SecretaryDesk.Reply(
+                listOf(tr("แตะแต่ละงานในรายการด้านบนเพื่อเปิดแล้วเลือกวันเอง", "Tap each task above to open it and pick its day")),
+                listOf(SecretaryDesk.Chip(tr("ลงตามนี้", "Apply"), SecretaryDesk.Ask.APPLY)), moves = lastReply?.moves.orEmpty(),
+            )
+            SecretaryDesk.Ask.TOMORROW -> SecretaryDesk.tomorrow(ctx)
+            SecretaryDesk.Ask.WEEK -> SecretaryDesk.week(ctx)
+            SecretaryDesk.Ask.SPLIT -> SecretaryDesk.split(ctx, lastReply?.task)
+            SecretaryDesk.Ask.APPLY_SPLIT -> {
+                val parent = lastReply?.task?.let { current(it) }
+                if (parent != null && picked.isNotEmpty()) addSubtasks(parent, picked)
+                markLastDone(lastReply)
+                SecretaryDesk.Reply(listOf(tr("ใส่เป็นงานย่อยแล้ว ${picked.size} ข้อ เริ่มที่ข้อแรกพอ", "${picked.size} subtasks added. Start with the first")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)), task = parent)
+            }
+            SecretaryDesk.Ask.CLAUDE -> return
+        }
+        desk.add(DeskTurn(reply = reply))
+    }
+
+    /** A typed question: answered by the rules when they know it, else offered to Claude with the chat so far. */
+    fun deskType(text: String) {
+        val ask = SecretaryDesk.match(text)
+        if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask)); return }
+        desk.add(DeskTurn(mine = text))
+        desk.add(DeskTurn(reply = SecretaryDesk.Reply(
+            listOf(
+                tr("เรื่องนี้ต้องชั่งหลายอย่าง กติกาของผมตอบได้ไม่ดีพอ", "This needs weighing up; my rules cannot answer it well"),
+                tr("ส่งให้ Claude คุยต่อดีกว่า บทสนทนานี้ งาน และที่ Claude รู้จักคุณจะติดไปด้วย", "Better with Claude: this chat, your work and what Claude knows about you go along"),
+            ),
+            listOf(SecretaryDesk.Chip(tr("คุยต่อกับ Claude", "Continue with Claude"), SecretaryDesk.Ask.CLAUDE), SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
+        )))
+    }
+
+    private fun markLastDone(reply: SecretaryDesk.Reply?) {
+        val i = desk.indexOfLast { it.reply === reply }
+        if (i >= 0) desk[i] = desk[i].copy(done = true)
+    }
+
+    /** The chat so far in plain lines, for Claude to carry on from. */
+    fun deskTranscript(): List<String> = desk.flatMap { t ->
+        t.mine?.let { listOf("Klui: $it") } ?: t.reply?.let { r ->
+            listOf("เลขา: " + (r.lines + listOfNotNull(r.task?.title?.let { "($it)" })).joinToString(" ")) +
+                r.moves.map { "  เสนอ ${it.task.title} ไป ${it.date}" }
+        }.orEmpty()
+    }
+
+    /** The pretext note; written from the defaults the first time it is missing. */
+    suspend fun pretext(): SecretaryPretext.Note {
+        val vault = _state.value.vault ?: return SecretaryPretext.parse(null)
+        val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryPretext.PATH) }.getOrNull() }
+        if (text == null) withContext(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.PATH, SecretaryPretext.DEFAULT) } }
+        return SecretaryPretext.parse(text)
+    }
+
+    /** What Claude has learned about the owner (Claude รู้จักคุณ.md), for the owner to read and change. */
+    suspend fun knows(): String {
+        val vault = _state.value.vault ?: return ""
+        return withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryPretext.KNOWS_PATH) }.getOrNull().orEmpty() }
+    }
+
+    fun saveKnows(text: String) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.KNOWS_PATH, text.trimEnd() + "\n") } }
+    }
+
+    /** The file handed to Claude, kept in the vault ("ส่งเลขา") to read or send again later. */
+    fun keepSendFile(name: String, text: String) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, "${app.omnitask.data.VaultText.OMNI_DIR}/ส่งเลขา/$name", text) } }
+    }
+
+    /** The dates of one project's moves from the secretary's answer, taken together. */
+    fun deskApplyMoves(moves: List<SecretaryDesk.Move>) {
+        moves.forEach { m -> current(m.task)?.let { setDate(it, m.field, m.date) } }
+        desk.add(DeskTurn(reply = SecretaryDesk.Reply(listOf(tr("ลงวันใหม่แล้ว ${moves.size} งาน", "${moves.size} tasks moved")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)))))
+    }
+
+    fun savePretext(note: SecretaryPretext.Note) {
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.PATH, note.render()) } }
+    }
+
+    /** Everything Claude gets for [situation]: the pretext, what it knows of the owner, the log, work and calendar, this chat. */
+    suspend fun claudePack(note: SecretaryPretext.Note, situation: SecretaryPretext.Part?, count: Boolean = true): String {
+        val s = _state.value
+        fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
+        val (knows, log) = withContext(Dispatchers.IO) { read(SecretaryPretext.KNOWS_PATH) to read(CLAUDE_LOG) }
+        if (count) deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
+        return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript())
+    }
+
+    /** What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md). */
+    private fun deskNote(what: String) {
+        val vault = _state.value.vault ?: return
+        val line = "- ${LocalDate.now()} ${nowHm()} $what"
+        viewModelScope.launch(Dispatchers.IO) {
+            deskLock.withLock {
+                runCatching {
+                    val old = repo.readPath(vault, DESK_STATS) ?: "# สถิติเลขา\n\nสิ่งที่กดในแชตเลขาของ Omni บรรทัดละครั้ง ใหม่สุดอยู่ล่าง เลขาอ่านเพื่อเรียนรู้นิสัย แล้วเขียนสิ่งที่พบลง Claude รู้จักคุณ.md\n"
+                    // Keep the last 400 taps; older ones have been read by then.
+                    val lines = (old.trimEnd() + "\n" + line).lines()
+                    val head = lines.takeWhile { !it.startsWith("- ") }
+                    val taps = lines.filter { it.startsWith("- ") }.takeLast(400)
+                    repo.writePath(vault, DESK_STATS, (head + taps).joinToString("\n") + "\n")
+                }
+            }
+        }
+    }
+    private val deskLock = kotlinx.coroutines.sync.Mutex()
+
+    fun freshVoiceTitles(): Set<String> {
+        val cut = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        return voiceFresh.all.filter { (it.value as? Long ?: 0L) > cut }.keys
+    }
+
+    private fun watchVoice() {
+        val app = getApplication<Application>()
+        _voice.update { it.copy(waiting = VoiceRec.waiting(app)) }
+        // Once, after the update that brought it: how to start.
+        if (!voiceFresh.getBoolean("voice.hinted", false)) {
+            voiceFresh.edit().putBoolean("voice.hinted", true).apply()
+            showMessage(tr("ใหม่: กดค้างที่ปุ่ม + เพื่อจดงานด้วยเสียง", "New: hold the + button to note tasks by voice"))
+        }
+        viewModelScope.launch {
+            VoiceRec.now.collect { r ->
+                if (r != null) {
+                    voiceRemoved.clear()
+                    voiceNextId = 1
+                    _voice.update { it.copy(recording = r, words = "", live = emptyList(), sending = 0, unsent = 0, review = null, failed = null) }
+                } else _voice.update { it.copy(recording = null, waiting = VoiceRec.waiting(app)) }
+            }
+        }
+        viewModelScope.launch { VoiceRec.pieces.collect { piece -> launch { sendPiece(piece) } } }
+        viewModelScope.launch { VoiceRec.done.collect { dir -> launch { finish(dir) } } }
+        viewModelScope.launch { VoiceRec.failed.collect { showMessage(it) } }
+    }
+
+    fun startVoice() = VoiceRec.start(getApplication())
+
+    fun stopVoice() = VoiceRec.stop(getApplication())
+
+    fun discardRecording() = VoiceRec.discard(getApplication())
+
+    /** Writes one piece down and lays Gemini's list over the live one; false when it could not be sent. */
+    private suspend fun sendPiece(piece: java.io.File): Boolean {
+        val app = getApplication<Application>()
+        _voice.update { it.copy(sending = it.sending + 1) }
+        return voiceLock.withLock {
+            val v = _voice.value
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val audio = android.util.Base64.encodeToString(piece.readBytes(), android.util.Base64.NO_WRAP)
+                    val body = VoiceNotes.pieceRequest(audio, "audio/wav", v.words, v.live.map { it.text }, voiceRemoved.toList())
+                    VoiceNotes.parsePiece(AiAssist.answerText(Gemini(app).generate(body))).also { (text, _) -> VoiceRec.keepHeard(piece, text) }
+                }
+            }
+            result.fold(
+                { (text, tasks) ->
+                    _voice.update { now ->
+                        val merged = VoiceNotes.merge(now.live, tasks, voiceRemoved, voiceNextId)
+                        voiceNextId = (merged.maxOfOrNull { it.id } ?: 0).coerceAtLeast(voiceNextId - 1) + 1
+                        now.copy(words = listOf(now.words, text).filter { it.isNotBlank() }.joinToString(" "), live = merged, sending = now.sending - 1)
+                    }
+                    true
+                },
+                { e -> _voice.update { it.copy(sending = it.sending - 1, unsent = it.unsent + 1, failed = e.message) }; false },
+            )
+        }
+    }
+
+    /** The owner changed a task's words while recording or checking: later pieces leave it as written. */
+    fun editLive(id: Int, text: String) = _voice.update { v -> v.copy(live = v.live.map { if (it.id == id) it.copy(text = text, locked = true, fresh = false) else it }) }
+
+    fun removeLive(id: Int) = _voice.update { v ->
+        v.live.firstOrNull { it.id == id }?.let { voiceRemoved += it.heard; if (it.text != it.heard) voiceRemoved += it.text }
+        v.copy(live = v.live.filterNot { it.id == id })
+    }
+
+    /**
+     * After a recording stops (or when one left over is tried again): pieces not written down yet are sent, the
+     * words are read once more to tidy the list, then the tasks wait in [VoiceUi.review].
+     */
+    private suspend fun finish(dir: java.io.File, again: Boolean = false) {
+        val app = getApplication<Application>()
+        _voice.update { it.copy(busy = true, failed = null) }
+        if (again) {
+            // A recording from an earlier launch: rebuild its words from the pieces already written down.
+            voiceRemoved.clear()
+            voiceNextId = 1
+            _voice.update { it.copy(words = VoiceRec.pieces(dir).mapNotNull(VoiceRec::heard).filter { t -> t.isNotBlank() }.joinToString(" "), live = emptyList(), sending = 0, unsent = 0) }
+        }
+        // Pieces cut just before the stop may still be on their way: wait for them, so none is sent twice.
+        if (!again) { kotlinx.coroutines.delay(400); _voice.first { it.sending <= 0 } }
+        val missing = VoiceRec.pieces(dir).filter { VoiceRec.heard(it) == null }
+        var ok = true
+        for (p in missing) if (!sendPieceAgain(p, again)) ok = false
+        if (!ok) {
+            _voice.update { it.copy(busy = false, waiting = VoiceRec.waiting(app), failed = it.failed ?: tr("ถอดเสียงไม่ครบ", "Some of it was not written down")) }
+            return
+        }
+        val v = _voice.value
+        val tidy = withContext(Dispatchers.IO) {
+            runCatching { VoiceNotes.parse(AiAssist.answerText(Gemini(app).generate(VoiceNotes.tidyRequest(v.words, v.live.map { it.text }, voiceRemoved.toList())))) }
+        }.getOrNull()
+        val live = if (tidy != null) VoiceNotes.merge(v.live, tidy, voiceRemoved, voiceNextId) else v.live
+        val since = VoiceRec.since(dir) ?: dir.lastModified()
+        val seconds = (VoiceRec.pieces(dir).maxOfOrNull { it.lastModified() } ?: since).minus(since).coerceAtLeast(0) / 1000
+        val open = _state.value.tasks
+        val now = java.time.LocalTime.now().let { kotlinx.datetime.LocalTime(it.hour, it.minute) }
+        val items = live.map {
+            val heard = SpokenWhen.read(it.text, _state.value.timeWords, LocalDate.now(), now)
+            VoiceItem(it.text, VoiceNotes.duplicateOf(heard.title, open), heard)
+        }
+        _voice.update { it.copy(busy = false, live = live, unsent = 0, review = VoiceReview(dir, seconds, items), waiting = VoiceRec.waiting(app)) }
+    }
+
+    /** Sends a piece that was missed: during a recording's own finish its unsent count goes back down. */
+    private suspend fun sendPieceAgain(piece: java.io.File, again: Boolean): Boolean {
+        if (!again) _voice.update { it.copy(unsent = (it.unsent - 1).coerceAtLeast(0)) }
+        return sendPiece(piece)
+    }
+
+    /** Tries a left-over recording again. */
+    fun transcribe(dir: java.io.File) {
+        if (_voice.value.busy || _voice.value.recording != null) return
+        viewModelScope.launch { finish(dir, again = true) }
+    }
+
+    /**
+     * Puts the checked tasks at the end of the task note, with the day, time and project the owner left on each (a
+     * task with none is a bare line in the no-project tray), then drops the recording.
+     */
+    fun saveVoice(drafts: List<VoiceDraft>) {
+        val review = _voice.value.review ?: return
+        val vault = _state.value.vault ?: return
+        val app = getApplication<Application>()
+        val today = LocalDate.now()
+        val kept = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
+        val lines = kept.map { SpokenWhen.line(it.heard, it.project, today) }
+        val titles = kept.map { it.heard.title }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { if (lines.isNotEmpty()) repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n")) }
+            }
+            result.fold(
+                {
+                    review.dir.deleteRecursively()
+                    val now = System.currentTimeMillis()
+                    val stale = voiceFresh.all.filter { (it.value as? Long)?.let { at -> now - at > 2 * 24 * 60 * 60 * 1000L } == true }.keys
+                    voiceFresh.edit().apply { stale.forEach { remove(it) }; titles.forEach { putLong(it, now) } }.apply()
+                    lines.forEach { noteCreated(it) }
+                    _voice.update { it.copy(review = null, live = emptyList(), words = "", waiting = VoiceRec.waiting(app)) }
+                    showMessage(tr("บันทึก ${lines.size} งานแล้ว", "Saved ${lines.size} tasks"))
+                    reload()
+                },
+                { e -> showMessage(tr("บันทึกไม่ได้: ${e.message}", "Could not save: ${e.message}")) },
+            )
+        }
+    }
+
+    fun setTimeWords(words: List<TimeWords.Word>) {
+        _state.update { it.copy(timeWords = words) }
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, TimeWords.PATH, TimeWords.render(words)) } }
+    }
+
+    /** Throws away a recording that is under review or waiting. */
+    fun dropVoice(dir: java.io.File) {
+        val app = getApplication<Application>()
+        dir.deleteRecursively()
+        _voice.update { v -> v.copy(review = v.review?.takeIf { it.dir != dir }, live = emptyList(), words = "", failed = null, waiting = VoiceRec.waiting(app)) }
+    }
+
+    /** Closes the check without saving: the recording waits on the focus page. */
+    fun closeVoiceReview() = _voice.update { it.copy(review = null) }
+
+    // After the voice properties above, which an init block placed earlier would find not yet set.
+    init { watchVoice() }
 
     override fun onCleared() {
         prefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
@@ -526,6 +938,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+
     fun reload() {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
@@ -569,11 +982,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
+            val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
             // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
             if (_state.value.projectTags == null) {
                 result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
+            } else {
+                // A task the secretary just wrote with a new project's tag: that project gets its branch.
+                val fresh = result.getOrNull()?.tasks?.let { Projects.newOnes(it, _state.value.projectTags.orEmpty(), prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty(), LocalDate.now()) }.orEmpty()
+                if (fresh.isNotEmpty()) saveProjectTags(_state.value.projectTags.orEmpty() + fresh)
             }
             // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
             aiUpkeep()
@@ -597,6 +1015,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     conflicts = result.getOrNull()?.conflicts ?: it.conflicts,
                     vaultName = vaultName,
                     profile = profile,
+                    timeWords = timeWords,
                     insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined(), behaviorNow()),
                     drive = driveUi(it.drive, result.getOrNull()?.drive),
                     message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") }
@@ -1222,6 +1641,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * A task with no project gets one (from the tray under Ygdrasil): [tag] goes in front of its tags, which stay. A
+     * new project's name is made a project, so the task shows on the tree at once.
+     */
+    fun homeTask(task: Task, tag: String) {
+        edit(task) { TaskLine.homeTag(it, tag) }
+        val root = tag.substringBefore('/')
+        _state.value.projectTags?.let { if (root !in it) saveProjectTags(it + root) }
+    }
+
+    /**
      * Dragging between quadrants changes importance only (priority ⏫ in, 🔼 out).
      * Urgency comes from the dates, so a move across the urgent / not-urgent line is refused.
      */
@@ -1250,6 +1679,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setProject(tag: String, on: Boolean) {
         val s = _state.value
         val now = s.projectTags ?: Projects.seed(s.tasks + s.parked)
+        // Taking a project off is remembered, so a new task with its tag does not bring it back.
+        val root = tag.substringBefore('/')
+        val declined = prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty()
+        prefs.edit().putStringSet(KEY_OFF_PROJECTS, if (on) declined - root else declined + root).apply()
         saveProjectTags(if (on) now + tag else now - tag)
     }
 
@@ -1283,6 +1716,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putStringSet(KEY_PROJECT_TASKS, next.map { (k, v) -> k + "\t" + v.joinToString("\u001F") }.toSet()).apply()
         _state.update { it.copy(projectTaskOrder = next) }
         if (project in _state.value.strictProjects) writeChain(ordered, on = true)
+    }
+
+    fun setTreeReach(reach: Ygdrasil.Reach) {
+        prefs.edit().putString(KEY_TREE_REACH, reach.name).apply()
+        _state.update { it.copy(treeReach = reach) }
     }
 
     /** Turns "do in order" on (each task waits for the one before it, via 🆔/⛔ in the file) or off. */
@@ -1916,7 +2354,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val index = withContext(Dispatchers.IO) { s.vault?.let { v -> library.index(v) } }
         _state.update { it.copy(ai = it.ai.copy(claudeLog = claude != null, secretaryLast = Secretary.lastRun(claude) ?: it.ai.secretaryLast)) }
         val profile = if (s.profile.exists) s.profile.render().lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } else emptyList()
-        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude), memory, entries, index)
+        return AiContext(AiAssist.picture(s.tasks, { s.subtasksOf(it) }, s.today, s.events, profile, claude, calendarOf = { CalendarStyles.label(it.calendarId) }), memory, entries, index)
     }
 
     private val logLock = kotlinx.coroutines.sync.Mutex()
@@ -2001,6 +2439,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val picture = ctx.picture
             val memory = AiMemory.memoryForModel(ctx.memory)
             val started = System.currentTimeMillis()
+            var brokenKept = false
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
@@ -2013,7 +2452,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val canSearch = vault != null && (!whole || months.isNotBlank())
                     val found = if (whole || vault == null) emptyList() else library.find(vault, text, entries, ctx.index)
                     val history = AiMemory.history(entries, found, months)
-                    val first = AiAssist.parseReply(gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch)), picture)
+                    fun generate(short: Boolean) = gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch, short = short))
+                    // An answer that came back but broken (cut off, repeating, refused as recitation) gets one shorter
+                    // try; the broken one is kept in the vault so Claude can see what went wrong.
+                    val raw = generate(short = false)
+                    val first = runCatching { AiAssist.parseReply(raw, picture) }.getOrElse { e ->
+                        if (e !is AiAssist.Failure || "\"candidates\"" !in raw) throw e
+                        brokenKept = true
+                        if (vault != null) runCatching {
+                            repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น ${AiKey.model(getApplication())}\nปัญหา ${e.message}\nคำถาม $text\n\n```\n${raw.take(8000)}\n```\n")
+                        }
+                        AiAssist.parseReply(generate(short = true), picture)
+                    }
                     val query = first.search
                     if (query == null || !canSearch || vault == null) first to false
                     else {
@@ -2026,7 +2476,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
-            val model = AiKey.model(getApplication())
+            // The model that answered: the one picked, or the Flash-Lite that stood in while it was busy.
+            val model = gemini.usedModel ?: AiKey.model(getApplication())
+            // Every failure is noted in ตรวจ Gemini.md (a broken answer already wrote its text there), so Claude
+            // can always see what went wrong, also when Google sent no answer at all.
+            r.exceptionOrNull()?.let { e ->
+                val vault = _state.value.vault
+                if (vault != null && !brokenKept) launch(Dispatchers.IO) {
+                    runCatching { repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น $model\nใช้เวลา $seconds วินาที\nปัญหา ${e.message}\nคำถาม $text\n\n(Google ไม่ได้ส่งคำตอบมา)\n") }
+                }
+            }
             val answer = r.fold(
                 { (reply, searched) -> Chat.AiAnswer(reply.text, reply.actions, model = model, seconds = seconds, searched = searched) },
                 { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
@@ -2533,6 +2992,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_TAGS = "projectTags"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
+        const val KEY_OFF_PROJECTS = "declinedProjects"
+        const val KEY_TREE_REACH = "treeReach"
         /** The single countdown (a task title) kept before there could be several; read once, then removed. */
         const val KEY_COUNTDOWN = "focus.countdown"
         const val KEY_COUNTDOWNS = "focus.countdowns"

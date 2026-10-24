@@ -91,6 +91,8 @@ import kotlinx.datetime.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import app.omnitask.time.*
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 
 /**
  * The assistant from the C+ mockup: it reads the profile note, the tasks and Google Calendar,
@@ -172,17 +174,16 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
     if (picking) AiModelSheet(state.ai, vm::loadAiModels, vm::setAiModel) { picking = false }
 
     Column(Modifier.fillMaxSize()) {
+        // One line: the title, the two tabs beside it, and starting over once there is a conversation.
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("ผู้ช่วย", "Assistant"), style = MaterialTheme.typography.headlineSmall, color = C.text)
-                Text(sources(state), color = C.muted, fontSize = TS.caption)
-            }
+            Text(if (NewLook.on) tr("เลขา", "Secretary") else tr("ผู้ช่วย", "Assistant"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text)
             if (state.chat.isNotEmpty()) SquareButton(Ic.refresh, tr("เริ่มใหม่", "Start over"), vm::clearChat)
+            // The new look opens on the conversation only: the overview's map repeated Today and Projects.
+            if (!NewLook.on) Segmented(
+                listOf(AiTab.OVERVIEW to tr("ภาพรวม", "Overview"), AiTab.CHAT to tr("แชต", "Chat") + state.chat.count { it is Chat.Asked }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()),
+                tab, { tab = it }, Modifier.padding(start = 8.dp).width(190.dp),
+            )
         }
-        Segmented(
-            listOf(AiTab.OVERVIEW to tr("ภาพรวม", "Overview"), AiTab.CHAT to tr("แชต", "Chat") + state.chat.count { it is Chat.Asked }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()),
-            tab, { tab = it }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp),
-        )
 
         // The overview fills the page without scrolling: a one-line brief, the switch and chips, and the map taking
         // the rest, with the picked task's card floating over the map's lower edge, under the thumb.
@@ -212,15 +213,14 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             }
             else -> null
         }
+        if (NewLook.on && tab != AiTab.CHAT) tab = AiTab.CHAT
         if (tab == AiTab.OVERVIEW && profile.exists && !interviewing) Column(
             Modifier.weight(1f).fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             askCard?.invoke()
             AiBriefLine(state.ai, picks.size, briefOpen, { briefOpen = !briefOpen }, { vm.aiBrief(force = true) }, onSettings)
-            AiViewSwitch(view) { view = it }
-            AiChips(who, staleOnly, stuckCount, { who = it; staleOnly = false }, { staleOnly = !staleOnly })
-            AiLegend(view)
+            AiViewBar(view, { view = it }, who, staleOnly, stuckCount, { who = it; staleOnly = false }, { staleOnly = !staleOnly })
             AiMap(
                 view, state, vm, onOpen, who, staleOnly, picks.keys, selKey, { selKey = it?.key },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -251,6 +251,15 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
 
 
 
+            // The new look: what the overview said up top (the day's brief, a question to answer) opens the chat.
+            if (NewLook.on && profile.exists && !interviewing) {
+                askCard?.let { card -> item(key = "ask-card") { card() } }
+                item(key = "brief-line") {
+                    val ordered = picks.mapNotNull { (k, why) -> state.tasks.firstOrNull { it.key == k }?.let { it to why } }
+                    val lateTargets = state.tasks.count { !it.isSubtask && it.list == null && app.omnitask.model.NextUp.onlyTargetLate(it, state.today) }
+                    BriefCard(state.ai, ordered, lateTargets, onOpen, { vm.aiBrief(force = true) }, onSettings) { vm.askAi(it) }
+                }
+            }
             if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {
                 Text(
                     if (state.ai.hasKey) tr("ถามหรือสั่งงานได้ที่ช่องด้านล่าง เช่น เพิ่มงาน เลื่อนวัน หรือถามว่าอะไรค้างนานสุด", "Ask or give an order below: add a task, move a date, or ask what has sat longest")
@@ -307,7 +316,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             }
         }
         Row(
-            Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp)
+            Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp + androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
                 .then(if (ime) Modifier.imePadding() else Modifier)
                 .fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(24.dp))
                 .padding(start = if (state.ai.hasKey) 6.dp else 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),

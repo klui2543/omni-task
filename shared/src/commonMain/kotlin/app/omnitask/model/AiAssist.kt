@@ -131,6 +131,8 @@ object AiAssist {
         events: List<CalendarEvent> = emptyList(),
         profile: List<String> = emptyList(),
         claudeLog: String? = null,
+        /** Whose calendar an event is in, where the owner labelled it (such as "แฟน"); null for the owner's own. */
+        calendarOf: (CalendarEvent) -> String? = { null },
     ): Picture {
         val open = tasks.filter { it.isOpen && !it.isSubtask }
         // Parked (someday) work is only counted: it is not stuck, and leaving it out keeps the request small and quick.
@@ -154,9 +156,12 @@ object AiAssist {
             val week = events.filter { e -> e.begin.date >= today && e.begin.date <= today.plusDays(7) }.sortedBy { it.begin }
             if (week.isNotEmpty()) {
                 appendLine("[นัดหมาย 7 วันข้างหน้า]")
+                if (week.any { calendarOf(it) != null }) {
+                    appendLine("นัดที่มี (ปฏิทินของ ...) เป็นนัดของคนนั้น ไม่ใช่ของเจ้าของงาน ห้ามบอกว่าเจ้าของมีนัดนั้น ใช้แค่รู้ว่าคนนั้นไม่ว่าง")
+                }
                 week.take(40).forEach { e ->
                     val time = if (e.allDay) "ทั้งวัน" else "${hm(e.begin.time.hour, e.begin.time.minute)} ถึง ${hm(e.end.time.hour, e.end.time.minute)}"
-                    appendLine("- ${e.begin.date} $time ${e.title}")
+                    appendLine("- ${e.begin.date} $time ${e.title}" + (calendarOf(e)?.let { " (ปฏิทินของ $it)" } ?: ""))
                 }
             }
             projectList(tasks).takeIf { it.isNotBlank() }?.let {
@@ -195,7 +200,7 @@ object AiAssist {
      * What goes to the model from Claude log.md: the overview and the open work in full, and the newest two
      * sessions of the timeline, cut to a few thousand characters.
      */
-    fun claudeDigest(text: String, max: Int = 3000): String {
+    fun claudeDigest(text: String, max: Int = 3000, days: Int = 2): String {
         val out = StringBuilder()
         var inTimeline = false
         var sessions = 0
@@ -203,7 +208,7 @@ object AiAssist {
             val t = line.trimEnd()
             if (t.startsWith("# ")) inTimeline = t.contains("ไทม์ไลน์") || t.contains("Timeline", ignoreCase = true)
             if (inTimeline && t.startsWith("## ")) sessions++
-            if (inTimeline && sessions > 2) continue
+            if (inTimeline && sessions > days) continue
             if (t.isBlank() || t.trim() == "- 💬 Klui:" || t.trim() == "💬 Klui:") continue
             out.appendLine(t)
         }
@@ -246,10 +251,11 @@ object AiAssist {
 - แยกให้ชัดว่าอะไรคือข้อเท็จจริงจากข้อมูล อะไรคือคำแนะนำของคุณ"""
 
     private const val BRIEF_ASK = """สรุปภาพรวมงานตอนนี้ให้เจ้าของงานเห็นใน 3 วินาที
-- summary: 1 ถึง 2 ประโยค บอกว่างานติดที่ไหน (ที่เจ้าของ ที่ Claude หรือเลยกำหนด) และควรเริ่มตรงไหน
-- picks: งานที่ควรดูก่อน 1 ถึง 4 งาน เรียงจากสำคัญสุด แต่ละงานมี reason สั้นไม่เกิน 1 ประโยค ว่าทำไมควรดูและควรทำอะไรต่อ"""
+- summary: ประโยคเดียวสั้น ๆ บอกสภาพวันนี้ เช่น ว่างถึงกี่โมง หรือพรุ่งนี้เข้าเวรอะไร ห้ามพูดกว้าง ๆ ว่า "ควรเริ่มจากงานที่เลยกำหนด" เพราะชื่องานที่ควรทำอยู่ใน picks แล้ว
+- picks: งานที่ควรทำก่อน 1 ถึง 4 งาน เรียงตามลำดับที่ควรทำ งานแรกคือ "ทำก่อน" งานที่สองคือ "แล้วต่อ" แต่ละงานมี reason สั้นไม่เกิน 10 คำ ว่าทำไมงานนี้ (เช่น มีคนรอ 2 วัน, กำหนดจริงพรุ่งนี้)
+- งานที่เลยแค่วัน "นัดทำ" (เป้าที่เจ้าของตั้งเอง) ไม่ด่วนเท่างานที่เลย "กำหนด" (กำหนดจริง)"""
 
-    private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer
+    private const val CHAT_ASK = """ตอบหรือทำตามข้อความล่าสุดของเจ้าของงาน ตอบสั้นในช่อง answer ไม่เกิน 3 ประโยค คิดคำนวณวันและเวลาว่างในใจ ห้ามเขียนวิธีคิดหรือไล่วันทีละวันลงในคำตอบ
 เจ้าของสั่งแก้งานได้ทุกอย่าง ใส่สิ่งที่จะแก้ใน actions (ไม่เกิน 8 ข้อ) แอปจะแสดงให้เจ้าของกดยืนยันทีละข้อก่อนแก้จริง ใน answer ให้บอกสั้น ๆ ว่าเตรียมอะไรไว้ให้ยืนยัน ห้ามบอกว่าทำเสร็จแล้ว
 - "add": เพิ่มงานใหม่ ชื่อใน text, date (YYYY-MM-DD) ถ้ามี, field "scheduled" ถ้าเป็นวันนัดทำ ไม่ใช่วันกำหนดส่ง, time (HH:mm) ถ้าต้องการเตือน, priority ถ้าระบุ, project ต้องมีทุกครั้ง (ดูกติกาโปรเจกต์ด้านล่าง)
 - "move": เปลี่ยนวันของงาน ref เป็น date, field "due" (กำหนดส่ง ค่าเริ่มต้น) หรือ "scheduled" (วันนัดทำ) หรือ "start" (วันเริ่ม), date ว่างคือลบวันนั้น
@@ -266,8 +272,7 @@ object AiAssist {
 กติกาโปรเจกต์: project ต้องเป็นชื่อจากรายการ [โปรเจกต์และกิ่งที่มี] เท่านั้น สะกดตรงตัว เลือกกิ่งที่ตรงที่สุด เช่น "peddose/แอป" ถ้ามีกิ่งนั้น ไม่งั้นใช้ชื่อโปรเจกต์ ห้ามแต่งชื่อใหม่ ห้ามแปลหรือย่อ ถ้าไม่แน่ใจว่าเข้าโปรเจกต์ไหน ให้ถามใน answer พร้อมเสนอ 2 ถึง 3 ชื่อจากรายการ และยังไม่ต้องใส่ action นั้น ใช้ชื่อที่ไม่อยู่ในรายการได้เฉพาะเมื่อเจ้าของพิมพ์ชื่อโปรเจกต์ใหม่นั้นเอง
 วันที่แบบ "พรุ่งนี้" หรือ "ศุกร์นี้" ให้คิดจากวันนี้ในภาพรวมงาน ถ้าคำสั่งกำกวม เช่น มีหลายงานชื่อคล้ายกัน ให้ถามกลับใน answer และไม่ต้องใส่ actions
 ถ้าเป็นคำถามที่ไม่ต้องแก้อะไร ให้ actions เป็นรายการว่าง
-topic: หัวข้อสั้นของการคุยครั้งนี้ ไม่เกิน 8 คำ เช่น "ตกลงทำระบบป้ายก่อน Flow"
-tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปรเจกต์หรือแท็กที่มีอยู่ในภาพรวมงานก่อน แล้วค่อยเป็นเรื่อง เช่น siriraj, ป้าย"""
+เขียน answer ครั้งเดียวแล้วจบ ห้ามคำลงท้ายซ้ำ ๆ เช่น ขอบคุณครับ ยินดีให้บริการ"""
 
     private const val SEARCH_ASK = """ถ้าสารบัญบอกว่าเคยคุยเรื่องที่ถาม แต่รายละเอียดไม่อยู่ในบทสนทนาที่ให้มา ให้ใส่คำค้นสั้น ๆ ใน search แล้วเว้น answer และ actions ว่างไว้ แอปจะค้นบันทึกเก่าแล้วส่งผลกลับมาให้ตอบ ถ้ามีข้อมูลพอแล้ว ให้ search ว่าง"""
 
@@ -276,42 +281,46 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private fun obj(type: String, block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}) = buildJsonObject { put("type", type); block() }
-    private fun str() = obj("STRING")
+    private fun str(max: Int? = null) = obj("STRING") { max?.let { put("maxLength", it) } }
 
     private val briefSchema = obj("OBJECT") {
         putJsonObject("properties") {
-            put("summary", str())
+            put("summary", str(300))
             put("picks", obj("ARRAY") {
+                put("maxItems", 4)
                 put("items", obj("OBJECT") {
-                    putJsonObject("properties") { put("ref", str()); put("reason", str()) }
+                    putJsonObject("properties") { put("ref", str(8)); put("reason", str(120)) }
                     putJsonArray("required") { add(JsonPrimitive("ref")); add(JsonPrimitive("reason")) }
                 })
             })
         }
         putJsonArray("required") { add(JsonPrimitive("summary")); add(JsonPrimitive("picks")) }
+        putJsonArray("propertyOrdering") { add(JsonPrimitive("summary")); add(JsonPrimitive("picks")) }
     }
 
     private val KINDS = listOf("add", "move", "rename", "priority", "remind", "done", "delete", "project", "stuck", "subtasks", "remember", "big")
 
     private val replySchema = obj("OBJECT") {
         putJsonObject("properties") {
-            put("answer", str())
-            put("topic", str())
-            put("tags", obj("ARRAY") { put("items", str()) })
-            put("search", str())
+            put("answer", str(800))
+            put("search", str(120))
             put("actions", obj("ARRAY") {
+                put("maxItems", 8)
                 put("items", obj("OBJECT") {
                     putJsonObject("properties") {
                         put("kind", obj("STRING") { putJsonArray("enum") { KINDS.forEach { add(JsonPrimitive(it)) } } })
-                        put("ref", str()); put("text", str()); put("date", str()); put("field", str())
+                        put("ref", str(8)); put("text", str(300)); put("date", str(10)); put("field", str(12))
                         put("time", str()); put("project", str()); put("priority", str())
-                        put("items", obj("ARRAY") { put("items", str()) })
+                        put("items", obj("ARRAY") { put("maxItems", 12); put("items", str()) })
                     }
                     putJsonArray("required") { add(JsonPrimitive("kind")) }
                 })
             })
         }
         putJsonArray("required") { add(JsonPrimitive("answer")); add(JsonPrimitive("actions")) }
+        // No free text after the list of changes: Gemini ran on in a trailing topic field with polite sign-offs until
+        // it was cut off (seen in ตรวจ Gemini.md). The topic now comes from the question; the answer ends with the list.
+        putJsonArray("propertyOrdering") { listOf("answer", "search", "actions").forEach { add(JsonPrimitive(it)) } }
     }
 
     private fun request(picture: Picture, turns: List<Turn>, ask: String, schema: JsonObject, memory: String?, history: String?): String = buildJsonObject {
@@ -338,10 +347,13 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         putJsonObject("generationConfig") {
             put("responseMimeType", "application/json")
             put("responseSchema", schema)
-            put("temperature", 0.4)
-            put("maxOutputTokens", 2048)
-            // Thinking made answers slow on the phone; task questions need almost none.
-            putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
+            // No temperature: Gemini 3 models loop (repeat until cut off, or refuse as recitation) below their default.
+            // Room for a full proposal in Thai with some thinking, but a reply that runs on stops within seconds and is
+            // read as far as it got (see salvage) instead of running to the phone's time limit.
+            put("maxOutputTokens", 4096)
+            // Low, not minimal: with almost no thinking Flash-Lite worked dates out inside the answer itself and ran on
+            // past 20,000 characters (cut off, or refused as recitation).
+            putJsonObject("thinkingConfig") { put("thinkingLevel", "low") }
         }
     }.toString()
 
@@ -352,9 +364,12 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
     fun chatRequest(
         picture: Picture, earlier: List<Turn>, question: String, memory: String? = null, history: String? = null,
         canSearch: Boolean = false, searched: String? = null,
+        /** A second try after an answer came back broken: keep it short and do not repeat. */
+        short: Boolean = false,
     ): String {
         val ask = buildString {
             append(CHAT_ASK)
+            if (short) append("\n\nคำตอบรอบก่อนยาวเกินหรือวนซ้ำจนใช้ไม่ได้ รอบนี้ answer ไม่เกิน 2 ประโยค actions ไม่เกิน 5 ข้อ text ของแต่ละข้อสั้น ห้ามพูดซ้ำ")
             if (searched != null) append("\n\n").append(SEARCHED).append("\n[ผลค้นบันทึกเก่า]\n").append(searched.ifBlank { "(ไม่เจอ)" })
             else if (canSearch) append("\n").append(SEARCH_ASK)
             append("\n\nคำถาม: ").append(question)
@@ -370,10 +385,17 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
     }
 
     /** What went wrong, from Gemini's own words where it gave them. */
-    class Failure(message: String) : Exception(message)
+    open class Failure(message: String) : Exception(message)
 
     /** The JSON the model wrote, out of a generateContent response, or a [Failure]. */
-    fun answerText(response: String): String {
+    fun answerText(response: String): String = answerTextOrCut(response).also { (_, cut) ->
+        if (cut) throw Failure(CUT)
+    }.first
+
+    private val CUT get() = tr("คำตอบยาวเกินจนถูกตัดกลางทาง ลองถามทีละไม่กี่งาน", "The answer ran too long and was cut off. Ask about fewer tasks at a time.")
+
+    /** The text the model wrote, and whether it was cut off at the length limit (then it is kept, to read what it can). */
+    fun answerTextOrCut(response: String): Pair<String, Boolean> {
         val root = runCatching { json.parseToJsonElement(response).jsonObject }.getOrElse { throw Failure(tr("ตอบกลับมาอ่านไม่ออก", "Could not read the reply")) }
         (root["error"] as? JsonObject)?.let { e -> throw Failure(e["message"]?.jsonPrimitive?.contentOrNull ?: tr("Gemini ตอบว่าผิดพลาด", "Gemini returned an error")) }
         val cand = (root["candidates"] as? JsonArray)?.firstOrNull()?.jsonObject
@@ -383,8 +405,36 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
         }
         val parts = (cand["content"] as? JsonObject)?.get("parts") as? JsonArray
         val text = parts?.mapNotNull { p -> (p as? JsonObject)?.takeIf { it["thought"]?.jsonPrimitive?.contentOrNull != "true" }?.get("text")?.jsonPrimitive?.contentOrNull }?.joinToString("")
-        if (text.isNullOrBlank()) throw Failure(tr("Gemini ไม่ได้ตอบอะไรกลับมา", "Gemini sent nothing back") + " (${cand["finishReason"]?.jsonPrimitive?.contentOrNull ?: "?"})")
-        return text
+        val cut = cand["finishReason"]?.jsonPrimitive?.contentOrNull == "MAX_TOKENS"
+        if (text.isNullOrBlank()) throw if (cut) Failure(CUT) else Failure(tr("Gemini ไม่ได้ตอบอะไรกลับมา", "Gemini sent nothing back") + " (${cand["finishReason"]?.jsonPrimitive?.contentOrNull ?: "?"})")
+        return text to cut
+    }
+
+    /**
+     * What can be read from a reply that broke off or ran on: the answer (or its first part) and every proposed change
+     * that was written out whole. Null when not even that is there.
+     */
+    internal fun salvage(text: String): JsonObject? {
+        val answer = Regex("\"answer\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(text)?.groupValues?.get(1)
+            ?.let { runCatching { json.parseToJsonElement("\"$it\"").jsonPrimitive.content }.getOrNull() }
+            ?: Regex("\"answer\"\\s*:\\s*\"").find(text)?.let { m -> text.substring(m.range.last + 1).take(400).substringBeforeLast(' ') }
+        val actions = mutableListOf<JsonObject>()
+        val start = text.indexOf("\"actions\"").takeIf { it >= 0 }?.let { text.indexOf('[', it) } ?: -1
+        if (start >= 0) {
+            var depth = 0; var inString = false; var escaped = false; var from = -1
+            for (i in start + 1 until text.length) {
+                val c = text[i]
+                if (inString) { if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false; continue }
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> { if (depth == 0) from = i; depth++ }
+                    '}' -> { depth--; if (depth == 0 && from >= 0) runCatching { json.parseToJsonElement(text.substring(from, i + 1)).jsonObject }.getOrNull()?.let(actions::add) }
+                    ']' -> if (depth == 0) break
+                }
+            }
+        }
+        if (answer.isNullOrBlank() && actions.isEmpty()) return null
+        return buildJsonObject { put("answer", answer.orEmpty()); put("actions", JsonArray(actions)) }
     }
 
     private fun parseObject(text: String): JsonObject {
@@ -424,7 +474,9 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
      * needs (a date, a title), is dropped.
      */
     fun parseReply(response: String, picture: Picture): Reply {
-        val o = parseObject(answerText(response))
+        // A reply cut off or broken partway is read as far as it goes rather than thrown away.
+        val (text, cut) = answerTextOrCut(response)
+        val o = runCatching { parseObject(text) }.getOrNull() ?: salvage(text) ?: throw if (cut) Failure(CUT) else Failure(tr("คำตอบของ Gemini ไม่ใช่รูปแบบที่ตกลงไว้", "Gemini answered in an unexpected form"))
         val actions = (o["actions"] as? JsonArray).orEmpty().mapNotNull { e ->
             val a = e as? JsonObject ?: return@mapNotNull null
             val task = picture.refs[a["ref"].s()]
@@ -439,8 +491,15 @@ tags: 1 ถึง 3 แท็กไม่มี # ใช้ชื่อโปร
                 "move" -> task?.let { t ->
                     val kind = when (a["field"].s()?.lowercase()) { "scheduled" -> DateKind.SCHEDULED; "start" -> DateKind.START; else -> DateKind.DUE }
                     val d = date(a["date"].s())
-                    // An empty date clears it; a date that does not read is a mistake, not a clear.
-                    if (d == null && a["date"].s() != null) null else Action.Move(t, d, kind)
+                    // Only an empty date ("") clears it. A date that does not read is a mistake, and a missing date
+                    // too: Flash-Lite said "to tomorrow" and left the date out, which would have wiped it.
+                    val raw = (a["date"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    when {
+                        raw == null -> null
+                        raw.isEmpty() -> Action.Move(t, null, kind)
+                        d == null -> null
+                        else -> Action.Move(t, d, kind)
+                    }
                 }
                 "rename" -> task?.let { t -> text?.takeIf { it != t.title }?.let { Action.Rename(t, it) } }
                 "priority" -> task?.let { t -> priority(a["priority"].s())?.let { Action.SetPriority(t, it) } }

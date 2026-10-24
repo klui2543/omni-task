@@ -70,6 +70,7 @@ import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -355,7 +356,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
     // How days show their work, set on the frames and emoji page; read again when that page closes.
     val style = remember(state.month) { MonthMarksStore.cellStyle(context) }
     val emojiSize = remember(state.month) { MonthMarksStore.emojiSize(context) }
-    val work = MonthData.work(days, first, ::tasksOn, ::eventsOn, state.today)
+    val work = MonthData.work(days, first, ::tasksOn, ::eventsOn, state.today, colorOf = { CalendarStyles.color(it)?.toArgb() })
     // The frames as the widget draws them: those set by hand and those the emoji rules make from the emoji and the task titles.
     val framed = remember(marks, state.tasks) {
         marks.shown(state.tasks.filter { it.isOpen }.mapNotNull { t -> (t.due ?: t.scheduled)?.let { it to t.title } }.groupBy({ it.first }, { it.second }))
@@ -445,7 +446,7 @@ private fun MonthCalendar(state: UiState, pool: List<Task>, vm: TaskViewModel, o
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(C.teal))
+                            Box(Modifier.width(4.dp).height(30.dp).clip(RoundedCornerShape(2.dp)).background(CalendarStyles.color(e.calendarId) ?: C.teal))
                             Column(Modifier.padding(start = 12.dp)) {
                                 Text(e.title, color = C.text, fontSize = TS.body)
                                 Text(if (e.allDay) tr("ทั้งวัน", "All day") else tr("${e.begin.toLocalTime()} ถึง ${e.end.toLocalTime()}", "${e.begin.toLocalTime()} to ${e.end.toLocalTime()}"), color = C.tealText, fontSize = TS.caption)

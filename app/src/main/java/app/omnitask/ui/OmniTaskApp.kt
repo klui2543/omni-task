@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.omnitask.ui
 
 import androidx.activity.compose.BackHandler
@@ -6,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,6 +111,9 @@ enum class Screen(private val th: String, private val en: String, val icon: Imag
 @Composable
 fun OmniTaskApp(vm: TaskViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // Each calendar's colour and label, read once (see CalendarStyles).
+    CalendarStyles.load(LocalContext.current)
+    NewLook.load(LocalContext.current)
     val pickVault = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setVault(uri)
     }
@@ -123,6 +129,20 @@ fun OmniTaskApp(vm: TaskViewModel) {
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var adding by remember { mutableStateOf<QuickAddRequest?>(null) }
+
+    // Holding + records tasks by voice; the mic is asked for the first time.
+    val voice by vm.voice.collectAsStateWithLifecycle()
+    val micContext = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.startVoice() else vm.showMessage(tr("ต้องอนุญาตไมค์ก่อน ถึงจะจดด้วยเสียงได้", "Allow the microphone to note tasks by voice"))
+    }
+    fun startVoice() {
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        if (voice.recording != null) return
+        val granted = micContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) vm.startVoice() else askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
 
     // The frames and emoji page and the settings pages are drawn alone, in place of the tabs and their sheets. What a
     // widget asks for closes them first, or quick add or the calendar would wait behind them.
@@ -201,6 +221,10 @@ fun OmniTaskApp(vm: TaskViewModel) {
             calendars = CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged),
             drive = DriveSettings(state.drive, vm::connectDrive, vm::driveSignInShown, vm::driveSignedIn, vm::confirmDrive, vm::disconnectDrive, vm::putBackClash, vm::dismissClash),
             ai = AiSettings(state.ai, vm::setAiKey, vm::testAiKey, vm::setAutoBrief),
+            urgent = { UrgentGroup(state.urgentRule, vm::setUrgentRule) },
+            notifyLink = { NotifyLink { notifyOpen = true } },
+            claudeRows = { ClaudeSettingsRows(vm) },
+                            timeWords = { TimeWordsGroup(state.timeWords, vm::setTimeWords) },
         ) { settingsOpen = false }
         return
     }
@@ -231,7 +255,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
 
     val fullPage = remember { mutableIntStateOf(0) }
     // On a phone the bottom bar floats over the page: full pages (the mind map) keep their own controls above it.
-    val askShown = screen != Screen.AI
+    // The new look leaves the assistant line out: the secretary has its own tab instead.
+    val askShown = screen != Screen.AI && !NewLook.on
     val dockHeight = DOCK_HEIGHT + 1.dp + if (askShown) ASK_HEIGHT else 0.dp
     val dock = if (rail || fullPage.intValue > 0) 0.dp else dockHeight + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -248,10 +273,18 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     // The task views (Kanban, Gantt, calendar) use all of it; the task list sets its own reading width.
                     Box(Modifier.widthIn(max = if (screen == Screen.TASKS) Dp.Unspecified else 760.dp)) {
                     when (screen) {
-                        Screen.FOCUS -> PullToReload(state.loading, vm::pullRefresh) { FocusScreen(state, vm, open, menu) }
+                        Screen.FOCUS -> PullToReload(state.loading, vm::pullRefresh) {
+                            FocusScreen(
+                                state, vm, open, menu,
+                                onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE },
+                                onAsk = { if (NewLook.on) vm.deskType(it) else vm.askAi(it); screen = Screen.AI },
+                            )
+                        }
                         Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }
                         Screen.PROJECTS -> PullToReload(state.loading, vm::pullRefresh) { ProjectsScreen(state, vm, open) }
-                        Screen.AI -> AssistantScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
+                        // The new look's secretary answers by rules and hands the rest to Claude; the old one is the Gemini chat.
+                        Screen.AI -> if (NewLook.on) DeskScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
+                            else AssistantScreen(state, vm, open, onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE })
                         // The Settings tab: the settings, with the assistant, notifications, urgency and the vault around them.
                         Screen.MORE -> SettingsScreen(
                             profile = state.profile, onSleepTimes = vm::setSleepTimes, onLanguageChange = vm::reload,
@@ -266,6 +299,10 @@ fun OmniTaskApp(vm: TaskViewModel) {
                                 }
                             },
                             tail = { VaultLinks(onReload = vm::reload, onVault = { pickVault.launch(state.vault) }) },
+                            urgent = { UrgentGroup(state.urgentRule, vm::setUrgentRule) },
+                            notifyLink = { NotifyLink { notifyOpen = true } },
+                            claudeRows = { ClaudeSettingsRows(vm) },
+                            timeWords = { TimeWordsGroup(state.timeWords, vm::setTimeWords) },
                         )
                     }
                     }
@@ -303,7 +340,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
         // Room at the end of the lists for the assistant button floating at the bottom corner.
         CompositionLocalProvider(LocalNavClearance provides 76.dp) {
             Row(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
-                NavRail(screen, onAdd = { adding = QuickAddRequest() }) { screen = it }
+                NavRail(screen, onAdd = { adding = QuickAddRequest() }, onVoice = ::startVoice) { screen = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     content()
                     assistantButton(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 18.dp))
@@ -323,7 +360,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                 content()
                 if (fullPage.intValue == 0) DockNav(
                     selected = screen, showAsk = askShown,
-                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onAsk = { vm.askAi(it); screen = Screen.AI },
+                    onSelect = { screen = it }, onAdd = { adding = QuickAddRequest() }, onVoice = ::startVoice, onAsk = { vm.askAi(it); screen = Screen.AI },
                     presets = askPresets(state, vm),
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
@@ -365,6 +402,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     adding?.let { r ->
         QuickAddSheet(state, vm, r.voice, r.status, r.text, r.link, onAskAssistant = { vm.askAi(it); screen = Screen.AI }) { adding = null }
     }
+    VoiceSheet(voice, vm)
 }
 
 /**
@@ -398,7 +436,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: Tas
 
 /** The same destinations as a vertical pill on the left, for wide screens. */
 @Composable
-private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> Unit) {
+private fun NavRail(selected: Screen, onAdd: () -> Unit, onVoice: () -> Unit, onSelect: (Screen) -> Unit) {
     // A phone on its side is short: smaller items, and the rail scrolls rather than clips.
     val itemH = if (LocalConfiguration.current.screenHeightDp < 440) 46.dp else 56.dp
     Column(
@@ -413,7 +451,8 @@ private fun NavRail(selected: Screen, onAdd: () -> Unit, onSelect: (Screen) -> U
         ) {
             // Adding a task, where the bottom bar of a phone has it in the middle.
             Box(
-                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                Modifier.width(72.dp).height(itemH).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent)
+                    .combinedClickable(onClick = onAdd, onLongClick = onVoice, onLongClickLabel = tr("จดด้วยเสียง", "Note by voice")),
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(24.dp)) }
             Screen.entries.filter { it != Screen.MORE }.forEach { s ->
@@ -457,6 +496,7 @@ private fun DockNav(
     showAsk: Boolean,
     onSelect: (Screen) -> Unit,
     onAdd: () -> Unit,
+    onVoice: () -> Unit,
     onAsk: (String) -> Unit,
     presets: List<AskPreset>,
     modifier: Modifier = Modifier,
@@ -488,12 +528,6 @@ private fun DockNav(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Opens the assistant's page without typing first.
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
-                    .clickable { focus.clearFocus(); onSelect(Screen.AI) },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.spark, tr("เปิดหน้าผู้ช่วย", "Open the assistant"), tint = C.accentText, modifier = Modifier.size(20.dp)) }
             BasicTextField(
                 value = question,
                 onValueChange = { question = it },
@@ -512,25 +546,34 @@ private fun DockNav(
                     }
                 },
             )
+            // On the right: with nothing typed, a speech bubble that opens the assistant's page; once typed, send.
             if (question.isNotBlank()) Box(
                 Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accent).clickable { send() },
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.send, tr("ส่งถึงผู้ช่วย", "Send to the assistant"), tint = C.onAccent, modifier = Modifier.size(20.dp)) }
+            else Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
+                    .clickable { focus.clearFocus(); onSelect(Screen.AI) },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.chat, tr("เปิดหน้าผู้ช่วย", "Open the assistant"), tint = C.accentText, modifier = Modifier.size(20.dp)) }
         }
         if (keyboard) return@Column
         if (showAsk) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(C.divider))
         Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            DockItem(Screen.FOCUS.label, selected == Screen.FOCUS, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
+            // The new look: Today, Tasks, add, Projects and the secretary; Settings moves to the gear on Today.
+            DockItem(if (NewLook.on) tr("วันนี้", "Today") else Screen.FOCUS.label, selected == Screen.FOCUS, { onSelect(Screen.FOCUS) }, Modifier.weight(1f))
             DockItem(Screen.TASKS.label, selected == Screen.TASKS, { onSelect(Screen.TASKS) }, Modifier.weight(1f))
             // Adding a task, in the middle of the tabs where it always was.
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 Box(
-                    Modifier.size(width = 56.dp, height = 38.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent).clickable(onClick = onAdd),
+                    Modifier.size(width = 56.dp, height = 38.dp).clip(RoundedCornerShape(14.dp)).background(if (C.calm) C.raised else C.accent)
+                        .combinedClickable(onClick = onAdd, onLongClick = onVoice, onLongClickLabel = tr("จดด้วยเสียง", "Note by voice")),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Ic.plus, tr("เพิ่มงาน", "New task"), tint = if (C.calm) C.accentText else C.onAccent, modifier = Modifier.size(22.dp)) }
             }
             DockItem(tr("โปรเจกต์", "Projects"), selected == Screen.PROJECTS, { onSelect(Screen.PROJECTS) }, Modifier.weight(1f))
-            DockItem(Screen.MORE.label, selected == Screen.MORE, { onSelect(Screen.MORE) }, Modifier.weight(1f))
+            if (NewLook.on) DockItem(tr("เลขา", "Secretary"), selected == Screen.AI, { onSelect(Screen.AI) }, Modifier.weight(1f))
+            else DockItem(Screen.MORE.label, selected == Screen.MORE, { onSelect(Screen.MORE) }, Modifier.weight(1f))
         }
     }
 }

@@ -82,7 +82,38 @@ object CalendarReader {
      * One calendar on the phone. Google accounts show up with [isGoogle] once calendar sync is on. [holiday] marks a
      * public-holiday calendar (Google's "Holidays in Thailand" and the like), whose days the month widget colours red.
      */
-    data class Calendar(val id: Long, val name: String, val account: String, val isGoogle: Boolean, val visible: Boolean, val writable: Boolean, val holiday: Boolean = false)
+    data class Calendar(
+        val id: Long, val name: String, val account: String, val isGoogle: Boolean, val visible: Boolean, val writable: Boolean, val holiday: Boolean = false,
+        /** Whether the phone keeps this calendar's events (SYNC_EVENTS). Off, no new event reaches the phone from its account. */
+        val sync: Boolean = true,
+        /** Where it comes from: "Google", "DAVx5", another account's name, or null for a calendar on the phone itself. */
+        val source: String? = null,
+    )
+
+    /** The account type's name for the owner to read; null for a calendar kept on the phone only. */
+    fun sourceName(type: String?): String? = when {
+        type.isNullOrBlank() || type.equals("LOCAL", ignoreCase = true) || type == "com.android.local" -> null
+        type == "com.google" -> "Google"
+        type.contains("davdroid", ignoreCase = true) -> "DAVx5"
+        else -> type.substringAfterLast('.')
+    }
+
+    /**
+     * Switches a calendar's sync on (and shows it), then asks for a sync now. Nothing in the phone's calendar app turns
+     * it back on for a calendar like the account's main one, which has no switch there. False when the phone refuses.
+     */
+    fun enableSync(context: Context, calendarId: Long): Boolean {
+        if (!canWrite(context)) return false
+        val values = ContentValues().apply {
+            put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+            put(CalendarContract.Calendars.VISIBLE, 1)
+        }
+        val rows = runCatching {
+            context.contentResolver.update(ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarId), values, null, null)
+        }.getOrDefault(0)
+        if (rows > 0) requestSync(context, force = true)
+        return rows > 0
+    }
 
     /** Google's holiday calendars are owned by an address like `th.th#holiday@group.v.calendar.google.com`. */
     fun isHolidayCalendar(name: String, owner: String) =
@@ -98,6 +129,7 @@ object CalendarReader {
             CalendarContract.Calendars.VISIBLE,
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
             CalendarContract.Calendars.OWNER_ACCOUNT,
+            CalendarContract.Calendars.SYNC_EVENTS,
         )
         val out = ArrayList<Calendar>()
         runCatching {
@@ -111,6 +143,8 @@ object CalendarReader {
                         visible = c.getInt(4) == 1,
                         writable = c.getInt(5) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR,
                         holiday = isHolidayCalendar(c.getString(1) ?: "", c.getString(6) ?: ""),
+                        sync = c.getInt(7) == 1,
+                        source = sourceName(c.getString(3)),
                     )
                 }
             }

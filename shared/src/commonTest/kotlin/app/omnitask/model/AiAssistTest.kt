@@ -71,7 +71,7 @@ class AiAssistTest {
         val config = body["generationConfig"]!!.jsonObject
         assertEquals("application/json", config["responseMimeType"]!!.jsonPrimitive.content)
         assertTrue("picks" in config["responseSchema"]!!.jsonObject["properties"]!!.jsonObject)
-        assertEquals("minimal", config["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
+        assertEquals("low", config["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
         val plain = Json.parseToJsonElement(AiAssist.withoutThinking(AiAssist.briefRequest(picture()))).jsonObject
         assertTrue("thinkingConfig" !in plain["generationConfig"]!!.jsonObject)
         assertTrue("responseSchema" in plain["generationConfig"]!!.jsonObject)
@@ -97,6 +97,22 @@ class AiAssistTest {
         assertEquals("งานติดที่คุณ, มากกว่าที่ Claude", brief.summary)
         assertEquals(listOf("ตอบอีเมลลูกค้า"), brief.picks.map { it.task.title })
         assertEquals("ลูกค้ารอคำตอบ", brief.picks[0].reason)
+    }
+
+    /** The real broken reply from ตรวจ Gemini.md: a trailing field ran on until the length limit cut it. */
+    @Test
+    fun aReplyCutOffIsReadAsFarAsItGoes() {
+        val p = picture()
+        val loop = "ขอบคุณครับคุณครับ ยินดีให้บริการครับ ".repeat(40)
+        val text = "{\n  \"answer\": \"จัดลำดับไว้ให้ยืนยันแล้ว\",\n  \"actions\": [\n    {\"kind\": \"done\", \"ref\": \"t2\"},\n    {\"kind\": \"priority\", \"ref\": \"t1\", \"priority\": \"high\"}\n  ],\n  \"topic\": \"จัดลำดับงาน$loop"
+        val cut = """{"candidates":[{"content":{"parts":[{"text":${Json.encodeToString(kotlinx.serialization.json.JsonPrimitive.serializer(), kotlinx.serialization.json.JsonPrimitive(text))}}]},"finishReason":"MAX_TOKENS"}]}"""
+        val r = AiAssist.parseReply(cut, p)
+        assertEquals("จัดลำดับไว้ให้ยืนยันแล้ว", r.text)
+        assertEquals(2, r.actions.size)
+        // Cut inside the list: the changes written out whole are kept, the half-written one is not.
+        val half = "{\"answer\": \"ได้\", \"actions\": [{\"kind\": \"done\", \"ref\": \"t2\"}, {\"kind\": \"prio"
+        val r2 = AiAssist.parseReply("""{"candidates":[{"content":{"parts":[{"text":${Json.encodeToString(kotlinx.serialization.json.JsonPrimitive.serializer(), kotlinx.serialization.json.JsonPrimitive(half))}}]},"finishReason":"MAX_TOKENS"}]}""", p)
+        assertEquals(1, r2.actions.size)
     }
 
     @Test

@@ -154,4 +154,71 @@ class YgdrasilTest {
         )
         assertEquals("- [ ] ทำ #Siriraj/peddose/แอป 📅 2026-10-12", Branches.renameInLine("- [ ] ทำ #peddose/แอป 📅 2026-10-12", "peddose", "Siriraj/peddose"))
     }
+
+    @Test
+    fun tasksWithNoProjectWaitInTheTrayByTheirFirstTag() {
+        val loose = VaultText.parseFile(
+            "f", "Omni note.md",
+            listOf(
+                "- [ ] เขียน paper #peddose",
+                "- [ ] ซื้อถ่าน 📅 2026-10-20",
+                "- [ ] โทรหาหมอ 📅 2026-10-12",
+                "- [ ] บทความ KMP #อ่าน",
+                "- [ ] Atomic Habits #อ่าน/หนังสือ",
+                "- [ ] ถ่ายรูปสินค้า #ร้านค้า",
+                "- [x] อ่านจบแล้ว #อ่าน ✅ 2026-10-01",
+                "- [-] ยกเลิก",
+            ).joinToString("\n"),
+        )
+        Projects.chosen = setOf("peddose")
+        try {
+            val groups = Ygdrasil.strays(loose, today, Ygdrasil.Filter())
+            // No tag first, then the tag with more tasks; the done and cancelled ones are not shown by the plain filter.
+            assertEquals(listOf(null, "อ่าน", "ร้านค้า"), groups.map { it.tag })
+            assertEquals(listOf("โทรหาหมอ", "ซื้อถ่าน"), groups[0].tasks.map { it.title })
+            assertEquals(2, groups[1].tasks.size)
+            // A tag made a project takes its tasks out of the tray.
+            Projects.chosen = setOf("peddose", "อ่าน")
+            assertEquals(listOf(null, "ร้านค้า"), Ygdrasil.strays(loose, today, Ygdrasil.Filter()).map { it.tag })
+        } finally {
+            Projects.chosen = null
+        }
+    }
+
+    @Test
+    fun aTaskGivenAHomeGetsItsTagFirstAndKeepsTheOthers() {
+        assertEquals("- [ ] บทความ KMP #omni #อ่าน", TaskLine.homeTag("- [ ] บทความ KMP #อ่าน", "omni"))
+        assertEquals("- [ ] ซื้อถ่าน #บ้าน/ซ่อม 📅 2026-10-20", TaskLine.homeTag("- [ ] ซื้อถ่าน 📅 2026-10-20", "#บ้าน/ซ่อม"))
+        assertEquals("- [ ] งาน #omni #อ่าน", TaskLine.homeTag("- [ ] งาน #อ่าน #omni", "omni"))
+        assertEquals("- [ ] งาน #omni #remind-at-due ⏰ 09:00 📅 2026-10-20", TaskLine.homeTag("- [ ] งาน #remind-at-due ⏰ 09:00 📅 2026-10-20", "omni"))
+    }
+
+    @Test
+    fun worldsOpenByTheirReachAndPastTargetsOnlyTell() {
+        val wed = LocalDate.parse("2026-10-21")
+        val work = VaultText.parseFile(
+            "g", "Omni note.md",
+            listOf(
+                "- [ ] เลยกำหนด #a 📅 2026-10-20",
+                "- [ ] เลยเป้าตัวเอง #b ⏳ 2026-10-19",
+                "- [ ] เสาร์นี้ #c 📅 2026-10-24",
+                "- [ ] ปลายเดือน #d ⏳ 2026-10-30",
+                "- [ ] ไม่มีวัน #e",
+            ).joinToString("\n"),
+        )
+        val tree = Ygdrasil.grow(work, emptyMap(), wed, Ygdrasil.Filter())
+        fun open(r: Ygdrasil.Reach) = tree.worlds.map { it.node.tag }.toSet() - Ygdrasil.autoFolded(tree, r, wed)
+        assertEquals(setOf("a", "b"), open(Ygdrasil.Reach.LATE))
+        assertEquals(setOf("a", "b"), open(Ygdrasil.Reach.TODAY))
+        assertEquals(setOf("a", "b", "c"), open(Ygdrasil.Reach.WEEK))
+        assertEquals(setOf("a", "b", "c", "d"), open(Ygdrasil.Reach.MONTH))
+        val notes = Ygdrasil.urgencies(tree, Ygdrasil.Reach.WEEK, wed)
+        assertEquals(1, notes.getValue("b").targetLate)
+        assertTrue(notes.getValue("b").opens)
+        assertEquals("เสาร์นี้", notes.getValue("c").next?.title)
+        // A folded branch inside a world stays folded; a folded world with a note is one wide row.
+        assertTrue("a/x" in Ygdrasil.autoFolded(tree, Ygdrasil.Reach.WEEK, wed, kept = setOf("a/x", "c")))
+        val wide = Ygdrasil.layout(tree, setOf("e"), notes = notes).spots.first { it.limb?.node?.tag == "e" }
+        assertEquals(Ygdrasil.WIDE_W, wide.w)
+    }
 }

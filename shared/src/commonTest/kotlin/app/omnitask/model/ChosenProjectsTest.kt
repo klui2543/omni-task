@@ -32,4 +32,16 @@ class ChosenProjectsTest {
         }
         assertEquals(emptyList(), Projects.others(listOf(read, plain)))
     }
+
+    @Test
+    fun aNewTasksProjectTagBecomesABranchUnlessTakenOff() {
+        val today = kotlinx.datetime.LocalDate(2026, 10, 23)
+        val fresh = task("- [ ] ตรวจสูตร #peddose/verify ➕ 2026-10-23")
+        val known = task("- [ ] ยืนยันตาราง #rxshift ➕ 2026-10-23")
+        val old = task("- [ ] งานเก่า #อ่าน ➕ 2026-09-01")
+        val taken = task("- [ ] ล้างรถ #บ้าน ➕ 2026-10-22")
+        val tasks = listOf(fresh, known, old, taken)
+        // Only a new task's project, once; not a known project, an old task's tag, or one the owner took off.
+        assertEquals(setOf("peddose"), Projects.newOnes(tasks, setOf("rxshift"), setOf("บ้าน"), today))
+    }
 }

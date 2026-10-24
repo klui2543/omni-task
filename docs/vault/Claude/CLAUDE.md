@@ -1,11 +1,12 @@
 ---
-format: claude-rules/3
+format: claude-rules/4
 ---
 # Klui: rules for every Claude session
 
 - Reply to Klui in Thai, short and simple. Suggest a model and effort for each task.
 - Never use the em dash or the middle dot in text Klui reads.
 - Do not start work until Klui says go. Picking an option is not a go: ask "เริ่มเลยไหม?" first.
+- When Klui reports a problem or asks for a change, think first: find the cause from evidence, then propose 2 or 3 ways with a recommendation, and wait. No code, no edits, until Klui picks one and says go (Klui, 2026-10-23: "คิดและเสนอแนวทางก่อน ไม่ต้องรีบโค้ด").
 - Never ask Klui to paste a token, key or password in chat. Secrets go only in environment settings.
 - Never write a patient's name, hospital number (HN), national ID number, phone number or address into the vault or the logs; write "ผู้ป่วยรายหนึ่ง" or the role.
 
@@ -16,6 +17,7 @@ format: claude-rules/3
 
 ## Work log: `📁 Folder/หลังบ้าน/Claude/Claude log.md`
 - Read its **ภาพรวม** and **งานค้าง** at the start of every session, plus any 💬 lines Klui added since the last session. If the session is about a project, check that project's line first.
+- Also read `📁 Folder/หลังบ้าน/Omni/Claude รู้จักคุณ.md` (what Claude knows about how Klui works and lives) at the start, together with Claude log. When you learn something lasting about how Klui works or lives (a habit, his energy, a bottleneck, what helps; not a single task), add one line at the top of its `## ที่ Claude รู้` list: `- <สิ่งที่รู้ ประโยคเดียว> (YYYY-MM-DD, จาก <ที่มา>)`. Never edit or delete Klui's lines there.
 - **ภาพรวม**: one line per project, rewritten each session: where it stands, then ➜ who acts next (Klui or Claude).
 - **งานค้าง**: open work as checkboxes. First tag is the project (`#<project>/<topic>`), second tag is whose turn: `#kluido` (Klui must act) or `#claudedo` (Claude does it next session). Add ⏳ or 📅 when there is a plan for when. Tick (`[x]` with ✅ date) what is done; do not delete it.
 - **ไทม์ไลน์**: newest day on top, plain bullets only (no checkboxes), so Omni does not count them as tasks. Keep only the last 14 days here.
@@ -33,11 +35,11 @@ format: claude-rules/3
 - When Klui says the secretary stopped (or "ซ่อมเลขา"), follow "ซ่อมเลขา" in `Claude/README.md`.
 - Klui types `/save` (optionally with a note) to make this session write its own state into Claude log at once, also when the work is not finished; otherwise the secretary picks it up within 3 hours. The command file is `Claude/commands/save.md` in the vault.
 - When Klui says "เลขา สรุปงาน": do the secretary's round now, following `Claude/secretary.md`.
-- Claude Chat and Cowork cannot be read directly. There Klui types "บันทึก": the `save-to-log` skill drops a summary into the Google Drive folder `Claude inbox`, and the secretary merges it into Claude log (bullets marked `(Chat)` or `(Cowork)`). If Klui expects something from a chat that is not in the log yet, say so and ask Klui to type "บันทึก" there.
+- Claude Chat and Cowork cannot be read directly. There Klui types (or says, at the end of a voice chat) "บันทึก": the `save-to-log` skill drops a summary into the Google Drive folder `Claude inbox`, and the secretary merges it into Claude log (bullets marked `(Chat)` or `(Cowork)`). If Klui expects something from a chat that is not in the log yet, say so and ask Klui to type "บันทึก" there.
 - The first time Claude writes the log in a new place, write one test line and ask Klui to confirm it shows on the phone before writing the rest.
 
 ## Klui's own notes
-- `📁 Folder/หลังบ้าน/Omni/Omni note.md` belongs to Klui. Claude only appends, and only a task Klui must do, tagged with its project first and `#kluido` second. Never edit or delete Klui's lines.
+- `📁 Folder/หลังบ้าน/Omni/Omni note.md` belongs to Klui. Claude only appends, and only a task Klui must do, tagged with its project first and `#kluido` second. One exception: a task from a file Klui attached in the secretary room is added as a bare line `- [ ] task ➕ date` (no tag), so it shows in the app's "ยังไม่มีบ้าน" tray. Never edit or delete Klui's lines.
 
 ## Gemini in the Omni app (agreed 2026-10-19, widened 2026-10-21)
 - The assistant in Omni (Gemini, typing) reads Klui's tasks and this Claude log, and can propose any change to tasks. Klui confirms each change with a tap, so nothing changes without a tap. Deleting is shown in red.

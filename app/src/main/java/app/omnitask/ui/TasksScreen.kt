@@ -136,8 +136,23 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             if (!showingResults) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val active = q.activeFilters + if (q.text.isNotBlank()) 1 else 0
                 ToolButton(if (active > 0) tr("กรอง $active", "Filter $active") else tr("กรอง", "Filter"), active > 0, Ic.filter) { sheet = Sheet.FILTER }
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (listOf<Pair<Mode?, String>>(null to tr("รายการ", "List")) + Mode.entries.map { it to it.label }).forEach { (m, label) ->
+                val views = listOf<Pair<Mode?, String>>(null to tr("รายการ", "List")) + Mode.entries.map { it to it.label }
+                if (NewLook.on) {
+                    // The new look: one button for the view, the list by default; every view is still one tap away.
+                    var choosing by remember { mutableStateOf(false) }
+                    Box(Modifier.weight(1f)) {
+                        ToolButton(tr("มุมมอง: ", "View: ") + views.first { it.first == layout }.second, layout != null) { choosing = true }
+                        androidx.compose.material3.DropdownMenu(choosing, { choosing = false }, containerColor = C.raised) {
+                            views.forEach { (m, label) ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(label, color = if (m == layout) C.accentText else C.text, fontSize = TS.body, fontWeight = if (m == layout) FontWeight.SemiBold else FontWeight.Normal) },
+                                    onClick = { choosing = false; vm.setTasksLayout(m) },
+                                )
+                            }
+                        }
+                    }
+                } else Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    views.forEach { (m, label) ->
                         Chip(label, m == layout, { vm.setTasksLayout(m) })
                     }
                 }
@@ -206,7 +221,7 @@ private fun TaskList(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, 
         LazyColumn(
             Modifier.widthIn(max = 760.dp).fillMaxSize(),
             contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = if (header != null) 14.dp else 4.dp, bottom = NavClearance + FabClearance),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(if (NewLook.on) 18.dp else 10.dp),
         ) {
             if (header != null) item { header() }
 
@@ -218,7 +233,29 @@ private fun TaskList(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, 
                     // Tap a group's head to fold it to one line, as in TaskForge; folds are remembered per grouping.
                     val foldKey = q.groupBy.name + ":" + g.label
                     val folded = foldKey in state.foldedGroups
-                    Card {
+                    // The new look: no card around a group, a small head over a hairline, rows split by thin lines.
+                    if (NewLook.on) Column {
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { vm.toggleGroup(foldKey) }.padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(g.label, color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+                            Text("${g.tasks.size}", Modifier.padding(start = 6.dp).weight(1f), color = C.faint, fontSize = TS.caption)
+                            Icon(
+                                Ic.next, if (folded) tr("เปิด", "Open") else tr("พับ", "Fold"), tint = C.faint,
+                                modifier = Modifier.size(18.dp).padding(3.dp).rotate(if (folded) 0f else 90f),
+                            )
+                        }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+                        if (!folded) g.tasks.forEachIndexed { i, t ->
+                            if (i > 0) Divider(start = 44.dp)
+                            TaskRow(
+                                t, state.today, { vm.toggleDone(t) }, { onOpen(t) },
+                                blockedBy = if (t in blocked) Projects.waitingOn(t, state.tasks) else null,
+                                progress = state.progressOf(t),
+                            )
+                        }
+                    } else Card {
                         Row(
                             Modifier.fillMaxWidth().clickable { vm.toggleGroup(foldKey) }
                                 .padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = if (folded) 10.dp else 4.dp),

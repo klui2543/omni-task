@@ -247,7 +247,6 @@ object AiIndex {
             })
         }
         putJsonObject("generationConfig") {
-            put("temperature", 0.3)
             put("maxOutputTokens", 512)
             putJsonObject("thinkingConfig") { put("thinkingLevel", "minimal") }
         }

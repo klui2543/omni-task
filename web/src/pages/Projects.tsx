@@ -136,6 +136,19 @@ export function ProjectsPage(p: PageProps) {
       if (res.ok) say(`ย้าย "${t.title}" ไป #${tag} แล้ว`)
       return res
     })
+  // A task with no project given one from the tray: the tag goes first, its own tags stay. A new project's tag is
+  // made a project, so the task shows on the tree at once.
+  const ygHome = (t: Task, tag: string) =>
+    p.run(async () => {
+      const res = await p.vault.change(p.fresh(t), { op: 'homeTo', value: tag })
+      if (res.ok) {
+        const root = tag.split('/')[0]
+        if (local.projectTags && !local.projectTags.includes(root)) setLocal((s) => withProject(s, root, true, out?.seed ?? []))
+        say(`ย้าย "${t.title}" ไป #${tag} แล้ว`)
+      }
+      return res
+    })
+  const ygMakeProject = (tag: string) => { setProject(tag, true); say(`#${tag} เป็นโปรเจกต์แล้ว`) }
   // A project or branch dropped on another (or on the trunk): its tag moves in every note, its branch states go along.
   const ygGraft = (from: string, to: string) => {
     const [project, ...rest] = from.split('/')
@@ -300,6 +313,7 @@ export function ProjectsPage(p: PageProps) {
       onFilter={(filter) => setYg({ filter })} onFolded={(folded) => setYg({ folded })}
       onBack={back} onTick={p.tick} onOpen={openTask}
       onAddTask={ygAddTask} onAddBranch={ygAddBranch} onOpenProject={ygOpenProject} onMove={ygMove} onGraft={ygGraft}
+      onHome={ygHome} onMakeProject={ygMakeProject}
     />
   ) : project && mapping ? (
     <MindMap

@@ -159,6 +159,21 @@ object TaskLine {
         }
     }
 
+    /**
+     * Gives a task with no project its project or branch: [tag] goes in front of the line's tags, so it is the first
+     * one read, and the tags the task had stay after it (`#อ่าน` on `#omni` becomes `#omni #อ่าน`). A line with no
+     * tags gets it where [addTag] would put it.
+     */
+    fun homeTag(raw: String, tag: String): String {
+        val name = normalizeTag(tag)
+        if (name.isEmpty()) return raw
+        return editBody(raw) { body0 ->
+            val body = TAG.findAll(body0).firstOrNull { it.value.equals("#$name", ignoreCase = true) }?.let { remove(body0, it.range) } ?: body0
+            val first = TAG.findAll(body).firstOrNull { !it.value.startsWith("#remind-at-") }
+            if (first == null) addTagToBody(body, name) else body.substring(0, first.range.first) + "#$name " + body.substring(first.range.first)
+        }
+    }
+
     fun removeTag(raw: String, tag: String): String = editBody(raw) { body ->
         TAG.findAll(body).firstOrNull { it.value == "#$tag" }?.let { remove(body, it.range) } ?: body
     }

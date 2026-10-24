@@ -128,6 +128,9 @@ export const ygdrasil = (
     fileKey, path, text, JSON.stringify(notes), JSON.stringify({ ...state, kindTags: customKindTags()}), JSON.stringify(filter), JSON.stringify(folded), today(),
   ))
 
+/** The line as it would read once a task with no project goes to [tag] (the picker shows it before the move). */
+export const homeLine = (raw: string, tag: string): string => api.ygdrasilHomeLine(raw, tag)
+
 /** A project or branch tag renamed in every task line of [text]; `changed` counts the lines. */
 export const renameTag = (text: string, old: string, name: string) => edited(api.projectRenameTag(text, old, name))
 export const cleanProjectName = (name: string): string => api.projectCleanName(name)

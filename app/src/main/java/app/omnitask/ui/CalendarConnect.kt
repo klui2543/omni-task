@@ -27,8 +27,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.tr
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import app.omnitask.notify.CalendarEvent
 
 /**
@@ -91,25 +98,61 @@ fun calendarConnectShows(state: UiState): Boolean {
  * the list was opened from: it is pointed out by id, since two calendars can carry the same name.
  */
 @Composable
-fun CalendarRows(choices: CalendarChoices, mark: Long? = null) {
+fun CalendarRows(choices: CalendarChoices, mark: Long? = null, byAccount: Boolean = false) {
     val visible = choices.calendars.filter { it.visible }
     if (visible.isEmpty()) {
         Text(tr("ไม่พบปฏิทินที่เปิดไว้ในเครื่อง", "No calendars are switched on in the phone's calendar app"), Modifier.padding(vertical = 12.dp), color = C.muted, fontSize = TS.body)
     }
-    visible.forEach { cal ->
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var styling by remember { mutableStateOf<Long?>(null) }
+    var lastAccount: String? = null
+    val shown = if (byAccount) visible.sortedBy { it.account.lowercase() } else visible
+    shown.forEach { cal ->
+        // By account: a heading each time the account changes, so whose calendars these are is clear.
+        if (byAccount && cal.account != lastAccount) {
+            lastAccount = cal.account
+            Text(
+                cal.account.ifBlank { tr("ไม่ระบุบัญชี", "No account") } + (cal.source?.let { " ($it)" } ?: ""),
+                Modifier.padding(top = 10.dp), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold,
+            )
+        }
         val on = !CalendarReader.isHidden(cal.id, choices.hidden)
         Row(Modifier.fillMaxWidth().clickable { choices.onShown(cal.id, !on) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The calendar's colour and label: whose events these are, at a glance (see CalendarStyles).
+            CalendarDot(cal.id) { styling = if (styling == cal.id) null else cal.id }
+            Box(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(cal.name.ifBlank { cal.account }, color = if (cal.id == mark) C.accentText else C.text, fontSize = TS.body)
                 val notes = listOfNotNull(
-                    cal.account.takeIf { it.isNotBlank() && it != cal.name },
+                    CalendarStyles.label(cal.id)?.let { tr("ป้าย: $it", "Label: $it") },
+                    // Which of the same-named calendars this is: the account's own (Google) or the one DAVx5 brings.
+                    cal.source?.let { s -> cal.account.takeIf { it.isNotBlank() && it != cal.name }?.let { "$s, $it" } ?: s }
+                        ?: cal.account.takeIf { it.isNotBlank() && it != cal.name },
                     if (cal.id == mark) tr("นัดที่แตะมาจากปฏิทินนี้", "The event you tapped is in this one") else null,
                 )
                 if (notes.isNotEmpty()) Text(notes.joinToString("\n"), color = C.muted, fontSize = TS.caption)
+                // Sync switched off for a calendar that has an account: its new events never reach the phone.
+                if (!cal.sync && cal.source != null) {
+                    Text(tr("ปิดซิงก์อยู่ นัดใหม่จะไม่เข้าเครื่อง", "Sync is off, so new events do not reach the phone"), color = C.amber, fontSize = TS.caption)
+                    Text(
+                        tr("เปิดซิงก์", "Turn sync on"),
+                        Modifier.padding(top = 2.dp).clip(RoundedCornerShape(8.dp)).clickable {
+                            val ok = CalendarReader.enableSync(context, cal.id)
+                            android.widget.Toast.makeText(
+                                context,
+                                if (ok) tr("เปิดซิงก์แล้ว รอสักครู่ให้นัดเข้ามา", "Sync is on. Give it a moment.") else tr("เปิดไม่ได้ ลองในแอปปฏิทินของเครื่อง", "Could not turn it on. Try the phone's calendar app."),
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                            choices.onPermissionChanged()
+                        }.padding(vertical = 8.dp, horizontal = 2.dp),
+                        color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.Medium,
+                    )
+                }
             }
             Box(Modifier.width(12.dp))
             OnOff(on)
         }
+        if (styling == cal.id) CalendarStyleEditor(context, cal.id)
     }
 }
 

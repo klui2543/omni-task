@@ -29,6 +29,9 @@ project: <project tag>
 
 ## ไทม์ไลน์
 - <2 to 4 one-line bullets: what was done, decided and why, what waits and for whom>
+
+## รู้จักเพิ่ม
+- <only when this talk showed something lasting about how Klui works or lives: a habit, when his energy is good or bad, what blocks or helps him; one line each; leave the section out when there is none>
 ```
 
    Use `from: cowork` when running in Cowork. Leave งานค้าง empty when nothing waits. Several projects: one ภาพรวม line each, and tag each item with its own project.

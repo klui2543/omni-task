@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
+import app.omnitask.model.NextUp
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
 import app.omnitask.model.Projects
@@ -61,14 +63,22 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import java.time.format.DateTimeFormatter
 import app.omnitask.time.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
 @Composable
-fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit) {
+fun FocusScreen(
+    state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
+    onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {},
+) {
+    // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
+    val nl = NewLook.on
+    var lateOpen by rememberSaveable { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
+    val voice by vm.voice.collectAsStateWithLifecycle()
     if (picking) FuturePicker(state, vm) { picking = false }
     if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
     // The calendar choice, opened from an event (its calendar pointed out) or from the line under the day.
@@ -88,6 +98,8 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
     val total = openToday + doneToday
     // Read off the plan, so the numbers match the overdue card and the timeline below.
     val overdue = DayPlan.lateCount(plan)
+    // The new look keeps red for real deadlines (📅) gone by; a slipped own target (⏳) alone is not red.
+    val realLate = state.tasks.any { it.isOpen && it.due.let { d -> d != null && d < today } }
     val eventCount = DayPlan.eventCount(plan)
     // The clock the timeline follows: it moves on at every minute, so the now line and the running event keep up with real time.
     var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -125,10 +137,20 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
+        verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
-        item {
+        if (nl) item {
+            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("วันนี้", "Today"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
+                    Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
+                }
+                menu()
+                SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
+            }
+        }
+        if (!nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
@@ -137,6 +159,35 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 // The assistant is the floating button now; only the wide layout's menu is left up here.
                 menu()
             }
+        }
+
+        // The new look (Settings switch): one task to do next, at the top.
+        if (NewLook.on) {
+            val skippedToday = NewLook.skippedFor(today)
+            val next = NextUp.ranked(state.tasks, today, skippedToday).firstOrNull()
+            // Everything put off with "not now": say so, one tap from seeing them again.
+            if (next == null && skippedToday.isNotEmpty() && NextUp.ranked(state.tasks, today).isNotEmpty()) item(key = "next-up-skipped") {
+                Text(
+                    tr("ข้ามงานถัดไปไว้ ${skippedToday.size} งานวันนี้ แตะเพื่อดูอีกครั้ง", "${skippedToday.size} tasks put off today. Tap to see them again"),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { NewLook.clearSkips(context) }.padding(horizontal = 4.dp, vertical = 10.dp),
+                    color = C.muted, fontSize = TS.caption,
+                )
+            }
+            next?.let { pick ->
+                item(key = "next-up") {
+                    NextUpCard(
+                        pick, if (free > 0) hours(free) else null, onOpen,
+                        onStart = { vm.setStatus(pick.task, Status.IN_PROGRESS) },
+                        onDone = { vm.toggleDone(pick.task) },
+                        onSkip = { NewLook.skip(context, pick.task.key, today) },
+                    )
+                }
+            }
+        }
+
+        // Recordings not written down yet (no network, or the check was closed): try again or throw away.
+        if (voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
+            item { VoiceWaitingCard(voice, vm) }
         }
 
         // The secretary stopped writing Claude log (over a day since its last round): say so until it is back or hidden.
@@ -151,10 +202,10 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
 
         item {
             Card {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (!nl) Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     DoneRing(doneToday, total)
                     Row(Modifier.weight(1f).padding(start = 12.dp).height(IntrinsicSize.Min)) {
-                        Stat("$overdue", tr("ค้างอยู่", "Overdue"), if (overdue > 0) C.red else C.text, Modifier.weight(1f))
+                        Stat("$overdue", tr("ค้างอยู่", "Overdue"), if (overdue > 0 && (!NewLook.on || realLate)) C.red else C.text, Modifier.weight(1f))
                         Stat("$eventCount", tr("นัดวันนี้", "Events today"), C.text, Modifier.weight(1f))
                         if (night != null && isNight) {
                             Stat(hm(night.toBed), tr("ก่อนนอน", "Until bed"), if (night.toBed < 30) C.amber else C.text, Modifier.weight(1f))
@@ -163,100 +214,9 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                         }
                     }
                 }
-                Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
-                if (night != null) {
-                    // Tap to move tonight's bedtime; the usual one is in settings.
-                    val color = when {
-                        night.sleep < 5 * 60 -> C.red
-                        night.sleep < 7 * 60 -> C.amber
-                        else -> C.lime
-                    }
-                    // Bed and wake as two tiles to tap, the hours of sleep beside them, why the wake time is what it is,
-                    // then the alarm on the watch.
-                    val wake = night.wakeAt.toLocalTime()
-                    val alarm = state.alarmSet?.takeIf { it.first == eve }
-                    // Set for tonight and the wake time moved (picked again, or a new morning event): send the new one.
-                    LaunchedEffect(alarm, night.wakeAt) {
-                        if (alarm != null && alarm.second != wake) vm.setWakeAlarm(eve, night.wakeAt, night.sleep)
-                    }
-                    Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
-                        if (lastNight != null) {
-                            Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(tr("เมื่อคืนได้นอน ${hm(lastNight)}", "${hm(lastNight)} of sleep last night"), color = C.muted, fontSize = TS.caption)
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(tr("คืนนี้", "Tonight"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
-                            Text(
-                                tr("ได้นอน ${hm(night.sleep)}", "${hm(night.sleep)} of sleep"),
-                                Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 2.dp),
-                                color = color, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1,
-                            )
-                        }
-                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SleepTile(tr("นอน", "Bed"), night.bedAt.format(HM), Modifier.weight(1f)) {
-                                pickSystemTime(context, bedtime) { vm.setTonightBedtime(eve, it) }
-                            }
-                            // In the daytime the wake time is tomorrow's; say so, or it reads as this morning's.
-                            val tomorrow = night.wakeAt.toLocalDate() > today
-                            SleepTile(tr("ตื่น", "Up"), night.wakeAt.format(HM), Modifier.weight(1f), if (tomorrow) tr("พรุ่งนี้", "tomorrow") else null) {
-                                pickSystemTime(context, wake) { vm.setTonightWake(eve, it) }
-                            }
-                        }
-                        // Why the wake time is what it is: an event in the morning, or picked for tonight.
-                        val why = when {
-                            pickedWake != null && state.wakeFromWatch -> tr("ตั้งจากนาฬิกา", "Set on the watch")
-                            pickedWake != null -> tr("ตั้งเองสำหรับคืนนี้", "Picked for tonight")
-                            night.because != null -> tr("เผื่อ 1 ชม. ก่อน ${night.because!!.begin.format(HM)}: ${night.because!!.title}", "An hour before ${night.because!!.begin.format(HM)}: ${night.because!!.title}")
-                            else -> null
-                        }
-                        if (why != null) {
-                            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(why, Modifier.weight(1f), color = C.faint, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (pickedWake != null) {
-                                    Text(
-                                        tr("ใช้เวลาปกติ", "Use usual"),
-                                        Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.setTonightWake(eve, null) }.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        color = C.accentText, fontSize = TS.micro,
-                                    )
-                                }
-                            }
-                        }
-                        // The watch alarm, for any day and time; tapping opens it set like a clock's, starting from
-                        // tonight's wake time when there is none.
-                        val alarmAt = state.alarmAt?.takeIf { it > now }
-                        val on = alarmAt != null && !state.alarmFailed
-                        val tint = when { on -> C.lime; state.alarmFailed -> C.red; else -> C.accentText }
-                        var editingAlarm by remember { mutableStateOf(false) }
-                        if (editingAlarm) AlarmDialog(
-                            initial = alarmAt ?: night.wakeAt, isSet = alarmAt != null,
-                            onSet = { at -> vm.setAlarm(at, if (at == night.wakeAt) night.sleep else 0) },
-                            onOff = { vm.setAlarm(null) },
-                        ) { editingAlarm = false }
-                        Row(
-                            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(if (on) C.lime.copy(alpha = 0.12f) else C.raised)
-                                .clickable { editingAlarm = true }
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                when {
-                                    state.alarmFailed -> tr("ส่งไม่ถึงนาฬิกา แตะเพื่อลองใหม่", "Did not reach the watch, tap to retry")
-                                    alarmAt != null -> tr(
-                                        "นาฬิกาจะปลุก${alarmDay(alarmAt.date, today)} ${alarmAt.format(HM)}",
-                                        "The watch rings ${alarmDay(alarmAt.date, today)} at ${alarmAt.format(HM)}",
-                                    )
-                                    else -> tr("ตั้งปลุกที่นาฬิกา", "Set the watch alarm")
-                                },
-                                Modifier.weight(1f), color = if (on || state.alarmFailed) tint else C.text,
-                                fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                            if (alarmAt != null && !state.alarmFailed) Text(tr("อีก ${untilAlarm(alarmAt, now)}", "in ${untilAlarm(alarmAt, now)}"), color = C.muted, fontSize = TS.caption, maxLines = 1)
-                        }
-                    }
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
-                }
+                if (!nl) Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+                // Tonight's bed and wake times are no longer shown or set here: the free time above works them out
+                // from the day's events and the owner's usual rhythm.
                 run {
                     // The pinned countdowns, soonest first: a ring for a task, the timeline's bar for an event. Any of
                     // them opens the picker.
@@ -294,9 +254,10 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
                 "A sync clash left a copy: ${path.substringAfterLast('/')}\nThe app skips it. Check it for anything the main note lacks, then delete it.",
             )
         }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
-        brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
+        // The new look leaves out the nudges ("3 days without touching..."): the secretary brings them up in its chat.
+        if (!nl) brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
-        if (state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
+        if (!nl && state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
 
         // Overdue work is not part of the day's timeline: it sits in its own card below it.
         val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
@@ -349,10 +310,36 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
             }
         }
 
-        if (overdueSection != null) item {
+        // The new look folds overdue work into one line: open it to see the list, or hand it to the secretary.
+        if (nl && overdueSection != null) item {
+            val n = overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
+            Card {
+                Row(Modifier.fillMaxWidth().clickable { lateOpen = !lateOpen }.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("ค้าง $n งาน", "$n open from before"), color = if (realLate) C.red else C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
+                        Text(if (lateOpen) tr("แตะเพื่อพับ", "Tap to fold") else tr("แตะเพื่อดูรายการ", "Tap to see them"), color = C.muted, fontSize = TS.caption)
+                    }
+                    Text(
+                        tr("ให้เลขาจัด", "Ask the secretary"),
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable {
+                            onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
+                        }.padding(horizontal = 10.dp, vertical = 10.dp),
+                        color = C.accentText, fontSize = TS.body,
+                    )
+                }
+                if (lateOpen) {
+                    overdueSection.items.forEach { item ->
+                        if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
+                    }
+                    Box(Modifier.height(8.dp))
+                }
+            }
+        }
+
+        if (!nl && overdueSection != null) item {
             Card {
                 Box(Modifier.height(6.dp))
-                PlanHead(overdueSection.part.label, C.red, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
+                PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
                 overdueSection.items.forEach { item ->
                     if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
                 }
@@ -383,8 +370,27 @@ fun FocusScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu:
         }
 
         // Either card goes when its kind is hidden; the other then takes the row.
-        val showWaiting = TaskKind.WAITING !in state.hiddenKinds
-        val showFuture = TaskKind.FUTURE !in state.hiddenKinds
+        // The new look: real deadlines (📅) in the next week, instead of the waiting and future cards.
+        if (nl) {
+            val soon = state.tasks.filter { it.isOpen && it.list == null && it.due.let { d -> d != null && d > today && d <= today.plusDays(7) } }
+                .sortedBy { it.due }.take(3)
+            if (soon.isNotEmpty()) item {
+                Column {
+                    Text(tr("กำหนดจริงใน 7 วัน", "Real deadlines this week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                    Card {
+                        soon.forEachIndexed { i, t ->
+                            if (i > 0) Divider(start = 14.dp)
+                            Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(t.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(t.due!!.format(SHORT_DATE), Modifier.padding(start = 10.dp), color = C.amber, fontSize = TS.caption)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
+        val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
         if (showWaiting || showFuture) item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Each card shows one task at a time: swipe for the next, or tap the head to see them all at once.
@@ -531,18 +537,6 @@ private fun DoneRing(done: Int, total: Int) {
     }
 }
 
-/** One of tonight's two times, big enough to tap; [day] says which day when it is not today. */
-@Composable
-private fun SleepTile(label: String, time: String, modifier: Modifier, day: String? = null, onClick: () -> Unit) {
-    Column(modifier.clip(RoundedCornerShape(12.dp)).background(C.raised).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text(label, color = C.muted, fontSize = TS.micro)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(time, color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
-            if (day != null) Text(day, Modifier.padding(start = 4.dp, bottom = 1.dp), color = C.muted, fontSize = TS.micro)
-        }
-    }
-}
-
 /** The line under the summary: tonight's sleep, or the pinned countdown during the day. */
 @Composable
 private fun FooterRow(onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
@@ -625,7 +619,11 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                 state.progressOf(t)?.let { (d, n) -> tr("งานย่อย $d/$n", "Subtasks $d/$n") },
             ).joinToString(", ")
             val clock = if (done) null else item.time
-            if (clock != null || lateText != null || rest.isNotEmpty()) {
+            // The new look: a slipped own target (⏳, no 📅 gone by) says so quietly.
+            val targetText = if (NewLook.on && !done && lateText == null && NextUp.onlyTargetLate(t, today)) {
+                t.scheduled?.let { tr("เลยเป้า ${ChronoUnit.DAYS.between(it, today)} วัน", "target ${ChronoUnit.DAYS.between(it, today)} days ago") }
+            } else null
+            if (clock != null || lateText != null || targetText != null || rest.isNotEmpty()) {
                 Row(
                     Modifier.padding(top = 1.dp).then(if (stuck) Modifier.clip(RoundedCornerShape(6.dp)).clickable { explaining = true } else Modifier),
                     verticalAlignment = Alignment.CenterVertically,
@@ -635,7 +633,8 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                         Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", color = C.muted, fontSize = TS.caption)
                     }
                     if (lateText != null) Text(lateText, color = C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                    if (rest.isNotEmpty()) Text((if (lateText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (targetText != null) Text(targetText, color = C.muted, fontSize = TS.caption)
+                    if (rest.isNotEmpty()) Text((if (lateText != null || targetText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -676,7 +675,8 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onCl
                 }
                 .padding(start = if (C.calm) 0.dp else 10.dp, end = 10.dp, top = if (running) 8.dp else 4.dp, bottom = if (running) 8.dp else 4.dp),
         ) {
-            Box(Modifier.width(3.dp).fillMaxHeight().background(if (past) C.faint else C.teal))
+            val mine = CalendarStyles.color(e.calendarId)
+            Box(Modifier.width(3.dp).fillMaxHeight().background(if (past) C.faint else mine ?: C.teal))
             if (running) {
                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
                     Text(e.title, color = C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
@@ -685,6 +685,7 @@ private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onCl
             } else {
                 Row(Modifier.weight(1f).fillMaxHeight().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(e.title, Modifier.weight(1f), color = if (past) C.faint else C.eventText, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    CalendarStyles.label(e.calendarId)?.let { Text(it, Modifier.padding(start = 8.dp), color = if (past) C.faint else mine ?: C.tealText, fontSize = TS.caption, maxLines = 1) }
                     Text(range, Modifier.padding(start = 8.dp), color = if (past) C.faint else C.tealText, fontSize = TS.caption, maxLines = 1)
                 }
             }

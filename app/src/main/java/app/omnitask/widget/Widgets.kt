@@ -128,6 +128,7 @@ class QuickAddWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         app.omnitask.model.Lang.load(context)
         Appearance.load(context)
+        app.omnitask.ui.CalendarStyles.load(context)
         provideContent {
             Row(
                 GlanceModifier.fillMaxSize().cornerRadius(26.dp).background(cp { it.card }).padding(start = 18.dp, end = 6.dp),
@@ -229,7 +230,7 @@ class TodayWidget : GlanceAppWidget() {
 private sealed interface Line {
     data class Now(val time: LocalTime) : Line
     data class Head(val text: String, val overdue: Boolean = false) : Line
-    data class Event(val title: String, val range: String, val phase: DayPlan.Phase, val minutesLeft: Long, val progress: Float) : Line
+    data class Event(val title: String, val range: String, val phase: DayPlan.Phase, val minutesLeft: Long, val progress: Float, val color: Int? = null) : Line
     data class Todo(val time: String, val task: Task, val sub: String) : Line
 }
 
@@ -273,7 +274,7 @@ private fun line(item: DayPlan.Item, time: String, now: LocalDateTime, today: Lo
     is DayPlan.Item.EventItem -> {
         val e = item.event
         val range = DayPlan.range(e, item.time != null, today, ::hm)
-        Line.Event(e.title, range, DayPlan.phase(e, now), ChronoUnit.MINUTES.between(now, e.end), DayPlan.progress(e, now))
+        Line.Event(e.title, range, DayPlan.phase(e, now), ChronoUnit.MINUTES.between(now, e.end), DayPlan.progress(e, now), calendarArgb(e.calendarId))
     }
     is DayPlan.Item.TaskItem -> Line.Todo(time, item.task, listOfNotNull(Projects.projectOf(item.task)?.let { "#$it" }, Focus.waitingFor(item.task)?.let { tr("รอ $it", "waiting on $it") }).joinToString(", "))
 }
@@ -297,7 +298,7 @@ private fun EventLine(context: Context, e: Line.Event) {
     val active = e.phase == DayPlan.Phase.ACTIVE
     Box(GlanceModifier.fillMaxWidth().height(if (active) 40.dp else 30.dp).padding(vertical = 2.dp).clickable(open(context))) {
         Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            Box(GlanceModifier.width(3.dp).height(if (active) 30.dp else 20.dp).cornerRadius(2.dp).background(if (past) cp { it.faint } else cp { it.teal })) {}
+            Box(GlanceModifier.width(3.dp).height(if (active) 30.dp else 20.dp).cornerRadius(2.dp).background(if (past) cp { it.faint } else e.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
             if (active) {
                 Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
                     Label(e.title, cp { it.text }, 14.sp)
