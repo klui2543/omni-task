@@ -202,6 +202,15 @@ fun OmniTaskApp(vm: TaskViewModel) {
         }
     }
 
+    // A move made in Ygdrasil: what moved, that the secretary was told, and a way back.
+    LaunchedEffect(state.moved) {
+        state.moved?.let { u ->
+            val r = snackbar.showSnackbar(u.text, actionLabel = tr("เลิกทำ", "Undo"), duration = SnackbarDuration.Long)
+            vm.clearMoved()
+            if (r == SnackbarResult.ActionPerformed) u.undo()
+        }
+    }
+
     // The frames and emoji page, from the month widget or the calendar's pencil; closing it lands on the calendar.
     state.month?.let { r ->
         MonthScreen(r, state) { day -> vm.requestCalendar(day); vm.requestMonth(null) }

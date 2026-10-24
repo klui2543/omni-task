@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import app.omnitask.model.Projects
 import app.omnitask.model.SecretaryBook
 import app.omnitask.model.SecretaryDesk
+import app.omnitask.model.SecretaryGuide
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.Task
 import app.omnitask.model.tr
@@ -97,7 +98,15 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     var resetAt by remember { mutableStateOf(0L) }
     LaunchedEffect(resetAt) { if (resetAt > 0) { kotlinx.coroutines.delay(6000); resetAt = 0L } }
 
+    // The guide (เลขา คู่มือ.md): read again whenever the chat opens, since it may have changed in Obsidian.
+    LaunchedEffect(Unit) { vm.refreshGuide() }
+    var guideOpen by remember { mutableStateOf(false) }
+    var editingBubble by remember { mutableStateOf<SecretaryGuide.Bubble?>(null) }
+    var teaching by remember { mutableStateOf<String?>(null) }
+
     fun ask(chip: SecretaryDesk.Chip) {
+        val handOver = chip.action as? SecretaryGuide.Action.Claude
+        if (handOver != null) { vm.deskRun(chip.label, handOver); return }
         if (chip.ask == SecretaryDesk.Ask.CLAUDE) { claudeOpen = true; return }
         val i = turns.indexOfLast { it.reply != null }
         val steps = turns.getOrNull(i)?.reply?.steps.orEmpty()
@@ -110,8 +119,24 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         sending = note to part
     }
     sending?.let { (note, part) -> SendSheet(vm, note, part) { sending = null } }
+    // A bubble or a word that hands over to Claude: straight to the send sheet, with its message as the topic.
+    vm.deskClaude?.let { part ->
+        LaunchedEffect(part) { sending = vm.pretext() to part; vm.deskClaude = null }
+    }
+    teaching?.let { said -> TeachSheet(state, vm, said) { teaching = null } }
+    editingBubble?.let { b ->
+        BubbleSheet(
+            state, vm, b.label, b.action, isWord = false,
+            onDelete = { vm.editGuide { it.copy(bubbles = it.bubbles.filterNot { x -> x.label == b.label }) }; editingBubble = null },
+            onDismiss = { editingBubble = null },
+        ) { label, action ->
+            vm.editGuide { it.copy(bubbles = it.bubbles.map { x -> if (x.label == b.label) x.copy(label = label, action = action) else x }) }
+            editingBubble = null
+        }
+    }
     var briefMore by remember { mutableStateOf<SecretaryBook.Brief?>(null) }
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
+    if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -133,7 +158,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 t.mine?.let { Mine(it) }
                 t.reply?.let { r ->
                     Column {
-                        Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves)
+                        Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves, { teaching = it }) { claudeOpen = true }
                         r.brief?.let { b -> BriefCard(b, state.tasks, onOpen, vm::toggleDone) { briefMore = b } }
                     }
                 }
@@ -174,6 +199,21 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                         .border(1.dp, if (first) C.accentLine else C.cardBorder, RoundedCornerShape(20.dp)).clickable { ask(c) }.padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text(c.label, color = if (first) C.text else C.text2, fontSize = TS.body, maxLines = 1) }
+            }
+            // The owner's bubbles, in the guide's order (those the answer already offers are not repeated). A long
+            // press changes one; the pencil at the end opens the guide.
+            items(vm.guide.shown.distinctBy { it.label }.filter { b -> chips.none { it.label == b.label } }, key = { "g:" + it.label }) { b ->
+                Box(
+                    Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(20.dp))
+                        .combinedClickable(onClick = { ask(SecretaryDesk.Chip.of(b.label, b.action)) }, onLongClick = { editingBubble = b }).padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(b.label, color = C.text2, fontSize = TS.body, maxLines = 1) }
+            }
+            item(key = "guide") {
+                Box(
+                    Modifier.size(width = 48.dp, height = 40.dp).clip(RoundedCornerShape(20.dp)).dashed(C.accentLine).clickable { guideOpen = true },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Ic.pen, tr("แก้บอลลูน", "Change the bubbles"), tint = C.accentText, modifier = Modifier.size(18.dp)) }
             }
         }
         Row(
@@ -216,7 +256,10 @@ private fun Mine(text: String) {
 }
 
 @Composable
-private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit, onApplyMoves: (List<SecretaryDesk.Move>) -> Unit) {
+private fun Answer(
+    r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit,
+    onApplyMoves: (List<SecretaryDesk.Move>) -> Unit, onTeach: (String) -> Unit, onClaude: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(tr("เลขา", "Secretary"), color = C.faint, fontSize = TS.micro)
         Column(
@@ -274,6 +317,29 @@ private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, o
                         Text(s, Modifier.padding(start = 10.dp), color = C.text, fontSize = TS.body)
                     }
                 }
+            }
+            if (r.items.isNotEmpty()) Column {
+                r.items.forEachIndexed { i, it ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(it.task) }.padding(vertical = 6.dp)) {
+                        Text("${i + 1}.", Modifier.width(28.dp), color = C.accentText, fontSize = TS.body)
+                        Column(Modifier.weight(1f)) {
+                            Text(it.task.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (it.note.isNotBlank()) Text(it.note, color = C.muted, fontSize = TS.caption)
+                        }
+                    }
+                }
+            }
+            // A question the rules did not know: teach the word now, or take it to Claude.
+            val teach = r.teach
+            if (teach != null && !done) Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accent).clickable { onTeach(teach) }.padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(tr("สอนคำนี้", "Teach this word"), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold) }
+                Box(
+                    Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accentDeep).clickable(onClick = onClaude).padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(tr("ส่งให้ Claude", "Send to Claude"), color = C.text, fontSize = TS.body) }
             }
             if (done) Text(tr("ทำแล้ว", "Done"), color = C.muted, fontSize = TS.caption)
         }

@@ -65,7 +65,7 @@ internal fun currentPicks(brief: AiAssist.Brief?, tasks: List<Task>): Map<String
 private fun GeminiHead(trailing: String? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(16.dp).clip(CircleShape).background(C.accent))
-        Text("Gemini", Modifier.padding(start = 7.dp).weight(1f), color = C.muted, fontSize = TS.caption)
+        Text(tr("เลขา", "Secretary"), Modifier.padding(start = 7.dp).weight(1f), color = C.muted, fontSize = TS.caption)
         if (trailing != null) Text(trailing, color = C.faint, fontSize = TS.micro)
     }
 }
@@ -79,20 +79,13 @@ internal fun AiBriefCard(ai: AiUi, picks: Int, onRefresh: () -> Unit, onSettings
                 Box(Modifier.weight(1f).padding(top = 6.dp)) {
                     GeminiHead(if (ai.briefing) tr("กำลังอ่านงาน...", "Reading your work...") else null)
                 }
-                if (ai.hasKey) Box(
+                Box(
                     Modifier.size(44.dp).clip(CircleShape).clickable(enabled = !ai.briefing, onClick = onRefresh),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Ic.refresh, tr("อ่านใหม่", "Read again"), tint = C.muted, modifier = Modifier.size(18.dp)) }
             }
             Column(Modifier.padding(end = 10.dp)) {
                 when {
-                    !ai.hasKey -> {
-                        Text(
-                            tr("ใส่ Gemini API key แล้วผู้ช่วยจะสรุปภาพรวม และวงงานที่ควรดูก่อนให้ คุยถามเรื่องงานได้ด้วย", "Add a Gemini API key and the assistant sums up your work, rings what to look at first, and answers questions"),
-                            Modifier.padding(top = 4.dp), color = C.text2, fontSize = TS.body, lineHeight = 1.45.em,
-                        )
-                        PrimaryButton(tr("ใส่ API key", "Add API key"), onSettings, Modifier.padding(top = 10.dp))
-                    }
                     ai.brief == null && ai.briefError != null -> {
                         Text(ai.briefError, Modifier.padding(top = 4.dp), color = C.amber, fontSize = TS.body, lineHeight = 1.45.em)
                         GhostButton(tr("ลองใหม่", "Try again"), onRefresh, Modifier.padding(top = 10.dp))
@@ -122,7 +115,6 @@ internal fun AiBriefCard(ai: AiUi, picks: Int, onRefresh: () -> Unit, onSettings
 @Composable
 internal fun AiBriefLine(ai: AiUi, picks: Int, open: Boolean, onToggle: () -> Unit, onRefresh: () -> Unit, onSettings: () -> Unit) {
     val text = when {
-        !ai.hasKey -> tr("ใส่ Gemini API key แล้วผู้ช่วยจะสรุปและวงงานที่ควรดูให้", "Add a Gemini API key for a summary and picks")
         ai.brief == null && ai.briefing -> tr("กำลังอ่านงานทั้งหมด...", "Reading all your work...")
         ai.brief == null && ai.briefError != null -> ai.briefError
         ai.brief == null -> tr("แตะอ่านใหม่ เพื่อให้ผู้ช่วยสรุปภาพรวม", "Tap read again for a summary")
@@ -140,14 +132,9 @@ internal fun AiBriefLine(ai: AiUi, picks: Int, open: Boolean, onToggle: () -> Un
             maxLines = if (open) 20 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, lineHeight = 1.4.em,
         )
         when {
-            !ai.hasKey -> Text(
-                tr("ใส่ key", "Add key"),
-                Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onSettings).padding(horizontal = 12.dp, vertical = 12.dp),
-                color = C.accentText, fontSize = TS.caption,
-            )
             ai.brief != null && !open -> Text(tr("อ่านต่อ", "More"), Modifier.padding(start = 6.dp), color = C.accentText, fontSize = TS.caption)
         }
-        if (ai.hasKey) Box(
+        Box(
             Modifier.size(44.dp).clip(CircleShape).clickable(enabled = !ai.briefing, onClick = onRefresh),
             contentAlignment = Alignment.Center,
         ) { Icon(Ic.refresh, tr("อ่านใหม่", "Read again"), tint = C.muted, modifier = Modifier.size(18.dp)) }

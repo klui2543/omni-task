@@ -68,6 +68,10 @@ import app.omnitask.model.StuckLog
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.SecretaryBook
+import app.omnitask.model.SecretaryGuide
+import app.omnitask.model.ProjectNames
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
@@ -97,7 +101,6 @@ import app.omnitask.time.*
 const val DEFAULT_ARCHIVE_DAYS = 7
 
 /** Where a broken Gemini answer is kept, for Claude to read. */
-private const val GEMINI_CHECK = "${app.omnitask.data.VaultText.OMNI_DIR}/ตรวจ Gemini.md"
 
 /** The secretary chat's taps, a line each, for the secretary to learn habits from. */
 private const val DESK_STATS = "${app.omnitask.data.VaultText.OMNI_DIR}/สถิติเลขา.md"
@@ -129,6 +132,8 @@ data class UiState(
     val archived: Deleted? = null,
     /** A task just turned into an event, or an event into a task, offered for undo once. */
     val swapped: SwapUndo? = null,
+    /** A move made in Ygdrasil, offered for undo once. */
+    val moved: TaskViewModel.MoveUndo? = null,
     /** A task just ticked done: ask whether to archive it, delete it or leave it. */
     val finished: Task? = null,
     /** Finished tasks move to the archive note after this many days; 0 leaves them in place. */
@@ -555,6 +560,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val lastReply = desk.lastOrNull { it.reply != null }?.reply
         desk.add(DeskTurn(mine = chip.label))
         deskNote(chip.label + (lastReply?.task?.let { ": ${it.title}" } ?: ""))
+        val n = guide.length.count
         val reply: SecretaryDesk.Reply = when (chip.ask) {
             SecretaryDesk.Ask.OPEN -> SecretaryDesk.opening(ctx)
             SecretaryDesk.Ask.NEXT -> SecretaryDesk.next(ctx).also { r -> r.task?.let { deskOffered = setOf(it.key) } }
@@ -591,23 +597,155 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 markLastDone(lastReply)
                 SecretaryDesk.Reply(listOf(tr("ใส่เป็นงานย่อยแล้ว ${picked.size} ข้อ เริ่มที่ข้อแรกพอ", "${picked.size} subtasks added. Start with the first")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)), task = parent)
             }
+            SecretaryDesk.Ask.TODAY -> SecretaryDesk.today(ctx)
+            SecretaryDesk.Ask.MONTH -> SecretaryDesk.month(ctx)
+            SecretaryDesk.Ask.RANK_TODAY -> deskList(tr("วันนี้ทำตามลำดับนี้", "Today, in this order"), SecretaryDesk.rankToday(ctx), tr("วันนี้ไม่มีงานที่ต้องทำแล้ว", "Nothing needs doing today"))
+            SecretaryDesk.Ask.RANK_ALL -> {
+                val all = SecretaryDesk.rankAll(ctx, guide.order)
+                deskList(tr("งานเปิดอยู่ ${all.size} งาน ทำตามลำดับนี้", "${all.size} open tasks, in this order"), all, tr("ไม่มีงานเปิดอยู่", "No open work"))
+            }
+            SecretaryDesk.Ask.MORE -> {
+                val list = deskPage
+                if (list == null || list.from + n >= list.items.size) SecretaryDesk.Reply(listOf(tr("ไม่มีชุดถัดไปแล้ว", "Nothing more to show")), listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)))
+                else {
+                    deskPage = list.copy(from = list.from + n)
+                    SecretaryDesk.list(list.title + tr(" (ต่อ)", " (more)"), list.items, list.from + n, n, "")
+                }
+            }
+            SecretaryDesk.Ask.SHOW -> {
+                val filter = (chip.action as? SecretaryGuide.Action.Show)?.filter ?: SecretaryGuide.Filter()
+                val found = SecretaryDesk.show(ctx, filter)
+                deskList(filter.describe() + tr(": ${found.size} งาน", ": ${found.size} tasks"), found, tr("ไม่มีงานตรงเงื่อนไขนี้", "No work matches"))
+            }
             SecretaryDesk.Ask.CLAUDE -> return
         }
         desk.add(DeskTurn(reply = reply))
     }
 
-    /** A typed question: answered by the rules when they know it, else offered to Claude with the chat so far. */
+    /** The list behind the last list answer, for "ต่อ": its title, every item, and where the shown page starts. */
+    private data class DeskPage(val title: String, val items: List<SecretaryDesk.Item>, val from: Int)
+    private var deskPage: DeskPage? = null
+
+    private fun deskList(title: String, items: List<SecretaryDesk.Item>, empty: String): SecretaryDesk.Reply {
+        deskPage = DeskPage(title, items, 0)
+        return SecretaryDesk.list(title, items, 0, guide.length.count, empty)
+    }
+
+    /**
+     * A typed question, read fresh against the guide: a bubble's own words, a word the owner taught, then what the rules
+     * know; anything else offers to teach the word, or to take it to Claude.
+     */
     fun deskType(text: String) {
-        val ask = SecretaryDesk.match(text)
-        if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask)); return }
-        desk.add(DeskTurn(mine = text))
-        desk.add(DeskTurn(reply = SecretaryDesk.Reply(
-            listOf(
-                tr("เรื่องนี้ต้องชั่งหลายอย่าง กติกาของผมตอบได้ไม่ดีพอ", "This needs weighing up; my rules cannot answer it well"),
-                tr("ส่งให้ Claude คุยต่อดีกว่า บทสนทนานี้ งาน และที่ Claude รู้จักคุณจะติดไปด้วย", "Better with Claude: this chat, your work and what Claude knows about you go along"),
-            ),
-            listOf(SecretaryDesk.Chip(tr("คุยต่อกับ Claude", "Continue with Claude"), SecretaryDesk.Ask.CLAUDE), SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
-        )))
+        viewModelScope.launch {
+            loadGuide()
+            deskNote(tr("พิมพ์: ", "Typed: ") + text)
+            val g = guide
+            val bubble = g.bubbles.firstOrNull { SecretaryGuide.squash(it.label) == SecretaryGuide.squash(text) }
+            val word = bubble?.action ?: g.wordIn(text)?.action
+            if (word != null) { deskRun(text, word); return@launch }
+            val ask = SecretaryDesk.match(text)
+            if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask)); return@launch }
+            deskNote(tr("ไม่รู้จัก: ", "Not understood: ") + text)
+            desk.add(DeskTurn(mine = text))
+            desk.add(DeskTurn(reply = SecretaryDesk.Reply(
+                listOf(tr("ยังไม่รู้จักคำนี้ สอนผมไว้ใช้ครั้งหน้า หรือส่งให้ Claude ช่วยคิดก็ได้", "I don't know this yet. Teach me for next time, or take it to Claude")),
+                listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
+                teach = text,
+            )))
+        }
+    }
+
+    /**
+     * Does a guide [action] as if [label] were tapped. A hand-over to Claude only says it in the chat; the screen opens
+     * the sheet to send it ([deskClaude] holds what to ask).
+     */
+    fun deskRun(label: String, action: SecretaryGuide.Action) {
+        if (action is SecretaryGuide.Action.Claude) {
+            desk.add(DeskTurn(mine = label))
+            deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + label)
+            deskClaude = SecretaryPretext.Part(label, action.text.ifBlank { label })
+            return
+        }
+        deskAsk(SecretaryDesk.Chip.of(label, action))
+    }
+
+    /** A hand-over to Claude a bubble or a word asked for, waiting for the screen to open the send sheet. */
+    var deskClaude by androidx.compose.runtime.mutableStateOf<SecretaryPretext.Part?>(null)
+
+    /** The guide as last read from the vault ([SecretaryGuide.PATH]); the defaults until it is read. */
+    var guide by androidx.compose.runtime.mutableStateOf(SecretaryGuide.DEFAULT)
+        private set
+
+    /** Reads the guide again (the owner may have changed it in Obsidian). */
+    suspend fun loadGuide(): SecretaryGuide.Guide {
+        val vault = _state.value.vault ?: return guide
+        val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryGuide.PATH) }.getOrNull() }
+        return SecretaryGuide.parse(text).also { guide = it }
+    }
+
+    fun refreshGuide() { viewModelScope.launch { loadGuide() } }
+
+    /**
+     * Changes the guide: read fresh, [change] applied, written back, so an edit made in Obsidian meanwhile is kept.
+     * One change at a time.
+     */
+    fun editGuide(change: (SecretaryGuide.Guide) -> SecretaryGuide.Guide) {
+        val vault = _state.value.vault
+        viewModelScope.launch {
+            guideLock.withLock {
+                val fresh = if (vault == null) guide else withContext(Dispatchers.IO) {
+                    SecretaryGuide.parse(runCatching { repo.readPath(vault, SecretaryGuide.PATH) }.getOrNull())
+                }
+                val next = change(fresh)
+                guide = next
+                if (vault != null) {
+                    val r = withContext(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryGuide.PATH, next.render()) } }
+                    r.exceptionOrNull()?.let { e -> showMessage(tr("บันทึกคู่มือไม่ได้: ${e.message}", "Could not save the guide: ${e.message}")) }
+                }
+            }
+        }
+    }
+    private val guideLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * The owner taught a word on the spot: [word] now does [action] (and is a bubble too when [asBubble]), and it is
+     * done right away for [said], what was typed.
+     */
+    fun teach(said: String, word: String, action: SecretaryGuide.Action, asBubble: Boolean) {
+        val w = word.trim()
+        if (w.isEmpty()) return
+        editGuide { g ->
+            val words = g.words.filterNot { SecretaryGuide.squash(it.word) == SecretaryGuide.squash(w) } + SecretaryGuide.Word(w, action)
+            val bubbles = if (asBubble && g.bubbles.none { it.label == w }) g.bubbles + SecretaryGuide.Bubble(w, action) else g.bubbles
+            g.copy(words = words, bubbles = bubbles)
+        }
+        deskNote(tr("สอนคำ: ", "Taught: ") + "$w → ${action.render()}")
+        // The question is answered now, by what was just taught.
+        val i = desk.indexOfLast { it.reply?.teach == said }
+        if (i >= 0) desk[i] = desk[i].copy(done = true)
+        deskRun(said, action)
+    }
+
+    /** A task-list filter kept as a bubble of the secretary chat, at the end of the shown ones. */
+    fun addFilterBubble(name: String, q: app.omnitask.model.TaskQuery) {
+        val label = name.trim()
+        if (label.isEmpty()) return
+        val bubble = SecretaryGuide.Bubble(label, SecretaryGuide.Action.Show(SecretaryGuide.Filter.of(q)))
+        editGuide { g -> g.copy(bubbles = g.bubbles.filterNot { it.label == label } + bubble) }
+        showMessage(tr("เพิ่มบอลลูน \"$label\" ในห้องเลขาแล้ว", "Bubble \"$label\" added to the secretary"))
+    }
+
+    /** What the taps say about the guide: shown bubbles nobody used for two weeks, unless dismissed. */
+    suspend fun guideHints(): List<String> {
+        val vault = _state.value.vault ?: return emptyList()
+        val stats = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, DESK_STATS) }.getOrNull() }
+        val dismissed = prefs.getStringSet(KEY_GUIDE_DISMISSED, null).orEmpty()
+        return SecretaryGuide.unusedBubbles(guide, stats, LocalDate.now()).filter { it !in dismissed }
+    }
+
+    /** "ไม่เอา" on an app hint: not offered again. */
+    fun dismissGuideHint(label: String) {
+        prefs.edit().putStringSet(KEY_GUIDE_DISMISSED, prefs.getStringSet(KEY_GUIDE_DISMISSED, null).orEmpty() + label).apply()
     }
 
     private fun markLastDone(reply: SecretaryDesk.Reply?) {
@@ -619,7 +757,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun deskTranscript(): List<String> = desk.flatMap { t ->
         t.mine?.let { listOf("Klui: $it") } ?: t.reply?.let { r ->
             listOf("เลขา: " + (r.lines + listOfNotNull(r.task?.title?.let { "($it)" })).joinToString(" ")) +
-                r.moves.map { "  เสนอ ${it.task.title} ไป ${it.date}" }
+                r.moves.map { "  เสนอ ${it.task.title} ไป ${it.date}" } +
+                r.items.map { "  ${it.task.title} (${it.note})" }
         }.orEmpty()
     }
 
@@ -672,7 +811,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
         val (knows, log) = withContext(Dispatchers.IO) { read(SecretaryPretext.KNOWS_PATH) to read(CLAUDE_LOG) }
         if (count) deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
-        return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript())
+        return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript(), loadGuide().forClaude)
     }
 
     /** What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md). */
@@ -977,6 +1116,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { BehaviorLog.sync(getApplication(), repo, vault) }.getOrElse { (behavior + BehaviorLog.waiting(getApplication())).distinctBy { e -> e.id } }
             }
             val swept = withContext(Dispatchers.IO) { runCatching { sweepIfDue(vault) }.getOrDefault(emptyList()) }
+            // The owner's project names and moves, read before the tasks so an old name counts as the new one.
+            loadProjectNames(vault)
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
                     // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
@@ -1005,8 +1146,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val fresh = result.getOrNull()?.tasks?.let { Projects.newOnes(it, _state.value.projectTags.orEmpty(), prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty(), LocalDate.now()) }.orEmpty()
                 if (fresh.isNotEmpty()) saveProjectTags(_state.value.projectTags.orEmpty() + fresh)
             }
-            // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
-            aiUpkeep()
             // When the secretary last wrote Claude log, so the today page can say when it stopped.
             val logText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, CLAUDE_LOG) }.getOrNull() }
             claudeLogText = logText
@@ -2413,105 +2552,24 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun nowHm(): String = java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
 
     /**
-     * Asks Gemini for the brief. Without [force] it reads again only when the owner left it on ([AiUi.autoBrief]) and
-     * the last one is over an hour old, so opening the page often costs nothing.
+     * The brief at the top of the assistant page, worked out by rules (no AI): the day in a line and the work to do
+     * first, with why. Cheap, so it is simply made again when asked.
      */
-    fun aiBrief(force: Boolean = false) {
-        val ai = _state.value.ai
-        if (!ai.hasKey || ai.briefing || _state.value.tasks.isEmpty()) return
-        if (!force && (!ai.autoBrief || System.currentTimeMillis() - ai.briefAt < BRIEF_EVERY_MS)) return
-        _state.update { it.copy(ai = it.ai.copy(briefing = true, briefError = null)) }
-        viewModelScope.launch {
-            val ctx = aiContext()
-            val picture = ctx.picture
-            val r = withContext(Dispatchers.IO) { runCatching { AiAssist.parseBrief(gemini.generate(AiAssist.briefRequest(picture, AiMemory.memoryForModel(ctx.memory))), picture) } }
-            _state.update { st ->
-                st.copy(
-                    ai = r.fold(
-                        { b -> st.ai.copy(briefing = false, brief = b, briefAt = System.currentTimeMillis()) },
-                        { e -> st.ai.copy(briefing = false, briefError = e.message ?: tr("อ่านภาพรวมไม่ได้", "Could not read the brief")) },
-                    ),
-                )
-            }
-        }
+    fun aiBrief(@Suppress("UNUSED_PARAMETER") force: Boolean = false) {
+        val s = _state.value
+        if (s.tasks.isEmpty()) return
+        val ctx = deskCtx()
+        val summary = SecretaryDesk.opening(ctx).lines.joinToString(", ")
+        val picks = app.omnitask.model.NextUp.ranked(s.tasks, s.today, ctx.skipped).take(4).map { AiAssist.Pick(it.task, it.reason) }
+        _state.update { it.copy(ai = it.ai.copy(briefing = false, briefError = null, brief = AiAssist.Brief(summary, picks), briefAt = System.currentTimeMillis())) }
     }
 
     /**
-     * A question typed to the assistant: Gemini answers when a key is in, the rules do otherwise. Only questions it
-     * answered before go along as the conversation so far, so the turns alternate as Gemini expects.
+     * A question typed to the assistant. Gemini no longer answers (the owner stopped it, 2026-10-24): the secretary's
+     * rules and guide do in the new look, the assistant's rules otherwise; what they cannot answer goes to Claude.
      */
     fun askAi(text: String) {
-        val s = _state.value
-        if (!s.ai.hasKey) { ask(text); return }
-        if (s.ai.thinking) return
-        val earlier = s.chat.zipWithNext().flatMap { (a, b) ->
-            if (a is Chat.Asked && b is Chat.AiAnswer && b.failed == null) listOf(AiAssist.Turn(true, a.text), AiAssist.Turn(false, b.text)) else emptyList()
-        }
-        _state.update { it.copy(chat = it.chat + Chat.Asked(text), ai = it.ai.copy(thinking = true, searching = false)) }
-        viewModelScope.launch {
-            val ctx = aiContext()
-            val picture = ctx.picture
-            val memory = AiMemory.memoryForModel(ctx.memory)
-            val started = System.currentTimeMillis()
-            var brokenKept = false
-            val r = withContext(Dispatchers.IO) {
-                runCatching {
-                    // The past that goes along: the index of every exchange, the newest ones, and (when the log is too
-                    // long to send whole) the older ones closest to this question.
-                    // This month and the last go along (whole while short); older months as their index lines.
-                    val entries = ctx.entries
-                    val vault = _state.value.vault
-                    val months = AiIndex.forModel(ctx.index)
-                    val whole = AiMemory.allSent(entries)
-                    val canSearch = vault != null && (!whole || months.isNotBlank())
-                    val found = if (whole || vault == null) emptyList() else library.find(vault, text, entries, ctx.index)
-                    val history = AiMemory.history(entries, found, months)
-                    fun generate(short: Boolean) = gemini.generate(AiAssist.chatRequest(picture, earlier, text, memory, history, canSearch = canSearch, short = short))
-                    // An answer that came back but broken (cut off, repeating, refused as recitation) gets one shorter
-                    // try; the broken one is kept in the vault so Claude can see what went wrong.
-                    val raw = generate(short = false)
-                    val first = runCatching { AiAssist.parseReply(raw, picture) }.getOrElse { e ->
-                        if (e !is AiAssist.Failure || "\"candidates\"" !in raw) throw e
-                        brokenKept = true
-                        if (vault != null) runCatching {
-                            repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น ${AiKey.model(getApplication())}\nปัญหา ${e.message}\nคำถาม $text\n\n```\n${raw.take(8000)}\n```\n")
-                        }
-                        AiAssist.parseReply(generate(short = true), picture)
-                    }
-                    val query = first.search
-                    if (query == null || !canSearch || vault == null) first to false
-                    else {
-                        // Gemini asked to look further back: search every month once with its own words, then ask again.
-                        _state.update { it.copy(ai = it.ai.copy(searching = true)) }
-                        val more = library.find(vault, query, entries, ctx.index, k = 8)
-                        val again = AiAssist.chatRequest(picture, earlier, text, memory, AiMemory.history(entries, found + more, months), searched = more.joinToString("\n\n") { it.text })
-                        AiAssist.parseReply(gemini.generate(again), picture) to true
-                    }
-                }
-            }
-            val seconds = (System.currentTimeMillis() - started) / 100 / 10.0
-            // The model that answered: the one picked, or the Flash-Lite that stood in while it was busy.
-            val model = gemini.usedModel ?: AiKey.model(getApplication())
-            // Every failure is noted in ตรวจ Gemini.md (a broken answer already wrote its text there), so Claude
-            // can always see what went wrong, also when Google sent no answer at all.
-            r.exceptionOrNull()?.let { e ->
-                val vault = _state.value.vault
-                if (vault != null && !brokenKept) launch(Dispatchers.IO) {
-                    runCatching { repo.writePath(vault, GEMINI_CHECK, "# ตรวจ Gemini\n\nเวลา ${LocalDateTime.now()}\nรุ่น $model\nใช้เวลา $seconds วินาที\nปัญหา ${e.message}\nคำถาม $text\n\n(Google ไม่ได้ส่งคำตอบมา)\n") }
-                }
-            }
-            val answer = r.fold(
-                { (reply, searched) -> Chat.AiAnswer(reply.text, reply.actions, model = model, seconds = seconds, searched = searched) },
-                { Chat.AiAnswer("", failed = it.message ?: tr("ถาม Gemini ไม่ได้", "Could not ask Gemini"), model = model, seconds = seconds) },
-            )
-            _state.update { it.copy(chat = it.chat + answer, ai = it.ai.copy(thinking = false, searching = false)) }
-            // Kept in the vault under a heading Gemini wrote, so it can be found again and Claude can read it too.
-            val reply = r.getOrNull()?.first
-            val today = LocalDate.now()
-            val time = nowHm()
-            val lines = listOf("ถาม: $text", "Gemini (${shortModel(model)}): " + (answer.failed?.let { "ไม่ได้ตอบ: $it" } ?: answer.text))
-            editLog(today) { old -> AiMemory.addExchange(old, today, time, reply?.topic ?: text.take(60), reply?.tags.orEmpty(), lines) }
-        }
+        if (NewLook.on) deskType(text) else ask(text)
     }
 
     /** The task as it is now: by its place in the note, or by title when lines moved since Gemini answered. */
@@ -2736,6 +2794,58 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Reads `ชื่อโปรเจกต์.md` ([ProjectNames]) for the task lines read next, and keeps the chosen projects under the
+     * names they have now (a project the owner merged or moved is not left behind as an empty one).
+     */
+    private suspend fun loadProjectNames(vault: android.net.Uri) {
+        val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, ProjectNames.PATH) }.getOrNull() }
+        ProjectNames.current = ProjectNames.parse(text)
+        _state.value.projectTags?.let { tags ->
+            val now = tags.map { ProjectNames.canonical(it).substringBefore('/') }.toSet()
+            if (now != tags) saveProjectTags(now)
+        }
+    }
+
+    /** A move made in Ygdrasil, waiting in the bar with "เลิกทำ". */
+    class MoveUndo(val text: String, val undo: () -> Unit)
+
+    /**
+     * Writes the owner's move of [old] to [new] into `ชื่อโปรเจกต์.md`, so the secretary writes the new names and old
+     * ones are read as new, and offers to undo it. [n] is how many task lines moved.
+     */
+    private suspend fun recordMove(old: String, new: String, n: Int, undoable: Boolean = true) {
+        val vault = _state.value.vault ?: return
+        val today = LocalDate.now()
+        val r = withContext(Dispatchers.IO) {
+            runCatching {
+                repo.editPath(vault, ProjectNames.PATH) { text -> ProjectNames.record(text, old, new, today) }
+                repo.readPath(vault, ProjectNames.PATH)
+            }
+        }
+        r.getOrNull()?.let { ProjectNames.current = ProjectNames.parse(it) }
+        val text = tr("ย้าย #$old ไปเป็น #$new แล้ว ($n งาน)\nจดลงตาราง ชื่อโปรเจกต์.md แล้ว เลขาจะเขียนชื่อใหม่ตามนี้", "Moved #$old to #$new ($n tasks)\nNoted in ชื่อโปรเจกต์.md: the secretary writes the new name")
+        if (undoable) _state.update { it.copy(moved = MoveUndo(text) { retagAll(new, old) }) }
+    }
+
+    fun clearMoved() = _state.update { it.copy(moved = null) }
+
+    /** Everything tagged [old] (and under it) gets [new] in every note, as an undo of a move. */
+    private fun retagAll(old: String, new: String) {
+        val files = (_state.value.allTasks + _state.value.parked + _state.value.listItems)
+            .filter { t -> t.tags.any { it == old || it.startsWith("$old/") } }.map { it.fileUri }.distinct()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, new) } }
+            result.onSuccess { n ->
+                saveBranchStates(Branches.moveTag(_state.value.branchStates, old, new))
+                _state.value.projectTags?.let { tags -> saveProjectTags(tags + new.substringBefore('/')) }
+                recordMove(old, new, n, undoable = false)
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
+            reload()
+        }
+    }
+
     /** Renames a branch: every task line under it gets the new tag, and the states under it move along. */
     /**
      * Project Ygdrasil: a project or branch tagged [oldTag] dropped on [target] (a tag, or "" for the trunk) goes under
@@ -2748,10 +2858,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
-            result.onSuccess {
+            result.onSuccess { n ->
                 saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag))
                 // A branch dropped on the trunk becomes a project of its own.
                 _state.value.projectTags?.let { tags -> saveProjectTags(tags + newTag.substringBefore('/')) }
+                recordMove(oldTag, newTag, n)
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
             reload()
@@ -2769,7 +2880,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
-            result.onSuccess { saveBranchStates(Branches.movePaths(_state.value.branchStates, node.project, node.path, newPath)) }
+            result.onSuccess { n ->
+                saveBranchStates(Branches.movePaths(_state.value.branchStates, node.project, node.path, newPath))
+                recordMove(oldTag, newTag, n)
+            }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนชื่อไม่ได้: ", "Cannot rename: ") + e.message) } }
             reload()
         }
@@ -2796,20 +2910,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * order, stars, task order, strict mode and branch states move with it.
      */
     fun renameProject(old: String, new: String) {
-        val name = new.trim().removePrefix("#").replace(Regex("""\s+"""), "-")
-        if (name.isEmpty() || name == old || '/' in name) return
+        // A name with "/" puts the project under another one (Omni as Claude/Omni); each part is cleaned on its own.
+        val name = new.trim().removePrefix("#").split('/').map { it.trim().replace(Regex("""\s+"""), "-") }.filter { it.isNotEmpty() }.joinToString("/")
+        if (name.isEmpty() || name == old || name.startsWith("$old/")) return
         val s0 = _state.value
         val files = (s0.tasks + s0.parked + s0.listItems).filter { Projects.projectOf(it) == old }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, name) } }
             result.onSuccess { n ->
                 val s = _state.value
-                val order = s.projectOrder.map { if (it == old) name else it }
-                val starred = s.starred.map { if (it == old) name else it }.toSet()
-                val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) name else k }
-                val strict = s.strictProjects.map { if (it == old) name else it }.toSet()
-                val branches = s.branchStates.mapKeys { (k, _) -> if (k.first == old) name to k.second else k }
-                s.projectTags?.let { saveProjectTags(it - old + name) }
+                val root = name.substringBefore('/')
+                val order = s.projectOrder.map { if (it == old) root else it }.distinct()
+                val starred = s.starred.map { if (it == old) root else it }.toSet()
+                val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) root else k }
+                val strict = s.strictProjects.map { if (it == old) root else it }.toSet()
+                val branches = Branches.moveTag(s.branchStates, old, name)
+                s.projectTags?.let { saveProjectTags(it - old + name.substringBefore('/')) }
+                recordMove(old, name, n)
                 prefs.edit()
                     .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
                     .putStringSet(KEY_STARRED, starred)
@@ -2820,7 +2937,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update {
                     it.copy(
                         projectOrder = order, starred = starred, projectTaskOrder = taskOrder, strictProjects = strict, branchStates = branches,
-                        message = tr("เปลี่ยนชื่อเป็น #$name แล้ว ($n บรรทัด)", "Renamed to #$name ($n lines)"),
                     )
                 }
             }
@@ -3007,6 +3123,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_OFF_PROJECTS = "declinedProjects"
+        /** Bubbles the owner said "no" to hiding (the app's own hints in the guide's learned tab). */
+        const val KEY_GUIDE_DISMISSED = "guideDismissed"
         const val KEY_TREE_REACH = "treeReach"
         /** The single countdown (a task title) kept before there could be several; read once, then removed. */
         const val KEY_COUNTDOWN = "focus.countdown"

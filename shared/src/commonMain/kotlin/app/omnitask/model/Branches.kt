@@ -134,7 +134,8 @@ object Branches {
         }
 
     fun renameInLine(line: String, old: String, new: String): String = TAG.replace(line) { m ->
-        val tag = m.groupValues[1]
+        // An old name ([ProjectNames]) is read as the name it has now, and written back with the new one.
+        val tag = ProjectNames.canonical(m.groupValues[1])
         when {
             tag == old -> "#$new"
             tag.startsWith("$old/") -> "#$new/" + tag.removePrefix("$old/")

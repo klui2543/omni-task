@@ -88,7 +88,8 @@ object TaskLine {
             id = ID.find(body)?.groupValues?.get(1),
             dependsOn = DEPENDS.find(body)?.groupValues?.get(1)?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
             reminderOn = reminder?.let { if (it.groupValues[1] == "🎯") ReminderOn.SCHEDULED else ReminderOn.DUE },
-            tags = TAG.findAll(body).map { it.value.removePrefix("#") }.toList(),
+            // Read with the names the owner uses now ([ProjectNames]): an old project name counts as the new one.
+            tags = TAG.findAll(body).map { app.omnitask.model.ProjectNames.canonical(it.value.removePrefix("#")) }.toList(),
         )
     }
 
@@ -154,7 +155,7 @@ object TaskLine {
         return editBody(raw) { body0 ->
             // The new tag may already sit further along the line; it is kept once, where the old one stood.
             val body = TAG.findAll(body0).firstOrNull { it.value.equals("#$name", ignoreCase = true) }?.let { remove(body0, it.range) } ?: body0
-            val at = old?.let { o -> TAG.findAll(body).firstOrNull { it.value == "#$o" } }
+            val at = old?.let { o -> TAG.findAll(body).firstOrNull { it.value == "#$o" || app.omnitask.model.ProjectNames.canonical(it.value.removePrefix("#")) == o } }
             if (at == null) addTagToBody(body, name) else body.replaceRange(at.range, "#$name")
         }
     }
@@ -175,7 +176,7 @@ object TaskLine {
     }
 
     fun removeTag(raw: String, tag: String): String = editBody(raw) { body ->
-        TAG.findAll(body).firstOrNull { it.value == "#$tag" }?.let { remove(body, it.range) } ?: body
+        TAG.findAll(body).firstOrNull { it.value == "#$tag" || app.omnitask.model.ProjectNames.canonical(it.value.removePrefix("#")) == tag }?.let { remove(body, it.range) } ?: body
     }
 
     /** Sets the checkbox character, and the ✅ date when the task becomes or stops being done. */

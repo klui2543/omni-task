@@ -14,9 +14,41 @@ import kotlinx.datetime.isoDayNumber
  * Each answer comes with the buttons the owner is likely to want next. What the rules cannot answer goes to Claude.
  */
 object SecretaryDesk {
-    enum class Ask { OPEN, NEXT, OTHER, LIGHT, START, DONE, LATE, APPLY, STEP_BY_STEP, TOMORROW, WEEK, SPLIT, APPLY_SPLIT, CLAUDE }
+    enum class Ask {
+        OPEN, NEXT, OTHER, LIGHT, START, DONE, LATE, APPLY, STEP_BY_STEP, TOMORROW, WEEK, SPLIT, APPLY_SPLIT, CLAUDE,
+        TODAY, MONTH, RANK_TODAY, RANK_ALL, MORE,
+        /** A list of work by the conditions in [Chip.action] (a bubble or a word from the guide). */
+        SHOW,
+    }
 
-    data class Chip(val label: String, val ask: Ask)
+    /** A button. [action] is set for a bubble from the guide ([SecretaryGuide]): what it does, when it is more than [ask]. */
+    data class Chip(val label: String, val ask: Ask, val action: SecretaryGuide.Action? = null) {
+        companion object {
+            /** The button for a guide [action]. */
+            fun of(label: String, action: SecretaryGuide.Action): Chip = when (action) {
+                is SecretaryGuide.Action.App -> Chip(label, askOf(action.builtin), action)
+                is SecretaryGuide.Action.Show -> Chip(label, Ask.SHOW, action)
+                is SecretaryGuide.Action.Claude -> Chip(label, Ask.CLAUDE, action)
+            }
+
+            fun askOf(b: SecretaryGuide.Builtin): Ask = when (b) {
+                SecretaryGuide.Builtin.TODAY -> Ask.TODAY
+                SecretaryGuide.Builtin.TOMORROW -> Ask.TOMORROW
+                SecretaryGuide.Builtin.WEEK -> Ask.WEEK
+                SecretaryGuide.Builtin.MONTH -> Ask.MONTH
+                SecretaryGuide.Builtin.NEXT -> Ask.NEXT
+                SecretaryGuide.Builtin.LIGHT -> Ask.LIGHT
+                SecretaryGuide.Builtin.LATE -> Ask.LATE
+                SecretaryGuide.Builtin.SPLIT -> Ask.SPLIT
+                SecretaryGuide.Builtin.RANK_TODAY -> Ask.RANK_TODAY
+                SecretaryGuide.Builtin.RANK_ALL -> Ask.RANK_ALL
+                SecretaryGuide.Builtin.MORE -> Ask.MORE
+            }
+        }
+    }
+
+    /** A task in a list answer, with a few words on why it is there. */
+    data class Item(val task: Task, val note: String)
 
     /** A date change the owner can accept: [task]'s [field] to [date], with a few words on why that day. */
     data class Move(val task: Task, val field: TaskLine.DateField, val date: LocalDate, val note: String)
@@ -28,6 +60,12 @@ object SecretaryDesk {
         val task: Task? = null,
         val moves: List<Move> = emptyList(),
         val steps: List<String> = emptyList(),
+        /** A list of work (an order, or a bubble's conditions); each opens on a tap. */
+        val items: List<Item> = emptyList(),
+        /** How many more are left after [items], for "ต่อ". */
+        val more: Int = 0,
+        /** What the owner typed when the rules did not know it: the answer offers to teach it, or Claude. */
+        val teach: String? = null,
         /** The morning brief from the secretary's book (Claude log), on the opening answer only. */
         val brief: SecretaryBook.Brief? = null,
     )
@@ -171,10 +209,79 @@ object SecretaryDesk {
         )
     }
 
+    /** Today: the owner's events and the work dated for it. */
+    fun today(ctx: Ctx): Reply = day(ctx, ctx.today, tr("วันนี้", "Today"))
+
+    /** Next month, one line for each day that has something: events, then the work dated for it. */
+    fun month(ctx: Ctx): Reply {
+        val first = ctx.today.plusDays((ctx.today.lengthOfMonth() - ctx.today.dayOfMonth + 1).toLong())
+        val days = generateSequence(first) { it.plusDays(1) }.takeWhile { it.month == first.month }.toList()
+        val lines = days.mapNotNull { d ->
+            val ev = ownEvents(ctx, d)
+            val work = dated(ctx, d)
+            if (ev.isEmpty() && work.isEmpty()) null
+            else dayName(d) + " " + d.dayOfMonth + ": " + listOfNotNull(
+                ev.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.title },
+                work.takeIf { it.isNotEmpty() }?.let { w -> if (w.size == 1) tr("งาน: ", "Task: ") + w.first().title else tr("งาน ${w.size}", "${w.size} tasks") },
+            ).joinToString(", ")
+        }
+        return Reply(
+            listOf(tr("เดือนหน้า", "Next month")) + lines.ifEmpty { listOf(tr("ยังว่างทั้งเดือน", "Nothing on yet")) },
+            listOf(Chip(tr("สัปดาห์นี้", "This week"), Ask.WEEK), Chip(tr("ตอนนี้ทำอะไรดี", "What now"), Ask.NEXT)),
+        )
+    }
+
+    /** Today's work in the order to do it, each with why. */
+    fun rankToday(ctx: Ctx): List<Item> = NextUp.ranked(ctx.tasks, ctx.today, ctx.skipped).map { Item(it.task, it.reason) }
+
+    /** All open work in order, put in the owner's [order] ([SecretaryGuide.Factor]) first. */
+    fun rankAll(ctx: Ctx, order: List<SecretaryGuide.Factor>): List<Item> {
+        val ranked = Focus.rank(ctx.tasks.filter { it.parent == null && it.list == null }, ctx.today)
+        return SecretaryGuide.inOrder(ranked, { it.first }, order, ctx.today).map { Item(it.first, it.second) }
+    }
+
+    /** The work a bubble's conditions pick, with its date in a few words. */
+    fun show(ctx: Ctx, filter: SecretaryGuide.Filter): List<Item> =
+        filter.run(ctx.tasks.filter { it.parent == null }, ctx.today).map { t -> Item(t, dateNote(t, ctx.today)) }
+
+    /**
+     * A list answer: [title], then [n] of [all] from [from], and how many are left (the "ต่อ" button shows then).
+     * [empty] is said when there is nothing.
+     */
+    fun list(title: String, all: List<Item>, from: Int, n: Int, empty: String): Reply {
+        if (all.isEmpty()) return Reply(listOf(empty), listOf(Chip(tr("ตอนนี้ทำอะไรดี", "What now"), Ask.NEXT)))
+        val page = all.drop(from).take(n)
+        val left = (all.size - from - page.size).coerceAtLeast(0)
+        val lines = buildList {
+            add(title)
+            if (left > 0) add(tr("เหลืออีก $left งาน พิมพ์ ต่อ เพื่อดูชุดถัดไป", "$left more: type ต่อ for the next ones"))
+        }
+        val chips = buildList {
+            if (left > 0) add(Chip(tr("ต่อ", "More"), Ask.MORE))
+            add(Chip(tr("ตอนนี้ทำอะไรดี", "What now"), Ask.NEXT))
+        }
+        return Reply(lines, chips, items = page, more = left)
+    }
+
+    private fun dateNote(t: Task, today: LocalDate): String {
+        val due = t.due
+        return when {
+            due != null && due < today -> tr("เลยกำหนด ${due.daysUntil(today)} วัน", "${due.daysUntil(today)} days overdue")
+            due == today -> tr("กำหนดวันนี้", "Due today")
+            due != null -> tr("กำหนด ", "Due ") + dayName(due) + " " + due.dayOfMonth + "/" + due.monthNumber
+            t.scheduled != null -> tr("นัดทำ ", "Do ") + dayName(t.scheduled!!) + " " + t.scheduled!!.dayOfMonth + "/" + t.scheduled!!.monthNumber
+            else -> tr("ไม่มีวันที่", "No date")
+        }
+    }
+
     /** What a typed question asks, when the rules can answer it; null sends it on to Claude. */
     fun match(text: String): Ask? {
         val t = text.lowercase().replace(" ", "")
         return when {
+            t == "ต่อ" || t == "more" || t == "ชุดถัดไป" -> Ask.MORE
+            "จัดลำดับ" in t || "prioriti" in t -> if ("วันนี้" in t || "today" in t) Ask.RANK_TODAY else Ask.RANK_ALL
+            listOf("เดือนหน้า", "nextmonth").any { it in t } -> Ask.MONTH
+            listOf("วันนี้มีอะไร", "วันนี้มีนัด", "today").any { it in t } -> Ask.TODAY
             listOf("พรุ่งนี้", "tomorrow").any { it in t } -> Ask.TOMORROW
             listOf("สัปดาห์", "อาทิตย์นี้", "week").any { it in t } -> Ask.WEEK
             listOf("ค้าง", "เลยกำหนด", "เลยเป้า", "overdue").any { it in t } -> Ask.LATE

@@ -126,7 +126,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
     }
     fun send(text: String = input) {
         if (text.isBlank()) return
-        // Gemini answers when a key is in; without one the rules do, as before.
+        // The rules answer (Gemini no longer does, 2026-10-24).
         vm.askAi(text.trim())
         input = ""
     }
@@ -146,7 +146,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
     var who by rememberSaveable { mutableStateOf(TimelineWho.ALL) }
     var staleOnly by rememberSaveable { mutableStateOf(false) }
     var selKey by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.ai.hasKey, state.tasks.isNotEmpty()) { vm.aiBrief() }
+    LaunchedEffect(state.tasks.isNotEmpty()) { vm.aiBrief() }
     val picks = remember(state.ai.brief, state.tasks) { currentPicks(state.ai.brief, state.tasks) }
     val picked = selKey?.let { k -> state.tasks.firstOrNull { it.key == k } }
     val stuckCount = remember(state.tasks, state.today) { state.tasks.count { !it.isSubtask && (it.start ?: it.scheduled ?: it.due) != null && needsLook(it, state) } }
@@ -162,7 +162,6 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
     // Two tabs: the overview of the work, and the conversation. Asking something moves to the conversation.
     var tab by rememberSaveable { mutableStateOf(if (state.chat.isEmpty()) AiTab.OVERVIEW else AiTab.CHAT) }
     var seenChat by rememberSaveable { mutableStateOf(state.chat.size) }
-    var picking by remember { mutableStateOf(false) }
     var briefOpen by rememberSaveable { mutableStateOf(false) }
     val list = rememberLazyListState()
     LaunchedEffect(state.chat.size, state.ai.thinking) {
@@ -171,7 +170,6 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
         if (tab == AiTab.CHAT && state.chat.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
     }
     val profile = state.profile
-    if (picking) AiModelSheet(state.ai, vm::loadAiModels, vm::setAiModel) { picking = false }
 
     Column(Modifier.fillMaxSize()) {
         // One line: the title, the two tabs beside it, and starting over once there is a conversation.
@@ -262,8 +260,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             }
             if (tab == AiTab.CHAT && profile.exists && !interviewing && state.chat.isEmpty() && !state.ai.thinking) item(key = "chat-empty") {
                 Text(
-                    if (state.ai.hasKey) tr("ถามหรือสั่งงานได้ที่ช่องด้านล่าง เช่น เพิ่มงาน เลื่อนวัน หรือถามว่าอะไรค้างนานสุด", "Ask or give an order below: add a task, move a date, or ask what has sat longest")
-                    else tr("ถามได้ที่ช่องด้านล่าง ใส่ Gemini API key ในตั้งค่าเพื่อให้ผู้ช่วยตอบและแก้งานให้ได้", "Ask below. Add a Gemini API key in Settings for answers and changes from the assistant"),
+                    tr("ถามได้ที่ช่องด้านล่าง หรือแตะปุ่มด้านล่าง เรื่องที่ต้องคิดเยอะ กด ถาม Claude", "Ask below or tap a button. For anything that needs thinking, tap Ask Claude"),
                     Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp), color = C.muted, fontSize = TS.body,
                 )
             }
@@ -319,10 +316,9 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
             Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = if (ime) 8.dp else NavClearance - 12.dp + androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
                 .then(if (ime) Modifier.imePadding() else Modifier)
                 .fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(24.dp))
-                .padding(start = if (state.ai.hasKey) 6.dp else 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (state.ai.hasKey) Box(Modifier.padding(end = 8.dp)) { AiModelChip(state.ai.model) { picking = true } }
             BasicTextField(
                 value = input,
                 onValueChange = { input = it },
@@ -334,7 +330,7 @@ fun AssistantScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, o
                 maxLines = 3,
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text(if (state.ai.hasKey) tr("สั่งหรือถามเรื่องงาน", "Ask, or say what to change") else tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body, maxLines = 1)
+                        if (input.isEmpty()) Text(tr("อยากทำอะไร หรือถามเรื่องงาน", "What do you want to do?"), color = C.faint, fontSize = TS.body, maxLines = 1)
                         inner()
                     }
                 },
