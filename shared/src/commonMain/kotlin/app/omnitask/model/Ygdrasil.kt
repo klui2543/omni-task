@@ -192,6 +192,31 @@ object Ygdrasil {
         return Urgency(late, targetLate, within, next)
     }
 
+    /** Whether open [t] is what [reach] is about: past its 📅 or ⏳ date, or dated within the reach. */
+    fun inReach(t: Task, reach: Reach, today: LocalDate): Boolean {
+        if (!t.isOpen) return false
+        val dates = listOfNotNull(t.due, t.scheduled)
+        if (dates.any { it < today }) return true
+        val end = reach.end(today) ?: return false
+        return dates.any { it in today..end }
+    }
+
+    /**
+     * The tags of every limb that holds work in [reach], with the worlds and branches above it, so the tree can dim the
+     * rest (the owner's pick, 2026-10-24: an opened project showed work that had nothing to do with the reach).
+     */
+    fun reachTags(tree: Tree, reach: Reach, today: LocalDate): Set<String> {
+        val out = HashSet<String>()
+        fun walk(l: Limb): Boolean {
+            var hit = l.tasks.any { inReach(it, reach, today) }
+            l.children.forEach { if (walk(it)) hit = true }
+            if (hit) out += l.node.tag
+            return hit
+        }
+        tree.worlds.forEach { walk(it) }
+        return out
+    }
+
     /** Every world and what it tells, by its tag. */
     fun urgencies(tree: Tree, reach: Reach, today: LocalDate): Map<String, Urgency> =
         tree.worlds.associate { it.node.tag to urgency(it, reach, today) }

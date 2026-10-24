@@ -221,4 +221,17 @@ class YgdrasilTest {
         val wide = Ygdrasil.layout(tree, setOf("e"), notes = notes).spots.first { it.limb?.node?.tag == "e" }
         assertEquals(Ygdrasil.WIDE_W, wide.w)
     }
+
+    @Test
+    fun onlyTheWayToWorkInTheReachStaysLit() {
+        val tree = Ygdrasil.grow(tasks, emptyMap(), today, Ygdrasil.Filter())
+        val lit = Ygdrasil.reachTags(tree, Ygdrasil.Reach.LATE, today)
+        // Past due under peddose/แอป/มือถือ: that branch and the limbs above it stay lit, its siblings go faint.
+        assertTrue("peddose" in lit && "peddose/แอป" in lit && "peddose/แอป/มือถือ" in lit)
+        assertFalse("peddose/แอป/เว็บ" in lit)
+        assertFalse("peddose/research" in lit)
+        val week = Ygdrasil.reachTags(tree, Ygdrasil.Reach.WEEK, today)
+        assertTrue("Siriraj" in week)
+        assertFalse(Ygdrasil.inReach(tasks.first { it.title.startsWith("ลองหน้าเว็บ") }, Ygdrasil.Reach.MONTH, today))
+    }
 }

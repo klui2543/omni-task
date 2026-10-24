@@ -127,6 +127,10 @@ fun YgdrasilScreen(
     val auto = embed == null && applied != reach.name
     val shownFolded = if (auto) Ygdrasil.autoFolded(tree, reach, state.today, folded) else folded
     SideEffect { if (auto) { applied = reach.name; onFolded(shownFolded) } }
+    // Work outside the reach stays on the tree but faint, so what the reach is about stands out.
+    val lit = remember(tree, reach, state.today, embed) { if (embed == null) Ygdrasil.reachTags(tree, reach, state.today) else null }
+    fun faint(t: Task) = lit != null && !Ygdrasil.inReach(t, reach, state.today)
+    fun faint(tag: String) = lit != null && tag !in lit
     val layout = remember(tree, shownFolded, notes) { Ygdrasil.layout(tree, shownFolded, notes = notes) }
     // The tray of tasks with no project, under the tree, and the task whose new home is being picked.
     var straySort by remember { mutableStateOf(Ygdrasil.StraySort.DUE) }
@@ -413,7 +417,7 @@ fun YgdrasilScreen(
                                         if (picked || target) 2.dp else 1.dp,
                                         if (target) C.amber else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
                                     )
-                                    .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else 1f)
+                                    .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else if (faint(n.tag)) 0.35f else 1f)
                                     .then(
                                         if (embed != null) Modifier else Modifier
                                             // A tap on a folded project opens it as well.
@@ -476,7 +480,7 @@ fun YgdrasilScreen(
                             val chosen = embed?.selKey == t.key
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (someday) 0.6f else 1f)
+                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (faint(t)) 0.35f else if (someday) 0.6f else 1f)
                                     .then(if (chosen) Modifier.background(C.accentSoft) else Modifier)
                                     .then(if (aiPick) Modifier.border(2.dp, C.accent, RoundedCornerShape(8.dp)) else Modifier)
                                     .then(
