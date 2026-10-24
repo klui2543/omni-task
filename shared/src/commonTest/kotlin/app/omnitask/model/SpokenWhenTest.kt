@@ -67,3 +67,20 @@ class SpokenWhenTest {
     }
 
 }
+
+class SpokenCalendarTest {
+    private val today = kotlinx.datetime.LocalDate.parse("2026-10-24")
+    private val now = kotlinx.datetime.LocalTime(9, 0)
+
+    @kotlin.test.Test
+    fun theCalendarWordMakesAnEventAndLeavesTheTitle() {
+        val h = SpokenWhen.read("ลงปฏิทินนัดหมอฟันพรุ่งนี้บ่ายสามโมง", emptyList(), today, now)
+        kotlin.test.assertTrue(h.event)
+        kotlin.test.assertEquals("นัดหมอฟัน", h.title)
+        kotlin.test.assertEquals(today.plusDays(1), h.date)
+        kotlin.test.assertEquals(kotlinx.datetime.LocalTime(15, 0), h.time)
+        val t = SpokenWhen.read("ส่งตารางเวรวันศุกร์", emptyList(), today, now)
+        kotlin.test.assertTrue(!t.event)
+        kotlin.test.assertTrue(SpokenWhen.read("ประชุมทีมวันจันทร์ ใส่ปฏิทินด้วย", emptyList(), today, now).let { it.event && "ปฏิทิน" !in it.title })
+    }
+}

@@ -110,7 +110,8 @@ object SecretaryPretext {
         }
         claudeLog?.takeIf { it.isNotBlank() }?.let {
             appendLine("## ช่วงนี้ (จาก Claude log)")
-            appendLine(AiAssist.claudeDigest(it, max = 5000, days = 7))
+            // As plain bullets: a kept copy of this file must not show the log's tasks a second time.
+            appendLine(SecretaryBook.plain(AiAssist.claudeDigest(it, max = 5000, days = 7)))
             appendLine()
         }
         val open = tasks.filter { it.isOpen && it.parent == null && it.list == null }

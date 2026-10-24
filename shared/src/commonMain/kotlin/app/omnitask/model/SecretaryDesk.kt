@@ -66,6 +66,8 @@ object SecretaryDesk {
         val more: Int = 0,
         /** What the owner typed when the rules did not know it: the answer offers to teach it, or Claude. */
         val teach: String? = null,
+        /** The morning brief from the secretary's book (Claude log), on the opening answer only. */
+        val brief: SecretaryBook.Brief? = null,
     )
 
     /**
@@ -79,6 +81,8 @@ object SecretaryDesk {
         val now: LocalDateTime,
         val skipped: Set<String> = emptySet(),
         val othersEvent: (CalendarEvent) -> Boolean = { false },
+        /** Claude log's text, for the brief's list of Claude's work; null when it could not be read. */
+        val claudeLog: String? = null,
     )
 
     private val CLAUDE_CHIP get() = Chip(tr("คุยเสียงกับ Claude", "Talk to Claude"), Ask.CLAUDE)
@@ -88,8 +92,10 @@ object SecretaryDesk {
         val late = lateTasks(ctx)
         val tomorrow = ownEvents(ctx, ctx.today.plusDays(1))
         val evening = ctx.now.hour >= 17
+        val brief = SecretaryBook.brief(ctx.tasks, ctx.claudeLog, ctx.today).takeUnless { it.isEmpty }
         val lines = buildList {
             add(greeting(ctx.now.hour) + freeLine(ctx))
+            brief?.waiting?.size?.takeIf { it > 0 }?.let { add(tr("วันนี้มี $it เรื่องรอคุณ", "$it things wait on you today")) }
             tomorrow.firstOrNull()?.let { add(tr("พรุ่งนี้: ", "Tomorrow: ") + it.title + if (tomorrow.size > 1) tr(" และอีก ${tomorrow.size - 1} นัด", " and ${tomorrow.size - 1} more") else "") }
             val soon = ctx.tasks.count { it.isOpen && it.due.let { d -> d != null && d >= ctx.today && d <= ctx.today.plusDays(3) } }
             if (soon > 0 || late.isNotEmpty()) add(
@@ -108,7 +114,7 @@ object SecretaryDesk {
             add(Chip(tr("งานใหญ่ ไม่รู้เริ่มตรงไหน", "Big task, where to start"), Ask.SPLIT))
             add(CLAUDE_CHIP)
         }
-        return Reply(lines, chips)
+        return Reply(lines, chips, brief = brief)
     }
 
     /** One task to do now, with why and the buttons that follow from it. [exclude] are tasks already offered. */

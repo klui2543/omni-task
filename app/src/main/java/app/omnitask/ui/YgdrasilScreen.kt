@@ -127,12 +127,18 @@ fun YgdrasilScreen(
     val auto = embed == null && applied != reach.name
     val shownFolded = if (auto) Ygdrasil.autoFolded(tree, reach, state.today, folded) else folded
     SideEffect { if (auto) { applied = reach.name; onFolded(shownFolded) } }
-    val layout = remember(tree, shownFolded, notes) { Ygdrasil.layout(tree, shownFolded, notes = notes) }
+    // Work outside the reach stays on the tree but faint, so what the reach is about stands out.
+    val lit = remember(tree, reach, state.today, embed) { if (embed == null) Ygdrasil.reachTags(tree, reach, state.today) else null }
+    fun faint(t: Task) = lit != null && !Ygdrasil.inReach(t, reach, state.today)
+    fun faint(tag: String) = lit != null && tag !in lit && !Ygdrasil.isInbox(tag)
     // The tray of tasks with no project, under the tree, and the task whose new home is being picked.
     var straySort by remember { mutableStateOf(Ygdrasil.StraySort.DUE) }
     val strays = remember(state.tasks, state.today, state.projectTags, filter, straySort) { Ygdrasil.strays(state.tasks, state.today, filter, straySort) }
     val strayCount = strays.sumOf { it.tasks.size }
     var trayOpen by rememberSaveable { mutableStateOf(false) }
+    // The tasks with no project are one more (pretend) project at the end of the tree, drawn like the others.
+    val grown = remember(tree, strays, embed) { if (embed == null) Ygdrasil.withInbox(tree, strays) else tree }
+    val layout = remember(grown, shownFolded, notes) { Ygdrasil.layout(grown, shownFolded, notes = notes) }
     LaunchedEffect(strayCount) { if (strayCount == 0) trayOpen = false }
     var picking by remember { mutableStateOf<Task?>(null) }
     var trayHeight by remember { mutableStateOf(0) }
@@ -184,7 +190,7 @@ fun YgdrasilScreen(
     val spots by rememberUpdatedState(layout.spots)
     fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
         (s.kind == Ygdrasil.Kind.LIMB || s.kind == Ygdrasil.Kind.TRUNK) && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
-    }?.let { it.limb?.node?.tag ?: "" }
+    }?.let { it.limb?.node?.tag ?: "" }?.takeUnless { Ygdrasil.isInbox(it) }
     /** Where the carried thing would go if let go now, or null. */
     fun goesTo(c: Carry, to: String?): String? = when {
         to == null -> null
@@ -304,8 +310,14 @@ fun YgdrasilScreen(
             }
             if (strayCount > 0) Row(
                 Modifier.padding(end = 8.dp).height(40.dp).clip(RoundedCornerShape(12.dp)).background(C.card)
-                    .border(1.dp, if (trayOpen) C.amber else C.cardBorder, RoundedCornerShape(12.dp))
-                    .clickable { trayOpen = !trayOpen; if (trayOpen) filtering = false }.padding(horizontal = 10.dp),
+                    .border(1.dp, C.cardBorder, RoundedCornerShape(12.dp))
+                    .clickable {
+                        filtering = false
+                        if (Ygdrasil.INBOX in foldedNow) onFolded(foldedNow - Ygdrasil.INBOX)
+                        layout.spots.firstOrNull { it.limb?.node?.tag == Ygdrasil.INBOX }?.let { s ->
+                            pan = Offset(24f * density - s.x * density * scale, 120f * density - (s.y - s.h / 2) * density * scale); touched = true
+                        }
+                    }.padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(tr("ยังไม่มีบ้าน", "No project"), color = C.text2, fontSize = TS.caption, maxLines = 1)
@@ -404,18 +416,24 @@ fun YgdrasilScreen(
                         Ygdrasil.Kind.LIMB -> {
                             val n = s.limb!!.node
                             val world = n.path.isEmpty()
+                            // The pretend project of tasks with no project: amber outline, opens and folds, never moved or picked.
+                            val inbox = Ygdrasil.isInbox(n.tag)
                             val picked = sel === s
                             val target = carry != null && dropTag == n.tag
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
-                                    .clip(RoundedCornerShape(10.dp)).background(if (target) C.amberSoft else if (world) C.accentSoft else C.card)
+                                    .clip(RoundedCornerShape(10.dp)).background(if (target) C.amberSoft else if (inbox) C.bg else if (world) C.accentSoft else C.card)
                                     .border(
-                                        if (picked || target) 2.dp else 1.dp,
-                                        if (target) C.amber else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
+                                        if (picked || target || (inbox && world)) 1.5.dp else 1.dp,
+                                        if (target) C.amber else if (inbox) C.amber.copy(alpha = if (world) 1f else 0.5f) else if (picked) C.accent else C.cardBorder, RoundedCornerShape(10.dp),
                                     )
-                                    .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else 1f)
+                                    .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else if (faint(n.tag)) 0.35f else 1f)
                                     .then(
-                                        if (embed != null) Modifier else Modifier
+                                        if (embed != null) Modifier
+                                        else if (inbox) Modifier.pointerInput(n.tag, s.folded) {
+                                            detectTapGestures(onTap = { onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
+                                        }
+                                        else Modifier
                                             // A tap on a folded project opens it as well.
                                             .pointerInput(n.tag, s.folded) { detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) }) }
                                             .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
@@ -425,7 +443,14 @@ fun YgdrasilScreen(
                             ) {
                                 if (!world) Box(Modifier.size(8.dp).clip(CircleShape).background(n.state.color))
                                 val note = notes[n.tag]
-                                if (world && s.folded && note != null && s.w > Ygdrasil.NODE_W) Column(Modifier.weight(1f)) {
+                                if (world && !s.folded && note != null && note.opens) Column(Modifier.weight(1f)) {
+                                    // Why it opened on its own, inside the card (the owner's pick, mock ค).
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("#" + n.name, Modifier.weight(1f), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (n.all.isNotEmpty()) Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
+                                    }
+                                    Box(Modifier.padding(top = 3.dp)) { TreeBadges(note, reach) }
+                                } else if (world && s.folded && note != null && s.w > Ygdrasil.NODE_W) Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             "#" + n.name, Modifier.weight(1f, fill = false).padding(end = 6.dp), color = C.accentText, fontSize = TS.caption,
@@ -437,20 +462,27 @@ fun YgdrasilScreen(
                                         Text(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 } else Text(
-                                    if (world) "#" + n.name else n.name, Modifier.weight(1f).padding(start = if (world) 0.dp else 7.dp),
-                                    color = if (world) C.accentText else C.text, fontSize = TS.caption,
+                                    if (inbox && world) tr("ยังไม่มีบ้าน", "No project yet") else if (world) "#" + n.name else n.name, Modifier.weight(1f).padding(start = if (world) 0.dp else 7.dp),
+                                    color = if (inbox) C.amber else if (world) C.accentText else C.text, fontSize = TS.caption,
                                     fontWeight = if (world) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
-                                if (s.folded) {
+                                if (world && !s.folded && note != null && note.opens) Unit
+                                else if (s.folded) {
                                     Text("+${s.count}", Modifier.clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 6.dp, vertical = 1.dp), color = C.text2, fontSize = TS.micro)
                                 } else if (n.all.isNotEmpty()) {
                                     Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
                                 }
                             }
-                            // An open project says why it opened on its own.
+                            // A thin bar along the card's bottom edge: the share of its open work past due, then past target.
                             val note = notes[n.tag]
-                            if (world && !s.folded && note != null && note.opens) {
-                                Box(Modifier.offset(s.x.dp, (s.y + s.h / 2 + 4).dp)) { TreeBadges(note, reach) }
+                            val open = n.all.size - n.done
+                            if (world && note != null && note.opens && open > 0 && (note.late > 0 || note.targetLate > 0)) Row(
+                                Modifier.offset((s.x + 1).dp, (s.y + s.h / 2 - 4).dp).width((s.w - 2).dp).height(3.dp),
+                            ) {
+                                if (note.late > 0) Box(Modifier.weight(note.late.toFloat()).fillMaxHeight().background(C.red))
+                                if (note.targetLate > 0) Box(Modifier.weight(note.targetLate.toFloat()).fillMaxHeight().background(C.amber))
+                                val rest = open - note.late - note.targetLate
+                                if (rest > 0) Box(Modifier.weight(rest.toFloat()).fillMaxHeight().background(C.cardBorder))
                             }
                         }
                         Ygdrasil.Kind.TASK -> {
@@ -462,13 +494,15 @@ fun YgdrasilScreen(
                             val chosen = embed?.selKey == t.key
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (someday) 0.6f else 1f)
+                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (faint(t)) 0.35f else if (someday) 0.6f else 1f)
                                     .then(if (chosen) Modifier.background(C.accentSoft) else Modifier)
                                     .then(if (aiPick) Modifier.border(2.dp, C.accent, RoundedCornerShape(8.dp)) else Modifier)
                                     .then(
                                         if (embed != null) Modifier.pointerInput(t, chosen) { detectTapGestures(onTap = { embed.onSelect(if (chosen) null else t) }) }
                                         // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
                                         // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
+                                        // A task with no project: a tap picks its home, held it is dragged up onto a project.
+                                        else if (Ygdrasil.isInbox(from)) Modifier.pointerInput(t) { detectTapGestures(onTap = { picking = t }) }.carries(Carry(t, "", t.title, stray = true), s.y - s.h / 2, s.x)
                                         else Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }.carries(Carry(t, from, t.title), s.y - s.h / 2, s.x),
                                     )
                                     .padding(end = 6.dp),
@@ -697,13 +731,17 @@ fun YgdrasilEntry(onClick: () -> Unit) {
 @Composable
 private fun TreeBadges(u: Ygdrasil.Urgency, reach: Ygdrasil.Reach) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (u.late > 0) TreeBadge(tr("เลยกำหนด ${u.late}", "${u.late} past due"), C.red, C.redSoft)
-        if (u.within > 0) TreeBadge("${reach.label} ${u.within}", C.accentText, C.accentSoft)
-        if (u.targetLate > 0) TreeBadge(tr("เลยเป้า ${u.targetLate}", "${u.targetLate} past target"), C.amber, C.amberSoft)
+        if (u.late > 0) TreeBadge(tr("เลยกำหนด ${u.late}", "${u.late} past due"), C.red)
+        if (u.targetLate > 0) TreeBadge(tr("เลยเป้า ${u.targetLate}", "${u.targetLate} past target"), C.amber)
+        if (u.within > 0) TreeBadge("${reach.label} ${u.within}", C.accentText)
     }
 }
 
 @Composable
-private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color, bg: androidx.compose.ui.graphics.Color) {
-    Text(text, Modifier.clip(RoundedCornerShape(8.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp), color = color, fontSize = TS.micro, maxLines = 1)
+private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color) {
+    // A dot and bold text in the colour itself, no tinted box: the box was nearly the card's colour and hid it.
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+        Text(text, Modifier.padding(start = 4.dp), color = color, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
 }

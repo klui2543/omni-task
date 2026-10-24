@@ -10,6 +10,7 @@ import app.omnitask.drive.OmniDrive
 import app.omnitask.drive.sameName
 import app.omnitask.model.OmniList
 import app.omnitask.model.Recurrence
+import app.omnitask.model.SecretaryBook
 import app.omnitask.model.Task
 import kotlinx.datetime.LocalDate
 import app.omnitask.model.tr
@@ -75,6 +76,8 @@ class VaultRepository(private val context: Context) {
         val tasks = files.flatMap { file ->
             // The archive keeps finished work for Obsidian; the app leaves it unread so Done stays short.
             if (Archive.isArchive(file.path)) return@flatMap emptyList<Task>()
+            // A file kept after it was handed to Claude repeats the tasks of Claude log; it is not a source of tasks.
+            if (SecretaryBook.isSentCopy(file.path)) return@flatMap emptyList<Task>()
             val text = file.text()
             // Lines in a list note (Bucket list, Watch list...) are marked with the list's name.
             val list = OmniList.parse(file.path, text)?.also { lists += it }

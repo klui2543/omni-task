@@ -221,4 +221,31 @@ class YgdrasilTest {
         val wide = Ygdrasil.layout(tree, setOf("e"), notes = notes).spots.first { it.limb?.node?.tag == "e" }
         assertEquals(Ygdrasil.WIDE_W, wide.w)
     }
+
+    @Test
+    fun onlyTheWayToWorkInTheReachStaysLit() {
+        val tree = Ygdrasil.grow(tasks, emptyMap(), today, Ygdrasil.Filter())
+        val lit = Ygdrasil.reachTags(tree, Ygdrasil.Reach.LATE, today)
+        // Past due under peddose/แอป/มือถือ: that branch and the limbs above it stay lit, its siblings go faint.
+        assertTrue("peddose" in lit && "peddose/แอป" in lit && "peddose/แอป/มือถือ" in lit)
+        assertFalse("peddose/แอป/เว็บ" in lit)
+        assertFalse("peddose/research" in lit)
+        val week = Ygdrasil.reachTags(tree, Ygdrasil.Reach.MONTH, today)
+        assertTrue("Siriraj" in week)
+        assertFalse(Ygdrasil.inReach(tasks.first { it.title.startsWith("ลองหน้าเว็บ") }, Ygdrasil.Reach.MONTH, today))
+    }
+
+    @Test
+    fun tasksWithNoProjectGrowAsOneMoreProjectAtTheEnd() {
+        val tree = Ygdrasil.grow(tasks, emptyMap(), today, Ygdrasil.Filter())
+        val strays = Ygdrasil.strays(tasks, today, Ygdrasil.Filter(), Ygdrasil.StraySort.DUE)
+        val grown = Ygdrasil.withInbox(tree, strays)
+        val inbox = grown.worlds.last()
+        assertEquals(Ygdrasil.INBOX, inbox.node.tag)
+        assertTrue(inbox.children.all { Ygdrasil.isInbox(it.node.tag) })
+        assertTrue(inbox.flatten().flatMap { it.tasks }.any { it.title == "งานไม่มี tag" })
+        assertEquals(tree.worlds.size + 1, grown.worlds.size)
+        // It lays out like any project, branches and all.
+        assertTrue(Ygdrasil.layout(grown, emptySet()).spots.any { it.limb?.node?.tag?.startsWith(Ygdrasil.INBOX + "/") == true })
+    }
 }

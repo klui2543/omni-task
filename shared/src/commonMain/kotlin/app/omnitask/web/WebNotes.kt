@@ -5,6 +5,7 @@ import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import app.omnitask.model.OmniList
 import app.omnitask.model.Recurrence
+import app.omnitask.model.SecretaryBook
 import app.omnitask.model.Task
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
@@ -28,8 +29,11 @@ object WebNotes {
     @Serializable
     data class Note(val key: String, val path: String, val text: String)
 
-    /** Whether the note at [path] is read for tasks: not an archive and not a sync app's conflict copy. */
-    fun isRead(path: String): Boolean = !Archive.isArchive(path) && !VaultText.isConflictCopy(path)
+    /**
+     * Whether the note at [path] is read for tasks: not an archive, not a sync app's conflict copy, and not a file the
+     * app kept after handing it to Claude (it repeats the tasks of Claude log).
+     */
+    fun isRead(path: String): Boolean = !Archive.isArchive(path) && !VaultText.isConflictCopy(path) && !SecretaryBook.isSentCopy(path)
 
     /**
      * The tasks of [text]: one note's, or with [fileKey] [MANY] those of every note in the list. Archives, conflict

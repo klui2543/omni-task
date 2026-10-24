@@ -192,6 +192,31 @@ object Ygdrasil {
         return Urgency(late, targetLate, within, next)
     }
 
+    /** Whether open [t] is what [reach] is about: past its 📅 or ⏳ date, or dated within the reach. */
+    fun inReach(t: Task, reach: Reach, today: LocalDate): Boolean {
+        if (!t.isOpen) return false
+        val dates = listOfNotNull(t.due, t.scheduled)
+        if (dates.any { it < today }) return true
+        val end = reach.end(today) ?: return false
+        return dates.any { it in today..end }
+    }
+
+    /**
+     * The tags of every limb that holds work in [reach], with the worlds and branches above it, so the tree can dim the
+     * rest (the owner's pick, 2026-10-24: an opened project showed work that had nothing to do with the reach).
+     */
+    fun reachTags(tree: Tree, reach: Reach, today: LocalDate): Set<String> {
+        val out = HashSet<String>()
+        fun walk(l: Limb): Boolean {
+            var hit = l.tasks.any { inReach(it, reach, today) }
+            l.children.forEach { if (walk(it)) hit = true }
+            if (hit) out += l.node.tag
+            return hit
+        }
+        tree.worlds.forEach { walk(it) }
+        return out
+    }
+
     /** Every world and what it tells, by its tag. */
     fun urgencies(tree: Tree, reach: Reach, today: LocalDate): Map<String, Urgency> =
         tree.worlds.associate { it.node.tag to urgency(it, reach, today) }
@@ -204,6 +229,27 @@ object Ygdrasil {
         kept.filter { '/' in it }.toSet() + tree.worlds.filter { !urgency(it, reach, today).opens }.map { it.node.tag }
 
     // ---- Tasks with no project yet ----
+
+    /** The tag of the pretend project that holds the tasks with no project; never written to a task. */
+    const val INBOX = "~ยังไม่มีบ้าน"
+
+    fun isInbox(tag: String) = tag == INBOX || tag.startsWith("$INBOX/")
+
+    /**
+     * [tree] with the tasks that have no project as one more, pretend, project at the end (owner's pick, 2026-10-24):
+     * one branch per first tag (no tag first), drawn and folded like every other project.
+     */
+    fun withInbox(tree: Tree, strays: List<Strays>): Tree {
+        if (strays.isEmpty()) return tree
+        val groups = strays.map { g ->
+            val path = (g.tag ?: tr("ไม่มีแท็ก", "No tag")).replace('/', '-')
+            val node = Branches.Node(INBOX, path, Branches.State.ACTIVE, g.tasks, g.tasks, emptyList())
+            Limb(node, g.tasks, emptyList())
+        }
+        val all = strays.flatMap { it.tasks }
+        val root = Branches.Node(INBOX, "", Branches.State.ACTIVE, emptyList(), all, groups.map { it.node })
+        return tree.copy(worlds = tree.worlds + Limb(root, emptyList(), groups))
+    }
 
     /** Tasks with no project, gathered by the first tag they have ([tag] null: no tag at all). */
     data class Strays(val tag: String?, val tasks: List<Task>)
@@ -246,6 +292,8 @@ object Ygdrasil {
     /** A folded world that tells its next task. */
     const val WIDE_W = NODE_W + COL
     const val WIDE_H = 58f
+    /** An open world whose work opened it: its name, then why, on a second line inside the card. */
+    const val URGENT_H = 56f
 
     enum class Kind { TRUNK, LIMB, TASK, MORE }
 
@@ -306,9 +354,11 @@ object Ygdrasil {
             }
             // A folded world with a note is one wide row: its name, then the task to do next.
             val wide = closed && depth == 1 && l.node.tag in notes
-            val h = maxOf(if (wide) WIDE_H else NODE_H, y - top)
+            val urgent = !closed && depth == 1 && notes[l.node.tag]?.opens == true
+            val nodeH = if (wide) WIDE_H else if (urgent) URGENT_H else NODE_H
+            val h = maxOf(nodeH, y - top)
             val s = Spot(
-                Kind.LIMB, depth * COL, top + h / 2, if (wide) WIDE_W else NODE_W, if (wide) WIDE_H else NODE_H,
+                Kind.LIMB, depth * COL, top + h / 2, if (wide) WIDE_W else NODE_W, nodeH,
                 limb = l, count = if (closed) l.matched else 0, folded = closed,
             )
             spots += s

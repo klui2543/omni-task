@@ -15,7 +15,14 @@ import kotlinx.datetime.isoDayNumber
 object SpokenWhen {
 
     /** What was heard: the title left, and the day, time and kind of date found (all may be missing). */
-    data class Heard(val title: String, val date: LocalDate?, val time: LocalTime?, val field: TaskLine.DateField = TaskLine.DateField.DUE)
+    data class Heard(
+        val title: String, val date: LocalDate?, val time: LocalTime?, val field: TaskLine.DateField = TaskLine.DateField.DUE,
+        /** The owner said it goes in the calendar ("ลงปฏิทิน"): an event, not a task. */
+        val event: Boolean = false,
+    )
+
+    /** "ลงปฏิทิน", "ใส่ปฏิทิน", "ในปฏิทิน" or just "ปฏิทิน": the item is an event, and the word leaves the title (owner, 2026-10-24). */
+    private val CALENDAR = Regex("(?:ลง|ใส่|เพิ่ม|จด)?(?:ใน|ลงใน|เข้า)?ปฏิทิน(?:ไว้|ด้วย|ให้หน่อย|ให้)?")
 
     private val NUM = mapOf(
         "หนึ่ง" to 1, "สอง" to 2, "สาม" to 3, "สี่" to 4, "ห้า" to 5, "หก" to 6, "เจ็ด" to 7, "แปด" to 8, "เก้า" to 9,
@@ -46,6 +53,8 @@ object SpokenWhen {
 
     fun read(words: String, table: List<TimeWords.Word>, today: LocalDate, now: LocalTime): Heard {
         var s = " $words "
+        val event = CALENDAR.containsMatchIn(s)
+        s = s.replace(CALENDAR, " ")
         var date: LocalDate? = null
         var time: LocalTime? = null
         fun cut(r: IntRange) { s = s.removeRange(r).let { it.substring(0, r.first) + " " + it.substring(r.first) } }
@@ -87,7 +96,7 @@ object SpokenWhen {
             .replace(Regex("(?:\\s|^)(?:เวลา|ตอน|ช่วง|ภายใน)(?=\\s|$)"), " ")
             .replace(Regex("(?:เวลา|ตอน|ช่วง)$"), "")
             .replace(Regex("\\s+"), " ").trim()
-        return Heard(title.ifEmpty { words.trim() }, date, time, field)
+        return Heard(title.ifEmpty { words.trim() }, date, time, field, event)
     }
 
     /** The task line for [h] (with an optional [project] tag), added today. */

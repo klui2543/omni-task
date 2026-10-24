@@ -67,6 +67,7 @@ import app.omnitask.model.Status
 import app.omnitask.model.StuckLog
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
+import app.omnitask.model.SecretaryBook
 import app.omnitask.model.SecretaryGuide
 import app.omnitask.model.ProjectNames
 import androidx.compose.runtime.getValue
@@ -517,6 +518,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return SecretaryDesk.Ctx(
             s.tasks, s.events, s.today, LocalDateTime.now(), NewLook.skippedFor(s.today),
             othersEvent = { CalendarStyles.label(it.calendarId) != null },
+            claudeLog = claudeLogText,
         )
     }
 
@@ -529,6 +531,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
     }
     private var deskOpenedAt = 0L
+
+    /** Claude log as last read, for the morning brief (Claude's work is plain bullets there, not tasks). */
+    private var claudeLogText: String? = null
 
     /** The chat as it was before "start over", for "undo". */
     private var deskBefore: List<DeskTurn> = emptyList()
@@ -776,10 +781,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.KNOWS_PATH, text.trimEnd() + "\n") } }
     }
 
-    /** The file handed to Claude, kept in the vault ("ส่งเลขา") to read or send again later. */
+    /**
+     * The file handed to Claude, kept in the vault ("ส่งเลขา") to read or send again later. Kept files older than a
+     * week go, so the folder does not grow: each is a copy of what the vault already holds.
+     */
     fun keepSendFile(name: String, text: String) {
         val vault = _state.value.vault ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, "${app.omnitask.data.VaultText.OMNI_DIR}/ส่งเลขา/$name", text) } }
+        val dir = SecretaryBook.SENT_DIR
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.writePath(vault, "$dir/$name", text) }
+            runCatching { SecretaryBook.staleSent(repo.namesIn(vault, dir), LocalDate.now()).forEach { repo.deletePath(vault, "$dir/$it") } }
+        }
     }
 
     /** The dates of one project's moves from the secretary's answer, taken together. */
@@ -948,7 +960,29 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val vault = _state.value.vault ?: return
         val app = getApplication<Application>()
         val today = LocalDate.now()
-        val kept = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
+        val all = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
+        // "ลงปฏิทิน" items go to the calendar quick add uses (an hour at the time said, or all day).
+        val events = all.filter { it.heard.event && it.heard.date != null }
+        val kept = all.filter { !it.heard.event }
+        if (events.isNotEmpty()) {
+            val cals = _state.value.calendars.filter { it.writable && it.visible }
+            val chosen = CalendarReader.addTo(app)
+            val cal = cals.firstOrNull { it.id == chosen } ?: cals.firstOrNull { it.isGoogle && it.name == it.account } ?: cals.firstOrNull { it.isGoogle } ?: cals.firstOrNull()
+            if (cal == null || !CalendarReader.canWrite(app)) {
+                showMessage(tr("ลงปฏิทินไม่ได้: ยังไม่มีปฏิทินที่เพิ่มนัดได้ หรือยังไม่อนุญาต ลองเพิ่มนัดจากปุ่ม + ก่อนหนึ่งครั้ง", "No calendar to add events to yet: add one event from + first"))
+                return
+            }
+            events.forEach { e ->
+                val h = e.heard
+                val t = h.time
+                if (t == null) addEvent(cal.id, h.title, kotlinx.datetime.LocalDateTime(h.date!!, kotlinx.datetime.LocalTime(0, 0)), kotlinx.datetime.LocalDateTime(h.date!!, kotlinx.datetime.LocalTime(0, 0)), true)
+                else {
+                    val start = kotlinx.datetime.LocalDateTime(h.date!!, t)
+                    val endDay = if (t.hour == 23) h.date!!.plusDays(1) else h.date!!
+                    addEvent(cal.id, h.title, start, kotlinx.datetime.LocalDateTime(endDay, kotlinx.datetime.LocalTime((t.hour + 1) % 24, t.minute)), false)
+                }
+            }
+        }
         val lines = kept.map { SpokenWhen.line(it.heard, it.project, today) }
         val titles = kept.map { it.heard.title }
         viewModelScope.launch {
@@ -963,7 +997,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     voiceFresh.edit().apply { stale.forEach { remove(it) }; titles.forEach { putLong(it, now) } }.apply()
                     lines.forEach { noteCreated(it) }
                     _voice.update { it.copy(review = null, live = emptyList(), words = "", waiting = VoiceRec.waiting(app)) }
-                    showMessage(tr("บันทึก ${lines.size} งานแล้ว", "Saved ${lines.size} tasks"))
+                    showMessage(tr("บันทึก ${lines.size} งาน ${events.size} นัดแล้ว", "Saved ${lines.size} tasks, ${events.size} events"))
                     reload()
                 },
                 { e -> showMessage(tr("บันทึกไม่ได้: ${e.message}", "Could not save: ${e.message}")) },
@@ -1135,7 +1169,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 if (fresh.isNotEmpty()) saveProjectTags(_state.value.projectTags.orEmpty() + fresh)
             }
             // When the secretary last wrote Claude log, so the today page can say when it stopped.
-            val secretary = withContext(Dispatchers.IO) { runCatching { Secretary.lastRun(repo.readPath(vault, CLAUDE_LOG)) }.getOrNull() }
+            val logText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, CLAUDE_LOG) }.getOrNull() }
+            claudeLogText = logText
+            val secretary = Secretary.lastRun(logText)
             _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
