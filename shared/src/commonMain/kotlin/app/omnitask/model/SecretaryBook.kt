@@ -63,7 +63,7 @@ object SecretaryBook {
         } ?: l
     }
 
-    private val CHECKBOX = Regex("""^(\s*)[-*] \[([ xX/\-])] """)
+    private val CHECKBOX = Regex("""^(\s*)[-*] \[([ xX/-])\] """)
 
     private fun line(t: Task, prefix: String) = t.notes.firstOrNull { it.startsWith(prefix) }?.removePrefix(prefix)?.trim()?.ifEmpty { null }
 
