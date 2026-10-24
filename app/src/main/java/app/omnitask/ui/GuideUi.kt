@@ -496,7 +496,7 @@ private fun FilterEditor(state: UiState, f: Filter, onChange: (Filter) -> Unit) 
     val count = remember(f, state.tasks) { state.tasks.count { it.parent == null && f.matches(it, state.today) } }
     fun <T> Set<T>.flip(v: T) = if (v in this) this - v else this + v
 
-    Label(tr("โปรเจกต์และแท็ก", "Projects and tags"))
+    FieldLabel(tr("โปรเจกต์และแท็ก", "Projects and tags"))
     var tagsOpen by remember { mutableStateOf(false) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         f.tags.forEach { t -> Chip(tagLabel(t), true, { onChange(f.copy(tags = f.tags - t)) }) }
@@ -514,7 +514,7 @@ private fun FilterEditor(state: UiState, f: Filter, onChange: (Filter) -> Unit) 
             }
         }
     }
-    Label(tr("กำหนดจริง", "Real deadline"))
+    FieldLabel(tr("กำหนดจริง", "Real deadline"))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(DateBucket.OVERDUE, DateBucket.TODAY, DateBucket.THIS_WEEK, DateBucket.NEXT_WEEK, DateBucket.NO_DATE).forEach { b ->
             Chip(b.label, b in f.buckets, { onChange(f.copy(buckets = f.buckets.flip(b))) })
@@ -522,7 +522,7 @@ private fun FilterEditor(state: UiState, f: Filter, onChange: (Filter) -> Unit) 
         Chip(tr("ภายใน ${f.withinDays ?: 7} วัน", "Within ${f.withinDays ?: 7} days"), f.withinDays != null, { onChange(f.copy(withinDays = if (f.withinDays == null) 7 else null)) })
     }
     f.withinDays?.let { n -> Stepper(tr("ภายในกี่วัน", "Within how many days"), n, 1..60) { onChange(f.copy(withinDays = it)) } }
-    Label(tr("ความสำคัญ", "Priority"))
+    FieldLabel(tr("ความสำคัญ", "Priority"))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(Priority.HIGHEST, Priority.HIGH, Priority.MEDIUM, Priority.LOW).forEach { p ->
             Chip(p.label, p in f.priorities, { onChange(f.copy(priorities = f.priorities.flip(p))) }, dot = p.tint)
@@ -549,16 +549,16 @@ private fun FilterEditor(state: UiState, f: Filter, onChange: (Filter) -> Unit) 
         Icon(if (more) Ic.up else Ic.down, null, tint = C.accentText, modifier = Modifier.size(16.dp))
     }
     if (more) {
-        Label(tr("ประเภทงาน", "Task type"))
+        FieldLabel(tr("ประเภทงาน", "Task type"))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             TaskKind.entries.forEach { k -> Chip(k.label, k in f.kinds, { onChange(f.copy(kinds = f.kinds.flip(k))) }) }
             state.listNames.forEach { l -> Chip(l, l in f.lists, { onChange(f.copy(lists = f.lists.flip(l))) }) }
         }
-        Label(tr("สถานะ (ไม่เลือก = งานที่ยังเปิด)", "Status (none: open work)"))
+        FieldLabel(tr("สถานะ (ไม่เลือก = งานที่ยังเปิด)", "Status (none: open work)"))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Status.entries.forEach { s -> Chip(s.label, s in f.statuses, { onChange(f.copy(statuses = f.statuses.flip(s))) }) }
         }
-        Label(tr("คำในชื่องาน", "Words in the title"))
+        FieldLabel(tr("คำในชื่องาน", "Words in the title"))
         TextBox(f.text, { onChange(f.copy(text = it)) }, tr("เช่น ตาราง", "e.g. report"), Modifier.fillMaxWidth())
         Chip(tr("ค้างนาน ${f.staleDays ?: 14} วันขึ้นไป", "${f.staleDays ?: 14}+ days old"), f.staleDays != null, { onChange(f.copy(staleDays = if (f.staleDays == null) 14 else null)) })
         f.staleDays?.let { n -> Stepper(tr("ค้างนานกี่วัน", "How many days old"), n, 1..365) { onChange(f.copy(staleDays = it)) } }
@@ -572,7 +572,7 @@ private fun tagLabel(t: String) = when (t) {
 }
 
 @Composable
-private fun Label(text: String) = Text(text, color = C.text2, fontSize = TS.caption)
+private fun FieldLabel(text: String) = Text(text, color = C.text2, fontSize = TS.caption)
 
 /** A number with − and + beside it. */
 @Composable

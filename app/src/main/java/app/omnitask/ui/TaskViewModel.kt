@@ -68,6 +68,8 @@ import app.omnitask.model.StuckLog
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.SecretaryGuide
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
