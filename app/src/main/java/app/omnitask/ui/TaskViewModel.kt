@@ -30,6 +30,8 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.SpokenWhen
+import app.omnitask.model.TimeWords
 import app.omnitask.model.Ygdrasil
 import app.omnitask.model.Behavior
 import app.omnitask.model.BehaviorEvent
@@ -215,7 +217,7 @@ data class UiState(
     /** How far ahead a project's work opens it in Ygdrasil (work past its 📅 date always does). */
     val treeReach: Ygdrasil.Reach = Ygdrasil.Reach.WEEK,
     /** The owner's time words for spoken tasks ("เย็น" is 17:00), from กฎเวลา.md. */
-    val timeWords: List<app.omnitask.model.TimeWords.Word> = app.omnitask.model.TimeWords.DEFAULT,
+    val timeWords: List<TimeWords.Word> = TimeWords.DEFAULT,
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
     /** The Gemini assistant: the key, the brief at the top of the assistant page, and calls under way. */
@@ -479,10 +481,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     data class VoiceReview(val dir: java.io.File, val seconds: Long, val items: List<VoiceItem>)
 
     /** A heard task: its words, the day and time read from them ([heard]), and an open task it may repeat. */
-    data class VoiceItem(val text: String, val dup: Task?, val heard: app.omnitask.model.SpokenWhen.Heard)
+    data class VoiceItem(val text: String, val dup: Task?, val heard: SpokenWhen.Heard)
 
     /** A heard task as the owner leaves it in the check: the words, the day, time and kind of date, and a project. */
-    data class VoiceDraft(val heard: app.omnitask.model.SpokenWhen.Heard, val project: String? = null)
+    data class VoiceDraft(val heard: SpokenWhen.Heard, val project: String? = null)
 
     private val _voice = MutableStateFlow(VoiceUi())
     val voice: StateFlow<VoiceUi> = _voice
@@ -780,7 +782,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val open = _state.value.tasks
         val now = java.time.LocalTime.now().let { kotlinx.datetime.LocalTime(it.hour, it.minute) }
         val items = live.map {
-            val heard = app.omnitask.model.SpokenWhen.read(it.text, _state.value.timeWords, LocalDate.now(), now)
+            val heard = SpokenWhen.read(it.text, _state.value.timeWords, LocalDate.now(), now)
             VoiceItem(it.text, VoiceNotes.duplicateOf(heard.title, open), heard)
         }
         _voice.update { it.copy(busy = false, live = live, unsent = 0, review = VoiceReview(dir, seconds, items), waiting = VoiceRec.waiting(app)) }
@@ -808,7 +810,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         val today = LocalDate.now()
         val kept = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
-        val lines = kept.map { app.omnitask.model.SpokenWhen.line(it.heard, it.project, today) }
+        val lines = kept.map { SpokenWhen.line(it.heard, it.project, today) }
         val titles = kept.map { it.heard.title }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -830,10 +832,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setTimeWords(words: List<app.omnitask.model.TimeWords.Word>) {
+    fun setTimeWords(words: List<TimeWords.Word>) {
         _state.update { it.copy(timeWords = words) }
         val vault = _state.value.vault ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, app.omnitask.model.TimeWords.PATH, app.omnitask.model.TimeWords.render(words)) } }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, TimeWords.PATH, TimeWords.render(words)) } }
     }
 
     /** Throws away a recording that is under review or waiting. */
@@ -980,7 +982,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
-            val timeWords = withContext(Dispatchers.IO) { runCatching { app.omnitask.model.TimeWords.parse(repo.readPath(vault, app.omnitask.model.TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
+            val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
             // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
