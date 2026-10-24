@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
@@ -127,11 +128,24 @@ private fun EventInfoDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
         title = { Text(e.title.ifBlank { tr("ไม่มีชื่อ", "Untitled") }) },
-        text = { Text(lines.joinToString("\n"), color = C.text2) },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                // Task or event at the top, as on the add sheet; a tap on งาน opens the sheet that confirms it.
+                KindToggle(
+                    isEvent = true, enabled = swapLabel != null,
+                    note = when {
+                        info?.recurring == true -> tr("นัดซ้ำเปลี่ยนเป็นงานไม่ได้", "A repeating event cannot become a task")
+                        swapLabel == null -> tr("นัดนี้เปลี่ยนเป็นงานไม่ได้ (ปฏิทินนี้แก้จากเครื่องไม่ได้)", "This event cannot become a task (its calendar cannot be changed here)")
+                        else -> null
+                    },
+                    onSwitch = onSwap,
+                )
+                Text(lines.joinToString("\n"), color = C.text2)
+            }
+        },
         confirmButton = {
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
-                if (swapLabel != null) TextButton(onClick = onSwap) { Text(swapLabel, color = C.accentText) }
                 if (canDelete) TextButton(onClick = { confirming = true }) { Text(tr("ลบ", "Delete"), color = C.red) }
                 TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) }
             }

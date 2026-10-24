@@ -375,15 +375,26 @@ val LocalPane = staticCompositionLocalOf { false }
 fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     val q = state.query
     var naming by remember { mutableStateOf(false) }
+    var bubbling by remember { mutableStateOf(false) }
     var more by rememberSaveable { mutableStateOf(moreInUse(q) > 0) }
     val shown = state.allTasks.count { q.matches(it, state.today) }
     SheetFrame(onDismiss) {
         FilterHead({ vm.setQuery(q.cleared()) })
         FilterBody(q, vm::setQuery, state, vm, more, { more = it }, onSave = { naming = true }, shown = shown, onShow = onDismiss, hideDone = true)
+        // The same filter as a bubble in the secretary chat (เลขา คู่มือ.md), one tap away from there.
+        if (q.activeFilters > 0 || q.text.isNotBlank()) Row(
+            Modifier.padding(top = 12.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp)).background(C.accentDeep)
+                .border(1.dp, C.accentLine, RoundedCornerShape(14.dp)).clickable { bubbling = true },
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(Ic.chat, null, tint = C.accentText, modifier = Modifier.size(18.dp))
+            Text(tr("บันทึกเป็นบอลลูนในห้องเลขา", "Save as a secretary bubble"), Modifier.padding(start = 8.dp), color = C.text, fontSize = TS.body)
+        }
         // Folded, the sheet still says how many tasks are left and closes with one tap.
         if (!more) PrimaryButton(tr("แสดง $shown งาน", "Show $shown tasks"), onDismiss, Modifier.padding(top = 16.dp).fillMaxWidth())
     }
     if (naming) NameDialog(tr("ตั้งชื่อตัวกรอง", "Name this filter"), { vm.saveFilter(it); naming = false }) { naming = false }
+    if (bubbling) NameDialog(tr("ชื่อบอลลูน", "Bubble name"), { vm.addFilterBubble(it, q); bubbling = false }) { bubbling = false }
 }
 
 @Composable
