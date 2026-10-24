@@ -628,11 +628,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Everything Claude gets for [situation]: the pretext, what it knows of the owner, the log, work and calendar, this chat. */
-    suspend fun claudePack(note: SecretaryPretext.Note, situation: SecretaryPretext.Part?, log: Boolean = true): String {
+    suspend fun claudePack(note: SecretaryPretext.Note, situation: SecretaryPretext.Part?, count: Boolean = true): String {
         val s = _state.value
         fun read(path: String): String? = s.vault?.let { v -> runCatching { repo.readPath(v, path) }.getOrNull() }
         val (knows, log) = withContext(Dispatchers.IO) { read(SecretaryPretext.KNOWS_PATH) to read(CLAUDE_LOG) }
-        if (log) deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
+        if (count) deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + (situation?.title ?: tr("ไม่ระบุเรื่อง", "no topic")))
         return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript())
     }
 

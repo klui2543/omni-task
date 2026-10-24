@@ -308,7 +308,7 @@ internal fun ClaudeSheet(vm: TaskViewModel, onDismiss: () -> Unit, onSend: ((Sec
     if (knowsOpen) KnowsDialog(vm) { knowsOpen = false }
     previewing?.let { _ ->
         var text by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(Unit) { note?.let { text = vm.claudePack(it, null, log = false) } }
+        LaunchedEffect(Unit) { note?.let { text = vm.claudePack(it, null, count = false) } }
         AlertDialog(
             onDismissRequest = { previewing = null },
             containerColor = C.raised,
