@@ -67,6 +67,7 @@ import app.omnitask.model.Status
 import app.omnitask.model.StuckLog
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
+import app.omnitask.model.SecretaryBook
 import app.omnitask.model.TaskKind
 import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
@@ -512,6 +513,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return SecretaryDesk.Ctx(
             s.tasks, s.events, s.today, LocalDateTime.now(), NewLook.skippedFor(s.today),
             othersEvent = { CalendarStyles.label(it.calendarId) != null },
+            claudeLog = claudeLogText,
         )
     }
 
@@ -524,6 +526,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
     }
     private var deskOpenedAt = 0L
+
+    /** Claude log as last read, for the morning brief (Claude's work is plain bullets there, not tasks). */
+    private var claudeLogText: String? = null
 
     /** The chat as it was before "start over", for "undo". */
     private var deskBefore: List<DeskTurn> = emptyList()
@@ -637,10 +642,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, SecretaryPretext.KNOWS_PATH, text.trimEnd() + "\n") } }
     }
 
-    /** The file handed to Claude, kept in the vault ("ส่งเลขา") to read or send again later. */
+    /**
+     * The file handed to Claude, kept in the vault ("ส่งเลขา") to read or send again later. Kept files older than a
+     * week go, so the folder does not grow: each is a copy of what the vault already holds.
+     */
     fun keepSendFile(name: String, text: String) {
         val vault = _state.value.vault ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, "${app.omnitask.data.VaultText.OMNI_DIR}/ส่งเลขา/$name", text) } }
+        val dir = SecretaryBook.SENT_DIR
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.writePath(vault, "$dir/$name", text) }
+            runCatching { SecretaryBook.staleSent(repo.namesIn(vault, dir), LocalDate.now()).forEach { repo.deletePath(vault, "$dir/$it") } }
+        }
     }
 
     /** The dates of one project's moves from the secretary's answer, taken together. */
@@ -996,7 +1008,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             // The assistant's log kept in order (months closed, index, search files): at most once a day, in the background.
             aiUpkeep()
             // When the secretary last wrote Claude log, so the today page can say when it stopped.
-            val secretary = withContext(Dispatchers.IO) { runCatching { Secretary.lastRun(repo.readPath(vault, CLAUDE_LOG)) }.getOrNull() }
+            val logText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, CLAUDE_LOG) }.getOrNull() }
+            claudeLogText = logText
+            val secretary = Secretary.lastRun(logText)
             _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {

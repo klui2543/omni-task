@@ -63,9 +63,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.Projects
+import app.omnitask.model.SecretaryBook
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.Task
@@ -108,6 +110,8 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         sending = note to part
     }
     sending?.let { (note, part) -> SendSheet(vm, note, part) { sending = null } }
+    var briefMore by remember { mutableStateOf<SecretaryBook.Brief?>(null) }
+    briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -127,7 +131,12 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         ) {
             itemsIndexed(turns) { i, t ->
                 t.mine?.let { Mine(it) }
-                t.reply?.let { r -> Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves) }
+                t.reply?.let { r ->
+                    Column {
+                        Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves)
+                        r.brief?.let { b -> BriefCard(b, state.tasks, onOpen, vm::toggleDone) { briefMore = b } }
+                    }
+                }
             }
         }
         if (resetAt > 0) Row(
@@ -267,6 +276,121 @@ private fun Answer(r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, o
                 }
             }
             if (done) Text(tr("ทำแล้ว", "Done"), color = C.muted, fontSize = TS.caption)
+        }
+    }
+}
+
+/** [task] as it is now (ticked or not), when it is still in the vault. */
+private fun now(task: Task, tasks: List<Task>): Task = tasks.firstOrNull { it.key == task.key && it.title == task.title } ?: task
+
+/**
+ * The morning brief, short (the owner's pick, mock B): one row per thing waiting on the owner, with a circle to tick it
+ * and a tap to see where to do it and when it counts as done; then one line for what the secretary closed and what
+ * Claude is ready to start, which opens the list with the reasons.
+ */
+@Composable
+private fun BriefCard(b: SecretaryBook.Brief, tasks: List<Task>, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onMore: () -> Unit) {
+    var open by remember { mutableStateOf<String?>(null) }
+    Column(
+        Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(16.dp))
+            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        b.waiting.forEachIndexed { i, item ->
+            val t = now(item.task, tasks)
+            val done = !t.isOpen
+            val expanded = open == item.task.key
+            if (i > 0) Box(Modifier.fillMaxWidth().padding(start = 48.dp).height(1.dp).background(C.divider))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { open = if (expanded) null else item.task.key }.heightIn(min = 52.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).clickable { onTick(t) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(22.dp).clip(CircleShape).background(if (done) C.lime else C.card).border(2.dp, if (done) C.lime else C.muted, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { if (done) Icon(Ic.check, tr("เสร็จแล้ว", "Done"), tint = C.onAccent, modifier = Modifier.size(14.dp)) }
+                }
+                Column(Modifier.weight(1f).padding(start = 6.dp, top = 6.dp, bottom = 6.dp)) {
+                    Text(
+                        t.title, color = if (done) C.muted else C.text, fontSize = TS.body, maxLines = if (expanded) 4 else 2, overflow = TextOverflow.Ellipsis,
+                        textDecoration = if (done) TextDecoration.LineThrough else null,
+                    )
+                    val due = t.due
+                    Text(
+                        listOfNotNull(item.project, due?.let { tr("กำหนดจริง ", "Due ") + it.format(SHORT_DATE) }).joinToString(", "),
+                        color = if (due != null && !done) C.amber else C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Icon(if (expanded) Ic.up else Ic.down, if (expanded) tr("ย่อ", "Less") else tr("ดูรายละเอียด", "More"), tint = C.muted, modifier = Modifier.size(18.dp))
+            }
+            if (expanded) Column(Modifier.fillMaxWidth().padding(start = 50.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                item.where?.let { Text(tr("ที่: ", "Where: ") + it, color = C.text2, fontSize = TS.caption) }
+                item.doneWhen?.let { Text(tr("เสร็จเมื่อ: ", "Done when: ") + it, color = C.text2, fontSize = TS.caption) }
+                if (item.where == null && item.doneWhen == null) Text(tr("เลขายังไม่ได้เขียนว่าทำที่ไหน", "The secretary has not written where yet"), color = C.muted, fontSize = TS.caption)
+                Text(
+                    tr("เปิดงาน", "Open"),
+                    Modifier.padding(top = 4.dp).heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accentDeep).border(1.dp, C.accentLine, RoundedCornerShape(22.dp))
+                        .clickable { onOpen(t) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                    color = C.text, fontSize = TS.body,
+                )
+            }
+        }
+        if (b.waiting.isEmpty()) Text(
+            tr("วันนี้ไม่มีเรื่องรอคุณ", "Nothing waits on you today"), Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp), color = C.text2, fontSize = TS.body,
+        )
+        if (b.closed.isNotEmpty() || b.claudeReady.isNotEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(start = 8.dp).height(1.dp).background(C.divider))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onMore() }.heightIn(min = 48.dp).padding(start = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Ic.check, null, tint = C.lime, modifier = Modifier.size(18.dp))
+                Text(
+                    listOfNotNull(
+                        b.closed.size.takeIf { it > 0 }?.let { tr("ปิดให้แล้ว $it ข้อ", "$it closed for you") },
+                        b.claudeReady.size.takeIf { it > 0 }?.let { tr("Claude พร้อมทำ $it เรื่อง", "Claude is ready for $it") },
+                    ).joinToString(", "),
+                    Modifier.weight(1f).padding(start = 8.dp), color = C.text2, fontSize = TS.caption,
+                )
+                Text(tr("ดู", "See"), color = C.accentText, fontSize = TS.body, modifier = Modifier.padding(horizontal = 8.dp))
+            }
+        }
+    }
+}
+
+/** What the secretary closed, each with its reason and a way to open it again, and the work Claude is ready to start. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BriefMoreSheet(b: SecretaryBook.Brief, tasks: List<Task>, onTick: (Task) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.raised) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (b.closed.isNotEmpty()) {
+                Text(tr("เลขาปิดให้แล้ว ${b.closed.size} ข้อ", "Closed for you: ${b.closed.size}"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+                Text(tr("ปิดเฉพาะข้อที่มีหลักฐาน ผิดก็เปิดกลับได้", "Closed only on evidence. Open it again if it was wrong"), color = C.muted, fontSize = TS.caption)
+                b.closed.forEach { c ->
+                    val t = now(c.task, tasks)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(12.dp)).padding(start = 14.dp, end = 6.dp, top = 12.dp)) {
+                        Projects.projectOf(t)?.let { Text(it, color = C.muted, fontSize = TS.caption) }
+                        Text(t.title, color = if (t.isOpen) C.text else C.text2, fontSize = TS.body, textDecoration = if (t.isOpen) null else TextDecoration.LineThrough)
+                        Text(tr("เหตุผล: ", "Why: ") + c.reason, color = C.text, fontSize = TS.caption, modifier = Modifier.padding(top = 2.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            if (t.isOpen) Text(tr("เปิดกลับแล้ว", "Opened again"), color = C.muted, fontSize = TS.caption, modifier = Modifier.padding(12.dp))
+                            else TextButton(onClick = { onTick(t) }, modifier = Modifier.heightIn(min = 44.dp)) { Text(tr("เปิดกลับ", "Open again"), color = C.accentText, fontSize = TS.body) }
+                        }
+                    }
+                }
+            }
+            if (b.claudeReady.isNotEmpty()) {
+                Text(
+                    tr("Claude พร้อมทำ ${b.claudeReady.size} เรื่อง", "Claude is ready for ${b.claudeReady.size}"),
+                    Modifier.padding(top = if (b.closed.isNotEmpty()) 8.dp else 0.dp), color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold,
+                )
+                b.claudeReady.forEachIndexed { i, w -> Text("${i + 1}. $w", color = C.text2, fontSize = TS.body) }
+                Text(tr("กด คุยกับ Claude แล้วบอกว่าเริ่มเรื่องไหน", "Tap Talk to Claude and say which one to start"), color = C.muted, fontSize = TS.caption)
+            }
         }
     }
 }
