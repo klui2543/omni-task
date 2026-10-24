@@ -164,7 +164,7 @@ fun SettingsScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (newLook && page != null) SquareButton(Ic.back, tr("กลับ", "Back")) { page = null }
+                if (newLook && page != null) SquareButton(Ic.back, tr("กลับ", "Back"), { page = null })
                 else if (onBack != null) SquareButton(Ic.back, tr("กลับ", "Back"), onBack)
                 Text(
                     if (newLook && page != null) PAGES.first { it.first == page }.second else tr("ตั้งค่า", "Settings"), Modifier.padding(start = if (tab && !(newLook && page != null)) 4.dp else 12.dp),
