@@ -230,6 +230,27 @@ object Ygdrasil {
 
     // ---- Tasks with no project yet ----
 
+    /** The tag of the pretend project that holds the tasks with no project; never written to a task. */
+    const val INBOX = "~ยังไม่มีบ้าน"
+
+    fun isInbox(tag: String) = tag == INBOX || tag.startsWith("$INBOX/")
+
+    /**
+     * [tree] with the tasks that have no project as one more, pretend, project at the end (owner's pick, 2026-10-24):
+     * one branch per first tag (no tag first), drawn and folded like every other project.
+     */
+    fun withInbox(tree: Tree, strays: List<Strays>): Tree {
+        if (strays.isEmpty()) return tree
+        val groups = strays.map { g ->
+            val path = (g.tag ?: tr("ไม่มีแท็ก", "No tag")).replace('/', '-')
+            val node = Branches.Node(INBOX, path, Branches.State.ACTIVE, g.tasks, g.tasks, emptyList())
+            Limb(node, g.tasks, emptyList())
+        }
+        val all = strays.flatMap { it.tasks }
+        val root = Branches.Node(INBOX, "", Branches.State.ACTIVE, emptyList(), all, groups.map { it.node })
+        return tree.copy(worlds = tree.worlds + Limb(root, emptyList(), groups))
+    }
+
     /** Tasks with no project, gathered by the first tag they have ([tag] null: no tag at all). */
     data class Strays(val tag: String?, val tasks: List<Task>)
 

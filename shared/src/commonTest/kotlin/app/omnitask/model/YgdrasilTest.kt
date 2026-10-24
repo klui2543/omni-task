@@ -234,4 +234,18 @@ class YgdrasilTest {
         assertTrue("Siriraj" in week)
         assertFalse(Ygdrasil.inReach(tasks.first { it.title.startsWith("ลองหน้าเว็บ") }, Ygdrasil.Reach.MONTH, today))
     }
+
+    @Test
+    fun tasksWithNoProjectGrowAsOneMoreProjectAtTheEnd() {
+        val tree = Ygdrasil.grow(tasks, emptyMap(), today, Ygdrasil.Filter())
+        val strays = Ygdrasil.strays(tasks, today, Ygdrasil.Filter(), Ygdrasil.StraySort.DUE)
+        val grown = Ygdrasil.withInbox(tree, strays)
+        val inbox = grown.worlds.last()
+        assertEquals(Ygdrasil.INBOX, inbox.node.tag)
+        assertTrue(inbox.children.all { Ygdrasil.isInbox(it.node.tag) })
+        assertTrue(inbox.flatten().flatMap { it.tasks }.any { it.title == "งานไม่มี tag" })
+        assertEquals(tree.worlds.size + 1, grown.worlds.size)
+        // It lays out like any project, branches and all.
+        assertTrue(Ygdrasil.layout(grown, emptySet()).spots.any { it.limb?.node?.tag?.startsWith(Ygdrasil.INBOX + "/") == true })
+    }
 }
