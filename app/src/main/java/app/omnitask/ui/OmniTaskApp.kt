@@ -224,6 +224,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
             urgent = { UrgentGroup(state.urgentRule, vm::setUrgentRule) },
             notifyLink = { NotifyLink { notifyOpen = true } },
             claudeRows = { ClaudeSettingsRows(vm) },
+                            timeWords = { TimeWordsGroup(state.timeWords, vm::setTimeWords) },
         ) { settingsOpen = false }
         return
     }
@@ -301,6 +302,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                             urgent = { UrgentGroup(state.urgentRule, vm::setUrgentRule) },
                             notifyLink = { NotifyLink { notifyOpen = true } },
                             claudeRows = { ClaudeSettingsRows(vm) },
+                            timeWords = { TimeWordsGroup(state.timeWords, vm::setTimeWords) },
                         )
                     }
                     }

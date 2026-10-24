@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -27,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import app.omnitask.model.tr
 import app.omnitask.time.*
 import kotlinx.coroutines.delay
+import kotlinx.datetime.LocalDate
 
 /**
  * The voice note sheet: recording (time and a stop button, nothing read back), Gemini writing it down, then the
@@ -152,54 +156,163 @@ private fun Recording(v: TaskViewModel.VoiceUi, since: Long, vm: TaskViewModel) 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Review(review: TaskViewModel.VoiceReview, vm: TaskViewModel) {
-    // Edits and removals stay here until saved; a new recording brings a new list.
-    val texts = remember(review.dir) { mutableStateListOf(*review.items.map { it.text }.toTypedArray()) }
+    // Edits and removals stay here until saved; a new recording brings a new list. The day and time said were taken
+    // out of the words (SpokenWhen) and sit under each task as chips, to change or remove.
+    val drafts = remember(review.dir) { mutableStateListOf(*review.items.map { TaskViewModel.VoiceDraft(it.heard) }.toTypedArray()) }
     val dups = remember(review.dir) { mutableStateListOf(*review.items.map { it.dup }.toTypedArray()) }
+    var whenOf by remember { mutableStateOf<Int?>(null) }
+    var projectOf by remember { mutableStateOf<Int?>(null) }
     val minutes = (review.seconds + 59) / 60
+    val today = LocalDate.now()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            if (texts.isEmpty()) tr("ไม่ได้ยินงานในเสียงนี้", "No tasks heard in this recording")
-            else tr("ได้ ${texts.size} งานจากเสียง $minutes นาที", "${texts.size} tasks from $minutes min of speech"),
+            if (drafts.isEmpty()) tr("ไม่ได้ยินงานในเสียงนี้", "No tasks heard in this recording")
+            else tr("ได้ ${drafts.size} งานจากเสียง $minutes นาที", "${drafts.size} tasks from $minutes min of speech"),
             color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold,
         )
-        Text(tr("แตะเพื่อแก้คำ ไม่ใส่วันที่และโปรเจกต์ให้ จัดทีหลังในถาด", "Tap to fix a word. No dates or projects are set; place them later in the tray"), color = C.muted, fontSize = TS.caption)
-        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            texts.forEachIndexed { i, t ->
+        Text(tr("วันเวลาที่พูดแยกออกมาแล้ว แตะชิปเพื่อเปลี่ยนหรือลบ แตะคำเพื่อแก้", "The day and time said are taken out. Tap a chip to change it, the words to fix them"), color = C.muted, fontSize = TS.caption)
+        Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            drafts.forEachIndexed { i, d ->
                 val dup = dups.getOrNull(i)
+                val h = d.heard
                 Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.bg)
                         .border(1.dp, if (dup != null) C.amber.copy(alpha = 0.5f) else C.cardBorder, RoundedCornerShape(12.dp))
-                        .padding(start = 12.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                        .padding(start = 12.dp, end = 2.dp, top = 4.dp, bottom = 8.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicTextField(
-                            t, { texts[i] = it }, Modifier.weight(1f).padding(vertical = 8.dp),
+                            h.title, { drafts[i] = d.copy(heard = h.copy(title = it)) }, Modifier.weight(1f).padding(vertical = 8.dp),
                             textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont), cursorBrush = SolidColor(C.accent),
                         )
                         Box(
-                            Modifier.size(40.dp).clip(CircleShape).clickable(onClickLabel = tr("ไม่เอางานนี้", "Leave this one out")) { texts.removeAt(i); dups.removeAt(i) },
+                            Modifier.size(40.dp).clip(CircleShape).clickable(onClickLabel = tr("ไม่เอางานนี้", "Leave this one out")) { drafts.removeAt(i); dups.removeAt(i) },
                             contentAlignment = Alignment.Center,
                         ) { Icon(Ic.close, tr("ไม่เอางานนี้", "Leave this one out"), tint = C.muted, modifier = Modifier.size(16.dp)) }
+                    }
+                    FlowRow(Modifier.padding(end = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val date = h.date
+                        if (date != null) {
+                            val due = h.field == app.omnitask.data.TaskLine.DateField.DUE
+                            val label = (if (due) "📅 " else "⏳ ") + dayWord(date, today) + (h.time?.let { " %02d:%02d".format(it.hour, it.minute) } ?: "")
+                            WhenChip(label, if (due) C.red else C.amber, if (due) C.redSoft else C.amberSoft, { whenOf = i }) {
+                                drafts[i] = d.copy(heard = h.copy(date = null, time = null))
+                            }
+                        } else WhenChip(tr("+ วัน", "+ Day"), C.muted, C.raised, { whenOf = i }, null)
+                        val project = d.project
+                        if (project != null) WhenChip("#$project", C.accentText, C.accentSoft, { projectOf = i }) { drafts[i] = d.copy(project = null) }
+                        else WhenChip(tr("+ โปรเจกต์", "+ Project"), C.muted, C.raised, { projectOf = i }, null)
                     }
                     if (dup != null) Text(
                         tr("อาจซ้ำกับงานที่มีอยู่แล้ว: ${dup.title}", "May repeat a task you have: ${dup.title}") +
                             (dup.created?.let { tr(" (ค้างตั้งแต่ ${it.format(SHORT_DATE)})", " (open since ${it.format(SHORT_DATE)})") } ?: ""),
-                        Modifier.padding(bottom = 6.dp, end = 10.dp), color = C.amber, fontSize = TS.caption, maxLines = 2,
+                        Modifier.padding(top = 6.dp, end = 10.dp), color = C.amber, fontSize = TS.caption, maxLines = 2,
                     )
                 }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton(tr("ทิ้งทั้งหมด", "Throw all away"), { vm.dropVoice(review.dir) }, Modifier.weight(1f))
-            if (texts.any { it.isNotBlank() }) PrimaryButton(
-                tr("บันทึก ${texts.count { it.isNotBlank() }} งานลงถาด", "Save ${texts.count { it.isNotBlank() }} to the tray"),
-                { vm.saveVoice(texts.toList()) }, Modifier.weight(2f),
+            val n = drafts.count { it.heard.title.isNotBlank() }
+            val homed = drafts.all { it.project != null }
+            if (n > 0) PrimaryButton(
+                if (homed) tr("บันทึก $n งาน", "Save $n") else tr("บันทึก $n งานลงถาด", "Save $n to the tray"),
+                { vm.saveVoice(drafts.toList()) }, Modifier.weight(2f),
             )
         }
         Text(tr("บันทึกแล้วลบไฟล์เสียงทิ้ง", "The recording is deleted once saved"), Modifier.align(Alignment.CenterHorizontally), color = C.muted, fontSize = TS.caption)
     }
+    whenOf?.let { i ->
+        drafts.getOrNull(i)?.let { d -> WhenDialog(d.heard, today, { whenOf = null }) { drafts[i] = d.copy(heard = it); whenOf = null } }
+    }
+    projectOf?.let { i ->
+        drafts.getOrNull(i)?.let { d ->
+            val names = vm.state.value.projectTags.orEmpty().sorted()
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { projectOf = null },
+                containerColor = C.raised,
+                title = { Text(tr("โปรเจกต์", "Project")) },
+                text = {
+                    Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        names.forEach { p ->
+                            Text(
+                                p, Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (p == d.project) C.accentSoft else C.card)
+                                    .clickable { drafts[i] = d.copy(project = p); projectOf = null }.padding(12.dp),
+                                color = C.text, fontSize = TS.body,
+                            )
+                        }
+                        Text(
+                            tr("ยังไม่มีบ้าน (จัดทีหลังในถาด)", "No project yet (place it later)"),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).clickable { drafts[i] = d.copy(project = null); projectOf = null }.padding(12.dp),
+                            color = C.text2, fontSize = TS.body,
+                        )
+                    }
+                },
+                confirmButton = { androidx.compose.material3.TextButton(onClick = { projectOf = null }) { Text(tr("ปิด", "Close"), color = C.text2) } },
+            )
+        }
+    }
+}
+
+private fun dayWord(d: LocalDate, today: LocalDate): String = when (d) {
+    today -> tr("วันนี้", "Today")
+    today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow")
+    else -> d.format(SHORT_DATE)
+}
+
+/** A detail under a heard task: a tap changes it, the cross ([onClear], when there is one) takes it off. */
+@Composable
+private fun WhenChip(label: String, color: Color, bg: Color, onClick: () -> Unit, onClear: (() -> Unit)?) {
+    Row(
+        Modifier.heightIn(min = 32.dp).clip(RoundedCornerShape(12.dp)).background(bg).clickable(onClick = onClick).padding(start = 10.dp, end = if (onClear != null) 2.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = color, fontSize = TS.caption)
+        if (onClear != null) Box(Modifier.size(28.dp).clip(CircleShape).clickable(onClick = onClear), contentAlignment = Alignment.Center) {
+            Icon(Ic.close, tr("เอาออก", "Remove"), tint = color, modifier = Modifier.size(12.dp))
+        }
+    }
+}
+
+/** The day, time and kind of date for a heard task: quick days, the phone's own pickers, and 📅 or ⏳. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WhenDialog(h: app.omnitask.model.SpokenWhen.Heard, today: LocalDate, onDismiss: () -> Unit, onDone: (app.omnitask.model.SpokenWhen.Heard) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var date by remember { mutableStateOf(h.date) }
+    var time by remember { mutableStateOf(h.time) }
+    var field by remember { mutableStateOf(h.field) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(h.title.ifBlank { tr("กำหนด", "When") }, maxLines = 2) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    (0..2).map { today.plusDays(it.toLong()) }.forEach { d -> Chip(dayWord(d, today), date == d, { date = d }) }
+                    Chip(tr("เลือกวัน...", "Pick a day..."), date != null && date!! > today.plusDays(2), { pickSystemDate(context, date ?: today) { date = it } })
+                    Chip(tr("ไม่ใส่วัน", "No day"), date == null, { date = null; time = null })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(tr("เวลา", "Time"), Modifier.weight(1f), color = C.text, fontSize = TS.body)
+                    Chip(time?.let { "%02d:%02d".format(it.hour, it.minute) } ?: tr("เลือกเวลา", "Pick a time"), time != null, {
+                        pickSystemTime(context, time ?: kotlinx.datetime.LocalTime(17, 0)) { time = it; if (date == null) date = today }
+                    })
+                    if (time != null) Chip(tr("ไม่ใส่เวลา", "No time"), false, { time = null })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(tr("ชนิดวัน", "Kind"), Modifier.weight(1f), color = C.text, fontSize = TS.body)
+                    Chip(tr("📅 กำหนดจริง", "📅 Deadline"), field == app.omnitask.data.TaskLine.DateField.DUE, { field = app.omnitask.data.TaskLine.DateField.DUE })
+                    Chip(tr("⏳ เป้าตัวเอง", "⏳ Own target"), field == app.omnitask.data.TaskLine.DateField.SCHEDULED, { field = app.omnitask.data.TaskLine.DateField.SCHEDULED })
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { onDone(h.copy(date = date, time = if (date == null) null else time, field = field)) }) { Text(tr("ตกลง", "OK"), color = C.accent) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+    )
 }
 
 /**

@@ -13,9 +13,9 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /**
- * Tasks spoken into the phone: a recording goes to Gemini, which writes it down and splits it into tasks. They are
- * kept rough, as the owner said them: no date, tag or priority is set, even when the words say "tomorrow" (most of
- * the owner's dates are their own targets, so they are placed later). The lines land in the no-project tray.
+ * Tasks spoken into the phone: a recording goes to Gemini, which writes it down and splits it into tasks, keeping the
+ * day and time words as said. [SpokenWhen] then takes those words out as the task's date and reminder, for the owner
+ * to check before the lines are written.
  */
 object VoiceNotes {
 

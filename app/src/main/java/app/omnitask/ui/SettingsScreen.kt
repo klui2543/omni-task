@@ -111,6 +111,7 @@ fun SettingsScreen(
     urgent: (@Composable () -> Unit)? = null,
     notifyLink: (@Composable () -> Unit)? = null,
     claudeRows: (@Composable () -> Unit)? = null,
+    timeWords: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -190,6 +191,7 @@ fun SettingsScreen(
         if (newLook && page == "tasks") urgent?.let { item { it() } }
         if (newLook && page == "system") notifyLink?.let { item { it() } }
         if (newLook && page == "ai") claudeRows?.let { item { it() } }
+        if (show("tasks")) timeWords?.let { item { it() } }
         if (ai != null && show("ai")) item { AiKeyGroup(ai) }
         if (show("look")) item {
             SettingsGroup(tr("ภาษา", "Language")) {

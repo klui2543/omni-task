@@ -1,7 +1,9 @@
 package app.omnitask.ui
 
+import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import app.omnitask.time.*
 
@@ -17,5 +19,17 @@ fun pickSystemTime(context: Context, initial: LocalTime, onPick: (LocalTime) -> 
         initial.hour,
         initial.minute,
         true,
+    ).show()
+}
+
+/** The phone's own date picker. */
+fun pickSystemDate(context: Context, initial: LocalDate, onPick: (LocalDate) -> Unit) {
+    DatePickerDialog(
+        context,
+        android.R.style.Theme_DeviceDefault_Dialog,
+        { _, year, month, day -> onPick(LocalDate(year, month + 1, day)) },
+        initial.year,
+        initial.monthNumber - 1,
+        initial.dayOfMonth,
     ).show()
 }

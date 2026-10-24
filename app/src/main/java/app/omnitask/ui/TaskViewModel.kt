@@ -214,6 +214,8 @@ data class UiState(
     val strictProjects: Set<String> = emptySet(),
     /** How far ahead a project's work opens it in Ygdrasil (work past its 📅 date always does). */
     val treeReach: Ygdrasil.Reach = Ygdrasil.Reach.WEEK,
+    /** The owner's time words for spoken tasks ("เย็น" is 17:00), from กฎเวลา.md. */
+    val timeWords: List<app.omnitask.model.TimeWords.Word> = app.omnitask.model.TimeWords.DEFAULT,
     /** The Omni folder on Google Drive: whether this phone uses it and how the last read went. */
     val drive: DriveUi = DriveUi(),
     /** The Gemini assistant: the key, the brief at the top of the assistant page, and calls under way. */
@@ -476,7 +478,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** The tasks heard in the recording in [dir], to check before they go to the tray. [dup] is an open task each may repeat. */
     data class VoiceReview(val dir: java.io.File, val seconds: Long, val items: List<VoiceItem>)
 
-    data class VoiceItem(val text: String, val dup: Task?)
+    /** A heard task: its words, the day and time read from them ([heard]), and an open task it may repeat. */
+    data class VoiceItem(val text: String, val dup: Task?, val heard: app.omnitask.model.SpokenWhen.Heard)
+
+    /** A heard task as the owner leaves it in the check: the words, the day, time and kind of date, and a project. */
+    data class VoiceDraft(val heard: app.omnitask.model.SpokenWhen.Heard, val project: String? = null)
 
     private val _voice = MutableStateFlow(VoiceUi())
     val voice: StateFlow<VoiceUi> = _voice
@@ -516,6 +522,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
     }
     private var deskOpenedAt = 0L
+
+    /** The chat as it was before "start over", for "undo". */
+    private var deskBefore: List<DeskTurn> = emptyList()
+
+    /** Starts the secretary's chat over: today's greeting only, so what goes to Claude no longer carries the old talk. */
+    fun deskReset() {
+        deskBefore = desk.toList()
+        desk.clear()
+        deskOffered = emptySet()
+        deskOpenedAt = System.currentTimeMillis()
+        desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
+    }
+
+    fun deskUndoReset() {
+        if (deskBefore.isEmpty()) return
+        desk.clear()
+        desk.addAll(deskBefore)
+        deskBefore = emptyList()
+    }
 
     /** The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. */
     fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList()) {
@@ -753,7 +778,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val since = VoiceRec.since(dir) ?: dir.lastModified()
         val seconds = (VoiceRec.pieces(dir).maxOfOrNull { it.lastModified() } ?: since).minus(since).coerceAtLeast(0) / 1000
         val open = _state.value.tasks
-        val items = live.map { VoiceItem(it.text, VoiceNotes.duplicateOf(it.text, open)) }
+        val now = java.time.LocalTime.now().let { kotlinx.datetime.LocalTime(it.hour, it.minute) }
+        val items = live.map {
+            val heard = app.omnitask.model.SpokenWhen.read(it.text, _state.value.timeWords, LocalDate.now(), now)
+            VoiceItem(it.text, VoiceNotes.duplicateOf(heard.title, open), heard)
+        }
         _voice.update { it.copy(busy = false, live = live, unsent = 0, review = VoiceReview(dir, seconds, items), waiting = VoiceRec.waiting(app)) }
     }
 
@@ -769,20 +798,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { finish(dir, again = true) }
     }
 
-    /** Puts the checked tasks at the end of the task note as bare lines (the no-project tray), then drops the recording. */
-    fun saveVoice(texts: List<String>) {
+    /**
+     * Puts the checked tasks at the end of the task note, with the day, time and project the owner left on each (a
+     * task with none is a bare line in the no-project tray), then drops the recording.
+     */
+    fun saveVoice(drafts: List<VoiceDraft>) {
         val review = _voice.value.review ?: return
         val vault = _state.value.vault ?: return
         val app = getApplication<Application>()
-        val titles = texts.map(VoiceNotes::clean).filter { it.isNotEmpty() }
+        val today = LocalDate.now()
+        val kept = drafts.map { it.copy(heard = it.heard.copy(title = VoiceNotes.clean(it.heard.title))) }.filter { it.heard.title.isNotEmpty() }
+        val lines = kept.map { app.omnitask.model.SpokenWhen.line(it.heard, it.project, today) }
+        val titles = kept.map { it.heard.title }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    if (titles.isNotEmpty()) {
-                        val today = LocalDate.now()
-                        repo.appendLine(vault, VaultRepository.TASK_FILE, titles.joinToString("\n") { VoiceNotes.line(it, today) })
-                    }
-                }
+                runCatching { if (lines.isNotEmpty()) repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n")) }
             }
             result.fold(
                 {
@@ -790,14 +820,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val now = System.currentTimeMillis()
                     val stale = voiceFresh.all.filter { (it.value as? Long)?.let { at -> now - at > 2 * 24 * 60 * 60 * 1000L } == true }.keys
                     voiceFresh.edit().apply { stale.forEach { remove(it) }; titles.forEach { putLong(it, now) } }.apply()
-                    titles.forEach { noteCreated(VoiceNotes.line(it, LocalDate.now())) }
+                    lines.forEach { noteCreated(it) }
                     _voice.update { it.copy(review = null, live = emptyList(), words = "", waiting = VoiceRec.waiting(app)) }
-                    showMessage(tr("บันทึก ${titles.size} งานไว้ในถาด ยังไม่มีบ้าน", "Saved ${titles.size} tasks to the no-project tray"))
+                    showMessage(tr("บันทึก ${lines.size} งานแล้ว", "Saved ${lines.size} tasks"))
                     reload()
                 },
                 { e -> showMessage(tr("บันทึกไม่ได้: ${e.message}", "Could not save: ${e.message}")) },
             )
         }
+    }
+
+    fun setTimeWords(words: List<app.omnitask.model.TimeWords.Word>) {
+        _state.update { it.copy(timeWords = words) }
+        val vault = _state.value.vault ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.writePath(vault, app.omnitask.model.TimeWords.PATH, app.omnitask.model.TimeWords.render(words)) } }
     }
 
     /** Throws away a recording that is under review or waiting. */
@@ -944,6 +980,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
+            val timeWords = withContext(Dispatchers.IO) { runCatching { app.omnitask.model.TimeWords.parse(repo.readPath(vault, app.omnitask.model.TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
             // Never chosen: the projects every first tag named so far are kept as the choice, so none disappears.
@@ -976,6 +1013,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     conflicts = result.getOrNull()?.conflicts ?: it.conflicts,
                     vaultName = vaultName,
                     profile = profile,
+                    timeWords = timeWords,
                     insight = Insight.next(result.getOrNull()?.tasks ?: it.tasks, doneLog(), profile, LocalDate.now(), declined(), behaviorNow()),
                     drive = driveUi(it.drive, result.getOrNull()?.drive),
                     message = result.exceptionOrNull()?.let { e -> tr("อ่านตู้โน้ตไม่ได้: ${e.message}", "Cannot read the vault: ${e.message}") }

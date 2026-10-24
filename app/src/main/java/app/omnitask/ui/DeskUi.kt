@@ -91,6 +91,9 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     val picks = remember { mutableStateMapOf<Int, Set<String>>() }
     var claudeOpen by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
+    // When the chat was started over: "undo" shows for a few seconds after.
+    var resetAt by remember { mutableStateOf(0L) }
+    LaunchedEffect(resetAt) { if (resetAt > 0) { kotlinx.coroutines.delay(6000); resetAt = 0L } }
 
     fun ask(chip: SecretaryDesk.Chip) {
         if (chip.ask == SecretaryDesk.Ask.CLAUDE) { claudeOpen = true; return }
@@ -109,6 +112,12 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(tr("เลขา", "Secretary"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
+            // Start over: today's greeting only, with a moment to undo it.
+            Text(
+                tr("เริ่มใหม่", "Start over"),
+                Modifier.padding(end = 4.dp).clip(RoundedCornerShape(12.dp)).clickable { vm.deskReset(); resetAt = System.currentTimeMillis() }.padding(horizontal = 12.dp, vertical = 10.dp),
+                color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.Medium,
+            )
             SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
         }
         LazyColumn(
@@ -121,13 +130,34 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 t.reply?.let { r -> Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves) }
             }
         }
-        val chips = turns.lastOrNull { it.reply != null }?.reply?.chips.orEmpty()
+        if (resetAt > 0) Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(14.dp)).background(C.raised).padding(start = 14.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(tr("เริ่มใหม่แล้ว", "Started over"), Modifier.weight(1f), color = C.text, fontSize = TS.body)
+            Text(
+                tr("เลิกทำ", "Undo"),
+                Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.deskUndoReset(); resetAt = 0L }.padding(horizontal = 12.dp, vertical = 12.dp),
+                color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold,
+            )
+        }
+        // Talking to Claude is the first button, always there and in the accent; the answer's own buttons follow.
+        val chips = turns.lastOrNull { it.reply != null }?.reply?.chips.orEmpty().filter { it.ask != SecretaryDesk.Ask.CLAUDE }
         val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         LazyRow(
             Modifier.fillMaxWidth().padding(top = 6.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item {
+                Row(
+                    Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(C.accent).clickable { claudeOpen = true }.padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Ic.mic, null, tint = C.onAccent, modifier = Modifier.size(16.dp))
+                    Text(tr("คุยกับ Claude", "Talk to Claude"), Modifier.padding(start = 6.dp), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+            }
             items(chips) { c ->
                 val first = c == chips.first()
                 Box(
