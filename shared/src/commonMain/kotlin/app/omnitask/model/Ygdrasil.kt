@@ -246,6 +246,8 @@ object Ygdrasil {
     /** A folded world that tells its next task. */
     const val WIDE_W = NODE_W + COL
     const val WIDE_H = 58f
+    /** An open world whose work opened it: its name, then why, on a second line inside the card. */
+    const val URGENT_H = 56f
 
     enum class Kind { TRUNK, LIMB, TASK, MORE }
 
@@ -306,9 +308,11 @@ object Ygdrasil {
             }
             // A folded world with a note is one wide row: its name, then the task to do next.
             val wide = closed && depth == 1 && l.node.tag in notes
-            val h = maxOf(if (wide) WIDE_H else NODE_H, y - top)
+            val urgent = !closed && depth == 1 && notes[l.node.tag]?.opens == true
+            val nodeH = if (wide) WIDE_H else if (urgent) URGENT_H else NODE_H
+            val h = maxOf(nodeH, y - top)
             val s = Spot(
-                Kind.LIMB, depth * COL, top + h / 2, if (wide) WIDE_W else NODE_W, if (wide) WIDE_H else NODE_H,
+                Kind.LIMB, depth * COL, top + h / 2, if (wide) WIDE_W else NODE_W, nodeH,
                 limb = l, count = if (closed) l.matched else 0, folded = closed,
             )
             spots += s

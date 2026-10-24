@@ -425,7 +425,14 @@ fun YgdrasilScreen(
                             ) {
                                 if (!world) Box(Modifier.size(8.dp).clip(CircleShape).background(n.state.color))
                                 val note = notes[n.tag]
-                                if (world && s.folded && note != null && s.w > Ygdrasil.NODE_W) Column(Modifier.weight(1f)) {
+                                if (world && !s.folded && note != null && note.opens) Column(Modifier.weight(1f)) {
+                                    // Why it opened on its own, inside the card (the owner's pick, mock ค).
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("#" + n.name, Modifier.weight(1f), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (n.all.isNotEmpty()) Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
+                                    }
+                                    Box(Modifier.padding(top = 3.dp)) { TreeBadges(note, reach) }
+                                } else if (world && s.folded && note != null && s.w > Ygdrasil.NODE_W) Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             "#" + n.name, Modifier.weight(1f, fill = false).padding(end = 6.dp), color = C.accentText, fontSize = TS.caption,
@@ -441,16 +448,23 @@ fun YgdrasilScreen(
                                     color = if (world) C.accentText else C.text, fontSize = TS.caption,
                                     fontWeight = if (world) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
-                                if (s.folded) {
+                                if (world && !s.folded && note != null && note.opens) Unit
+                                else if (s.folded) {
                                     Text("+${s.count}", Modifier.clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 6.dp, vertical = 1.dp), color = C.text2, fontSize = TS.micro)
                                 } else if (n.all.isNotEmpty()) {
                                     Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
                                 }
                             }
-                            // An open project says why it opened on its own.
+                            // A thin bar along the card's bottom edge: the share of its open work past due, then past target.
                             val note = notes[n.tag]
-                            if (world && !s.folded && note != null && note.opens) {
-                                Box(Modifier.offset(s.x.dp, (s.y + s.h / 2 + 4).dp)) { TreeBadges(note, reach) }
+                            val open = n.all.size - n.done
+                            if (world && note != null && note.opens && open > 0 && (note.late > 0 || note.targetLate > 0)) Row(
+                                Modifier.offset((s.x + 1).dp, (s.y + s.h / 2 - 4).dp).width((s.w - 2).dp).height(3.dp),
+                            ) {
+                                if (note.late > 0) Box(Modifier.weight(note.late.toFloat()).fillMaxHeight().background(C.red))
+                                if (note.targetLate > 0) Box(Modifier.weight(note.targetLate.toFloat()).fillMaxHeight().background(C.amber))
+                                val rest = open - note.late - note.targetLate
+                                if (rest > 0) Box(Modifier.weight(rest.toFloat()).fillMaxHeight().background(C.cardBorder))
                             }
                         }
                         Ygdrasil.Kind.TASK -> {
@@ -697,13 +711,17 @@ fun YgdrasilEntry(onClick: () -> Unit) {
 @Composable
 private fun TreeBadges(u: Ygdrasil.Urgency, reach: Ygdrasil.Reach) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (u.late > 0) TreeBadge(tr("เลยกำหนด ${u.late}", "${u.late} past due"), C.red, C.redSoft)
-        if (u.within > 0) TreeBadge("${reach.label} ${u.within}", C.accentText, C.accentSoft)
-        if (u.targetLate > 0) TreeBadge(tr("เลยเป้า ${u.targetLate}", "${u.targetLate} past target"), C.amber, C.amberSoft)
+        if (u.late > 0) TreeBadge(tr("เลยกำหนด ${u.late}", "${u.late} past due"), C.red)
+        if (u.targetLate > 0) TreeBadge(tr("เลยเป้า ${u.targetLate}", "${u.targetLate} past target"), C.amber)
+        if (u.within > 0) TreeBadge("${reach.label} ${u.within}", C.accentText)
     }
 }
 
 @Composable
-private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color, bg: androidx.compose.ui.graphics.Color) {
-    Text(text, Modifier.clip(RoundedCornerShape(8.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp), color = color, fontSize = TS.micro, maxLines = 1)
+private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color) {
+    // A dot and bold text in the colour itself, no tinted box: the box was nearly the card's colour and hid it.
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+        Text(text, Modifier.padding(start = 4.dp), color = color, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
 }
