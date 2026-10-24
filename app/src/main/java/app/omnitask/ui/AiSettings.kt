@@ -44,12 +44,12 @@ internal fun AiKeyGroup(s: AiSettings) {
     val ai = s.ai
     var entering by remember { mutableStateOf(false) }
     if (entering) AiKeyDialog({ s.onKey(it); entering = false }) { entering = false }
-    SettingsGroup(tr("ผู้ช่วย AI (Gemini)", "AI assistant (Gemini)")) {
+    SettingsGroup(tr("Gemini (ใช้กับจดเสียงเท่านั้น)", "Gemini (voice notes only)")) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 10.dp)) {
                 Text("API key", color = C.text, fontSize = TS.body)
                 Text(
-                    if (ai.hasKey) tr("ใส่แล้ว ลงท้ายด้วย ${ai.keyTail}", "Added, ends in ${ai.keyTail}") else tr("ยังไม่ได้ใส่ ผู้ช่วยใช้แบบเดิม (ไม่มี AI)", "Not added: the assistant works without AI"),
+                    if (ai.hasKey) tr("ใส่แล้ว ลงท้ายด้วย ${ai.keyTail}", "Added, ends in ${ai.keyTail}") else tr("ยังไม่ได้ใส่ จดเสียงจะใช้ไม่ได้ เลขาไม่ใช้ Gemini แล้ว", "Not added: voice notes need it. The secretary no longer uses Gemini"),
                     color = if (ai.hasKey) C.tealChip else C.muted, fontSize = TS.caption,
                 )
             }
@@ -69,13 +69,6 @@ internal fun AiKeyGroup(s: AiSettings) {
                 )
             }
             GhostButton(tr("ทดสอบ", "Test"), { if (!ai.testing) s.onTest() })
-        }
-        Row(Modifier.fillMaxWidth().clickable { s.onAutoBrief(!ai.autoBrief) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).padding(end = 10.dp)) {
-                Text(tr("สรุปให้เมื่อเปิดหน้าผู้ช่วย", "Sum up when the assistant opens"), color = C.text, fontSize = TS.body)
-                Text(tr("อ่านงานใหม่ไม่เกินชั่วโมงละครั้ง เพื่อประหยัด", "At most once an hour, to keep it cheap"), color = C.muted, fontSize = TS.caption)
-            }
-            OnOff(ai.autoBrief)
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 10.dp)) {

@@ -143,16 +143,14 @@ fun BriefCard(
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(tr("สรุปวันนี้", "Today's brief"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                if (ai.hasKey) Box(
+                Box(
                     Modifier.size(40.dp).clip(RoundedCornerShape(20.dp)).clickable(enabled = !ai.briefing, onClick = onRefresh),
                     contentAlignment = Alignment.Center,
                 ) { androidx.compose.material3.Icon(Ic.refresh, tr("อ่านใหม่", "Read again"), tint = C.faint, modifier = Modifier.size(16.dp)) }
-                else Box(Modifier.size(40.dp))
             }
             Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val brief = ai.brief
                 val line = when {
-                    !ai.hasKey -> tr("ใส่ Gemini API key ในตั้งค่า แล้วเลขาจะสรุปวันให้", "Add a Gemini API key in Settings for a daily brief")
                     brief == null && ai.briefing -> tr("กำลังอ่านงานทั้งหมด...", "Reading all your work...")
                     brief == null && ai.briefError != null -> ai.briefError
                     brief == null -> tr("แตะปุ่มอ่านใหม่ เพื่อให้เลขาสรุปวันนี้", "Tap read again for today's brief")
@@ -160,7 +158,6 @@ fun BriefCard(
                 }
                 if (!line.isNullOrBlank()) Text(
                     line, color = if (brief == null && ai.briefError != null) C.amber else C.text2, fontSize = TS.body,
-                    modifier = if (!ai.hasKey) Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onSettings) else Modifier,
                 )
                 picks.take(2).forEachIndexed { i, (t, reason) ->
                     Row {

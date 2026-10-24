@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -128,6 +129,11 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         if (CalendarReader.canWrite(context)) addEvent(calendar ?: pickCalendar(CalendarReader.calendars(context)))
         else allow.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
     }
+    // Task or event is picked first, so one button saves it and the two can no longer be mixed up (owner, 2026-10-24).
+    // A typed time range (9:00-11:00) or day range picks the event until the owner picks for himself.
+    var pickedEvent by remember { mutableStateOf<Boolean?>(null) }
+    val autoEvent = draft.endTime != null || draft.endDue != null
+    val asEvent = target == null && (pickedEvent ?: autoEvent)
     fun add() {
         if (draft.title.isBlank()) return
         val t = target
@@ -157,7 +163,28 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     if (full) AddDetailPage(state, vm, text, status, link, onClose = { full = false }, onSaved = { full = false; onDismiss() })
 
     SheetFrame(onDismiss) {
-        Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
+        if (target == null) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken).padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                listOf(false to tr("งาน", "Task"), true to tr("นัด", "Event")).forEach { (event, name) ->
+                    val on = asEvent == event
+                    Row(
+                        Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.accentDeep else C.sunken)
+                            .clickable { pickedEvent = event },
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                    ) {
+                        if (event) Icon(Ic.calendar, null, tint = if (on) C.text else C.muted, modifier = Modifier.padding(end = 6.dp).size(16.dp))
+                        Text(name, color = if (on) C.text else C.muted, fontSize = TS.body, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+                    }
+                }
+            }
+            if (pickedEvent == null && autoEvent) Text(
+                tr("เลือกนัดให้ เพราะพิมพ์ช่วงเวลา แตะ งาน ถ้าไม่ใช่", "Event picked because a time range was typed. Tap Task if not"),
+                Modifier.padding(top = 8.dp), color = C.accentText, fontSize = TS.caption,
+            )
+        } else Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
         BasicTextField(
             value = field,
             onValueChange = { field = it },
@@ -166,7 +193,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
             cursorBrush = SolidColor(C.accent),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { add() }),
+            keyboardActions = KeyboardActions(onDone = { if (asEvent) toCalendar() else add() }),
             decorationBox = { inner ->
                 Box {
                     if (text.isEmpty()) Text(tr("เช่น ส่งรายงาน พรุ่งนี้ 9:00 #รอ/พี่เอ", "e.g. Send report tomorrow 9:00 #waiting/Ann"), color = C.faint, fontSize = TS.body)
@@ -256,24 +283,23 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         )
 
         // Where and when "ลงปฏิทิน" would put it, laid out like Google Calendar's new-event sheet.
-        if (target == null) {
+        if (asEvent) {
             QuickEventRows(draft, eventPick, state.today, calendars, calendar, onCalendar = { chosen = it }, onMore = { full = true })
         }
 
+        // One button: what it saves follows the choice at the top.
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIcon(Ic.mic, tr("พูด", "Speak"), C.raised, C.text2) { startListening() }
-            RoundIcon(Ic.spark, tr("ถามผู้ช่วยว่าควรทำตอนไหน", "Ask the assistant when to do it"), C.accentSoft, C.accentText) {
-                if (text.isNotBlank()) { onAskAssistant(text.trim()); onDismiss() }
+            Box(
+                Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(14.dp)).background(C.accent)
+                    .clickable { if (asEvent) toCalendar() else add() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    when { target != null -> tr("เพิ่มลง List", "Add to list"); asEvent -> tr("ลงปฏิทิน", "Add to calendar"); else -> tr("เพิ่มงาน", "Add task") },
+                    color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold,
+                )
             }
-            Box(Modifier.weight(1f))
-            if (target == null) {
-                Box(
-                    Modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft)
-                        .border(1.dp, C.accentLine, RoundedCornerShape(12.dp)).clickable { toCalendar() }.padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text(tr("ลงปฏิทิน", "To calendar"), color = C.accentText, fontSize = TS.body) }
-            }
-            PrimaryButton(if (target != null) tr("เพิ่มลง List", "Add to list") else tr("เพิ่มงาน", "Add task"), { add() })
         }
     }
 }

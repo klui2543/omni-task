@@ -75,6 +75,8 @@ object SecretaryPretext {
         calendarOf: (CalendarEvent) -> String?,
         today: LocalDate,
         chat: List<String> = emptyList(),
+        /** What the owner asks of Claude every time, from the secretary's guide ("บอก Claude" in เลขา คู่มือ.md). */
+        rules: List<String> = emptyList(),
     ): String = buildString {
         appendLine("# เลขา: คุยกับ Klui วันที่ $today")
         appendLine()
@@ -88,6 +90,11 @@ object SecretaryPretext {
         if (chat.isNotEmpty()) {
             appendLine("## ที่คุยกับเลขาในแอปก่อนส่งมา (ต่อจากตรงนี้ ไม่ต้องถามซ้ำ)")
             chat.forEach { appendLine("- $it") }
+            appendLine()
+        }
+        if (rules.isNotEmpty()) {
+            appendLine("## ที่ Klui ขอทุกครั้ง (จากเลขา คู่มือ)")
+            rules.forEach { appendLine("- $it") }
             appendLine()
         }
         appendLine("## ตอนจบ")
