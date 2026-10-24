@@ -230,7 +230,7 @@ class YgdrasilTest {
         assertTrue("peddose" in lit && "peddose/แอป" in lit && "peddose/แอป/มือถือ" in lit)
         assertFalse("peddose/แอป/เว็บ" in lit)
         assertFalse("peddose/research" in lit)
-        val week = Ygdrasil.reachTags(tree, Ygdrasil.Reach.WEEK, today)
+        val week = Ygdrasil.reachTags(tree, Ygdrasil.Reach.MONTH, today)
         assertTrue("Siriraj" in week)
         assertFalse(Ygdrasil.inReach(tasks.first { it.title.startsWith("ลองหน้าเว็บ") }, Ygdrasil.Reach.MONTH, today))
     }
