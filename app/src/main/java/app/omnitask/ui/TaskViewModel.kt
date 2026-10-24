@@ -68,6 +68,7 @@ import app.omnitask.model.StuckLog
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.SecretaryGuide
+import app.omnitask.model.ProjectNames
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import app.omnitask.model.TaskKind
@@ -130,6 +131,8 @@ data class UiState(
     val archived: Deleted? = null,
     /** A task just turned into an event, or an event into a task, offered for undo once. */
     val swapped: SwapUndo? = null,
+    /** A move made in Ygdrasil, offered for undo once. */
+    val moved: TaskViewModel.MoveUndo? = null,
     /** A task just ticked done: ask whether to archive it, delete it or leave it. */
     val finished: Task? = null,
     /** Finished tasks move to the archive note after this many days; 0 leaves them in place. */
@@ -1101,6 +1104,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { BehaviorLog.sync(getApplication(), repo, vault) }.getOrElse { (behavior + BehaviorLog.waiting(getApplication())).distinctBy { e -> e.id } }
             }
             val swept = withContext(Dispatchers.IO) { runCatching { sweepIfDue(vault) }.getOrDefault(emptyList()) }
+            // The owner's project names and moves, read before the tasks so an old name counts as the new one.
+            loadProjectNames(vault)
             val result = withContext(Dispatchers.IO) {
                 runCatching { repo.load(vault) }.onSuccess { snap ->
                     // Every load refreshes the reminders and the widgets, so edits made anywhere reach both.
@@ -2775,6 +2780,58 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Reads `ชื่อโปรเจกต์.md` ([ProjectNames]) for the task lines read next, and keeps the chosen projects under the
+     * names they have now (a project the owner merged or moved is not left behind as an empty one).
+     */
+    private suspend fun loadProjectNames(vault: android.net.Uri) {
+        val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, ProjectNames.PATH) }.getOrNull() }
+        ProjectNames.current = ProjectNames.parse(text)
+        _state.value.projectTags?.let { tags ->
+            val now = tags.map { ProjectNames.canonical(it).substringBefore('/') }.toSet()
+            if (now != tags) saveProjectTags(now)
+        }
+    }
+
+    /** A move made in Ygdrasil, waiting in the bar with "เลิกทำ". */
+    class MoveUndo(val text: String, val undo: () -> Unit)
+
+    /**
+     * Writes the owner's move of [old] to [new] into `ชื่อโปรเจกต์.md`, so the secretary writes the new names and old
+     * ones are read as new, and offers to undo it. [n] is how many task lines moved.
+     */
+    private suspend fun recordMove(old: String, new: String, n: Int, undoable: Boolean = true) {
+        val vault = _state.value.vault ?: return
+        val today = LocalDate.now()
+        val r = withContext(Dispatchers.IO) {
+            runCatching {
+                repo.editPath(vault, ProjectNames.PATH) { text -> ProjectNames.record(text, old, new, today) }
+                repo.readPath(vault, ProjectNames.PATH)
+            }
+        }
+        r.getOrNull()?.let { ProjectNames.current = ProjectNames.parse(it) }
+        val text = tr("ย้าย #$old ไปเป็น #$new แล้ว ($n งาน)\nจดลงตาราง ชื่อโปรเจกต์.md แล้ว เลขาจะเขียนชื่อใหม่ตามนี้", "Moved #$old to #$new ($n tasks)\nNoted in ชื่อโปรเจกต์.md: the secretary writes the new name")
+        if (undoable) _state.update { it.copy(moved = MoveUndo(text) { retagAll(new, old) }) }
+    }
+
+    fun clearMoved() = _state.update { it.copy(moved = null) }
+
+    /** Everything tagged [old] (and under it) gets [new] in every note, as an undo of a move. */
+    private fun retagAll(old: String, new: String) {
+        val files = (_state.value.allTasks + _state.value.parked + _state.value.listItems)
+            .filter { t -> t.tags.any { it == old || it.startsWith("$old/") } }.map { it.fileUri }.distinct()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, new) } }
+            result.onSuccess { n ->
+                saveBranchStates(Branches.moveTag(_state.value.branchStates, old, new))
+                _state.value.projectTags?.let { tags -> saveProjectTags(tags + new.substringBefore('/')) }
+                recordMove(old, new, n, undoable = false)
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
+            reload()
+        }
+    }
+
     /** Renames a branch: every task line under it gets the new tag, and the states under it move along. */
     /**
      * Project Ygdrasil: a project or branch tagged [oldTag] dropped on [target] (a tag, or "" for the trunk) goes under
@@ -2787,10 +2844,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
-            result.onSuccess {
+            result.onSuccess { n ->
                 saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag))
                 // A branch dropped on the trunk becomes a project of its own.
                 _state.value.projectTags?.let { tags -> saveProjectTags(tags + newTag.substringBefore('/')) }
+                recordMove(oldTag, newTag, n)
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
             reload()
@@ -2808,7 +2866,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             .filter { t -> t.tags.any { it == oldTag || it.startsWith("$oldTag/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, oldTag, newTag) } }
-            result.onSuccess { saveBranchStates(Branches.movePaths(_state.value.branchStates, node.project, node.path, newPath)) }
+            result.onSuccess { n ->
+                saveBranchStates(Branches.movePaths(_state.value.branchStates, node.project, node.path, newPath))
+                recordMove(oldTag, newTag, n)
+            }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนชื่อไม่ได้: ", "Cannot rename: ") + e.message) } }
             reload()
         }
@@ -2835,20 +2896,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * order, stars, task order, strict mode and branch states move with it.
      */
     fun renameProject(old: String, new: String) {
-        val name = new.trim().removePrefix("#").replace(Regex("""\s+"""), "-")
-        if (name.isEmpty() || name == old || '/' in name) return
+        // A name with "/" puts the project under another one (Omni as Claude/Omni); each part is cleaned on its own.
+        val name = new.trim().removePrefix("#").split('/').map { it.trim().replace(Regex("""\s+"""), "-") }.filter { it.isNotEmpty() }.joinToString("/")
+        if (name.isEmpty() || name == old || name.startsWith("$old/")) return
         val s0 = _state.value
         val files = (s0.tasks + s0.parked + s0.listItems).filter { Projects.projectOf(it) == old }.map { it.fileUri }.distinct()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, name) } }
             result.onSuccess { n ->
                 val s = _state.value
-                val order = s.projectOrder.map { if (it == old) name else it }
-                val starred = s.starred.map { if (it == old) name else it }.toSet()
-                val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) name else k }
-                val strict = s.strictProjects.map { if (it == old) name else it }.toSet()
-                val branches = s.branchStates.mapKeys { (k, _) -> if (k.first == old) name to k.second else k }
-                s.projectTags?.let { saveProjectTags(it - old + name) }
+                val root = name.substringBefore('/')
+                val order = s.projectOrder.map { if (it == old) root else it }.distinct()
+                val starred = s.starred.map { if (it == old) root else it }.toSet()
+                val taskOrder = s.projectTaskOrder.mapKeys { (k, _) -> if (k == old) root else k }
+                val strict = s.strictProjects.map { if (it == old) root else it }.toSet()
+                val branches = Branches.moveTag(s.branchStates, old, name)
+                s.projectTags?.let { saveProjectTags(it - old + name.substringBefore('/')) }
+                recordMove(old, name, n)
                 prefs.edit()
                     .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
                     .putStringSet(KEY_STARRED, starred)
@@ -2859,7 +2923,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update {
                     it.copy(
                         projectOrder = order, starred = starred, projectTaskOrder = taskOrder, strictProjects = strict, branchStates = branches,
-                        message = tr("เปลี่ยนชื่อเป็น #$name แล้ว ($n บรรทัด)", "Renamed to #$name ($n lines)"),
                     )
                 }
             }

@@ -128,6 +128,15 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     val today = state.today
 
     SheetFrame(onDismiss) {
+        // Task or event at the top, as on the add sheet: a task in a note can become a calendar event, and back
+        // again with everything it had (the sheet that confirms it comes first).
+        if (task.parent == null && task.list == null && !task.todayCopy) {
+            val calName = keptEvent?.let { k -> state.calendars.firstOrNull { it.id == k.calendarId }?.let { it.name.ifBlank { it.account } } }
+            val kept = keptEvent?.let { app.omnitask.model.Swap.keptOfEvent(it, calName) }
+            Box(Modifier.padding(bottom = 10.dp)) {
+                KindToggle(isEvent = false, note = kept?.takeIf { it.isNotEmpty() }?.let { tr("นัดเดิมยังเก็บไว้: ", "The event kept: ") + it.joinToString(", ") }) { swapping = true }
+            }
+        }
         // A subtask opens as a full task of its own; this leads back to the task it sits under.
         state.parentOf(task)?.let { parent ->
             Row(
@@ -256,11 +265,6 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
 
         SubtaskBlock(task, state, vm, onOpen)
 
-        // A task in a note can become a calendar event, and back again with everything it had.
-        if (task.parent == null && task.list == null && !task.todayCopy) {
-            val calName = keptEvent?.let { k -> state.calendars.firstOrNull { it.id == k.calendarId }?.let { it.name.ifBlank { it.account } } }
-            SwapToEventButton(keptEvent?.let { app.omnitask.model.Swap.keptOfEvent(it, calName) }) { swapping = true }
-        }
 
         // The rarely used parts, one line each until opened.
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken)) {

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +49,36 @@ import kotlinx.datetime.LocalTime
 import app.omnitask.time.*
 
 private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+
+/**
+ * "งาน | นัด" at the top of a task's sheet and an event's details, as on the add sheet: the side it is now is lit;
+ * a tap on the other side opens the confirming sheet (nothing changes before it). [note] says why the other side
+ * cannot be picked when [enabled] is false, or what the event left behind.
+ */
+@Composable
+fun KindToggle(isEvent: Boolean, enabled: Boolean = true, note: String? = null, onSwitch: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            listOf(false to tr("งาน", "Task"), true to tr("นัด", "Event")).forEach { (event, name) ->
+                val on = event == isEvent
+                val other = !on && enabled
+                Row(
+                    Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.accentDeep else C.sunken)
+                        .clickable(enabled = other, onClick = onSwitch),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                ) {
+                    val tint = when { on -> C.text; enabled -> C.muted; else -> C.faint }
+                    if (event) Icon(Ic.calendar, null, tint = tint, modifier = Modifier.padding(end = 6.dp).size(16.dp))
+                    Text(name, color = tint, fontSize = TS.body, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+                }
+            }
+        }
+        note?.let { Text(it, color = if (enabled) C.tealText else C.muted, fontSize = TS.caption, maxLines = 2) }
+    }
+}
 
 /** The button in the task sheet: "เปลี่ยนเป็นนัด", or "เปลี่ยนกลับเป็นนัด" with what the event left behind. */
 @Composable
