@@ -51,6 +51,28 @@ class FoldersTest {
     }
 
     @Test
+    fun theProjectTagIsTheFolderOnANewTaskToo() = chosen(setOf("Siriraj", "Omni")) {
+        // A lone tag before the project tag: the project tag is the folder, as Folders.of reads a saved task.
+        assertEquals("Siriraj/a", Folders.ofTags(listOf("ระบบ", "Siriraj/a")))
+        assertEquals(listOf("Omni", "ระบบ"), Folders.withFolder(listOf("ระบบ", "Siriraj/a"), "Omni"))
+        assertEquals("ระบบ", Folders.ofTags(listOf("kluido", "ระบบ")))
+    }
+
+    @Test
+    fun labelsIgnoreCase() = chosen(setOf("Omni")) {
+        assertTrue(Folders.isLabel("Kluido"))
+        assertTrue(Folders.isLabel("ClaudeDo"))
+    }
+
+    @Test
+    fun aTypedFolderIsTidied() {
+        assertEquals("Omni/เลขา", Folders.clean("Omni / เลขา"))
+        assertEquals("Omni", Folders.clean("Omni/"))
+        assertEquals("Omni/งาน-บ้าน", Folders.clean(" #Omni//งาน บ้าน "))
+        assertEquals("", Folders.clean(" / "))
+    }
+
+    @Test
     fun everyFolderOnTheWayIsListed() = chosen(setOf("Siriraj", "Omni")) {
         val tasks = listOf(
             task("- [ ] a #Siriraj/ตารางเวรเภสัช/wording #kluido"),

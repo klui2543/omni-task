@@ -363,7 +363,13 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     if (notingStuck) StuckDialog(task, state.subtasksOf(task), today, { vm.noteStuck(task, it) }) { notingStuck = false }
     if (stuckLog) StuckTimeline(state, onOpen = { stuckLog = false; onOpen(it) }) { stuckLog = false }
     if (choosingFolder) {
-        FolderPicker(state, Folders.of(task), labels = null, onLabel = null, onPick = { vm.moveToFolder(task, it); choosingFolder = false }) { choosingFolder = false }
+        val folder = Folders.of(task)
+        FolderPicker(
+            state, folder,
+            labels = task.tags.filter { it != folder && !it.startsWith("remind-at-") },
+            onLabel = { l -> if (l in task.tags) vm.removeTag(task, l) else vm.addTag(task, l) },
+            onPick = { vm.moveToFolder(task, it); choosingFolder = false },
+        ) { choosingFolder = false }
     }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }

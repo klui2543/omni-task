@@ -93,6 +93,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var shelf by rememberSaveable { mutableStateOf<String?>(null) }
     val pinned = if (state.starred.isEmpty()) projects.map { it.name }.toSet() else state.starred
     fun folderUp() { val p = folderPath ?: return; folderPath = p.substringBeforeLast('/').takeIf { '/' in it } }
+    // A folder belongs to the open project: when the project is gone (closed, or its last task moved away), so is the folder.
+    LaunchedEffect(open == null) { if (open == null) folderPath = null }
+    // A tag in "อื่นๆ" opened to see its tasks, before it is made a project.
+    var tagShown by remember { mutableStateOf<String?>(null) }
     fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; openListPath = null; listCategory = null; world = true }
     BackHandler(enabled = open != null || openList != null || world || shelf != null) {
         when {
@@ -119,12 +123,23 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     if (renaming && open != null) {
         RenameProjectDialog(open.name, vm.renameCount(open.name), { new -> vm.renameProject(open.name, new); openName = new; renaming = false }) { renaming = false }
     }
+    tagShown?.let { tag ->
+        TagTasksSheet(
+            state, tag, canMakeProject = tag != app.omnitask.model.Focus.WAITING_TAG,
+            onOpen = { tagShown = null; onOpen(it) },
+            onToggle = { vm.toggleDone(it) },
+            onMakeProject = { vm.setProject(tag, true); tagShown = null },
+        ) { tagShown = null }
+    }
     if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
     if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
     if (deletingList && openList != null) {
         val own = state.itemsOf(openList).count { it.list != null }
         val pulled = state.itemsOf(openList).size - own
-        DeleteListDialog(openList, own, pulled, { vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null }) { deletingList = false }
+        DeleteListDialog(openList, own, pulled, {
+            vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null
+            if (fromWorld) backToWorld()
+        }) { deletingList = false }
     }
 
     if (world && open == null && openList == null) {
@@ -183,7 +198,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
                     val shelfName = when (shelf) { "other" -> tr("อื่นๆ", "Other"); "list" -> "List"; else -> null }
                     Text(
-                        folderPath?.substringAfterLast('/') ?: open?.name ?: openList?.name ?: shelfName ?: tr("โปรเจกต์", "Projects"),
+                        folderPath?.takeIf { open != null }?.substringAfterLast('/') ?: open?.name ?: openList?.name ?: shelfName ?: tr("โปรเจกต์", "Projects"),
                         style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     if (open != null && folderPath != null) {
@@ -229,27 +244,28 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         } else if (open == null && shelf == "other") {
             val unpinned = projects.filter { it.name !in pinned }
             val loose = others.filter { !Folders.isLabel(it.first) }
-            val labels = others.filter { Folders.isLabel(it.first) }
+            // #รอ is a label too, though it never names a project.
+            val waits = (state.tasks + state.parked).count { t -> t.status != app.omnitask.model.Status.CANCELLED && t.tags.any { it == app.omnitask.model.Focus.WAITING_TAG || it.startsWith(app.omnitask.model.Focus.WAITING_TAG + "/") } }
+            val labels = others.filter { Folders.isLabel(it.first) } + listOfNotNull(if (waits > 0) app.omnitask.model.Focus.WAITING_TAG to waits else null)
             if (unpinned.isNotEmpty()) item(key = "other projects") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     DeskHead(tr("โปรเจกต์ที่ไม่ได้ปักหมุด", "Projects not pinned"))
                     TileGrid(unpinned.map { p -> Tile(p.name, p.name, "${p.done}/${p.tasks.size}", folderTint(p.name), { openName = p.name }, late = p.overdue) })
                 }
             }
-            // Tags that are not projects yet; a tap makes one a project, as the "other tags" card did.
+            // Tags that are not projects yet; a tap shows their tasks, with the way to make one a project.
             if (loose.isNotEmpty()) item(key = "other loose") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DeskHead(tr("แท็กเดี่ยว แตะเพื่อทำเป็นโปรเจกต์", "Lone tags: tap one to make it a project"))
-                    TileGrid(loose.map { (tag, n) -> Tile(tag, tag, tr("$n งาน", "$n tasks"), folderTint(tag), { vm.setProject(tag, true) }, dashed = true) })
+                    DeskHead(tr("แท็กเดี่ยว", "Lone tags"))
+                    TileGrid(loose.map { (tag, n) -> Tile(tag, tag, tr("$n งาน", "$n tasks"), folderTint(tag), { tagShown = tag }, dashed = true) })
                 }
             }
             if (labels.isNotEmpty()) item(key = "other labels") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     DeskHead(tr("ป้าย (ไม่ใช่โฟลเดอร์ ติดได้หลายอัน)", "Labels (not folders, any number per task)"))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        labels.forEach { (tag, n) -> Chip("#$tag  $n", false, { vm.setProject(tag, true) }) }
+                        labels.forEach { (tag, n) -> Chip("#$tag  $n", false, { tagShown = tag }) }
                     }
-                    Text(tr("แตะป้ายเพื่อทำเป็นโปรเจกต์ได้เหมือนเดิม", "Tap a label to make it a project, as before"), color = C.faint, fontSize = TS.caption)
                 }
             }
             if (unpinned.isEmpty() && loose.isEmpty() && labels.isEmpty()) item(key = "other empty") {
@@ -261,7 +277,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Card {
                         Text(
                             if (others.isEmpty()) tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet")
-                            else tr("ยังไม่มีโปรเจกต์ แตะแท็กด้านล่างเพื่อทำเป็นโปรเจกต์", "No projects yet. Tap a tag below to make it one."),
+                            else tr("ยังไม่มีโปรเจกต์ เปิดโฟลเดอร์ อื่นๆ แล้วเลือกแท็กเพื่อทำเป็นโปรเจกต์", "No projects yet. Open Other and pick a tag to make it one."),
                             Modifier.padding(16.dp), color = C.muted,
                         )
                     }

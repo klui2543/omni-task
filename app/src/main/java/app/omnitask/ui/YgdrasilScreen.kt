@@ -132,7 +132,7 @@ fun YgdrasilScreen(
     // Work outside the reach stays on the tree but faint, so what the reach is about stands out.
     val lit = remember(tree, reach, state.today, embed) { if (embed == null) Ygdrasil.reachTags(tree, reach, state.today) else null }
     fun faint(t: Task) = lit != null && !Ygdrasil.inReach(t, reach, state.today)
-    fun faint(tag: String) = lit != null && tag !in lit && !Ygdrasil.isInbox(tag)
+    fun faint(tag: String) = lit != null && tag !in lit && !Ygdrasil.isInbox(tag) && !isListTag(tag)
     // The tray of tasks with no project, under the tree, and the task whose new home is being picked.
     var straySort by remember { mutableStateOf(Ygdrasil.StraySort.DUE) }
     val strays = remember(state.tasks, state.today, state.projectTags, filter, straySort) { Ygdrasil.strays(state.tasks, state.today, filter, straySort) }
@@ -482,15 +482,15 @@ fun YgdrasilScreen(
                                     fontWeight = if (world) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                                 if (world && !s.folded && note != null && note.opens) Unit
-                                else if (s.folded) {
+                                else if (listLimb && world) {
+                                    Text(tr("${n.children.size} รายการ", "${n.children.size} lists"), color = C.muted, fontSize = TS.micro)
+                                } else if (s.folded) {
                                     Text("+${s.count}", Modifier.clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 6.dp, vertical = 1.dp), color = C.text2, fontSize = TS.micro)
                                 } else if (n.all.isNotEmpty()) {
                                     Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
                                 } else if (list != null) {
                                     val items = state.itemsOf(list)
                                     Text("${items.count { !it.isOpen }}/${items.size}", color = C.muted, fontSize = TS.micro)
-                                } else if (listLimb && world) {
-                                    Text(tr("${n.children.size} รายการ", "${n.children.size} lists"), color = C.muted, fontSize = TS.micro)
                                 }
                             }
                             if (world && !inbox && !listLimb && n.tag in pinned) PinMark(Modifier.offset((s.x + s.w - 16).dp, (s.y - s.h / 2 + 2).dp))

@@ -2,6 +2,8 @@ package app.omnitask.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,3 +111,43 @@ fun FolderCrumbs(path: String, onHome: () -> Unit, onOpen: (String) -> Unit) {
 }
 
 private fun tr(th: String, en: String) = app.omnitask.model.tr(th, en)
+
+/**
+ * A lone tag or a label opened from the folder "อื่นๆ" (mock way 1: a tile opens, a label shows its tasks): its open
+ * tasks, and the way to make it a project, which a tap did at once before.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun TagTasksSheet(
+    state: UiState,
+    tag: String,
+    canMakeProject: Boolean,
+    onOpen: (app.omnitask.model.Task) -> Unit,
+    onToggle: (app.omnitask.model.Task) -> Unit,
+    onMakeProject: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val tasks = state.tasks.filter { t -> t.isOpen && t.parent == null && t.tags.any { it.equals(tag, ignoreCase = true) || it.startsWith("$tag/", ignoreCase = true) } }
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = C.raised,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("#$tag", color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text(tr("งานค้าง ${tasks.size} งาน", "${tasks.size} open"), color = C.muted, fontSize = TS.caption)
+            tasks.forEachIndexed { i, t ->
+                if (i > 0) Divider(start = 48.dp)
+                TaskRow(t, state.today, { onToggle(t) }, { onOpen(t) })
+            }
+            if (canMakeProject) Text(
+                tr("ทำเป็นโปรเจกต์", "Make it a project"),
+                Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.card).clickable(onClick = onMakeProject).padding(horizontal = 14.dp, vertical = 10.dp),
+                color = C.accentText, fontSize = TS.body,
+            )
+        }
+    }
+}

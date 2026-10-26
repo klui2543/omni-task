@@ -15,21 +15,33 @@ object Folders {
 
     fun isLabel(tag: String): Boolean {
         val root = tag.substringBefore('/')
-        return !Projects.isPlain(tag) || (root in LABELS && Projects.chosen?.contains(root) != true)
+        val label = LABELS.any { it.equals(root, ignoreCase = true) }
+        return !Projects.isPlain(tag) || (label && Projects.chosen?.any { it.equals(root, ignoreCase = true) } != true)
     }
 
     /** The folder a task sits in: its project tag (branch and all), else its first tag that is not a label. */
-    fun of(t: Task): String? = Projects.tagOf(t)?.takeUnless(::isLabel) ?: t.tags.firstOrNull { !isLabel(it) }
+    fun of(t: Task): String? = ofTags(t.tags)
+
+    /** The same for tags not yet on a line (a new task): a tag of a chosen project first, else the first non-label. */
+    fun ofTags(tags: List<String>): String? {
+        val made = Projects.chosen
+        return tags.firstOrNull { !isLabel(it) && (made == null || it.substringBefore('/') in made) }
+            ?: tags.firstOrNull { !isLabel(it) }
+    }
+
+    /** A folder as typed, tidied the way a line writes tags: no empty levels, no spaces around a slash. */
+    fun clean(input: String): String =
+        input.trim().removePrefix("#").split('/').map { TaskLine.normalizeTag(it.trim()) }.filter { it.isNotEmpty() }.joinToString("/")
 
     /**
      * A new task's tags with [folder] as its one folder, in front where the project tag goes; the folder it had
      * leaves, and its labels stay. A null [folder] leaves only the labels.
      */
     fun withFolder(tags: List<String>, folder: String?): List<String> {
-        val name = folder?.let(TaskLine::normalizeTag)?.takeIf { it.isNotEmpty() }
+        val name = folder?.let(::clean)?.takeIf { it.isNotEmpty() }
         // A label typed where a folder goes joins the labels; the folder stays.
         if (name != null && isLabel(name)) return if (tags.any { it.equals(name, ignoreCase = true) }) tags else tags + name
-        val old = tags.firstOrNull { !isLabel(it) }
+        val old = ofTags(tags)
         return listOfNotNull(name) + tags.filter { it != old && !it.equals(name, ignoreCase = true) }
     }
 

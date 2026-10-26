@@ -2077,21 +2077,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * The folder picker (owner's pick, 2026-10-26): the task's one folder becomes [folder] where its old one stood, or
-     * goes in front when it had none; null takes it out of its folder. Labels stay. A folder whose top is not a
-     * project yet becomes one, so the task shows on the desktop and in Ygdrasil at once.
+     * goes in front when it had none; null takes it out of its folder. Labels stay. A brand-new top folder becomes a
+     * project, so the task shows on the desktop and in Ygdrasil at once.
      */
     fun moveToFolder(task: Task, folder: String?) {
         val from = Folders.of(task)
+        val to = folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() }
         when {
             // A label typed into the picker (#รอ/พี่เอ) is added; the folder stays.
-            folder != null && Folders.isLabel(TaskLine.normalizeTag(folder)) -> addTag(task, folder)
-            folder == null -> if (from != null) removeTag(task, from)
-            from == null -> homeTask(task, folder)
+            to != null && Folders.isLabel(to) -> addTag(task, to)
+            to == null -> if (from != null) removeTag(task, from)
+            from == to -> return
             else -> {
-                if (from == folder) return
-                edit(task) { TaskLine.retag(it, from, folder) }
-                val root = TaskLine.normalizeTag(folder).substringBefore('/')
-                _state.value.projectTags?.let { if (root !in it) saveProjectTags(it + root) }
+                // Only a top folder no tag has used yet becomes a project; a tag already in use (#siriraj) stays as it is.
+                val root = to.substringBefore('/')
+                val s = _state.value
+                val known = s.projectTags.orEmpty().any { it.equals(root, ignoreCase = true) } ||
+                    (s.tasks + s.parked).any { t -> t.tags.any { it.substringBefore('/').equals(root, ignoreCase = true) } }
+                if (from == null) edit(task) { TaskLine.homeTag(it, to) } else edit(task) { TaskLine.retag(it, from, to) }
+                if (!known) s.projectTags?.let { saveProjectTags(it + root) }
             }
         }
     }

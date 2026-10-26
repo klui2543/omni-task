@@ -312,7 +312,7 @@ fun AddDetailPage(
                             }
                             // One folder and any labels (owner's pick, 2026-10-26); still written as tags.
                             FormRow(Ic.tag, onClick = { picking = "tags" }) {
-                                val folder = tags.firstOrNull { !app.omnitask.model.Folders.isLabel(it) }
+                                val folder = app.omnitask.model.Folders.ofTags(tags)
                                 if (folder != null) FolderGlyph(folderTint(folder), 20.dp, Modifier.padding(end = 8.dp))
                                 Text(
                                     listOfNotNull(
@@ -386,8 +386,8 @@ fun AddDetailPage(
         )
         "tags" -> FolderPicker(
             state,
-            current = tags.firstOrNull { !app.omnitask.model.Folders.isLabel(it) },
-            labels = tags.filter { app.omnitask.model.Folders.isLabel(it) },
+            current = app.omnitask.model.Folders.ofTags(tags),
+            labels = app.omnitask.model.Folders.ofTags(tags).let { f -> tags.filter { it != f } },
             onLabel = { l -> if (l in tags) tags.remove(l) else tags.add(l) },
             onPick = { f -> val next = app.omnitask.model.Folders.withFolder(tags.toList(), f); tags.clear(); tags.addAll(next); picking = null },
         ) { picking = null }

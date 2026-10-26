@@ -126,6 +126,10 @@ fun FolderPicker(
         all.associateWith { p -> open.count { it == p || it.startsWith("$p/") } }
     }
     val recent = remember(state.tasks) { Folders.recent(state.tasks.filter { it.list == null }, 3) }
+    val usedLabels = remember(state.tasks) {
+        state.tasks.flatMap { it.tags }.filter { Folders.isLabel(it) && !it.startsWith("remind-at-") }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }.take(12)
+    }
     var query by remember { mutableStateOf("") }
     var at by remember { mutableStateOf(current?.substringBeforeLast('/', "") ?: "") }
     var naming by remember { mutableStateOf(false) }
@@ -142,9 +146,14 @@ fun FolderPicker(
                 val hits = Folders.search(all, query)
                 Hint(tr("ผลค้นหา ${hits.size}", "${hits.size} found"))
                 hits.forEach { p -> FolderRow(p, p.substringAfterLast('/'), p.substringBeforeLast('/', "").let { if (it.isEmpty()) tr("ชั้นบนสุด", "Top level") else folderTrail(it) }, p == current) { onPick(p) } }
-                val typed = TaskLine.normalizeTag(query)
+                val typed = Folders.clean(query)
                 if (typed.isNotEmpty() && all.none { it.equals(typed, ignoreCase = true) }) {
-                    NewRow(tr("โฟลเดอร์ใหม่ \"${folderTrail(typed)}\"", "New folder \"${folderTrail(typed)}\"")) { onPick(typed) }
+                    // A label typed here (#รอ/พี่เอ) is added as a label; the folder stays.
+                    val label = Folders.isLabel(typed)
+                    NewRow(
+                        if (label) tr("เพิ่มป้าย #$typed", "Add the label #$typed")
+                        else tr("โฟลเดอร์ใหม่ \"${folderTrail(typed)}\"", "New folder \"${folderTrail(typed)}\""),
+                    ) { onPick(typed) }
                 }
             } else {
                 if (recent.isNotEmpty()) {
@@ -187,7 +196,7 @@ fun FolderPicker(
                 if (kids.isEmpty()) Text(tr("ไม่มีโฟลเดอร์ย่อย", "No folders inside"), Modifier.padding(vertical = 10.dp, horizontal = 4.dp), color = C.faint, fontSize = TS.body)
                 if (naming) {
                     PickerField(newName, tr("ชื่อโฟลเดอร์ใหม่", "New folder name"), Modifier.padding(top = 8.dp), onDone = {
-                        val name = TaskLine.normalizeTag(newName).trim('/')
+                        val name = Folders.clean(newName)
                         if (name.isNotEmpty()) onPick(if (at.isEmpty()) name else "$at/$name")
                     }) { newName = it }
                 } else {
@@ -198,7 +207,8 @@ fun FolderPicker(
             if (labels != null && onLabel != null) {
                 Hint(tr("ป้าย (ติดได้หลายอัน แยกจากโฟลเดอร์)", "Labels (any number, apart from the folder)"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val shown = (Folders.LABELS.filter { Folders.isLabel(it) } + labels).distinct()
+                    // The usual labels, the ones used most (list and type tags too), and the task's own.
+                    val shown = (Folders.LABELS.filter { Folders.isLabel(it) } + usedLabels + labels).distinct()
                     shown.forEach { l -> Chip("#$l", l in labels, { onLabel(l) }) }
                 }
             }
@@ -265,6 +275,3 @@ private fun PickerField(value: String, hint: String, modifier: Modifier = Modifi
         },
     )
 }
-
-/** The folder of a task as a short label for a chip: its own name, or null when it sits in none. */
-fun folderChipText(t: Task): String? = Folders.of(t)?.substringAfterLast('/')
