@@ -46,20 +46,25 @@ class SecretaryAiTest {
         assertTrue(SecretaryAi.isMedical("hn:7654321"))
         // A Latin name that contains the letters hn is not a hospital number.
         assertFalse(SecretaryAi.isMedical("นัด john พรุ่งนี้"))
-        // Wordings the reviewer found slipping through (2026-10-26).
+        // Wordings the reviewers found slipping through (2026-10-26).
         listOf(
             "ยาพารากินได้กี่เม็ด", "ยาอะไรแก้ไอดี", "ทานยาก่อนอาหารไหม", "จ่ายยา", "warfarin กับ aspirin กินด้วยกันได้ไหม",
             "amoxicillin 500 mg", "omeprazole ก่อนอาหาร", "ยาน้ำเด็ก", "ยาตีกันไหม",
+            "กินยากี่เม็ด", "กินยานี้ได้ไหม", "ขอยานอนหลับ", "ใช้ยากับเด็กได้ไหม", "มียาแก้แพ้ไหม", "มียาลดไข้ไหม",
+            "ควรได้ยาปฏิชีวนะไหม", "ต้องได้ยาฆ่าเชื้อไหม", "ยากันชักตัวไหนดี", "ยากดภูมิกินนานแค่ไหน", "ยานี้กินยังไง",
+            "ยาวัณโรคกินกี่เดือน", "ยาย่อยกินก่อนหรือหลังอาหาร", "กินพารากี่เม็ด", "แม่ลืมยาความดัน", "ยาวิตามินซีกินตอนไหน",
+            "ยาม่วงทาแผล", "furosemide กี่ mg", "ceftriaxone 2 g", "tramadol กับ codeine", "clopidogrel หยุดก่อนผ่าตัด",
+            "meropenem ปรับตามไต", "vancomycinให้กี่วัน", "ฉีด 10 ยูนิต", "ให้ 5 มก. ต่อวัน",
+            // An everyday word must not swallow the ยา after it.
+            "ซื้อมายาแก้ปวด", "ขอยากันชัก", "รอยาก่อนกลับบ้าน",
         ).forEach { assertTrue(SecretaryAi.isMedical(it), it) }
-        // Everyday words that hold ยา or look like a unit are not about medicines.
+        // A pharmacist's everyday sentences that hold ยา or look like a unit are not about medicines.
         listOf(
             "แอปนี้ใช้ยากมาก", "ทีมตีกันอีกแล้ว", "ยามเช้าไปวิ่ง", "พยาบาลประชุมบ่าย", "งานวิทยาลัย", "วันเกิดภรรยา",
-            "สอบที่ มก. วันเสาร์", "ประชุม april", "ซื้อยางรถ",
+            "สอบที่ มก. วันเสาร์", "ประชุม april", "ซื้อยางรถ", "นัดประชุม 5 มกราคม", "1 มกรา ไปเที่ยว", "อยากกินข้าวมันไก่",
+            "พยายามทำให้เสร็จ", "งานนี้ยากและยาวมาก", "ซื้อยาสีฟัน", "ไปหายาย", "ขยายเวลาส่งงาน", "งานนี้ยาก",
+            "อยากไปเที่ยว", "ยามว่างอ่านหนังสือ", "ทำเลยสยามพารากอน",
         ).forEach { assertFalse(SecretaryAi.isMedical(it), it) }
-        // Thai words that merely contain ยา are not questions about medicines.
-        assertFalse(SecretaryAi.isMedical("พยายามทำงานให้เสร็จ"))
-        assertFalse(SecretaryAi.isMedical("ช่วงนี้ยุ่งมาก งานไหนพอเลื่อนได้บ้าง"))
-        assertFalse(SecretaryAi.isMedical("งานนี้ยากและยาวมาก"))
     }
 
     @Test
