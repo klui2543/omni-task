@@ -78,6 +78,7 @@ fun FocusScreen(
     var lateOpen by rememberSaveable { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
     val voice by vm.voice.collectAsStateWithLifecycle()
     if (picking) FuturePicker(state, vm) { picking = false }
     if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
@@ -88,6 +89,8 @@ fun FocusScreen(
         CalendarsDialog(CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged), calendarsFrom) { calendarsOpen = false }
     }
     val today = state.today
+    val asks = app.omnitask.model.SecretaryAsk.open(state.secretaryAsks, state.tasks, today)
+    if (asking) SecretaryAskSheet(asks, vm, onOpen) { asking = false }
     val brief = state.brief
     val events = state.todayEvents
     // Tasks already ticked today stay in the day's timeline, greyed, so the day reads as a whole.
@@ -184,6 +187,9 @@ fun FocusScreen(
                 }
             }
         }
+
+        // The secretary's questions: one line however many, the answers in a sheet (owner's pick, 2026-10-26).
+        if (asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
 
         // Recordings not written down yet (no network, or the check was closed): try again or throw away.
         if (voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {

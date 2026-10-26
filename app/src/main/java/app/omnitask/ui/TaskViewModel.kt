@@ -167,6 +167,8 @@ data class UiState(
     /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
+    /** The secretary's questions (`Claude/เลขาถาม.md`), as last read; the today page matches them to open tasks. */
+    val secretaryAsks: List<app.omnitask.model.SecretaryAsk.Ask> = emptyList(),
     val profile: Profile = Profile(),
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
@@ -1112,6 +1114,40 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
 
+    /** Set when the app comes to the front, so the next load checks once whether Obsidian has synced the book. */
+    @Volatile private var checkSyncOnLoad = false
+
+    /** The app came to the front: read the vault again, and check whether this phone's copy is behind the secretary. */
+    fun resumed() {
+        checkSyncOnLoad = true
+        reload()
+    }
+
+    /**
+     * When this phone's Claude log is older than the newest secretary round that should be in it, Obsidian has not
+     * synced (it syncs only while open): open Obsidian so it does (owner, 2026-10-26). Once per round, so a secretary
+     * that really stopped does not send the owner to Obsidian again and again; the warning card covers that case.
+     */
+    private fun openObsidianIfBehind(last: Long?) {
+        val now = System.currentTimeMillis()
+        if (!Secretary.behind(last, now)) return
+        val round = Secretary.expectedRound(now)
+        if (prefs.getLong(KEY_SYNC_OPENED_FOR, 0L) == round) return
+        prefs.edit().putLong(KEY_SYNC_OPENED_FOR, round).apply()
+        val vault = _state.value.vaultName
+        val uri = if (vault != null) "obsidian://open?vault=${android.net.Uri.encode(vault)}" else "obsidian://open"
+        val opened = runCatching {
+            getApplication<Application>().startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+        if (opened.isSuccess) {
+            showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด เปิด Obsidian ให้ซิงก์ ซิงก์เสร็จแล้วกลับมาที่ Omni ได้เลย", "Your copy is older than the secretary's last round. Opened Obsidian to sync; come back when it is done"))
+        } else {
+            showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด แต่เปิด Obsidian ไม่ได้ เปิด Obsidian เองให้ซิงก์", "Your copy is older than the secretary's last round, and Obsidian could not be opened: open it yourself to sync"))
+        }
+    }
+
     fun reload() {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
@@ -1173,6 +1209,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             claudeLogText = logText
             val secretary = Secretary.lastRun(logText)
             _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
+            // The secretary's questions; a file that cannot be read keeps the last ones rather than hiding them.
+            val askText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, app.omnitask.model.SecretaryAsk.PATH) } }
+            askText.getOrNull().let { t -> if (askText.isSuccess) _state.update { it.copy(secretaryAsks = app.omnitask.model.SecretaryAsk.parse(t)) } }
+            if (checkSyncOnLoad) {
+                checkSyncOnLoad = false
+                val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
+                if (vaultName != null && _state.value.vaultName == null) _state.update { it.copy(vaultName = vaultName) }
+                openObsidianIfBehind(secretary)
+            }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -3132,6 +3177,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         /** The brief is read again on opening the assistant only when it is older than this. */
         const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"
+        /** The secretary round (its start, epoch ms) for which Obsidian was last opened to sync the book. */
+        const val KEY_SYNC_OPENED_FOR = "secretary.syncOpenedFor"
         const val KEY_URGENT = "urgentRule"
         const val KEY_FUTURE_COUNT = "futureCount"
         const val KEY_SKIPPED = "skippedFuture"

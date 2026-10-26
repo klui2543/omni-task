@@ -122,13 +122,14 @@ private fun repText(r: Rep, event: Boolean): String {
 @Composable
 fun AddDetailPage(
     state: UiState, vm: TaskViewModel, sentence: String, status: Status, link: String?,
-    onClose: () -> Unit, onSaved: () -> Unit,
+    startAsEvent: Boolean = false, onClose: () -> Unit, onSaved: () -> Unit,
 ) {
     val context = LocalContext.current
     val today = state.today
     val draft = remember { QuickAdd.parse(sentence, today) }
     var title by remember { mutableStateOf(draft.title) }
-    var event by remember { mutableStateOf(false) }
+    // Opened from the event side of quick add, the page starts on นัด.
+    var event by remember { mutableStateOf(startAsEvent) }
     var scheduled by remember { mutableStateOf(false) }
     var date by remember { mutableStateOf(draft.due ?: today) }
     var time by remember { mutableStateOf(draft.time) }
