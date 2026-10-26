@@ -120,7 +120,7 @@ private fun ModeMenu(open: Boolean, vm: TaskViewModel, onDismiss: () -> Unit, on
                 val on = m == vm.deskMode
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.accentDeep else C.raised)
-                        .clickable { vm.setDeskMode(m) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                        .clickable { vm.pickDeskMode(m) }.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -137,7 +137,7 @@ private fun ModeMenu(open: Boolean, vm: TaskViewModel, onDismiss: () -> Unit, on
             }
             if (vm.deskMode.isAi) {
                 Text(tr("ความพยายามคิด", "Effort"), Modifier.padding(start = 6.dp, top = 8.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)
-                Segments(SecretaryAi.Effort.entries.map { it.label }, SecretaryAi.Effort.entries.indexOf(vm.deskEffort)) { vm.setDeskEffort(SecretaryAi.Effort.entries[it]) }
+                Segments(SecretaryAi.Effort.entries.map { it.label }, SecretaryAi.Effort.entries.indexOf(vm.deskEffort)) { vm.pickDeskEffort(SecretaryAi.Effort.entries[it]) }
             }
             Text(
                 tr("ตั้งค่า AI และกฎถามตอบ", "AI and rules settings"),
@@ -361,7 +361,7 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                             ClaudeSettings.setKeyExpires(context, today.plusMonths(3L))
                             newKey = ""; vm.aiSettingsChanged(); picking = "key"
                         }
-                        if (key != null) AiButton(tr("ลบกุญแจออกจากเครื่อง", "Remove the key"), false) { ClaudeSettings.setKey(context, null); ClaudeSettings.setKeyExpires(context, null); vm.setDeskMode(SecretaryAi.Mode.RULES); vm.aiSettingsChanged() }
+                        if (key != null) AiButton(tr("ลบกุญแจออกจากเครื่อง", "Remove the key"), false) { ClaudeSettings.setKey(context, null); ClaudeSettings.setKeyExpires(context, null); vm.pickDeskMode(SecretaryAi.Mode.RULES); vm.aiSettingsChanged() }
                     }
                     Text(tr("กุญแจเก็บในเครื่องนี้เท่านั้น ไม่เข้า vault และไม่ซิงก์ เตือนก่อนหมดอายุ 7 วันที่หน้าเลขา", "Kept on this phone only, never in the vault; a warning shows on the secretary page a week before it runs out"), color = C.faint, fontSize = TS.caption)
                 }

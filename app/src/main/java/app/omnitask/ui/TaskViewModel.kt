@@ -563,9 +563,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     var aiSettingsVersion by androidx.compose.runtime.mutableStateOf(0)
         private set
 
-    fun setDeskMode(mode: SecretaryAi.Mode) { deskMode = mode; ClaudeSettings.setMode(getApplication(), mode) }
+    fun pickDeskMode(mode: SecretaryAi.Mode) { deskMode = mode; ClaudeSettings.setMode(getApplication(), mode) }
 
-    fun setDeskEffort(effort: SecretaryAi.Effort) { deskEffort = effort; ClaudeSettings.setEffort(getApplication(), effort) }
+    fun pickDeskEffort(effort: SecretaryAi.Effort) { deskEffort = effort; ClaudeSettings.setEffort(getApplication(), effort) }
 
     fun aiSettingsChanged() { aiSettingsVersion++ }
 
