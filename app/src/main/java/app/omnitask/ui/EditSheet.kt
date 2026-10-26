@@ -437,11 +437,11 @@ private fun DescriptionBlock(task: Task, vm: TaskViewModel) {
                 GhostButton(tr("ยกเลิก", "Cancel"), { text = task.description; editing = false })
                 PrimaryButton(tr("บันทึก", "Save"), { vm.setDescription(task, text); editing = false })
             }
+        } else if (task.description.isEmpty()) {
+            Text(tr("แตะเพื่อเขียนรายละเอียด", "Tap to add details"), Modifier.padding(top = 4.dp), color = C.faint, fontSize = TS.body)
         } else {
-            Text(
-                task.description.ifEmpty { tr("แตะเพื่อเขียนรายละเอียด", "Tap to add details") },
-                Modifier.padding(top = 4.dp), color = if (task.description.isEmpty()) C.faint else C.text, fontSize = TS.body,
-            )
+            // Web addresses open in the browser; a tap anywhere else still starts writing.
+            Text(withWebLinks(task.description), Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.body)
         }
     }
 }
@@ -754,6 +754,35 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
     )
+}
+
+/**
+ * The details with each web address (a shared link sits there as `- https://...`) underlined and opening in the
+ * browser; a phone with nothing to open it says so instead of failing quietly.
+ */
+@Composable
+private fun withWebLinks(text: String): androidx.compose.ui.text.AnnotatedString {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val style = androidx.compose.ui.text.TextLinkStyles(
+        androidx.compose.ui.text.SpanStyle(color = C.accentText, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+    )
+    return androidx.compose.ui.text.buildAnnotatedString {
+        var at = 0
+        app.omnitask.model.WebLinks.find(text).forEach { r ->
+            append(text.substring(at, r.first))
+            val url = text.substring(r.first, r.last + 1)
+            val open = androidx.compose.ui.text.LinkInteractionListener {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(context, tr("ไม่พบแอปที่เปิดลิงก์นี้ได้", "No app can open this link"), Toast.LENGTH_SHORT).show()
+                }
+            }
+            withLink(androidx.compose.ui.text.LinkAnnotation.Url(url, style, open)) { append(url) }
+            at = r.last + 1
+        }
+        append(text.substring(at))
+    }
 }
 
 /** Opens a vault note in Obsidian; the vault is named after its folder. */
