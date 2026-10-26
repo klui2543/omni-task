@@ -68,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +82,7 @@ import app.omnitask.data.ImageAttach
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.model.Focus
+import app.omnitask.model.Folders
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Projects
@@ -105,6 +107,7 @@ import app.omnitask.time.*
 fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Unit, onOpen: (Task) -> Unit = {}) {
     var picking by remember { mutableStateOf<DateField?>(null) }
     var addingTag by remember { mutableStateOf(false) }
+    var choosingFolder by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     var linking by remember { mutableStateOf(false) }
@@ -192,8 +195,11 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             PropChip(task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }
             val custom = CustomKind.of(task, state.customKinds)
             PropChip(custom?.label ?: TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
-            val tags = task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) || custom?.tag.equals(it, ignoreCase = true) }
-            PropChip(tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, "Tag", open == Prop.TAG) { toggle(Prop.TAG) }
+            // One folder, then the labels (owner's pick, 2026-10-26); both are still tags on the line.
+            val folder = Folders.of(task)
+            PropChip(folder?.substringAfterLast('/'), tr("โฟลเดอร์", "Folder"), false) { choosingFolder = true }
+            val tags = task.tags.filterNot { it == folder || it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) || custom?.tag.equals(it, ignoreCase = true) }
+            PropChip(tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, tr("ป้าย", "Labels"), open == Prop.TAG) { toggle(Prop.TAG) }
         }
 
         // The open chip's choices, right under the chips.
@@ -246,7 +252,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     }
                     Prop.KIND -> KindField(task, state, vm)
                     Prop.TAG -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }.forEach { tag ->
+                        task.tags.filterNot { it == Folders.of(task) || it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }.forEach { tag ->
                             Row(
                                 Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(C.accentSoft)
                                     .clickable { vm.removeTag(task, tag) }.padding(start = 12.dp, end = 8.dp),
@@ -257,7 +263,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                                 Icon(Ic.close, tr("ลบ #$tag", "Remove #$tag"), tint = C.muted, modifier = Modifier.size(13.dp))
                             }
                         }
-                        Chip(tr("+ เพิ่ม Tag", "+ Add tag"), false, { addingTag = true })
+                        Chip(tr("+ เพิ่มป้าย", "+ Add label"), false, { addingTag = true })
                     }
                 }
             }
@@ -356,6 +362,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     if (repeating) RepeatDialog(task, { vm.setRecurrence(task, it) }) { repeating = false }
     if (notingStuck) StuckDialog(task, state.subtasksOf(task), today, { vm.noteStuck(task, it) }) { notingStuck = false }
     if (stuckLog) StuckTimeline(state, onOpen = { stuckLog = false; onOpen(it) }) { stuckLog = false }
+    if (choosingFolder) {
+        FolderPicker(state, Folders.of(task), labels = null, onLabel = null, onPick = { vm.moveToFolder(task, it); choosingFolder = false }) { choosingFolder = false }
+    }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }
     }
@@ -804,7 +813,7 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text(tr("เพิ่ม Tag", "Add tag")) },
+        title = { Text(tr("เพิ่มป้าย", "Add a label")) },
         text = {
             Column {
                 BasicTextField(

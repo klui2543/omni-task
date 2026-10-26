@@ -32,6 +32,7 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.Folders
 import app.omnitask.model.SpokenWhen
 import app.omnitask.model.TimeWords
 import app.omnitask.model.Ygdrasil
@@ -2072,6 +2073,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val from = Projects.tagOf(task)
         if (from == tag) return
         edit(task) { TaskLine.retag(it, from, tag) }
+    }
+
+    /**
+     * The folder picker (owner's pick, 2026-10-26): the task's one folder becomes [folder] where its old one stood, or
+     * goes in front when it had none; null takes it out of its folder. Labels stay. A folder whose top is not a
+     * project yet becomes one, so the task shows on the desktop and in Ygdrasil at once.
+     */
+    fun moveToFolder(task: Task, folder: String?) {
+        val from = Folders.of(task)
+        when {
+            folder == null -> if (from != null) removeTag(task, from)
+            from == null -> homeTask(task, folder)
+            else -> {
+                if (from == folder) return
+                edit(task) { TaskLine.retag(it, from, folder) }
+                val root = TaskLine.normalizeTag(folder).substringBefore('/')
+                _state.value.projectTags?.let { if (root !in it) saveProjectTags(it + root) }
+            }
+        }
     }
 
     /**
