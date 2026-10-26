@@ -217,5 +217,29 @@ class AssistantMlTest {
         val m = AssistantMl.Model(listOf(ex("- {พรุ่งนี้|วันที่}{ประชุมทีม|ชื่องาน}{ลงปฏิทิน|คำสั่ง} → เพิ่มงาน")), AssistantMl.seeds(SecretaryGuide.DEFAULT))
         assertEquals(Level.HIGH, m.read("วันศุกร์ไปหาหมอลงปฏิทิน").level)
     }
-}
 
+    @Test
+    fun aListIsAskedForByItsWholeSentence() {
+        val m = AssistantMl.Model(
+            listOf(ex("- {งานค้าง|ชื่องาน}{มีอะไรบ้าง|คำสั่ง} → ในแอป: งานค้าง"), ex("- {ขอดูงาน|คำสั่ง}{ค้าง|ชื่องาน} → ในแอป: งานค้าง")),
+            AssistantMl.seeds(SecretaryGuide.DEFAULT),
+        )
+        listOf("พรุ่งนี้มีอะไรบ้าง", "ตู้เย็นมีอะไรบ้าง", "ขอดูงานด่วน", "ขอดูงานพรุ่งนี้").forEach { said -> assertNotEquals(Level.HIGH, m.read(said).level, said) }
+        assertEquals(Level.HIGH, m.read("งานค้างมีอะไรบ้าง").level)
+    }
+
+    @Test
+    fun aTaughtSentenceTypedAgainIsDoneEvenNextToAnotherLikeIt() {
+        val m = AssistantMl.Model(
+            listOf(
+                ex("- {จด|คำสั่ง} {ซื้อไข่|ชื่องาน} → เพิ่มงาน"), ex("- {จด|คำสั่ง} {ประชุม|ชื่องาน} → หาเวลา"),
+                ex("- {งานค้าง|ชื่องาน}{มีอะไรบ้าง|คำสั่ง} → ในแอป: งานค้าง"), ex("- {งานด่วน|ชื่องาน}{มีอะไรบ้าง|คำสั่ง} → กรอง: ความสำคัญ สูง"),
+            ),
+            AssistantMl.seeds(SecretaryGuide.DEFAULT),
+        )
+        assertEquals(Intent.AddTask, m.read("จด ซื้อไข่").let { assertEquals(Level.HIGH, it.level); it.best!!.intent })
+        assertEquals(Intent.FindTime, m.read("จด ประชุม").let { assertEquals(Level.HIGH, it.level); it.best!!.intent })
+        assertEquals(Level.HIGH, m.read("งานด่วนมีอะไรบ้าง").level)
+        assertTrue(m.read("งานด่วนมีอะไรบ้าง").best!!.intent.let { it is Intent.Do && it.action is SecretaryGuide.Action.Show })
+    }
+}

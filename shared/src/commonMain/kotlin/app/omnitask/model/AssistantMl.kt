@@ -383,8 +383,11 @@ object AssistantMl {
             val last = taught.withIndex().associateBy({ SecretaryGuide.squash(it.value.text) }, { it.index })
             kept = taught.filterIndexed { i, e -> last[SecretaryGuide.squash(e.text)] == i }
             fun item(e: Example, seed: Boolean): Item {
-                // Read as highlighted only when something that asks (a command, urgency, project) is marked.
-                val marked = e.spans.any { it.label != null && !it.label.content }
+                // Read by its asking only for a task (add it, find time), whose name, day and time change every time,
+                // and only when something that asks is marked. What only shows a list is asked by its whole sentence: its
+                // words are the question ("งานค้างมีอะไรบ้าง" is not "พรุ่งนี้มีอะไรบ้าง").
+                val task = e.intent == Intent.AddTask || e.intent == Intent.FindTime
+                val marked = task && e.spans.any { it.label != null && !it.label.content }
                 val a = if (seed || !marked) emptyMap() else asking(e)
                 // Asking after the task's own name ("ซื้อนม จดไว้"): it need not start the sentence.
                 val afterTask = e.spans.firstOrNull { it.text.isNotBlank() && it.label != Label.DATE && it.label != Label.TIME }?.label == Label.TITLE
@@ -409,8 +412,6 @@ object AssistantMl {
             .filter { it.first.isNotEmpty() && it.second in LEVELS }.distinctBy { it.first }.sortedByDescending { it.first.length }
 
         private fun score(item: Item, q: Set<String>, text: String): Double {
-            // A sentence taught before, typed again (spaces aside): what the screen promised ("ครั้งหน้าพิมพ์แบบนี้ เลขาทำเลย").
-            if (!item.seed && item.squashed == SecretaryGuide.squash(text)) return 1.0
             val anchor = item.anchor
             val s = if (anchor != null) {
                 var num = 0.0
@@ -444,6 +445,13 @@ object AssistantMl {
                 .map { (_, list) -> list.maxBy { it.second }.let { (item, s) -> Guess(item.example.intent, s, item.example) } }
                 .sortedByDescending { it.score }
                 .take(3)
+            // A sentence taught before, typed again (spaces aside), is done: what the screen promised
+            // ("ครั้งหน้าพิมพ์แบบนี้ เลขาทำเลย"), whatever else is close.
+            val squashed = SecretaryGuide.squash(text)
+            items.firstOrNull { !it.seed && it.squashed == squashed }?.let { exact ->
+                val g = Guess(exact.example.intent, 1.0, exact.example)
+                return Reading(Level.HIGH, listOf(g) + best.filter { it.intent != g.intent }.take(2))
+            }
             val top = best.firstOrNull()?.score ?: 0.0
             val second = best.getOrNull(1)?.score ?: 0.0
             val level = when {
