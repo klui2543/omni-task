@@ -192,13 +192,35 @@ fun NotifySettingsScreen(settings: NotifySettings, onChange: (NotifySettings) ->
                     onChange(settings.copy(calendarEvents = it))
                 }
                 if (settings.calendarEvents) {
-                    FlowRow(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        NotifySettings.LEAD_PRESETS.forEach { m ->
-                            Chip(tr("ก่อน $m นาที", "$m min before"), settings.calendarLeadMinutes == m, { onChange(settings.copy(calendarLeadMinutes = m)) })
-                        }
-                    }
+                    // Several leads at once, in minutes or whole days (owner's pick, mock 2026-10-26).
+                    LeadChips(tr("ก่อนนัด (เลือกได้หลายอัน)", "Before an event (pick as many as you like)"), NotifySettings.LEAD_PRESETS, settings, onChange)
+                    LeadChips(tr("ก่อนเป็นวัน", "Days before"), NotifySettings.DAY_LEAD_PRESETS, settings, onChange)
+                    Text(
+                        if (settings.calendarLeads.isEmpty()) tr("ยังไม่ได้เลือก จะไม่เตือนนัด", "None picked: no event reminders")
+                        else tr("เลือกไว้ ${settings.calendarLeads.size} เวลา", "${settings.calendarLeads.size} picked"),
+                        Modifier.padding(top = 6.dp, bottom = 12.dp), color = C.muted, fontSize = TS.caption,
+                    )
                 }
             }
+        }
+    }
+}
+
+/** One row of event leads: [presets] plus a lead kept from before that is not a preset, so it can be turned off. A tap turns one on or off. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LeadChips(title: String, presets: List<Int>, settings: NotifySettings, onChange: (NotifySettings) -> Unit) {
+    val days = presets.first() >= 1440
+    Text(title, Modifier.padding(top = 6.dp), color = C.muted, fontSize = TS.caption)
+    FlowRow(Modifier.padding(top = 6.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val kept = settings.calendarLeads.filter { it !in NotifySettings.LEAD_PRESETS + NotifySettings.DAY_LEAD_PRESETS && (it >= 1440) == days }
+        (presets + kept).distinct().sorted().forEach { m ->
+            val on = m in settings.calendarLeads
+            val label = NotifySettings.leadLabel(m)
+            Chip((if (on) "✓ " else "") + tr("ก่อน $label", "$label before"), on, {
+                val next = if (on) settings.calendarLeads - m else settings.calendarLeads + m
+                onChange(settings.copy(calendarLeads = next.distinct().sorted()))
+            })
         }
     }
 }

@@ -73,11 +73,50 @@ class AlarmPlanTest {
             CalendarEvent(1, "ประชุมทีม", LocalDateTime.parse("2026-10-07T13:00"), LocalDateTime.parse("2026-10-07T14:00")),
             CalendarEvent(2, "เริ่มไปแล้ว", LocalDateTime.parse("2026-10-07T10:35"), LocalDateTime.parse("2026-10-07T11:00")),
         )
-        val on = AlarmPlan.plan(emptyList(), events, NotifySettings(calendarLeadMinutes = 15), now).filter { it.kind == AlarmKind.EVENT }
+        val on = AlarmPlan.plan(emptyList(), events, NotifySettings(calendarLeads = listOf(15)), now).filter { it.kind == AlarmKind.EVENT }
         assertEquals(listOf(LocalDateTime.parse("2026-10-07T12:45")), on.map { it.at })
         assertEquals("อีก 15 นาที (13:00 ถึง 14:00)", on.single().text)
         val off = AlarmPlan.plan(emptyList(), events, NotifySettings(calendarEvents = false), now)
         assertTrue(off.none { it.kind == AlarmKind.EVENT })
+        val none = AlarmPlan.plan(emptyList(), events, NotifySettings(calendarLeads = emptyList()), now)
+        assertTrue(none.none { it.kind == AlarmKind.EVENT })
+    }
+
+    @Test
+    fun anEventRemindsAtEveryLeadPickedEvenDaysBefore() {
+        // now is Wednesday 7 Oct 10:30.
+        val events = listOf(
+            CalendarEvent(1, "ประชุมทีมยา", LocalDateTime.parse("2026-10-09T09:00"), LocalDateTime.parse("2026-10-09T10:00")),
+            CalendarEvent(2, "สอบ", LocalDateTime.parse("2026-10-14T11:00"), LocalDateTime.parse("2026-10-14T12:00")),
+            CalendarEvent(3, "ทั้งวัน", LocalDateTime.parse("2026-10-08T00:00"), LocalDateTime.parse("2026-10-09T00:00"), allDay = true),
+        )
+        val s = NotifySettings(calendarLeads = listOf(30, 1440, 10080))
+        val alarms = AlarmPlan.plan(emptyList(), events, s, now).filter { it.kind == AlarmKind.EVENT }.sortedBy { it.at }
+        assertEquals(
+            listOf(
+                // A week before the exam is today 11:00, within the 48 hours the plan sets.
+                LocalDateTime.parse("2026-10-07T11:00") to "อีก 1 สัปดาห์ (พ. 14 ต.ค. 11:00 ถึง 12:00)",
+                LocalDateTime.parse("2026-10-08T09:00") to "อีก 1 วัน (ศ. 9 ต.ค. 09:00 ถึง 10:00)",
+                LocalDateTime.parse("2026-10-09T08:30") to "อีก 30 นาที (09:00 ถึง 10:00)",
+            ),
+            alarms.map { it.at to it.text },
+        )
+        // One alarm per lead: the ids differ, so none replaces another.
+        assertEquals(alarms.size, alarms.map { it.id }.toSet().size)
+        // Not set: a week before the meeting (passed), the exam's day and half-hour alarms (later than 48 hours, a
+        // rescan sets them), and the all-day event (no time to count back from).
+        assertTrue(alarms.none { it.title == "ทั้งวัน" })
+        // The phone reads far enough ahead for a week's lead.
+        assertEquals(48L + 168 + 1, AlarmPlan.eventReadHours(s))
+        assertEquals(48L + 0 + 1, AlarmPlan.eventReadHours(NotifySettings(calendarLeads = listOf(30))))
+    }
+
+    @Test
+    fun leadLabelsReadAsMinutesHoursDaysOrWeeks() {
+        assertEquals(
+            listOf("5 นาที", "30 นาที", "1 ชั่วโมง", "2 ชั่วโมง", "1 วัน", "2 วัน", "1 สัปดาห์", "90 นาที"),
+            listOf(5, 30, 60, 120, 1440, 2880, 10080, 90).map { NotifySettings.leadLabel(it) },
+        )
     }
 
     @Test

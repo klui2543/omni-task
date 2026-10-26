@@ -45,8 +45,15 @@ object Scheduler {
             digestWaiting = p.getBoolean(KEY_SETTINGS + "waiting", d.digestWaiting),
             weeklyReview = p.getBoolean(KEY_SETTINGS + "weekly", d.weeklyReview),
             calendarEvents = p.getBoolean(KEY_SETTINGS + "calendar", d.calendarEvents),
-            calendarLeadMinutes = p.getInt(KEY_SETTINGS + "lead", d.calendarLeadMinutes),
+            calendarLeads = loadLeads(p, d.calendarLeads),
         )
+    }
+
+    /** The leads picked, as "30,1440"; before several could be picked there was one number under "lead", kept as it was. */
+    private fun loadLeads(p: SharedPreferences, default: List<Int>): List<Int> {
+        p.getString(KEY_SETTINGS + "leads", null)?.let { s -> return s.split(',').mapNotNull { it.trim().toIntOrNull() }.filter { it > 0 }.distinct().sorted() }
+        if (p.contains(KEY_SETTINGS + "lead")) return listOf(p.getInt(KEY_SETTINGS + "lead", default.firstOrNull() ?: 10))
+        return default
     }
 
     fun saveSettings(context: Context, s: NotifySettings) {
@@ -58,7 +65,8 @@ object Scheduler {
             .putBoolean(KEY_SETTINGS + "waiting", s.digestWaiting)
             .putBoolean(KEY_SETTINGS + "weekly", s.weeklyReview)
             .putBoolean(KEY_SETTINGS + "calendar", s.calendarEvents)
-            .putInt(KEY_SETTINGS + "lead", s.calendarLeadMinutes)
+            .putString(KEY_SETTINGS + "leads", s.calendarLeads.distinct().sorted().joinToString(","))
+            .remove(KEY_SETTINGS + "lead")
             .apply()
     }
 
@@ -81,7 +89,7 @@ object Scheduler {
     fun reschedule(context: Context, tasks: List<Task>) {
         val now = LocalDateTime.now()
         val settings = loadSettings(context)
-        val events = if (settings.calendarEvents) readCalendar(context, now) else emptyList()
+        val events = if (settings.calendarEvents) readCalendar(context, now, settings) else emptyList()
         val plan = AlarmPlan.plan(tasks, events, settings, now)
 
         val am = context.getSystemService(AlarmManager::class.java)
@@ -144,6 +152,6 @@ object Scheduler {
 
     fun hasCalendarPermission(context: Context) = CalendarReader.hasPermission(context)
 
-    private fun readCalendar(context: Context, now: LocalDateTime): List<CalendarEvent> =
-        CalendarReader.events(context, now, now.plusHours(48))
+    private fun readCalendar(context: Context, now: LocalDateTime, settings: NotifySettings): List<CalendarEvent> =
+        CalendarReader.events(context, now, now.plusHours(AlarmPlan.eventReadHours(settings)))
 }
