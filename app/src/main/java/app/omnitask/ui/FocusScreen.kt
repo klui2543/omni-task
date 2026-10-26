@@ -48,6 +48,7 @@ import app.omnitask.model.TaskKind
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
+import app.omnitask.model.SecretaryAsk
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import androidx.compose.foundation.layout.heightIn
@@ -89,7 +90,7 @@ fun FocusScreen(
         CalendarsDialog(CalendarChoices(state.calendars, state.hiddenCalendars, vm::setCalendarShown, vm::calendarChanged), calendarsFrom) { calendarsOpen = false }
     }
     val today = state.today
-    val asks = app.omnitask.model.SecretaryAsk.open(state.secretaryAsks, state.tasks, today)
+    val asks = SecretaryAsk.open(state.secretaryAsks, state.tasks, today)
     if (asking) SecretaryAskSheet(asks, vm, onOpen) { asking = false }
     val brief = state.brief
     val events = state.todayEvents

@@ -80,6 +80,7 @@ import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
 import app.omnitask.model.quadrant
+import app.omnitask.model.SecretaryAsk
 import app.omnitask.model.tr
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
@@ -168,7 +169,7 @@ data class UiState(
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
     /** The secretary's questions (`Claude/เลขาถาม.md`), as last read; the today page matches them to open tasks. */
-    val secretaryAsks: List<app.omnitask.model.SecretaryAsk.Ask> = emptyList(),
+    val secretaryAsks: List<SecretaryAsk.Ask> = emptyList(),
     val profile: Profile = Profile(),
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
@@ -1135,10 +1136,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         if (prefs.getLong(KEY_SYNC_OPENED_FOR, 0L) == round) return
         prefs.edit().putLong(KEY_SYNC_OPENED_FOR, round).apply()
         val vault = _state.value.vaultName
-        val uri = if (vault != null) "obsidian://open?vault=${android.net.Uri.encode(vault)}" else "obsidian://open"
+        val uri = if (vault != null) "obsidian://open?vault=${Uri.encode(vault)}" else "obsidian://open"
         val opened = runCatching {
             getApplication<Application>().startActivity(
-                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
         if (opened.isSuccess) {
@@ -1210,8 +1211,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val secretary = Secretary.lastRun(logText)
             _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
             // The secretary's questions; a file that cannot be read keeps the last ones rather than hiding them.
-            val askText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, app.omnitask.model.SecretaryAsk.PATH) } }
-            askText.getOrNull().let { t -> if (askText.isSuccess) _state.update { it.copy(secretaryAsks = app.omnitask.model.SecretaryAsk.parse(t)) } }
+            val askText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryAsk.PATH) } }
+            askText.getOrNull().let { t -> if (askText.isSuccess) _state.update { it.copy(secretaryAsks = SecretaryAsk.parse(t)) } }
             if (checkSyncOnLoad) {
                 checkSyncOnLoad = false
                 val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
