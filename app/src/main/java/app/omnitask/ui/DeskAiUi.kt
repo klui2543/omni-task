@@ -59,8 +59,8 @@ private fun longDay(d: LocalDate) = d.format(SHORT_DATE) + " " + (d.year + 543)
 
 /**
  * The secretary's chat box, laid out like Claude's (owner, 2026-10-26): the text on top; below it the mode (the app's
- * rules, or a Claude model picked here before asking) and send. The prices stay hidden until a question is sent: the
- * confirmation shows them.
+ * rules, or a Claude model picked here before asking) and send. The prices stay hidden until the mode is tapped (the
+ * menu shows what one question costs) and again at the confirmation before anything is sent.
  */
 @Composable
 internal fun ChatBox(
@@ -114,7 +114,6 @@ private fun ModeMenu(open: Boolean, vm: TaskViewModel, onDismiss: () -> Unit, on
     val context = LocalContext.current
     DropdownMenu(open, onDismiss, containerColor = C.raised) {
         val credit = remember(vm.aiSettingsVersion) { ClaudeSettings.credit(context) }
-        val system = remember { SecretaryAi.system(LocalDate.now()) }
         Column(Modifier.width(300.dp).padding(horizontal = 6.dp)) {
             SecretaryAi.Mode.entries.forEach { m ->
                 val on = m == vm.deskMode
@@ -128,7 +127,7 @@ private fun ModeMenu(open: Boolean, vm: TaskViewModel, onDismiss: () -> Unit, on
                         Text(m.note, color = C.muted, fontSize = TS.caption)
                     }
                     val price = if (!m.isAi) tr("ฟรี", "Free") else
-                        tr("ราว ", "about ") + baht(SecretaryAi.estimate(m, vm.deskEffort, SecretaryAi.guessInTokens(system, "อยากวิ่ง 30 นาที สัปดาห์นี้")).usd, credit) + tr(" บาท", " baht")
+                        tr("ราว ", "about ") + baht(vm.aiEstimate(m, vm.deskEffort, "อยากวิ่ง 30 นาที สัปดาห์นี้").usd, credit) + tr(" บาท", " baht")
                     Text(price, Modifier.padding(start = 6.dp), color = C.muted, fontSize = TS.caption)
                     Box(Modifier.width(22.dp), contentAlignment = Alignment.CenterEnd) {
                         if (on) Icon(Ic.check, null, tint = C.accentText, modifier = Modifier.size(16.dp))
@@ -331,11 +330,6 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                     SettingRow(tr("เครดิตโปรโมชั่นหมดอายุ", "Promotional credit expires"), credit.creditExpires?.let(::longDay) ?: tr("ตั้งค่า", "Set")) { picking = "credit" }
                     NumberRow(tr("เครดิตตั้งต้น (ดอลลาร์)", "Credit (dollars)"), quota) { v -> quota = v; v.toDoubleOrNull()?.let { ClaudeSettings.setQuota(context, it); vm.aiSettingsChanged() } }
                     NumberRow(tr("บาทต่อ 1 ดอลลาร์", "Baht per dollar"), rate) { v -> rate = v; v.toDoubleOrNull()?.takeIf { it > 0 }?.let { ClaudeSettings.setRate(context, it); vm.aiSettingsChanged() } }
-                    Text(
-                        tr("เริ่มนับใหม่ (เครดิตก้อนใหม่)", "Start counting again (new credit)"),
-                        Modifier.clip(RoundedCornerShape(8.dp)).clickable { ClaudeSettings.resetSpent(context); vm.aiSettingsChanged() }.padding(vertical = 6.dp),
-                        color = C.accentText, fontSize = TS.caption,
-                    )
                 }
                 Text(tr("คิดจากที่แอปนี้ใช้เท่านั้น ถ้าใช้เครดิตเดียวกันที่อื่น ยอดจริงดูที่หน้า Billing ของ Claude Console", "Counted from this app only; the real balance is on the Claude Console's Billing page"), color = C.faint, fontSize = TS.caption)
                 Column(

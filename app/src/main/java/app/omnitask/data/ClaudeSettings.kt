@@ -7,7 +7,8 @@ import kotlinx.datetime.LocalDate
 /**
  * The secretary chat's AI settings, kept on this phone only (app-private preferences, never in the vault or the
  * settings file that syncs): the Anthropic key and when it runs out, the credit and what this app spent of it, the
- * baht rate, and the model and effort last picked in the chat box.
+ * baht rate, the effort last picked in the chat box (the model is not kept: the chat starts on the free rules), and
+ * what the instructions really cost per model.
  */
 object ClaudeSettings {
     private const val PREFS = "omni-ai"
@@ -52,13 +53,6 @@ object ClaudeSettings {
     /** Adds what one call cost to what this app has spent (kept to the full precision of a Double). */
     @Synchronized
     fun addSpent(context: Context, usd: Double) = setDouble(context, "claude.spentUsdBits", credit(context).spentUsd + usd)
-
-    /** Starts counting again (a new credit): what was spent goes back to zero. */
-    fun resetSpent(context: Context) = prefs(context).edit().remove("claude.spentUsdBits").apply()
-
-    fun mode(context: Context): SecretaryAi.Mode = SecretaryAi.Mode.of(prefs(context).getString("claude.mode", null))
-
-    fun setMode(context: Context, mode: SecretaryAi.Mode) = prefs(context).edit().putString("claude.mode", mode.name).apply()
 
     fun effort(context: Context): SecretaryAi.Effort = SecretaryAi.Effort.of(prefs(context).getString("claude.effort", null))
 

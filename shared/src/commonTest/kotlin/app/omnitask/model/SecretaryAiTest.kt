@@ -46,6 +46,16 @@ class SecretaryAiTest {
         assertTrue(SecretaryAi.isMedical("hn:7654321"))
         // A Latin name that contains the letters hn is not a hospital number.
         assertFalse(SecretaryAi.isMedical("นัด john พรุ่งนี้"))
+        // Wordings the reviewer found slipping through (2026-10-26).
+        listOf(
+            "ยาพารากินได้กี่เม็ด", "ยาอะไรแก้ไอดี", "ทานยาก่อนอาหารไหม", "จ่ายยา", "warfarin กับ aspirin กินด้วยกันได้ไหม",
+            "amoxicillin 500 mg", "omeprazole ก่อนอาหาร", "ยาน้ำเด็ก", "ยาตีกันไหม",
+        ).forEach { assertTrue(SecretaryAi.isMedical(it), it) }
+        // Everyday words that hold ยา or look like a unit are not about medicines.
+        listOf(
+            "แอปนี้ใช้ยากมาก", "ทีมตีกันอีกแล้ว", "ยามเช้าไปวิ่ง", "พยาบาลประชุมบ่าย", "งานวิทยาลัย", "วันเกิดภรรยา",
+            "สอบที่ มก. วันเสาร์", "ประชุม april", "ซื้อยางรถ",
+        ).forEach { assertFalse(SecretaryAi.isMedical(it), it) }
         // Thai words that merely contain ยา are not questions about medicines.
         assertFalse(SecretaryAi.isMedical("พยายามทำงานให้เสร็จ"))
         assertFalse(SecretaryAi.isMedical("ช่วงนี้ยุ่งมาก งานไหนพอเลื่อนได้บ้าง"))

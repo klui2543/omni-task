@@ -225,6 +225,8 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 ) { Icon(Ic.pen, tr("แก้บอลลูน", "Change the bubbles"), tint = C.accentText, modifier = Modifier.size(18.dp)) }
             }
         }
+        // A question cancelled at the cost check comes back into the box.
+        LaunchedEffect(vm.deskDraft) { vm.deskDraft?.let { input = it; vm.deskDraftTaken() } }
         // The chat box, like Claude's: the rules by default, a Claude model only when picked here (owner, 2026-10-26).
         ChatBox(
             input, { input = it }, vm,

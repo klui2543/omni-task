@@ -591,7 +591,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun aiStart(text: String, mode: SecretaryAi.Mode, effort: SecretaryAi.Effort, fromTurn: Int? = null) {
         val app = getApplication<Application>()
         fun say(line: String) {
-            if (fromTurn == null) desk.add(DeskTurn(mine = text, via = mode.sentWith))
+            // Stopped here: nothing went out, so the line under it says so.
+            if (fromTurn == null) desk.add(DeskTurn(mine = text, via = tr("ไม่ได้ส่งให้ AI", "Not sent to the AI")))
             desk.add(DeskTurn(reply = SecretaryDesk.Reply(listOf(line), emptyList())))
         }
         if (SecretaryAi.isMedical(text)) {
@@ -602,12 +603,31 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             say(tr("ยังไม่ได้ใส่กุญแจ API ของ Anthropic ใส่ได้ที่ปุ่มเลือกโหมดในกล่องพิมพ์ แล้วเลือก ตั้งค่า AI และกฎถามตอบ", "No Anthropic API key yet: add it from the mode button in the chat box, AI and rules settings"))
             return
         }
-        val system = SecretaryAi.system(LocalDate.now())
-        val inTokens = ClaudeSettings.baseTokens(app, mode)?.let { it + SecretaryAi.guessInTokens("", text) } ?: SecretaryAi.guessInTokens(system, text)
-        aiPending = AiPending(text, mode, effort, SecretaryAi.estimate(mode, effort, inTokens), fromTurn)
+        aiPending = AiPending(text, mode, effort, aiEstimate(mode, effort, text), fromTurn)
     }
 
-    fun aiCancel() { aiPending = null }
+    /**
+     * What [text] will cost on [mode], worked out on the phone: the instructions as the last real answer measured them,
+     * plus the sentence; before any answer, a guess from the instructions and the answer's form.
+     */
+    fun aiEstimate(mode: SecretaryAi.Mode, effort: SecretaryAi.Effort, text: String): SecretaryAi.Estimate {
+        val app = getApplication<Application>()
+        val inTokens = ClaudeSettings.baseTokens(app, mode)?.let { it + SecretaryAi.guessInTokens("", text) }
+            ?: SecretaryAi.guessInTokens(SecretaryAi.system(LocalDate.now()) + SecretaryAi.SCHEMA, text)
+        return SecretaryAi.estimate(mode, effort, inTokens)
+    }
+
+    /** A typed sentence the owner cancelled, handed back to the chat box so it need not be typed again. */
+    var deskDraft by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
+    fun deskDraftTaken() { deskDraft = null }
+
+    fun aiCancel() {
+        val p = aiPending ?: return
+        aiPending = null
+        if (p.fromTurn == null) deskDraft = p.question
+    }
 
     private fun aiTurnIndex(id: Long) = desk.indexOfFirst { it.ai?.id == id }
 
@@ -618,7 +638,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         val key = ClaudeSettings.key(app) ?: return
         // The rules' answer the Haiku button came from has done its part: its buttons give way.
-        p.fromTurn?.let { i -> if (i in desk.indices) desk[i] = desk[i].copy(done = true) }
+        p.fromTurn?.let { i -> if (i in desk.indices && desk[i].reply?.teach == p.question) desk[i] = desk[i].copy(done = true) }
         if (p.fromTurn == null) desk.add(DeskTurn(mine = p.question, via = p.mode.sentWith))
         val id = aiNextId++
         desk.add(DeskTurn(ai = AiTurn(id, p.mode, p.effort, question = p.question)))
@@ -649,7 +669,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 },
             )
-            // Found by its id: the chat may have moved on, or started over (then the answer, and its cost, still show).
+            // Found by its id: the chat may have moved on, or started over. Then the answer, and its cost, show in the
+            // new chat, and also in the old one kept for "undo", so undo does not bring back "กำลังถาม..." for good.
+            deskBefore = deskBefore.map { if (it.ai?.id == id) it.copy(ai = done) else it }
             val at = aiTurnIndex(id)
             if (at >= 0) desk[at] = desk[at].copy(ai = done) else desk.add(DeskTurn(ai = done))
         }

@@ -94,16 +94,25 @@ object SecretaryAi {
     fun isMedical(text: String): Boolean {
         val t = text.lowercase()
         val words = listOf(
-            "ขนาดยา", "ปรับยา", "ปรับขนาด", "ยาตัว", "ใช้ยา", "กินยา", "ให้ยา", "ฉีดยา", "แพ้ยา", "ตีกัน", "interaction",
-            "ขอยา", "ยาแก้", "ยาลด", "ยาฆ่าเชื้อ", "ยาปฏิชีวนะ", "สั่งยา",
-            "dose", "dosing", "mg/kg", "มก.", "มิลลิกรัม", "ผู้ป่วย", "คนไข้", "เลขบัตร", "patient", "drug",
+            "ขนาดยา", "ปรับขนาด", "ยาตีกัน", "interaction", "พาราเซตามอล", "อินซูลิน",
+            "dose", "dosing", "mg/kg", "มิลลิกรัม", "ผู้ป่วย", "คนไข้", "เลขบัตร", "patient", "drug", "medicine", "medication", "antibiotic",
         )
         if (words.any { it in t }) return true
-        // A hospital number: "hn" as its own Latin word ("HN 1234", "hn:5678", "hn123"), not inside "john".
-        if (Regex("""(^|[^a-z])hn([^a-z]|$)""").containsMatchIn(t)) return true
-        // "ยา" on its own, as a word ("ยา vancomycin", "ถามเรื่องยา"), not inside พยายาม, ยาว, ยาก...
-        return Regex("""(^|\s|เรื่อง)ยา(\s|$|[a-z])""").containsMatchIn(t)
+        return MEDICAL.any { it.containsMatchIn(t) }
     }
+
+    private val MEDICAL = listOf(
+        // A hospital number: "hn" as its own Latin word ("HN 1234", "hn:5678", "hn123"), not inside "john".
+        Regex("""(^|[^a-z])hn([^a-z]|$)"""),
+        // "ยา" as a word: at the start, after a space, or after a verb (กินยา, ขอยาแก้ปวด, ทานยาก่อนอาหาร), but not the
+        // start of ยาก, ยาว, ยาม, ยาย, ยาง, ยาน (ใช้ยาก, ยามเช้า), nor inside พยายาม, พยาบาล, วิทยา, ภรรยา.
+        Regex("""(^|[\s\d.,!?()"']|เรื่อง|กิน|ทาน|ใช้|ให้|จ่าย|สั่ง|ขอ|ฉีด|แพ้|หยอด|พ่น|ปรับ|เปลี่ยน|หยุด|เก็บ|ซื้อ|ตัว|ชื่อ)ยา(?!ก(?![่้])|ว|ม|ย|ง|น(?!้))"""),
+        // A strength after a number: "500 mg", "5 มก.", "10 ยูนิต" (not "มก." alone, which is also a university).
+        Regex("""\d\s*(mg|mcg|มก|iu|ยูนิต)"""),
+        // Medicines by name: common names and the endings drug names share (warfarin, amoxicillin, omeprazole).
+        Regex("""aspirin|paracetamol|acetaminophen|metformin|insulin|morphine|heparin|digoxin|ibuprofen"""),
+        Regex("""[a-z]{3,}(cillin|mycin|micin|floxacin|cycline|pril|sartan|olol|statin|azole|vir|mab|farin|parin|profen|pam|lam|tidine|dronate|gliptin|gliflozin|xaban|platin|taxel|rubicin|olone|sone|triptan|dipine|setron)\b"""),
+    )
 
     /** What the model may answer with. */
     enum class Kind { COMMAND, ADD_TASK, FIND_TIME, ANSWER, CLAUDE }
