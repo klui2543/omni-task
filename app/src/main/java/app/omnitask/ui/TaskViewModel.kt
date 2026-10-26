@@ -585,8 +585,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Gets a question ready for Claude: medicines and patients never go out; without a key the owner is told where to
-     * put one; otherwise the confirmation opens with what it will cost. Nothing is sent before "ยืนยันส่ง".
+     * Gets a question ready for Claude: without a key the owner is told where to put one; otherwise the confirmation
+     * opens with what it will cost. Nothing is sent before "ยืนยันส่ง". Any sentence may go (owner, 2026-10-26).
      */
     fun aiStart(text: String, mode: SecretaryAi.Mode, effort: SecretaryAi.Effort, fromTurn: Int? = null) {
         val app = getApplication<Application>()
@@ -594,10 +594,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             // Stopped here: nothing went out, so the line under it says so.
             if (fromTurn == null) desk.add(DeskTurn(mine = text, via = tr("ไม่ได้ส่งให้ AI", "Not sent to the AI")))
             desk.add(DeskTurn(reply = SecretaryDesk.Reply(listOf(line), emptyList())))
-        }
-        if (SecretaryAi.isMedical(text)) {
-            say(tr("แชตเลขาไม่ส่งเรื่องยาและผู้ป่วยให้ AI เพราะผิดไม่ได้ ใช้แหล่งอ้างอิงหรือแอป Peddose แทน", "The secretary does not send medicines or patients to an AI: use your references or Peddose"))
-            return
         }
         if (ClaudeSettings.key(app) == null) {
             say(tr("ยังไม่ได้ใส่กุญแจ API ของ Anthropic ใส่ได้ที่ปุ่มเลือกโหมดในกล่องพิมพ์ แล้วเลือก ตั้งค่า AI และกฎถามตอบ", "No Anthropic API key yet: add it from the mode button in the chat box, AI and rules settings"))

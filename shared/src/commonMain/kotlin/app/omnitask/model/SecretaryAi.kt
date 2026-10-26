@@ -87,60 +87,6 @@ object SecretaryAi {
     fun leftText(credit: Credit, usd: Double = credit.leftUsd): String =
         tr("${formatFixed(usd, 2)} ดอลลาร์ (ราว ${grouped(credit.baht(usd).roundToLong())} บาท)", "$${formatFixed(usd, 2)} (about ${grouped(credit.baht(usd).roundToLong())} baht)")
 
-    /**
-     * Questions about medicines and patients never go to a model, whatever is picked: an answer there cannot be wrong
-     * (owner's work as a pharmacist). Words, not a judgement, and leaning to stop: a sentence stopped by mistake only
-     * shows a message, a sentence missed goes out. Any "ยา" left once everyday words that hold it are taken out
-     * (อยาก, พยาบาล, วิทยา, ยากมาก, ยาว, ยาม, ยาง...) counts as a medicine.
-     */
-    fun isMedical(text: String): Boolean {
-        var t = " " + text.lowercase() + " "
-        if (MEDICAL_WORDS.any { it in t }) return true
-        if (MEDICAL.any { it.containsMatchIn(t) }) return true
-        EVERYDAY_YA.forEach { t = it.replace(t, " ") }
-        return "ยา" in t
-    }
-
-    /** Not followed by a Thai vowel or tone mark written on or after a consonant. */
-    private const val NO_MARK = "(?![ัิีึืุู็่้๊๋์ำะา])"
-
-    private val MEDICAL_WORDS = listOf(
-        "interaction", "อินซูลิน", "dose", "dosing", "mg/kg", "มิลลิกรัม", "ผู้ป่วย", "คนไข้", "เลขบัตร",
-        "patient", "drug", "medicine", "medication", "antibiotic",
-    )
-
-    private val MEDICAL = listOf(
-        // A hospital number: "hn" as its own Latin word ("HN 1234", "hn:5678", "hn123"), not inside "john".
-        Regex("""(^|[^a-z])hn([^a-z]|$)"""),
-        // A strength after a number: "500 mg", "5 มก.", "10 ยูนิต"; not "5 มกราคม", nor "มก." alone (a university).
-        Regex("""\d\s*(mg|mcg|iu)(?![a-z])"""),
-        Regex("""\d\s*(มก\.|มก(?!ร)|ยูนิต)"""),
-        // Medicines by name: common names, and the endings and starts drug names share (warfarin, omeprazole, cefazolin).
-        // (?![a-z]) rather than \b: on Android a Thai letter right after the name counts as part of the word for \b.
-        Regex("""aspirin|paracetamol|acetaminophen|metformin|insulin|morphine|heparin|digoxin|ibuprofen|codeine|tramadol|fentanyl|warfarin|amiodarone|furosemide|prednisolone|dexamethasone|salbutamol"""),
-        Regex("""[a-z]{3,}(cillin|mycin|micin|floxacin|cycline|pril|sartan|olol|statin|azole|vir|mab|farin|parin|profen|pam|lam|tidine|dronate|gliptin|gliflozin|xaban|platin|taxel|rubicin|olone|sone|triptan|dipine|setron|semide|thiazide|grel|penem|adol|tinib|oxetine)(?![a-z])"""),
-        Regex("""cef[a-z]{4,}"""),
-        // พารา the medicine, not สยามพารากอน.
-        Regex("""พารา(?!กอน|ไดซ์)"""),
-    )
-
-    /**
-     * Everyday words that hold ยา, taken out before looking for ยา (อยาก before ยาก, ขยาย before ยาย). A word that
-     * ends in a consonant is taken only when no vowel or tone mark follows it, since then that consonant starts the
-     * next syllable: ขอยากันชัก is ขอ + ยากันชัก, not อยาก; ยาวัณโรค, ยาม่วง and ยาย่อย are medicines. Nothing that
-     * could end the word before it and start ยา is listed (มายา would eat ซื้อมา + ยาแก้ปวด).
-     */
-    private val EVERYDAY_YA = listOf(
-        Regex("""พยายาม|พยาบาล|พยากรณ์|วิทยา|ภรรยา|กริยา|จรรยา|ไวยากรณ์|อุทยาน|ขยาย|ปริยาย|กัลยา|สุริยา|ยานพาหนะ|ยานอวกาศ|ยานยนต์|ยาสีฟัน|ยาสระผม|ยาทาเล็บ|ยาสูบ"""),
-        Regex("""อยาก$NO_MARK"""),
-        // ยาก as "hard" only when a word that goes with it follows (ยากมาก, ใช้ยากไป), so ยากันชัก and กินยาก่อน stay.
-        Regex("""ยาก(?=มาก|ไป|ขึ้น|จัง|จริง|นะ|เกิน|กว่า|ที่สุด|ๆ|และ|แต่|หรือ|ลำบาก|[\s.,!?])"""),
-        Regex("""ยาว$NO_MARK"""),
-        Regex("""ยาม$NO_MARK"""),
-        Regex("""ยาย$NO_MARK"""),
-        Regex("""ยาง$NO_MARK"""),
-    )
-
     /** What the model may answer with. */
     enum class Kind { COMMAND, ADD_TASK, FIND_TIME, ANSWER, CLAUDE }
 

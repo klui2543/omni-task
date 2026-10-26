@@ -367,7 +367,7 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                     }
                     Text(tr("กุญแจเก็บในเครื่องนี้เท่านั้น ไม่เข้า vault และไม่ซิงก์ เตือนก่อนหมดอายุ 7 วันที่หน้าเลขา", "Kept on this phone only, never in the vault; a warning shows on the secretary page a week before it runs out"), color = C.faint, fontSize = TS.caption)
                 }
-                Text(tr("ส่งให้ AI แค่ประโยคที่พิมพ์ วันนี้ และรายชื่อคำสั่งของแอป ไม่ส่งงานทั้งหมด เรื่องยาและผู้ป่วยไม่ส่งให้ AI", "Only the sentence, today's date and the app's commands go out, never your tasks; medicines and patients never go"), color = C.faint, fontSize = TS.caption)
+                Text(tr("ส่งให้ AI แค่ประโยคที่พิมพ์ วันนี้ และรายชื่อคำสั่งของแอป ไม่ส่งงานทั้งหมด", "Only the sentence, today's date and the app's commands go out, never your tasks"), color = C.faint, fontSize = TS.caption)
             } else {
                 Text(
                     tr(
