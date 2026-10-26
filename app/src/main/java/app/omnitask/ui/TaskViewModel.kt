@@ -530,6 +530,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val slotTitle: String = "",
         val note: String? = null,
         val done: Boolean = false,
+        /** Finds the answer again when the note is written (the chat may have moved on). */
+        val id: Long = 0,
     )
 
     /**
@@ -906,12 +908,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val read = if (vault == null) Result.success(null) else withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, AssistantMl.PATH) } }
         // Not read: the chat still answers from the app's own hints, and says the taught examples were left out.
         read.exceptionOrNull()?.let { e -> showMessage(tr("อ่านโน้ต Assistant ML ไม่ได้: ${e.message}", "Could not read Assistant ML: ${e.message}")) }
-        if (read.getOrNull() != null) mlNoteSeen = true
+        if (read.getOrNull() != null) mlNoteSeenIn = vault
         return AssistantMl.Model(AssistantMl.examples(read.getOrNull()), AssistantMl.seeds(guide)).also { mlModel = it }
     }
 
-    /** The note was read once in this run: a later read that finds nothing is a failed lookup, not a missing note. */
-    private var mlNoteSeen = false
+    /** The vault whose note was read in this run: a later read there that finds nothing is a failed lookup, not a missing note. */
+    private var mlNoteSeenIn: Any? = null
 
     /**
      * Keeps [e] in Assistant ML.md (read fresh, added at the end of the examples, written back) and says whether it
@@ -927,9 +929,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 runCatching {
                     val old = repo.readPath(vault, AssistantMl.PATH)
-                    if (old == null && mlNoteSeen) error(tr("เปิดโน้ต Assistant ML ไม่เจอ จึงไม่เขียนทับ", "Assistant ML was not found, so nothing was written over it"))
+                    if (old == null && mlNoteSeenIn == vault) error(tr("เปิดโน้ต Assistant ML ไม่เจอ จึงไม่เขียนทับ", "Assistant ML was not found, so nothing was written over it"))
                     repo.writePath(vault, AssistantMl.PATH, AssistantMl.add(old, e))
-                    mlNoteSeen = true
+                    mlNoteSeenIn = vault
                 }
             }
         }
@@ -946,7 +948,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun mlDo(
         text: String, reading: AssistantMl.Reading, guess: AssistantMl.Guess, via: String?, note: String?,
-        spans: List<AssistantMl.Span>? = null,
+        spans: List<AssistantMl.Span>? = null, id: Long = 0,
     ) {
         val model = mlModel
         // The task's own words: what was highlighted, or the sentence without the taught command words.
@@ -960,22 +962,37 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         when (val intent = guess.intent) {
             is AssistantMl.Intent.Do -> {
                 deskRun(text, intent.action, via)
-                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note)))
+                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note, id = id)))
             }
             AssistantMl.Intent.AddTask -> {
                 // Said here for the first time ([via] set); a pick or a teach is about a sentence already in the chat.
                 if (via != null) desk.add(DeskTurn(mine = text, via = via))
                 requestQuickAdd(QuickAddRequest(text = taskText()))
-                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note)))
+                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note, id = id)))
             }
             AssistantMl.Intent.FindTime -> {
                 if (via != null) desk.add(DeskTurn(mine = text, via = via))
                 val s = _state.value
                 val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now())
-                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, slots = plan.slots.take(3), slotTitle = plan.title, note = note)))
+                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, slots = plan.slots.take(3), slotTitle = plan.title, note = note, id = id)))
             }
         }
     }
+
+    /**
+     * Does it at once, then keeps [e] in the note; the line under the answer says "กำลังจำ" until the write is done,
+     * then whether it was kept.
+     */
+    private fun mlDoThenKeep(text: String, reading: AssistantMl.Reading, guess: AssistantMl.Guess, e: AssistantMl.Example, spans: List<AssistantMl.Span>?) {
+        val id = ++mlNextId
+        mlDo(text, reading, guess, via = null, note = tr("กำลังจำ...", "Keeping..."), spans = spans, id = id)
+        viewModelScope.launch {
+            val note = mlKeep(e)
+            val at = desk.indexOfFirst { it.ml?.id == id }
+            if (at >= 0) desk[at] = desk[at].copy(ml = desk[at].ml!!.copy(note = note))
+        }
+    }
+    private var mlNextId = 0L
 
     /** A sentence for the secretary's stats: left out when it may hold a patient's number. */
     private fun mlSaid(text: String) = if (AssistantMl.sensitive(text)) tr("(ประโยคมีเลขยาว ไม่จด)", "(has a long number, not written)") else text
@@ -987,7 +1004,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk[index] = desk[index].copy(ml = t.copy(done = true))
         deskNote(tr("เลือก: ", "Picked: ") + "${mlSaid(t.question)} → ${guess.intent.render()}")
         val e = AssistantMl.Example(mlModel.spansFor(t.question, guess.intent), guess.intent, LocalDate.now(), "หมายถึงอันนี้ไหม")
-        viewModelScope.launch { mlDo(t.question, t.reading, guess, via = null, note = mlKeep(e)) }
+        mlDoThenKeep(t.question, t.reading, guess, e, spans = null)
     }
 
     /** Taught on the highlight page: kept as an example, then done for [said]. */
@@ -995,7 +1012,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.indices.filter { desk[it].ml?.question == said && desk[it].ml?.done == false }.forEach { i -> desk[i] = desk[i].copy(ml = desk[i].ml!!.copy(done = true)) }
         val e = AssistantMl.Example(spans, intent, LocalDate.now(), "สอนในแอป")
         val guess = AssistantMl.Guess(intent, 1.0, e)
-        viewModelScope.launch { mlDo(said, AssistantMl.Reading(AssistantMl.Level.HIGH, listOf(guess)), guess, via = null, note = mlKeep(e), spans = spans) }
+        mlDoThenKeep(said, AssistantMl.Reading(AssistantMl.Level.HIGH, listOf(guess)), guess, e, spans)
     }
 
     /** A free time the learning secretary found: quick add with the title, day and time typed in. */

@@ -106,7 +106,14 @@ internal fun MlAnswer(
                     contentAlignment = Alignment.Center,
                 ) { Text(tr("ไม่ใช่", "Not this"), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold) }
             }
-            t.note?.let { Text(it, color = if (it.startsWith(tr("จำแล้ว", "Kept"))) C.lime else C.amber, fontSize = TS.caption) }
+            t.note?.let { n ->
+                val color = when {
+                    n.startsWith(tr("จำแล้ว", "Kept")) -> C.lime
+                    n.startsWith(tr("กำลังจำ", "Keeping")) -> C.muted
+                    else -> C.amber
+                }
+                Text(n, color = color, fontSize = TS.caption)
+            }
             return@Column
         }
         if (t.done) { Text(tr("ทำแล้ว", "Done"), color = C.muted, fontSize = TS.caption); return@Column }

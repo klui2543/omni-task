@@ -166,4 +166,29 @@ class AssistantMlTest {
             assertNotEquals(Level.HIGH, m.read(said).level, said)
         }
     }
+
+    @Test
+    fun aTaskNameBeforeTheCommandIsUnderstoodToo() {
+        val m = AssistantMl.Model(listOf(ex("- {ซื้อนม|ชื่องาน} {จดไว้|คำสั่ง} → เพิ่มงาน")), AssistantMl.seeds(SecretaryGuide.DEFAULT))
+        listOf("ซื้อนม จดไว้", "ซื้อไข่ จดไว้").forEach { said ->
+            assertEquals(Level.HIGH, m.read(said).level, said)
+            assertEquals(Intent.AddTask, m.read(said).best!!.intent, said)
+        }
+    }
+
+    @Test
+    fun aShortCommandMustBeAWordOfItsOwn() {
+        val m = AssistantMl.Model(
+            listOf(
+                ex("- {จด|คำสั่ง} {ซื้อไข่|ชื่องาน} → เพิ่มงาน"),
+                ex("- {ดู|คำสั่ง}{พรุ่งนี้|วันที่} → ในแอป: พรุ่งนี้"),
+                ex("- {สรุป|คำสั่ง} → ในแอป: วันนี้"),
+            ),
+            AssistantMl.seeds(SecretaryGuide.DEFAULT),
+        )
+        listOf("จดหมายถึงแม่ พรุ่งนี้", "จดทะเบียนรถ", "ดูหนังกับแฟน", "พรุ่งนี้ดูหนัง", "สรุปประชุมให้หัวหน้า").forEach { said ->
+            assertNotEquals(Level.HIGH, m.read(said).level, said)
+        }
+        listOf("จด ซื้อนม", "ดูพรุ่งนี้", "พรุ่งนี้ จด โทรหาแม่").forEach { said -> assertEquals(Level.HIGH, m.read(said).level, said) }
+    }
 }

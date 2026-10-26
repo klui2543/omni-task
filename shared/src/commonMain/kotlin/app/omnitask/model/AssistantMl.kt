@@ -191,17 +191,24 @@ object AssistantMl {
      */
     fun forQuickAdd(text: String, timeWords: List<TimeWords.Word>, today: LocalDate, now: LocalTime): String {
         var out = text
-        guessLabels(text).sortedByDescending { it.first.first }.forEach { (r, label) ->
+        val guesses = guessLabels(text)
+        val timeTyped = guesses.any { it.second == Label.TIME }
+        guesses.sortedByDescending { it.first.first }.forEach { (r, label) ->
             val words = text.substring(r)
             val quick = QuickAdd.parse(words, today)
-            if (label == Label.DATE && quick.due != null) return@forEach
-            if (label == Label.TIME && quick.time != null) return@forEach
-            val heard = SpokenWhen.read(words, timeWords, today, now)
-            val made = listOfNotNull(
+            val made = if (label == Label.DATE) {
+                if (quick.due != null) return@forEach
+                // Read as at midnight, so "เย็นนี้" said at 20:00 is still today; its time only when none is typed.
+                val heard = SpokenWhen.read(words, timeWords, today, LocalTime(0, 0))
+                listOfNotNull(
+                    heard.date?.let { "${it.dayOfMonth}/${it.monthNumber}" },
+                    heard.time?.takeIf { !timeTyped }?.let { "${it.hour}:${it.minute.toString().padStart(2, '0')}" },
+                ).joinToString(" ")
+            } else {
+                if (quick.time != null) return@forEach
                 // A time alone is read as today's: its day comes from the sentence, not from here.
-                heard.date?.takeIf { label == Label.DATE }?.let { "${it.dayOfMonth}/${it.monthNumber}" },
-                heard.time?.let { "${it.hour}:${it.minute.toString().padStart(2, '0')}" },
-            ).joinToString(" ")
+                SpokenWhen.read(words, timeWords, today, now).time?.let { "${it.hour}:${it.minute.toString().padStart(2, '0')}" }.orEmpty()
+            }
             if (made.isNotEmpty()) out = out.substring(0, r.first) + made + out.substring(r.last + 1)
         }
         return out
@@ -210,7 +217,7 @@ object AssistantMl {
     // ---- Privacy ----
 
     private val THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙"
-    private val DATE_LIKE = Regex("""(?<!\d)\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}(?!\d)""")
+    private val DATE_LIKE = Regex("""(?<!\d)\d{1,2}[-/]\d{1,2}[-/]\d{2,4}(?!\d)|(?<!\d)\d{4}-\d{1,2}-\d{1,2}(?!\d)""")
     private val SEPARATORS = Regex("""(?<=\d)[\s.\-,]+(?=\d)""")
     private val LONG_NUMBER = Regex("""\d{6,}""")
     private val ID_WORDS = Regex("""(?<![a-z])hn(?![a-z])|เลขบัตร|บัตรประชาชน|เบอร์โทร""", RegexOption.IGNORE_CASE)
@@ -245,8 +252,10 @@ object AssistantMl {
     const val MAYBE = 0.4
     /** The app's own commands, bubbles and taught words are hints, not taught sentences: they never make the app sure. */
     private const val SEED_WEIGHT = 0.7
-    /** A taught command that is not where the sentence starts (after a day or time): asked, not done ("จด" in "จดหมาย" aside). */
+    /** A taught command that is not where the sentence starts (after a day or time): asked, not done. */
     private const val NOT_AT_START = 0.7
+    /** A start this short ("จด", "ดู", "สรุป") must end where a word ends, so "จดหมาย" is not "จด". */
+    private const val SHORT_START = 4
 
     /** Pieces of two and three letters of [text], spaces and case aside. */
     fun grams(text: String): Set<String> {
@@ -299,6 +308,26 @@ object AssistantMl {
         return SecretaryGuide.squash(out.toString())
     }
 
+    /**
+     * Whether [text] starts with [anchor] (squashed), after any day or time at its front. A short start must end where a
+     * word ends: a space, a day or time, or the end.
+     */
+    internal fun startsWith(text: String, anchor: String): Boolean {
+        var t = text.trimStart()
+        while (true) {
+            val g = guessLabels(t).firstOrNull { it.first.first == 0 } ?: break
+            t = t.substring(g.first.last + 1).trimStart()
+        }
+        var p = 0
+        for (c in anchor) {
+            while (p < t.length && t[p].isWhitespace()) p++
+            if (p >= t.length || t[p].lowercaseChar() != c) return false
+            p++
+        }
+        if (anchor.length > SHORT_START) return true
+        return p >= t.length || t[p].isWhitespace() || guessLabels(t).any { it.first.first == p }
+    }
+
     /** Examples the app starts from without being taught: its own commands, the owner's bubbles and taught words. */
     fun seeds(guide: SecretaryGuide.Guide): List<Example> = buildList {
         SecretaryGuide.Builtin.entries.forEach { b ->
@@ -320,7 +349,7 @@ object AssistantMl {
      *   merely holds it ("ส่งรายงานวันนี้" holding "วันนี้") is not the same question.
      */
     class Model(taught: List<Example>, seeds: List<Example> = emptyList()) {
-        private class Item(val example: Example, val features: Map<String, Double>, val seed: Boolean, val anchor: String?)
+        private class Item(val example: Example, val features: Map<String, Double>, val seed: Boolean, val anchor: String?, val afterTask: Boolean = false)
 
         private val items: List<Item>
         private val idf: Map<String, Double>
@@ -334,7 +363,9 @@ object AssistantMl {
                 // Read as highlighted only when something that asks (a command, urgency, project) is marked.
                 val marked = e.spans.any { it.label != null && !it.label.content }
                 val a = if (seed || !marked) emptyMap() else asking(e)
-                return if (a.isNotEmpty()) Item(e, a, seed, anchor(e)) else Item(e, grams(e.text).associateWith { 1.0 }, seed, null)
+                // Asking after the task's own name ("ซื้อนม จดไว้"): it need not start the sentence.
+                val afterTask = e.spans.firstOrNull { it.text.isNotBlank() }?.label == Label.TITLE
+                return if (a.isNotEmpty()) Item(e, a, seed, anchor(e), afterTask) else Item(e, grams(e.text).associateWith { 1.0 }, seed, null)
             }
             items = kept.map { item(it, false) } + seeds.map { item(it, true) }
             val df = HashMap<String, Int>()
@@ -354,7 +385,7 @@ object AssistantMl {
         private val urgency: List<Pair<String, String>> = kept.flatMap { e -> e.spans.filter { it.label == Label.PRIORITY }.map { it.text.trim() to (it.value ?: "สูง") } }
             .filter { it.first.isNotEmpty() && it.second in LEVELS }.distinctBy { it.first }.sortedByDescending { it.first.length }
 
-        private fun score(item: Item, q: Set<String>, core: String): Double {
+        private fun score(item: Item, q: Set<String>, text: String, core: String): Double {
             val anchor = item.anchor
             val s = if (anchor != null) {
                 var num = 0.0
@@ -364,7 +395,8 @@ object AssistantMl {
                     den += x
                     if (g in q) num += x
                 }
-                if (den == 0.0) 0.0 else num / den * if (anchor.isEmpty() || core.startsWith(anchor)) 1.0 else NOT_AT_START
+                val same = anchor.isEmpty() || (if (item.afterTask) core.contains(anchor) else startsWith(text, anchor))
+                if (den == 0.0) 0.0 else num / den * if (same) 1.0 else NOT_AT_START
             } else {
                 var num = 0.0
                 var e2 = 0.0
@@ -383,7 +415,7 @@ object AssistantMl {
             val q = grams(text)
             if (q.isEmpty() || items.isEmpty()) return Reading(Level.LOW, emptyList())
             val c = core(text)
-            val best = items.map { it to score(it, q, c) }.filter { it.second > 0.0 }
+            val best = items.map { it to score(it, q, text, c) }.filter { it.second > 0.0 }
                 .groupBy { it.first.example.intent.render() }
                 .map { (_, list) -> list.maxBy { it.second }.let { (item, s) -> Guess(item.example.intent, s, item.example) } }
                 .sortedByDescending { it.score }
@@ -411,7 +443,9 @@ object AssistantMl {
             var bang = ""
             urgency.firstOrNull { t.contains(it.first, ignoreCase = true) }?.let { (w, level) ->
                 val i = t.indexOf(w, ignoreCase = true)
-                t = t.substring(0, i) + " " + t.substring(i + w.length)
+                // "ด่วนๆ": the repeat mark goes with its word.
+                val end = (i + w.length).let { e -> if (t.getOrNull(e) == 'ๆ') e + 1 else e }
+                t = t.substring(0, i) + " " + t.substring(end)
                 bang = when (level) { "สูงสุด" -> " !!!"; "สูง" -> " !!"; "กลาง" -> " !"; else -> "" }
             }
             return t.replace(Regex("""\s+"""), " ").trim() + bang
