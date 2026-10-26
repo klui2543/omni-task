@@ -134,6 +134,10 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             editingBubble = null
         }
     }
+    var aiSettingsOpen by remember { mutableStateOf(false) }
+    if (aiSettingsOpen) AiSettingsSheet(vm, onGuide = { guideOpen = true }) { aiSettingsOpen = false }
+    AiConfirmDialog(vm)
+    val hasKey = remember(vm.aiSettingsVersion) { app.omnitask.data.ClaudeSettings.key(context) != null }
     var briefMore by remember { mutableStateOf<SecretaryBook.Brief?>(null) }
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
     if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
@@ -149,6 +153,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             )
             SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
         }
+        KeyWarning(vm) { aiSettingsOpen = true }
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(), state = list,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
@@ -156,9 +161,13 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         ) {
             itemsIndexed(turns) { i, t ->
                 t.mine?.let { Mine(it) }
+                t.ai?.let { AiAnswer(i, it, vm) }
                 t.reply?.let { r ->
                     Column {
-                        Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves, { teaching = it }) { claudeOpen = true }
+                        Answer(
+                            r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves, { teaching = it },
+                            onAskAi = if (hasKey) { said -> vm.aiStart(said, app.omnitask.model.SecretaryAi.Mode.HAIKU, vm.deskEffort) } else null,
+                        ) { claudeOpen = true }
                         r.brief?.let { b -> BriefCard(b, state.tasks, onOpen, vm::toggleDone) { briefMore = b } }
                     }
                 }
@@ -216,32 +225,14 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 ) { Icon(Ic.pen, tr("แก้บอลลูน", "Change the bubbles"), tint = C.accentText, modifier = Modifier.size(18.dp)) }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp)
-                .padding(bottom = if (keyboard) 8.dp else NavClearance - 12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val send = { if (input.isNotBlank()) { vm.deskType(input.trim()); input = "" } }
-            BasicTextField(
-                value = input, onValueChange = { input = it },
-                modifier = Modifier.weight(1f).heightIn(min = 46.dp).clip(RoundedCornerShape(23.dp)).background(C.card)
-                    .border(1.dp, C.cardBorder, RoundedCornerShape(23.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
-                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
-                cursorBrush = SolidColor(C.accent),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send() }),
-                decorationBox = { inner -> Box { if (input.isEmpty()) Text(tr("พิมพ์ถามเอง", "Type a question"), color = C.faint, fontSize = TS.body); inner() } },
-            )
-            if (input.isNotBlank()) Box(
-                Modifier.size(44.dp).clip(CircleShape).background(C.accent).clickable { send() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.send, tr("ส่ง", "Send"), tint = C.onAccent, modifier = Modifier.size(20.dp)) }
-            else Box(
-                Modifier.size(44.dp).clip(CircleShape).background(C.raised).clickable { claudeOpen = true },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.mic, tr("คุยเสียงกับ Claude", "Talk to Claude"), tint = C.text2, modifier = Modifier.size(20.dp)) }
-        }
+        // The chat box, like Claude's: the rules by default, a Claude model only when picked here (owner, 2026-10-26).
+        ChatBox(
+            input, { input = it }, vm,
+            bottom = if (keyboard) 8.dp else NavClearance - 12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            onSend = { if (input.isNotBlank()) { vm.deskSend(input.trim()); input = "" } },
+            onTalk = { claudeOpen = true },
+            onSettings = { aiSettingsOpen = true },
+        )
     }
 }
 
@@ -258,7 +249,7 @@ private fun Mine(text: String) {
 @Composable
 private fun Answer(
     r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit,
-    onApplyMoves: (List<SecretaryDesk.Move>) -> Unit, onTeach: (String) -> Unit, onClaude: () -> Unit,
+    onApplyMoves: (List<SecretaryDesk.Move>) -> Unit, onTeach: (String) -> Unit, onAskAi: ((String) -> Unit)? = null, onClaude: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(tr("เลขา", "Secretary"), color = C.faint, fontSize = TS.micro)
@@ -340,6 +331,12 @@ private fun Answer(
                     Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accentDeep).clickable(onClick = onClaude).padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text(tr("ส่งให้ Claude", "Send to Claude"), color = C.text, fontSize = TS.body) }
+                // Haiku only on a tap, and only after its cost is confirmed (owner, 2026-10-26).
+                if (onAskAi != null) Box(
+                    Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(22.dp))
+                        .clickable { onAskAi(teach) }.padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(tr("ถามด้วย Haiku", "Ask Haiku"), color = C.text, fontSize = TS.body) }
             }
             if (done) Text(tr("ทำแล้ว", "Done"), color = C.muted, fontSize = TS.caption)
         }
