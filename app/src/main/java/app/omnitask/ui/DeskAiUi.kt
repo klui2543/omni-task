@@ -409,17 +409,12 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                 var learn by remember { mutableStateOf(ClaudeSettings.learnOn(context)) }
                 var taught by remember { mutableStateOf<Int?>(-1) }
                 androidx.compose.runtime.LaunchedEffect(Unit) { taught = vm.mlCount() }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(tr("เลขาเรียนรู้เอง", "Secretary learns"), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            tr("เทียบประโยคกับตัวอย่างที่สอนไว้ในโน้ต Assistant ML ทายในเครื่อง ไม่เสียเงิน", "Compares a sentence with the examples taught in Assistant ML, on the phone, free") + "\n" +
-                                when (val n = taught) { null -> tr("อ่านโน้ตไม่ได้", "Could not read the note"); -1 -> ""; else -> tr("สอนไว้ $n ตัวอย่าง", "$n examples taught") },
-                            color = C.muted, fontSize = TS.caption,
-                        )
-                    }
-                    androidx.compose.material3.Switch(checked = learn, onCheckedChange = { learn = it; ClaudeSettings.setLearnOn(context, it) })
-                }
+                FilterSwitch(
+                    tr("เลขาเรียนรู้เอง", "Secretary learns"),
+                    tr("เทียบประโยคกับตัวอย่างที่สอนไว้ในโน้ต Assistant ML ทายในเครื่อง ไม่เสียเงิน", "Compares a sentence with the examples taught in Assistant ML, on the phone, free") +
+                        when (val n = taught) { null -> tr("\nอ่านโน้ตไม่ได้", "\nCould not read the note"); -1 -> ""; else -> tr("\nสอนไว้ $n ตัวอย่าง", "\n$n examples taught") },
+                    learn,
+                ) { learn = !learn; ClaudeSettings.setLearnOn(context, learn) }
                 Text(
                     if (learn) tr(
                         "โหมดเลขาลองตามลำดับ: ชื่อบอลลูน, คำที่สอนไว้, ตัวอย่างที่สอน (ถ้ามั่นใจ ทำเลย), คำในรายการ ถ้าไม่แน่ใจ จะถามว่าหมายถึงอันไหน หรือให้ถามด้วย Haiku (ยืนยันราคาก่อน) หรือสอนแบบลากไฮไลต์",

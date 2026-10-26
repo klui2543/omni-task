@@ -47,7 +47,6 @@ import app.omnitask.model.Planner
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.SecretaryGuide
 import app.omnitask.model.tr
-import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
 
 /** The colour of each highlight, from the app's palette. */
@@ -101,11 +100,11 @@ internal fun MlAnswer(
                         if (near.isNotEmpty() && t.note == null) tr(" (ใกล้กับ \"$near\")", " (like \"$near\")") else "",
                     Modifier.weight(1f), color = C.muted, fontSize = TS.caption,
                 )
-                Text(
-                    tr("ไม่ใช่", "Not this"),
-                    Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onTeach).padding(horizontal = 10.dp, vertical = 10.dp),
-                    color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold,
-                )
+                // Gone once the sentence is taught again.
+                if (!t.done) Box(
+                    Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onTeach).padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(tr("ไม่ใช่", "Not this"), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold) }
             }
             t.note?.let { Text(it, color = if (it.startsWith(tr("จำแล้ว", "Kept"))) C.lime else C.amber, fontSize = TS.caption) }
             return@Column
@@ -301,7 +300,7 @@ internal fun MlTeachSheet(state: UiState, vm: TaskViewModel, said: String, onDis
                 if (hasCmd) add(tr("คำสั่ง", "Command") to (intent?.describe() ?: tr("ยังไม่ได้เลือก", "Not picked yet")))
                 Label.entries.filter { it != Label.COMMAND }.forEach { l ->
                     val words = spans.filter { it.label == l }.joinToString(" ") { it.text.trim() }
-                    if (words.isNotEmpty()) add(l.label to valueOf(l, words, level, state.today))
+                    if (words.isNotEmpty()) add(l.label to valueOf(l, words, level, state))
                 }
             }
             if (rows.isNotEmpty()) Column(
@@ -354,10 +353,18 @@ private fun spansOf(parts: List<Piece>, labelOf: (Int) -> Label?, level: String)
     return out
 }
 
-/** A highlight as the app reads it: the day and time by quick add's reader, urgency by its level. */
-private fun valueOf(l: Label, words: String, level: String, today: LocalDate): String = when (l) {
-    Label.DATE -> QuickAdd.parse(words, today).due?.let { Countdown.day(it) } ?: words
-    Label.TIME -> QuickAdd.parse(words, today).time?.let { "%02d:%02d".format(it.hour, it.minute) } ?: words
-    Label.PRIORITY -> level
-    else -> words
+/**
+ * A highlight as the app will read it: the day and time as quick add gets them (spoken times like "9 โมง" made into
+ * 9:00 first), urgency by its level; the project's words stay in the task's name (its tag comes in stage 2).
+ */
+private fun valueOf(l: Label, words: String, level: String, state: UiState): String {
+    val now = java.time.LocalTime.now().let { kotlinx.datetime.LocalTime(it.hour, it.minute) }
+    val quick = QuickAdd.parse(AssistantMl.forQuickAdd(words, state.timeWords, state.today, now), state.today)
+    return when (l) {
+        Label.DATE -> quick.due?.let { Countdown.day(it) } ?: words
+        Label.TIME -> quick.time?.let { "%02d:%02d".format(it.hour, it.minute) } ?: words
+        Label.PRIORITY -> level
+        Label.PROJECT -> words + tr(" (อยู่ในชื่องาน ยังไม่ใส่แท็ก)", " (in the task's name, no tag yet)")
+        else -> words
+    }
 }

@@ -2,8 +2,8 @@ package app.omnitask.model
 
 import app.omnitask.data.VaultText
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlin.math.ln
-import kotlin.math.min
 
 /**
  * The secretary that learns from examples (owner, 2026-10-26; plan in docs/PLAN_assistant_ml_2026-10-26.md, stage 1).
@@ -43,7 +43,8 @@ object AssistantMl {
     }
 
     /** Urgency levels a highlighted word can mean, as the note writes them after "=". */
-    val LEVELS = listOf("สูงสุด", "สูง", "กลาง", "ต่ำ")
+    /** Only the levels quick add can mark (!!!, !!, !): a level it cannot set would be a promise not kept. */
+    val LEVELS = listOf("สูงสุด", "สูง", "กลาง")
 
     /** A part of a sentence: plain ([label] null) or highlighted. [value] is the urgency level or the project's name. */
     data class Span(val text: String, val label: Label? = null, val value: String? = null) {
@@ -183,16 +184,47 @@ object AssistantMl {
         (DATE_GUESS.findAll(text).map { it.range to Label.DATE } + TIME_GUESS.findAll(text).map { it.range to Label.TIME })
             .sortedBy { it.first.first }.toList()
 
+    /**
+     * [text] with the days and times quick add cannot read made into ones it can: "9 โมง" and "บ่ายสองโมง" become "9:00"
+     * and "14:00" by the reader of spoken notes (with the owner's time words), and a day word only that reader knows
+     * ("เย็นนี้") becomes its date. What neither reads is left as typed.
+     */
+    fun forQuickAdd(text: String, timeWords: List<TimeWords.Word>, today: LocalDate, now: LocalTime): String {
+        var out = text
+        guessLabels(text).sortedByDescending { it.first.first }.forEach { (r, label) ->
+            val words = text.substring(r)
+            val quick = QuickAdd.parse(words, today)
+            if (label == Label.DATE && quick.due != null) return@forEach
+            if (label == Label.TIME && quick.time != null) return@forEach
+            val heard = SpokenWhen.read(words, timeWords, today, now)
+            val made = listOfNotNull(
+                // A time alone is read as today's: its day comes from the sentence, not from here.
+                heard.date?.takeIf { label == Label.DATE }?.let { "${it.dayOfMonth}/${it.monthNumber}" },
+                heard.time?.let { "${it.hour}:${it.minute.toString().padStart(2, '0')}" },
+            ).joinToString(" ")
+            if (made.isNotEmpty()) out = out.substring(0, r.first) + made + out.substring(r.last + 1)
+        }
+        return out
+    }
+
     // ---- Privacy ----
 
+    private val THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙"
+    private val DATE_LIKE = Regex("""(?<!\d)\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}(?!\d)""")
+    private val SEPARATORS = Regex("""(?<=\d)[\s.\-,]+(?=\d)""")
     private val LONG_NUMBER = Regex("""\d{6,}""")
     private val ID_WORDS = Regex("""(?<![a-z])hn(?![a-z])|เลขบัตร|บัตรประชาชน|เบอร์โทร""", RegexOption.IGNORE_CASE)
 
     /**
      * A sentence that may hold a patient's number (HN), an ID card number or a phone number: never kept as an example,
-     * since the owner's rule keeps them out of the vault. Six digits in a row, spaces and dashes aside, or the words.
+     * since the owner's rule keeps them out of the vault. Six digits in a row (Thai digits too, spaces, dots and dashes
+     * between digits aside, a written date aside), or the words.
      */
-    fun sensitive(text: String): Boolean = LONG_NUMBER.containsMatchIn(text.replace(Regex("""[\s-]"""), "")) || ID_WORDS.containsMatchIn(text)
+    fun sensitive(text: String): Boolean {
+        val digits = text.map { c -> THAI_DIGITS.indexOf(c).takeIf { it >= 0 }?.let { '0' + it } ?: c }.joinToString("")
+        val joined = SEPARATORS.replace(DATE_LIKE.replace(digits, " "), "")
+        return LONG_NUMBER.containsMatchIn(joined) || ID_WORDS.containsMatchIn(text)
+    }
 
     // ---- Learning and guessing ----
 
@@ -213,6 +245,8 @@ object AssistantMl {
     const val MAYBE = 0.4
     /** The app's own commands, bubbles and taught words are hints, not taught sentences: they never make the app sure. */
     private const val SEED_WEIGHT = 0.7
+    /** A taught command that is not where the sentence starts (after a day or time): asked, not done ("จด" in "จดหมาย" aside). */
+    private const val NOT_AT_START = 0.7
 
     /** Pieces of two and three letters of [text], spaces and case aside. */
     fun grams(text: String): Set<String> {
@@ -221,11 +255,19 @@ object AssistantMl {
         return buildSet { for (n in 2..3) for (i in 0..t.length - n) add(t.substring(i, i + n)) }
     }
 
+    /** [text] without the days and times guessed in it, squashed: where a sentence's asking starts. */
+    internal fun core(text: String): String {
+        var t = text
+        guessLabels(text).sortedByDescending { it.first.first }.forEach { (r, _) -> t = t.substring(0, r.first) + " " + t.substring(r.last + 1) }
+        return SecretaryGuide.squash(t)
+    }
+
     /**
-     * What an example teaches about asking: the command counts double, so do urgency and project (they change what is
-     * shown), the plain words count once, and the task's own name, day and time are left out (they change every time).
+     * What a highlighted example teaches about asking: the command counts double, so do urgency and project (they
+     * change what is shown), plain words once, and the task's own name, day and time not at all (they change every
+     * time). Empty when nothing but the task's own words is highlighted.
      */
-    private fun features(e: Example): Map<String, Double> {
+    private fun asking(e: Example): Map<String, Double> {
         val out = HashMap<String, Double>()
         // Plain words run on between highlights, so they are read as one stretch; a highlight breaks the stretch.
         val plain = StringBuilder()
@@ -238,9 +280,23 @@ object AssistantMl {
             }
         }
         flush()
-        // An example that is all name, day and time still says something: its whole text, once.
-        if (out.isEmpty()) grams(e.text).forEach { out[it] = 1.0 }
         return out
+    }
+
+    /**
+     * Where a highlighted example's asking starts: its words before the task's own, up to the end of its command (or of
+     * its first other highlight). A new sentence that starts the same way (after a day or time) is asking the same.
+     */
+    private fun anchor(e: Example): String {
+        val out = StringBuilder()
+        val firstHighlight = e.spans.indexOfFirst { it.label == Label.COMMAND }.takeIf { it >= 0 }
+            ?: e.spans.indexOfFirst { it.label != null && !it.label.content }
+        for ((i, s) in e.spans.withIndex()) {
+            if (s.label?.content == true) { if (out.isNotEmpty()) break else continue }
+            out.append(s.text)
+            if (i == firstHighlight) break
+        }
+        return SecretaryGuide.squash(out.toString())
     }
 
     /** Examples the app starts from without being taught: its own commands, the owner's bubbles and taught words. */
@@ -252,48 +308,82 @@ object AssistantMl {
         guide.words.forEach { add(Example(listOf(Span(it.word)), Intent.Do(it.action))) }
     }
 
-    /** All the examples, learned at once. Taught examples with the same words as an earlier one replace it. */
+    /**
+     * All the examples, learned at once. Taught examples with the same words as an earlier one replace it.
+     *
+     * Two kinds of example, read two ways:
+     * - Highlighted (a command, urgency or project marked): what it asks is its marked and plain words, and a new
+     *   sentence asks the same when it holds them (its own task, day and time may be anything) and starts the same way.
+     *   Score: the share of the example's asking pieces found in the sentence, rare pieces counting more.
+     * - Plain (a whole sentence picked from "หมายถึงอันนี้ไหม", the app's own commands): the whole sentence is what it
+     *   asks, so the new one must be like it as a whole, both ways (cosine of the pieces), and a longer sentence that
+     *   merely holds it ("ส่งรายงานวันนี้" holding "วันนี้") is not the same question.
+     */
     class Model(taught: List<Example>, seeds: List<Example> = emptyList()) {
-        private class Item(val example: Example, val features: Map<String, Double>, val seed: Boolean)
+        private class Item(val example: Example, val features: Map<String, Double>, val seed: Boolean, val anchor: String?)
 
         private val items: List<Item>
         private val idf: Map<String, Double>
+        private val unknownIdf: Double
+        private val kept: List<Example>
 
         init {
             val last = taught.withIndex().associateBy({ SecretaryGuide.squash(it.value.text) }, { it.index })
-            val kept = taught.filterIndexed { i, e -> last[SecretaryGuide.squash(e.text)] == i }
-            items = kept.map { Item(it, features(it), false) } + seeds.map { Item(it, features(it), true) }
+            kept = taught.filterIndexed { i, e -> last[SecretaryGuide.squash(e.text)] == i }
+            fun item(e: Example, seed: Boolean): Item {
+                // Read as highlighted only when something that asks (a command, urgency, project) is marked.
+                val marked = e.spans.any { it.label != null && !it.label.content }
+                val a = if (seed || !marked) emptyMap() else asking(e)
+                return if (a.isNotEmpty()) Item(e, a, seed, anchor(e)) else Item(e, grams(e.text).associateWith { 1.0 }, seed, null)
+            }
+            items = kept.map { item(it, false) } + seeds.map { item(it, true) }
             val df = HashMap<String, Int>()
             items.forEach { it.features.keys.forEach { g -> df[g] = (df[g] ?: 0) + 1 } }
             idf = df.mapValues { (_, n) -> ln(1.0 + items.size.toDouble() / n) }
+            unknownIdf = ln(1.0 + items.size.toDouble().coerceAtLeast(1.0))
         }
 
+        private fun idfOf(g: String) = idf[g] ?: unknownIdf
+
         /** The command words taught for adding a task or finding time, longest first: taken out of the task's name. */
-        val commandWords: List<String> = taught.filter { it.intent == Intent.AddTask || it.intent == Intent.FindTime }
+        val commandWords: List<String> = kept.filter { it.intent == Intent.AddTask || it.intent == Intent.FindTime }
             .flatMap { e -> e.spans.filter { it.label == Label.COMMAND }.map { it.text.trim() } }
             .filter { it.isNotEmpty() }.distinct().sortedByDescending { it.length }
 
-        /**
-         * How much of what [item] teaches is in [q]: the share of its pieces found, weighted by how rare each piece is.
-         * A short example (a few pieces) is trusted less, so "ต่อ" inside "ติดต่อ" does not make the app sure.
-         */
-        private fun score(item: Item, q: Set<String>): Double {
-            var num = 0.0
-            var den = 0.0
-            item.features.forEach { (g, w) ->
-                val x = w * (idf[g] ?: 0.0)
-                den += x
-                if (g in q) num += x
+        /** Urgency words taught, with their level, longest first. */
+        private val urgency: List<Pair<String, String>> = kept.flatMap { e -> e.spans.filter { it.label == Label.PRIORITY }.map { it.text.trim() to (it.value ?: "สูง") } }
+            .filter { it.first.isNotEmpty() && it.second in LEVELS }.distinctBy { it.first }.sortedByDescending { it.first.length }
+
+        private fun score(item: Item, q: Set<String>, core: String): Double {
+            val anchor = item.anchor
+            val s = if (anchor != null) {
+                var num = 0.0
+                var den = 0.0
+                item.features.forEach { (g, w) ->
+                    val x = w * idfOf(g)
+                    den += x
+                    if (g in q) num += x
+                }
+                if (den == 0.0) 0.0 else num / den * if (anchor.isEmpty() || core.startsWith(anchor)) 1.0 else NOT_AT_START
+            } else {
+                var num = 0.0
+                var e2 = 0.0
+                item.features.forEach { (g, w) ->
+                    val x = w * idfOf(g)
+                    e2 += x * x
+                    if (g in q) num += x * idfOf(g)
+                }
+                val q2 = q.sumOf { idfOf(it) * idfOf(it) }
+                if (e2 == 0.0 || q2 == 0.0) 0.0 else num / kotlin.math.sqrt(e2 * q2)
             }
-            if (den == 0.0) return 0.0
-            val short = min(1.0, item.features.size / 6.0)
-            return num / den * short * if (item.seed) SEED_WEIGHT else 1.0
+            return s * if (item.seed) SEED_WEIGHT else 1.0
         }
 
         fun read(text: String): Reading {
             val q = grams(text)
             if (q.isEmpty() || items.isEmpty()) return Reading(Level.LOW, emptyList())
-            val best = items.map { it to score(it, q) }.filter { it.second > 0.0 }
+            val c = core(text)
+            val best = items.map { it to score(it, q, c) }.filter { it.second > 0.0 }
                 .groupBy { it.first.example.intent.render() }
                 .map { (_, list) -> list.maxBy { it.second }.let { (item, s) -> Guess(item.example.intent, s, item.example) } }
                 .sortedByDescending { it.score }
@@ -308,17 +398,29 @@ object AssistantMl {
             return Reading(level, best)
         }
 
-        /** [text] without the command words taught for adding a task, for quick add to read the rest. */
+        /**
+         * [text] for quick add: without the command words taught for adding a task, and a taught urgency word made into
+         * quick add's mark (!!! highest, !! high, ! medium).
+         */
         fun taskText(text: String): String {
-            val w = commandWords.firstOrNull { text.contains(it, ignoreCase = true) } ?: return text.trim()
-            val i = text.indexOf(w, ignoreCase = true)
-            return (text.substring(0, i) + " " + text.substring(i + w.length)).replace(Regex("""\s+"""), " ").trim()
+            var t = text
+            commandWords.firstOrNull { t.contains(it, ignoreCase = true) }?.let { w ->
+                val i = t.indexOf(w, ignoreCase = true)
+                t = t.substring(0, i) + " " + t.substring(i + w.length)
+            }
+            var bang = ""
+            urgency.firstOrNull { t.contains(it.first, ignoreCase = true) }?.let { (w, level) ->
+                val i = t.indexOf(w, ignoreCase = true)
+                t = t.substring(0, i) + " " + t.substring(i + w.length)
+                bang = when (level) { "สูงสุด" -> " !!!"; "สูง" -> " !!"; "กลาง" -> " !"; else -> "" }
+            }
+            return t.replace(Regex("""\s+"""), " ").trim() + bang
         }
 
         /**
          * The highlights for a sentence the owner picked [intent] for in "หมายถึงอันนี้ไหม", so it is kept as an example:
-         * for a task, the taught command words, the day and time guessed, and the rest as its name; for anything else, the
-         * sentence as it is (its words are what asks).
+         * for a task, the taught command words, the day and time guessed, the words after the command as its name (the
+         * words before it stay plain, as part of the asking); for anything else, the sentence as it is.
          */
         fun spansFor(text: String, intent: Intent): List<Span> {
             if (intent !is Intent.AddTask && intent !is Intent.FindTime) return listOf(Span(text.trim()))
@@ -329,11 +431,12 @@ object AssistantMl {
             }
             guessLabels(text).forEach { (r, l) -> if (marks.none { it.first.first <= r.last && r.first <= it.first.last }) marks += r to l }
             marks.sortBy { it.first.first }
+            val commandAt = marks.firstOrNull { it.second == Label.COMMAND }?.first?.first
             val out = mutableListOf<Span>()
             var i = 0
             fun rest(until: Int) {
                 val s = text.substring(i, until)
-                if (s.isBlank()) { if (s.isNotEmpty()) out += Span(s); return }
+                if (s.isBlank() || (commandAt != null && until <= commandAt)) { if (s.isNotEmpty()) out += Span(s); return }
                 val lead = s.takeWhile { it.isWhitespace() }
                 val trail = s.takeLastWhile { it.isWhitespace() }
                 if (lead.isNotEmpty()) out += Span(lead)

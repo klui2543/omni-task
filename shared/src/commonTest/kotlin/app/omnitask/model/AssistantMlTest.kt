@@ -140,4 +140,30 @@ class AssistantMlTest {
         assertFalse(AssistantMl.sensitive("ประชุม 9:00 วันที่ 30/10/2569"))
         assertFalse(AssistantMl.sensitive("เพิ่มงาน ซื้อนม"))
     }
+
+    @Test
+    fun aSentenceTaughtWithAShortCommandIsDoneTheNextTime() {
+        // What the screen promises after teaching ("จำแล้ว ครั้งหน้าพิมพ์แบบนี้ เลขาทำเลย") must be true for short Thai commands too.
+        val jot = ex("- {จด|คำสั่ง} {ซื้อไข่|ชื่องาน} → เพิ่มงาน (2026-10-26, จาก สอนในแอป)")
+        val appt = ex("- {นัด|คำสั่ง} {หมอฟัน|ชื่องาน} {พรุ่งนี้|วันที่} → เพิ่มงาน (2026-10-26, จาก สอนในแอป)")
+        val m = AssistantMl.Model(listOf(jot, appt), AssistantMl.seeds(SecretaryGuide.DEFAULT))
+        listOf("จด ซื้อไข่", "นัด หมอฟัน พรุ่งนี้", "จด ซื้อนม", "นัด ทำฟัน วันศุกร์").forEach { said ->
+            val r = m.read(said)
+            assertEquals(Level.HIGH, r.level, said)
+            assertEquals(Intent.AddTask, r.best!!.intent, said)
+        }
+    }
+
+    @Test
+    fun aLongerSentenceThatMerelyHoldsAPickedOneIsNotTheSameQuestion() {
+        // Picked from "หมายถึงอันนี้ไหม" and kept whole.
+        val today = ex("- วันนี้ → ในแอป: วันนี้ (2026-10-26, จาก หมายถึงอันนี้ไหม)")
+        val urgent = ex("- งานด่วน → กรอง: ความสำคัญ สูง (2026-10-26, จาก หมายถึงอันนี้ไหม)")
+        val m = AssistantMl.Model(listOf(today, urgent), AssistantMl.seeds(SecretaryGuide.DEFAULT))
+        assertEquals(Level.HIGH, m.read("วันนี้").level)
+        assertEquals(Level.HIGH, m.read("งานด่วน").level)
+        listOf("ส่งรายงานวันนี้", "โทรหาแม่วันนี้ตอนเย็น", "ส่งงานด่วนให้หัวหน้าพรุ่งนี้").forEach { said ->
+            assertNotEquals(Level.HIGH, m.read(said).level, said)
+        }
+    }
 }

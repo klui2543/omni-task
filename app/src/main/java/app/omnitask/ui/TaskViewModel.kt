@@ -880,7 +880,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val reading = if (ClaudeSettings.learnOn(getApplication())) loadMl().read(text) else null
             if (reading?.level == AssistantMl.Level.HIGH) {
                 val best = reading.best!!
-                deskNote(tr("ทายเอง: ", "Guessed: ") + "$text → ${best.intent.render()}")
+                deskNote(tr("ทายเอง: ", "Guessed: ") + "${mlSaid(text)} → ${best.intent.render()}")
                 mlDo(text, reading, best, via = via, note = null)
                 return@launch
             }
@@ -906,26 +906,34 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val read = if (vault == null) Result.success(null) else withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, AssistantMl.PATH) } }
         // Not read: the chat still answers from the app's own hints, and says the taught examples were left out.
         read.exceptionOrNull()?.let { e -> showMessage(tr("อ่านโน้ต Assistant ML ไม่ได้: ${e.message}", "Could not read Assistant ML: ${e.message}")) }
+        if (read.getOrNull() != null) mlNoteSeen = true
         return AssistantMl.Model(AssistantMl.examples(read.getOrNull()), AssistantMl.seeds(guide)).also { mlModel = it }
     }
 
+    /** The note was read once in this run: a later read that finds nothing is a failed lookup, not a missing note. */
+    private var mlNoteSeen = false
+
     /**
-     * Keeps [e] in Assistant ML.md (read fresh, added at the end of the examples, written back) and says so; a
-     * sentence that may hold a patient's number is not kept, and the line says why.
+     * Keeps [e] in Assistant ML.md (read fresh, added at the end of the examples, written back) and says whether it
+     * was kept, once the write is done. Not kept: a sentence that may hold a patient's number, and a note that was
+     * there before but is not found now (writing then would replace every taught example).
      */
-    private fun mlKeep(e: AssistantMl.Example): String {
+    private suspend fun mlKeep(e: AssistantMl.Example): String {
         if (AssistantMl.sensitive(e.text)) {
             return tr("ไม่ได้จำ เพราะมีเลขยาวหรือคำที่อาจเป็นข้อมูลผู้ป่วย", "Not kept: it has a long number or words that may be a patient's")
         }
         val vault = _state.value.vault ?: return tr("ยังไม่ได้เลือก vault จึงจำไม่ได้", "No vault picked, so it was not kept")
-        viewModelScope.launch {
-            mlLock.withLock {
-                val r = withContext(Dispatchers.IO) {
-                    runCatching { repo.writePath(vault, AssistantMl.PATH, AssistantMl.add(repo.readPath(vault, AssistantMl.PATH), e)) }
+        val r = mlLock.withLock {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val old = repo.readPath(vault, AssistantMl.PATH)
+                    if (old == null && mlNoteSeen) error(tr("เปิดโน้ต Assistant ML ไม่เจอ จึงไม่เขียนทับ", "Assistant ML was not found, so nothing was written over it"))
+                    repo.writePath(vault, AssistantMl.PATH, AssistantMl.add(old, e))
+                    mlNoteSeen = true
                 }
-                r.exceptionOrNull()?.let { x -> showMessage(tr("บันทึกโน้ต Assistant ML ไม่ได้: ${x.message}", "Could not save Assistant ML: ${x.message}")) }
             }
         }
+        r.exceptionOrNull()?.let { x -> return tr("ไม่ได้จำ: ", "Not kept: ") + (x.message ?: x.toString()) }
         deskNote(tr("สอนตัวอย่าง: ", "Taught: ") + e.render().removePrefix("- "))
         return tr("จำแล้ว ครั้งหน้าพิมพ์แบบนี้ เลขาทำเลย", "Kept: next time this is done right away")
     }
@@ -942,24 +950,26 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val model = mlModel
         // The task's own words: what was highlighted, or the sentence without the taught command words.
-        fun taskText(): String = spans?.let { ss ->
-            val words = ss.filter { it.label?.content != false }.joinToString("") { it.text }.replace(Regex("""\s+"""), " ").trim()
+        fun taskText(): String = AssistantMl.forQuickAdd(spans?.let { ss ->
+            // The task's own words and its project's (no tag yet: stage 2); the command and urgency words go.
+            val words = ss.filter { it.label != AssistantMl.Label.COMMAND && it.label != AssistantMl.Label.PRIORITY }.joinToString("") { it.text }.replace(Regex("""\s+"""), " ").trim()
             // Urgency as quick add reads it: !!! highest, !! high, ! medium.
             val level = ss.firstOrNull { it.label == AssistantMl.Label.PRIORITY }?.let { it.value ?: "สูง" }
             words + when (level) { "สูงสุด" -> " !!!"; "สูง" -> " !!"; "กลาง" -> " !"; else -> "" }
-        } ?: model.taskText(text)
+        } ?: model.taskText(text), _state.value.timeWords, LocalDate.now(), java.time.LocalTime.now().let { kotlinx.datetime.LocalTime(it.hour, it.minute) })
         when (val intent = guess.intent) {
             is AssistantMl.Intent.Do -> {
                 deskRun(text, intent.action, via)
                 desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note)))
             }
             AssistantMl.Intent.AddTask -> {
-                desk.add(DeskTurn(mine = text, via = via))
+                // Said here for the first time ([via] set); a pick or a teach is about a sentence already in the chat.
+                if (via != null) desk.add(DeskTurn(mine = text, via = via))
                 requestQuickAdd(QuickAddRequest(text = taskText()))
                 desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note)))
             }
             AssistantMl.Intent.FindTime -> {
-                desk.add(DeskTurn(mine = text, via = via))
+                if (via != null) desk.add(DeskTurn(mine = text, via = via))
                 val s = _state.value
                 val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now())
                 desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, slots = plan.slots.take(3), slotTitle = plan.title, note = note)))
@@ -967,14 +977,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A sentence for the secretary's stats: left out when it may hold a patient's number. */
+    private fun mlSaid(text: String) = if (AssistantMl.sensitive(text)) tr("(ประโยคมีเลขยาว ไม่จด)", "(has a long number, not written)") else text
+
     /** "หมายถึงอันนี้ไหม": the owner picked [guess] for the sentence of turn [index]; it is done and kept as an example. */
     fun mlPick(index: Int, guess: AssistantMl.Guess) {
         val t = desk.getOrNull(index)?.ml ?: return
         if (t.done) return
         desk[index] = desk[index].copy(ml = t.copy(done = true))
-        deskNote(tr("เลือก: ", "Picked: ") + "${t.question} → ${guess.intent.render()}")
+        deskNote(tr("เลือก: ", "Picked: ") + "${mlSaid(t.question)} → ${guess.intent.render()}")
         val e = AssistantMl.Example(mlModel.spansFor(t.question, guess.intent), guess.intent, LocalDate.now(), "หมายถึงอันนี้ไหม")
-        mlDo(t.question, t.reading, guess, via = null, note = mlKeep(e))
+        viewModelScope.launch { mlDo(t.question, t.reading, guess, via = null, note = mlKeep(e)) }
     }
 
     /** Taught on the highlight page: kept as an example, then done for [said]. */
@@ -982,7 +995,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.indices.filter { desk[it].ml?.question == said && desk[it].ml?.done == false }.forEach { i -> desk[i] = desk[i].copy(ml = desk[i].ml!!.copy(done = true)) }
         val e = AssistantMl.Example(spans, intent, LocalDate.now(), "สอนในแอป")
         val guess = AssistantMl.Guess(intent, 1.0, e)
-        mlDo(said, AssistantMl.Reading(AssistantMl.Level.HIGH, listOf(guess)), guess, via = null, note = mlKeep(e), spans = spans)
+        viewModelScope.launch { mlDo(said, AssistantMl.Reading(AssistantMl.Level.HIGH, listOf(guess)), guess, via = null, note = mlKeep(e), spans = spans) }
     }
 
     /** A free time the learning secretary found: quick add with the title, day and time typed in. */
