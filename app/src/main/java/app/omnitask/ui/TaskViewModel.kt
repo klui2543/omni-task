@@ -2129,6 +2129,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(starred = next) }
     }
 
+    /**
+     * Desktop pins are the stars (owner's pick, 2026-10-26). Before any star every project sits on the desktop, so the
+     * first unpin stars all the others; unpinning the last one keeps [NO_PIN], so the desktop does not fill up again.
+     */
+    fun setPinned(project: String, on: Boolean, all: List<String>) {
+        val s = _state.value.starred
+        val next = when {
+            on -> s - NO_PIN + project
+            s.isEmpty() -> all.toSet() - project
+            else -> s - project
+        }.ifEmpty { setOf(NO_PIN) }
+        prefs.edit().putStringSet(KEY_STARRED, next).apply()
+        _state.update { it.copy(starred = next) }
+    }
+
     /** Makes [tag] a project, or (off) a plain tag again; the task lines stay as they are. */
     fun setProject(tag: String, on: Boolean) {
         val s = _state.value
@@ -3423,6 +3438,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
         const val KEY_PROJECT_TAGS = "projectTags"
+        /** Kept among the stars when the owner has unpinned every project; no tag can hold a tab. */
+        const val NO_PIN = "\t"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_OFF_PROJECTS = "declinedProjects"

@@ -1,0 +1,111 @@
+package app.omnitask.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * The Projects page as a desktop (owner's pick, 2026-10-26, mock way 1): folders as icons, the pinned ones on top,
+ * the rest in the folder "อื่นๆ", the lists in the folder "List".
+ */
+data class Tile(
+    val key: String,
+    val name: String,
+    val sub: String,
+    val tint: Color,
+    val onClick: () -> Unit,
+    val pinned: Boolean = false,
+    val late: Int = 0,
+    val dashed: Boolean = false,
+    val dim: Boolean = false,
+    val mark: String? = null,
+)
+
+/** Folder icons three to a row, like a phone's home screen. */
+@Composable
+fun TileGrid(tiles: List<Tile>, small: Boolean = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        tiles.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { t -> Box(Modifier.weight(1f)) { FolderTile(t, small) } }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderTile(t: Tile, small: Boolean) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = t.onClick).alpha(if (t.dim) 0.5f else 1f).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box {
+            FolderGlyph(t.tint, if (small) 52.dp else 64.dp, dashed = t.dashed)
+            t.mark?.let {
+                Text(it, Modifier.align(Alignment.Center).offset(y = 5.dp), color = Color.Black.copy(alpha = 0.55f), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+            if (t.pinned) Box(
+                Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp).size(22.dp).clip(CircleShape).background(C.card),
+                contentAlignment = Alignment.Center,
+            ) { PinMark() }
+            if (t.late > 0) Box(
+                Modifier.align(Alignment.TopStart).offset(x = (-4).dp, y = (-4).dp).widthIn(min = 18.dp).height(18.dp).clip(RoundedCornerShape(9.dp)).background(C.red)
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("${t.late}", color = C.bg, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+        }
+        Text(t.name, Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        Text(t.sub, color = if (t.late > 0) C.red else C.faint, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+    }
+}
+
+/** A small heading with a hairline after it, between groups of folders. */
+@Composable
+fun DeskHead(title: String) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = C.muted, fontSize = TS.caption)
+        Box(Modifier.padding(start = 8.dp).weight(1f).height(1.dp).background(C.divider))
+    }
+}
+
+/** Where a folder sits, every level a tap back: `โปรเจกต์ › Siriraj › ตารางเวรเภสัช`. */
+@Composable
+fun FolderCrumbs(path: String, onHome: () -> Unit, onOpen: (String) -> Unit) {
+    val parts = path.split('/')
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("โปรเจกต์", "Projects"), Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onHome).padding(horizontal = 2.dp), color = C.accentText, fontSize = TS.caption)
+        parts.forEachIndexed { i, name ->
+            Text(" › ", color = C.faint, fontSize = TS.caption)
+            val to = parts.take(i + 1).joinToString("/")
+            if (i == parts.lastIndex) Text(name, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            else Text(name, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(to) }.padding(horizontal = 2.dp), color = C.accentText, fontSize = TS.caption, maxLines = 1)
+        }
+    }
+}
+
+private fun tr(th: String, en: String) = app.omnitask.model.tr(th, en)

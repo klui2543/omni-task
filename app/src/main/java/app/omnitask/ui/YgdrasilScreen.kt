@@ -71,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.Branches
+import app.omnitask.model.OmniList
 import app.omnitask.model.Priority
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
@@ -115,6 +116,7 @@ fun YgdrasilScreen(
     onOpenProject: (String) -> Unit,
     onBack: () -> Unit,
     embed: YgdrasilEmbed? = null,
+    onOpenList: ((OmniList) -> Unit)? = null,
 ) {
     val tree = remember(state.tasks, state.parked, state.branchStates, state.today, state.starred, state.projectOrder, filter) {
         Ygdrasil.grow(state.tasks + state.parked, state.branchStates, state.today, filter, state.starred, state.projectOrder)
@@ -137,7 +139,13 @@ fun YgdrasilScreen(
     val strayCount = strays.sumOf { it.tasks.size }
     var trayOpen by rememberSaveable { mutableStateOf(false) }
     // The tasks with no project are one more (pretend) project at the end of the tree, drawn like the others.
-    val grown = remember(tree, strays, embed) { if (embed == null) Ygdrasil.withInbox(tree, strays) else tree }
+    // The lists as one more limb before the tray (owner's pick, 2026-10-26, Ygdrasil mock way 1); left out while filtering.
+    val listsShown = onOpenList != null && filter.query.text.isBlank() && !filter.starredOnly && !filter.blockedOnly
+    val grown = remember(tree, strays, embed, state.lists, listsShown) {
+        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) else tree
+    }
+    // Desktop pins are the stars; before any star every project is pinned.
+    val pinned = if (state.starred.isEmpty()) tree.worlds.map { it.node.tag }.toSet() else state.starred
     val layout = remember(grown, shownFolded, notes) { Ygdrasil.layout(grown, shownFolded, notes = notes) }
     LaunchedEffect(strayCount) { if (strayCount == 0) trayOpen = false }
     var picking by remember { mutableStateOf<Task?>(null) }
@@ -190,7 +198,7 @@ fun YgdrasilScreen(
     val spots by rememberUpdatedState(layout.spots)
     fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
         (s.kind == Ygdrasil.Kind.LIMB || s.kind == Ygdrasil.Kind.TRUNK) && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
-    }?.let { it.limb?.node?.tag ?: "" }?.takeUnless { Ygdrasil.isInbox(it) }
+    }?.let { it.limb?.node?.tag ?: "" }?.takeUnless { Ygdrasil.isInbox(it) || isListTag(it) }
     /** Where the carried thing would go if let go now, or null. */
     fun goesTo(c: Carry, to: String?): String? = when {
         to == null -> null
@@ -418,6 +426,8 @@ fun YgdrasilScreen(
                             val world = n.path.isEmpty()
                             // The pretend project of tasks with no project: amber outline, opens and folds, never moved or picked.
                             val inbox = Ygdrasil.isInbox(n.tag)
+                            val listLimb = isListTag(n.tag)
+                            val list = if (listLimb && !world) state.lists.firstOrNull { "$LIST_LIMB/${it.name.replace('/', ' ')}" == n.tag } else null
                             val picked = sel === s
                             val target = carry != null && dropTag == n.tag
                             Row(
@@ -430,7 +440,8 @@ fun YgdrasilScreen(
                                     .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else if (faint(n.tag)) 0.35f else 1f)
                                     .then(
                                         if (embed != null) Modifier
-                                        else if (inbox) Modifier.pointerInput(n.tag, s.folded) {
+                                        else if (list != null) Modifier.pointerInput(n.tag) { detectTapGestures(onTap = { onOpenList?.invoke(list) }) }
+                                        else if (inbox || listLimb) Modifier.pointerInput(n.tag, s.folded) {
                                             detectTapGestures(onTap = { onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
                                         else Modifier
@@ -441,19 +452,23 @@ fun YgdrasilScreen(
                                     .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (!world) Box(Modifier.size(8.dp).clip(CircleShape).background(n.state.color))
+                                // Folders (owner's pick, 2026-10-26): a branch's folder keeps its state's colour; a project's has its own, and a pin when pinned.
+                                if (list != null) Text(list.icon, fontSize = TS.caption)
+                                else if (!world) FolderGlyph(n.state.color, 13.dp)
+                                else if (listLimb) FolderGlyph(C.accent, 16.dp, Modifier.padding(end = 7.dp))
+                                else if (!inbox) FolderGlyph(folderTint(n.tag), 16.dp, Modifier.padding(end = 7.dp))
                                 val note = notes[n.tag]
                                 if (world && !s.folded && note != null && note.opens) Column(Modifier.weight(1f)) {
                                     // Why it opened on its own, inside the card (the owner's pick, mock ค).
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("#" + n.name, Modifier.weight(1f), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(n.name, Modifier.weight(1f), color = C.accentText, fontSize = TS.caption, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         if (n.all.isNotEmpty()) Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
                                     }
                                     Box(Modifier.padding(top = 3.dp)) { TreeBadges(note, reach) }
                                 } else if (world && s.folded && note != null && s.w > Ygdrasil.NODE_W) Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            "#" + n.name, Modifier.weight(1f, fill = false).padding(end = 6.dp), color = C.accentText, fontSize = TS.caption,
+                                            n.name, Modifier.weight(1f, fill = false).padding(end = 6.dp), color = C.accentText, fontSize = TS.caption,
                                             fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         )
                                         TreeBadges(note, reach)
@@ -462,7 +477,7 @@ fun YgdrasilScreen(
                                         Text(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 } else Text(
-                                    if (inbox && world) tr("ยังไม่มีบ้าน", "No project yet") else if (world) "#" + n.name else n.name, Modifier.weight(1f).padding(start = if (world) 0.dp else 7.dp),
+                                    if (inbox && world) tr("ยังไม่มีบ้าน", "No project yet") else if (listLimb && world) "List" else n.name, Modifier.weight(1f).padding(start = if (world) 0.dp else 7.dp),
                                     color = if (inbox) C.amber else if (world) C.accentText else C.text, fontSize = TS.caption,
                                     fontWeight = if (world) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
@@ -471,8 +486,14 @@ fun YgdrasilScreen(
                                     Text("+${s.count}", Modifier.clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 6.dp, vertical = 1.dp), color = C.text2, fontSize = TS.micro)
                                 } else if (n.all.isNotEmpty()) {
                                     Text("${n.done}/${n.all.size}", color = C.muted, fontSize = TS.micro)
+                                } else if (list != null) {
+                                    val items = state.itemsOf(list)
+                                    Text("${items.count { !it.isOpen }}/${items.size}", color = C.muted, fontSize = TS.micro)
+                                } else if (listLimb && world) {
+                                    Text(tr("${n.children.size} รายการ", "${n.children.size} lists"), color = C.muted, fontSize = TS.micro)
                                 }
                             }
+                            if (world && !inbox && !listLimb && n.tag in pinned) PinMark(Modifier.offset((s.x + s.w - 16).dp, (s.y - s.h / 2 + 2).dp))
                             // A thin bar along the card's bottom edge: the share of its open work past due, then past target.
                             val note = notes[n.tag]
                             val open = n.all.size - n.done
@@ -616,9 +637,9 @@ fun YgdrasilScreen(
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (node.path.isNotEmpty()) Box(Modifier.size(9.dp).clip(CircleShape).background(node.state.color))
+                    FolderGlyph(if (node.path.isNotEmpty()) node.state.color else folderTint(node.tag), 18.dp)
                     Text(
-                        if (node.path.isEmpty()) "#" + node.name else node.name, Modifier.weight(1f).padding(start = if (node.path.isEmpty()) 0.dp else 8.dp),
+                        node.name, Modifier.weight(1f).padding(start = 8.dp),
                         color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text("#" + node.tag + if (node.path.isNotEmpty()) ", " + node.state.label else "", color = C.faint, fontSize = TS.caption, maxLines = 1)
@@ -744,4 +765,18 @@ private fun TreeBadge(text: String, color: androidx.compose.ui.graphics.Color) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(color))
         Text(text, Modifier.padding(start = 4.dp), color = color, fontSize = TS.micro, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
+}
+
+/** The tag of the pretend limb that holds the lists on the tree; never written to a task. */
+private const val LIST_LIMB = "~List"
+
+private fun isListTag(tag: String) = tag == LIST_LIMB || tag.startsWith("$LIST_LIMB/")
+
+/** [tree] with the lists as one more limb before the tray of tasks with no project (one branch per list). */
+private fun withListLimb(tree: Ygdrasil.Tree, lists: List<OmniList>): Ygdrasil.Tree {
+    if (lists.isEmpty()) return tree
+    val kids = lists.map { l -> Ygdrasil.Limb(Branches.Node(LIST_LIMB, l.name.replace('/', ' '), Branches.State.ACTIVE, emptyList(), emptyList(), emptyList()), emptyList(), emptyList()) }
+    val limb = Ygdrasil.Limb(Branches.Node(LIST_LIMB, "", Branches.State.ACTIVE, emptyList(), emptyList(), kids.map { it.node }), emptyList(), kids)
+    val at = tree.worlds.indexOfFirst { Ygdrasil.isInbox(it.node.tag) }.let { if (it < 0) tree.worlds.size else it }
+    return tree.copy(worlds = tree.worlds.take(at) + limb + tree.worlds.drop(at))
 }
