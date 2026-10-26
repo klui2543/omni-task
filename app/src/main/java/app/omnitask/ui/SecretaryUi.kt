@@ -63,7 +63,15 @@ object Secretary {
     private const val ROUND_MINUTE = 7
 
     /** How long a round may take to write its marker and reach Obsidian Sync before the phone counts as behind. */
-    const val ROUND_GRACE_MIN = 25L
+    const val ROUND_GRACE_MIN = 45L
+
+    /** The round's own record, written at every round whether it worked or not (secretary.md step 10). */
+    const val HEALTH_PATH = "📁 Folder/หลังบ้าน/Claude/system/health.md"
+    private val ATTEMPT = Regex("""(?m)^last_attempt:\s*(\S+)""")
+
+    /** When the last round ran, from health.md's `last_attempt`; null when the file or the line is missing. */
+    fun lastAttempt(health: String?): Long? = health?.let { ATTEMPT.find(it) }?.groupValues?.get(1)
+        ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
 
     /**
      * The start of the newest round that should already be in the book at [now]: today's latest round whose start plus
@@ -81,7 +89,11 @@ object Secretary {
      * Whether this phone's copy of the book is older than the newest round that should be in it: Obsidian has not
      * synced since (it only syncs while open), or the round failed. Unknown (no marker yet) is not behind.
      */
-    fun behind(last: Long?, now: Long): Boolean = last != null && last < expectedRound(now)
+    fun behind(last: Long?, now: Long, attempt: Long? = null): Boolean {
+        // A round that ran but failed still wrote health.md: the phone has synced it, the secretary is what stopped.
+        val newest = listOfNotNull(last, attempt).maxOrNull() ?: return false
+        return newest < expectedRound(now)
+    }
 
     /** "2 ชม. ที่แล้ว" and so on. */
     fun ago(last: Long, now: Long): String {

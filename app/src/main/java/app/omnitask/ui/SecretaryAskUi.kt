@@ -73,6 +73,7 @@ private sealed interface Answer {
 fun SecretaryAskSheet(asks: List<SecretaryAsk.Open>, vm: TaskViewModel, onOpen: (Task) -> Unit, onDismiss: () -> Unit) {
     // The questions as they were when the sheet opened: answered ones stay, showing the answer, until it is closed.
     val shown = remember { asks }
+    val today = remember { java.time.LocalDate.now() }
     val answers = remember { mutableStateMapOf<String, Answer>() }
     val left = shown.count { answers[it.task.key].let { a -> a == null || a == Answer.Picking } }
     ModalBottomSheet(
@@ -93,7 +94,7 @@ fun SecretaryAskSheet(asks: List<SecretaryAsk.Open>, vm: TaskViewModel, onOpen: 
                 ) {
                     Projects.projectOf(o.task)?.let { Text(it, color = C.muted, fontSize = TS.caption) }
                     Text(o.task.title, Modifier.clickable { onDismiss(); onOpen(o.task) }, color = C.text, fontSize = TS.body)
-                    o.ask.why?.let { Text(tr("เหตุที่ถาม: ", "Why: ") + it, color = C.faint, fontSize = TS.caption) }
+                    o.ask.why?.let { Text(it, color = C.faint, fontSize = TS.caption) }
                     when (val a = answers[key]) {
                         null -> Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AskButton(tr("เสร็จแล้ว", "Done"), filled = true, Modifier.weight(1f)) {
@@ -104,24 +105,31 @@ fun SecretaryAskSheet(asks: List<SecretaryAsk.Open>, vm: TaskViewModel, onOpen: 
                         }
                         Answer.Picking -> {
                             var own by remember(key) { mutableStateOf("") }
+                            var typing by remember(key) { mutableStateOf(false) }
                             Text(tr("ติดอะไร (จดลงความเป็นไปของงานนี้)", "What holds it up (noted on this task)"), color = C.muted, fontSize = TS.caption)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 StuckLog.Reason.entries.forEach { r ->
                                     Chip(r.label, false, {
-                                        vm.noteStuck(o.task, r.label)
-                                        answers[key] = Answer.Noted(r.label)
+                                        // Words typed first ride along after the reason, as the task page writes them.
+                                        val note = if (own.isBlank()) r.label else "${r.label}: ${own.trim()}"
+                                        vm.noteStuck(o.task, note)
+                                        answers[key] = Answer.Noted(note)
                                     })
                                 }
+                                // Own words (the keyboard's microphone speaks them): the box opens only when asked.
+                                if (!typing) Chip(tr("พิมพ์หรือพูดเอง", "Type or say it"), false, { typing = true })
                             }
-                            StuckField(own) { own = it }
-                            if (own.isNotBlank()) AskButton(tr("บันทึก", "Save"), filled = true, Modifier.fillMaxWidth()) {
-                                vm.noteStuck(o.task, own)
-                                answers[key] = Answer.Noted(own.trim())
+                            if (typing) {
+                                StuckField(own) { own = it }
+                                if (own.isNotBlank()) AskButton(tr("บันทึก", "Save"), filled = true, Modifier.fillMaxWidth()) {
+                                    vm.noteStuck(o.task, own)
+                                    answers[key] = Answer.Noted(own.trim())
+                                }
                             }
                         }
                         Answer.Done -> Text(tr("ติ๊กว่าเสร็จแล้ว", "Ticked as done"), color = C.lime, fontSize = TS.caption)
                         is Answer.Noted -> Text(
-                            tr("จดลงความเป็นไปแล้ว: ${a.reason} พรุ่งนี้เลขาถามข้อนี้อีก", "Noted on the task: ${a.reason}. Asked again tomorrow"),
+                            tr("จดลงความเป็นไปแล้ว: ค้าง ${today.format(SHORT_DATE)} ${a.reason} พรุ่งนี้เลขาถามข้อนี้อีก", "Noted on the task: ${a.reason}. Asked again tomorrow"),
                             color = C.lime, fontSize = TS.caption,
                         )
                     }

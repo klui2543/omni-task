@@ -1129,9 +1129,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * synced (it syncs only while open): open Obsidian so it does (owner, 2026-10-26). Once per round, so a secretary
      * that really stopped does not send the owner to Obsidian again and again; the warning card covers that case.
      */
-    private fun openObsidianIfBehind(last: Long?) {
+    private fun openObsidianIfBehind(last: Long?, attempt: Long?) {
         val now = System.currentTimeMillis()
-        if (!Secretary.behind(last, now)) return
+        if (!Secretary.behind(last, now, attempt)) return
         val round = Secretary.expectedRound(now)
         if (prefs.getLong(KEY_SYNC_OPENED_FOR, 0L) == round) return
         prefs.edit().putLong(KEY_SYNC_OPENED_FOR, round).apply()
@@ -1217,7 +1217,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 checkSyncOnLoad = false
                 val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
                 if (vaultName != null && _state.value.vaultName == null) _state.update { it.copy(vaultName = vaultName) }
-                openObsidianIfBehind(secretary)
+                val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
+                openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
             }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
