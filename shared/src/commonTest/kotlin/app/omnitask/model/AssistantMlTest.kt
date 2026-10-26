@@ -191,4 +191,31 @@ class AssistantMlTest {
         }
         listOf("จด ซื้อนม", "ดูพรุ่งนี้", "พรุ่งนี้ จด โทรหาแม่").forEach { said -> assertEquals(Level.HIGH, m.read(said).level, said) }
     }
+
+    @Test
+    fun aSentenceTaughtWithoutSpacesIsDoneWhenTypedTheSameWay() {
+        val m = AssistantMl.Model(
+            listOf(ex("- {จด|คำสั่ง}{ซื้อไข่|ชื่องาน} → เพิ่มงาน"), ex("- {นัด|คำสั่ง}{หมอฟัน|ชื่องาน}{พรุ่งนี้|วันที่} → เพิ่มงาน")),
+            AssistantMl.seeds(SecretaryGuide.DEFAULT),
+        )
+        assertEquals(Level.HIGH, m.read("จดซื้อไข่").level)
+        assertEquals(Level.HIGH, m.read("นัดหมอฟันพรุ่งนี้").level)
+        assertEquals(Intent.AddTask, m.read("นัดหมอฟันพรุ่งนี้").best!!.intent)
+        // A new task joined to the short command is asked, not done ("จดหมาย" may be a letter).
+        assertEquals(Level.MEDIUM, m.read("จดซื้อนม").level)
+    }
+
+    @Test
+    fun aShortCommandAfterTheTaskNameMustStandAlone() {
+        val m = AssistantMl.Model(listOf(ex("- {ซื้อนม|ชื่องาน} {จด|คำสั่ง} → เพิ่มงาน"), ex("- {เพิ่ม|คำสั่ง} {ซื้อนม|ชื่องาน} → เพิ่มงาน")), AssistantMl.seeds(SecretaryGuide.DEFAULT))
+        assertEquals(Level.HIGH, m.read("ซื้อไข่ จด").level)
+        listOf("ส่งจดหมายถึงแม่", "จดทะเบียนรถ", "เพิ่มเติมรายละเอียดงาน", "เพิ่มน้ำหนัก").forEach { said -> assertNotEquals(Level.HIGH, m.read(said).level, said) }
+    }
+
+    @Test
+    fun aDayBeforeTheTaskNameStillCountsAsAskingAfterIt() {
+        val m = AssistantMl.Model(listOf(ex("- {พรุ่งนี้|วันที่}{ประชุมทีม|ชื่องาน}{ลงปฏิทิน|คำสั่ง} → เพิ่มงาน")), AssistantMl.seeds(SecretaryGuide.DEFAULT))
+        assertEquals(Level.HIGH, m.read("วันศุกร์ไปหาหมอลงปฏิทิน").level)
+    }
 }
+

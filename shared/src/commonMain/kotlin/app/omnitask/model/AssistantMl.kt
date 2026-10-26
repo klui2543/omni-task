@@ -219,6 +219,8 @@ object AssistantMl {
     private val THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙"
     private val DATE_LIKE = Regex("""(?<!\d)\d{1,2}[-/]\d{1,2}[-/]\d{2,4}(?!\d)|(?<!\d)\d{4}-\d{1,2}-\d{1,2}(?!\d)""")
     private val SEPARATORS = Regex("""(?<=\d)[\s.\-,]+(?=\d)""")
+    /** A time or a day and month with a dot or colon ("8.00", "16:30", "30.10"): not part of a long number. */
+    private val TIME_LIKE = Regex("""(?<![\d.])\d{1,2}[.:]\d{2}(?![\d])""")
     private val LONG_NUMBER = Regex("""\d{6,}""")
     private val ID_WORDS = Regex("""(?<![a-z])hn(?![a-z])|เลขบัตร|บัตรประชาชน|เบอร์โทร""", RegexOption.IGNORE_CASE)
 
@@ -229,7 +231,7 @@ object AssistantMl {
      */
     fun sensitive(text: String): Boolean {
         val digits = text.map { c -> THAI_DIGITS.indexOf(c).takeIf { it >= 0 }?.let { '0' + it } ?: c }.joinToString("")
-        val joined = SEPARATORS.replace(DATE_LIKE.replace(digits, " "), "")
+        val joined = SEPARATORS.replace(TIME_LIKE.replace(DATE_LIKE.replace(digits, " "), " "), "")
         return LONG_NUMBER.containsMatchIn(joined) || ID_WORDS.containsMatchIn(text)
     }
 
@@ -254,21 +256,18 @@ object AssistantMl {
     private const val SEED_WEIGHT = 0.7
     /** A taught command that is not where the sentence starts (after a day or time): asked, not done. */
     private const val NOT_AT_START = 0.7
-    /** A start this short ("จด", "ดู", "สรุป") must end where a word ends, so "จดหมาย" is not "จด". */
-    private const val SHORT_START = 4
+    /**
+     * A taught command this short ("จด", "ดู", "สรุป", "เพิ่ม"; Thai vowels and tone marks count as letters) is sure
+     * only as a word of its own: a space, a day or time, or the sentence's start or end on both sides. Typed joined to
+     * other words it is asked, unless the whole sentence is one already taught.
+     */
+    private const val SHORT_START = 5
 
     /** Pieces of two and three letters of [text], spaces and case aside. */
     fun grams(text: String): Set<String> {
         val t = SecretaryGuide.squash(text)
         if (t.length < 2) return if (t.isEmpty()) emptySet() else setOf(t)
         return buildSet { for (n in 2..3) for (i in 0..t.length - n) add(t.substring(i, i + n)) }
-    }
-
-    /** [text] without the days and times guessed in it, squashed: where a sentence's asking starts. */
-    internal fun core(text: String): String {
-        var t = text
-        guessLabels(text).sortedByDescending { it.first.first }.forEach { (r, _) -> t = t.substring(0, r.first) + " " + t.substring(r.last + 1) }
-        return SecretaryGuide.squash(t)
     }
 
     /**
@@ -328,6 +327,28 @@ object AssistantMl {
         return p >= t.length || t[p].isWhitespace() || guessLabels(t).any { it.first.first == p }
     }
 
+    /**
+     * Whether [text] holds [anchor] (squashed) anywhere: for asking that comes after the task's name. A short one must
+     * stand as a word of its own: a space, a day or time, or the sentence's start or end on both sides.
+     */
+    internal fun holds(text: String, anchor: String): Boolean {
+        val at = text.indices.filter { !text[it].isWhitespace() }
+        val squashed = at.map { text[it].lowercaseChar() }.joinToString("")
+        if (anchor.isEmpty()) return true
+        if (anchor.length > SHORT_START) return squashed.contains(anchor)
+        val guesses = guessLabels(text)
+        var from = squashed.indexOf(anchor)
+        while (from >= 0) {
+            val start = at[from]
+            val end = at[from + anchor.length - 1]
+            val before = start == 0 || text[start - 1].isWhitespace() || guesses.any { it.first.last == start - 1 }
+            val after = end == text.length - 1 || text[end + 1].isWhitespace() || guesses.any { it.first.first == end + 1 }
+            if (before && after) return true
+            from = squashed.indexOf(anchor, from + 1)
+        }
+        return false
+    }
+
     /** Examples the app starts from without being taught: its own commands, the owner's bubbles and taught words. */
     fun seeds(guide: SecretaryGuide.Guide): List<Example> = buildList {
         SecretaryGuide.Builtin.entries.forEach { b ->
@@ -349,7 +370,9 @@ object AssistantMl {
      *   merely holds it ("ส่งรายงานวันนี้" holding "วันนี้") is not the same question.
      */
     class Model(taught: List<Example>, seeds: List<Example> = emptyList()) {
-        private class Item(val example: Example, val features: Map<String, Double>, val seed: Boolean, val anchor: String?, val afterTask: Boolean = false)
+        private class Item(val example: Example, val features: Map<String, Double>, val seed: Boolean, val anchor: String?, val afterTask: Boolean = false) {
+            val squashed = SecretaryGuide.squash(example.text)
+        }
 
         private val items: List<Item>
         private val idf: Map<String, Double>
@@ -364,7 +387,7 @@ object AssistantMl {
                 val marked = e.spans.any { it.label != null && !it.label.content }
                 val a = if (seed || !marked) emptyMap() else asking(e)
                 // Asking after the task's own name ("ซื้อนม จดไว้"): it need not start the sentence.
-                val afterTask = e.spans.firstOrNull { it.text.isNotBlank() }?.label == Label.TITLE
+                val afterTask = e.spans.firstOrNull { it.text.isNotBlank() && it.label != Label.DATE && it.label != Label.TIME }?.label == Label.TITLE
                 return if (a.isNotEmpty()) Item(e, a, seed, anchor(e), afterTask) else Item(e, grams(e.text).associateWith { 1.0 }, seed, null)
             }
             items = kept.map { item(it, false) } + seeds.map { item(it, true) }
@@ -385,7 +408,9 @@ object AssistantMl {
         private val urgency: List<Pair<String, String>> = kept.flatMap { e -> e.spans.filter { it.label == Label.PRIORITY }.map { it.text.trim() to (it.value ?: "สูง") } }
             .filter { it.first.isNotEmpty() && it.second in LEVELS }.distinctBy { it.first }.sortedByDescending { it.first.length }
 
-        private fun score(item: Item, q: Set<String>, text: String, core: String): Double {
+        private fun score(item: Item, q: Set<String>, text: String): Double {
+            // A sentence taught before, typed again (spaces aside): what the screen promised ("ครั้งหน้าพิมพ์แบบนี้ เลขาทำเลย").
+            if (!item.seed && item.squashed == SecretaryGuide.squash(text)) return 1.0
             val anchor = item.anchor
             val s = if (anchor != null) {
                 var num = 0.0
@@ -395,7 +420,7 @@ object AssistantMl {
                     den += x
                     if (g in q) num += x
                 }
-                val same = anchor.isEmpty() || (if (item.afterTask) core.contains(anchor) else startsWith(text, anchor))
+                val same = anchor.isEmpty() || (if (item.afterTask) holds(text, anchor) else startsWith(text, anchor))
                 if (den == 0.0) 0.0 else num / den * if (same) 1.0 else NOT_AT_START
             } else {
                 var num = 0.0
@@ -414,8 +439,7 @@ object AssistantMl {
         fun read(text: String): Reading {
             val q = grams(text)
             if (q.isEmpty() || items.isEmpty()) return Reading(Level.LOW, emptyList())
-            val c = core(text)
-            val best = items.map { it to score(it, q, text, c) }.filter { it.second > 0.0 }
+            val best = items.map { it to score(it, q, text) }.filter { it.second > 0.0 }
                 .groupBy { it.first.example.intent.render() }
                 .map { (_, list) -> list.maxBy { it.second }.let { (item, s) -> Guess(item.example.intent, s, item.example) } }
                 .sortedByDescending { it.score }
@@ -444,7 +468,11 @@ object AssistantMl {
             urgency.firstOrNull { t.contains(it.first, ignoreCase = true) }?.let { (w, level) ->
                 val i = t.indexOf(w, ignoreCase = true)
                 // "ด่วนๆ": the repeat mark goes with its word.
-                val end = (i + w.length).let { e -> if (t.getOrNull(e) == 'ๆ') e + 1 else e }
+                val end = (i + w.length).let { e ->
+                    var k = e
+                    while (k < t.length && t[k].isWhitespace()) k++
+                    if (t.getOrNull(k) == 'ๆ') k + 1 else e
+                }
                 t = t.substring(0, i) + " " + t.substring(end)
                 bang = when (level) { "สูงสุด" -> " !!!"; "สูง" -> " !!"; "กลาง" -> " !"; else -> "" }
             }

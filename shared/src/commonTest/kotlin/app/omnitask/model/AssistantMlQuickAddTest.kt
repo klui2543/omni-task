@@ -78,5 +78,12 @@ class AssistantMlQuickAddTest {
         assertTrue(AssistantMl.sensitive("โทร 081.23.4567"))
         assertTrue(AssistantMl.sensitive("โทร 0812.34.5678"))
     }
+
+    @Test
+    fun shiftTimesAndDottedDatesAreNotPatientNumbers() {
+        assertFalse(AssistantMl.sensitive("เวร 8.00-16.00"))
+        assertFalse(AssistantMl.sensitive("นัด 30.10.2569"))
+        assertEquals("ไปรับพัสดุ !!", AssistantMl.Model(listOf(ex("- {เพิ่มงาน|คำสั่ง} {ด่วน|ความเร่งด่วน=สูง} → เพิ่มงาน"))).taskText("เพิ่มงาน ไปรับพัสดุ ด่วน ๆ"))
+    }
 }
 
