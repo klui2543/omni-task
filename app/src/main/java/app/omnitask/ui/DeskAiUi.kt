@@ -71,8 +71,9 @@ internal fun ChatBox(
 ) {
     var menu by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
-    // Open while typing (the field has focus and the keyboard is up) or while text waits in it, as Claude's does.
-    val open = (focused && keyboard) || input.isNotBlank()
+    // Open while typing (the field has focus and the keyboard is up) or while text waits in it, as Claude's does. Also
+    // while the mode menu is up: the menu takes the focus and the keyboard goes down, and the menu lives in the second row.
+    val open = (focused && keyboard) || input.isNotBlank() || menu
     val shape = RoundedCornerShape(if (open) 22.dp else 26.dp)
     Column(
         Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = bottom)
@@ -95,7 +96,7 @@ internal fun ChatBox(
                 keyboardActions = KeyboardActions(onSend = { onSend() }),
                 decorationBox = { inner ->
                     Box(contentAlignment = if (open) Alignment.TopStart else Alignment.CenterStart) {
-                        if (input.isEmpty()) Text(tr("ถามเลขา", "Ask the secretary"), color = C.faint, fontSize = TS.body)
+                        if (input.isEmpty() || (!open && input.isBlank())) Text(tr("ถามเลขา", "Ask the secretary"), color = C.faint, fontSize = TS.body)
                         inner()
                     }
                 },
