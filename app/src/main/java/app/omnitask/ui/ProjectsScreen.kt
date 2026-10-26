@@ -93,8 +93,9 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var shelf by rememberSaveable { mutableStateOf<String?>(null) }
     val pinned = if (state.starred.isEmpty()) projects.map { it.name }.toSet() else state.starred
     fun folderUp() { val p = folderPath ?: return; folderPath = p.substringBeforeLast('/').takeIf { '/' in it } }
-    // A folder belongs to the open project: when the project is gone (closed, or its last task moved away), so is the folder.
-    LaunchedEffect(open == null) { if (open == null) folderPath = null }
+    // A folder belongs to the project it was opened in: another project (or none) starts at its own page. Keyed on the
+    // name, so a project missing for a moment while the tasks reload keeps its folder.
+    LaunchedEffect(openName) { if (folderPath?.startsWith("$openName/") != true) folderPath = null }
     // A tag in "อื่นๆ" opened to see its tasks, before it is made a project.
     var tagShown by remember { mutableStateOf<String?>(null) }
     fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; openListPath = null; listCategory = null; world = true }

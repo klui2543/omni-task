@@ -134,6 +134,14 @@ fun FolderPicker(
     var at by remember { mutableStateOf(current?.substringBeforeLast('/', "") ?: "") }
     var naming by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    // A new top folder typed in another case than one already there ("omni/ใหม่" beside "Omni") takes its spelling,
+    // so the task stays in that project; a name that exists as typed is left alone.
+    fun spell(p: String): String {
+        val roots = all.map { it.substringBefore('/') }.toSet()
+        val r = p.substringBefore('/')
+        if (r in roots) return p
+        return roots.firstOrNull { it.equals(r, ignoreCase = true) }?.let { it + p.removePrefix(r) } ?: p
+    }
     fun under(p: String) = all.filter { if (p.isEmpty()) '/' !in it else it.startsWith("$p/") && it.count { c -> c == '/' } == p.count { c -> c == '/' } + 1 }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.raised) {
@@ -146,7 +154,7 @@ fun FolderPicker(
                 val hits = Folders.search(all, query)
                 Hint(tr("ผลค้นหา ${hits.size}", "${hits.size} found"))
                 hits.forEach { p -> FolderRow(p, p.substringAfterLast('/'), p.substringBeforeLast('/', "").let { if (it.isEmpty()) tr("ชั้นบนสุด", "Top level") else folderTrail(it) }, p == current) { onPick(p) } }
-                val typed = Folders.clean(query)
+                val typed = spell(Folders.clean(query))
                 if (typed.isNotEmpty() && all.none { it.equals(typed, ignoreCase = true) }) {
                     // A label typed here (#รอ/พี่เอ) is added as a label; the folder stays.
                     val label = Folders.isLabel(typed)
@@ -197,7 +205,7 @@ fun FolderPicker(
                 if (naming) {
                     PickerField(newName, tr("ชื่อโฟลเดอร์ใหม่", "New folder name"), Modifier.padding(top = 8.dp), onDone = {
                         val name = Folders.clean(newName)
-                        if (name.isNotEmpty()) onPick(if (at.isEmpty()) name else "$at/$name")
+                        if (name.isNotEmpty()) onPick(if (at.isEmpty()) spell(name) else "$at/$name")
                     }) { newName = it }
                 } else {
                     NewRow(if (at.isEmpty()) tr("โฟลเดอร์ใหม่", "New folder") else tr("โฟลเดอร์ใหม่ใน ", "New folder in ") + at.substringAfterLast('/')) { naming = true; newName = "" }
