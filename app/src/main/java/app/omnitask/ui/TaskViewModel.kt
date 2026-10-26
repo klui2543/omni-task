@@ -15,6 +15,8 @@ import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
 import app.omnitask.CrashLog
 import app.omnitask.data.CalendarReader
+import app.omnitask.data.ClaudeAi
+import app.omnitask.data.ClaudeSettings
 import app.omnitask.data.DriveLink
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.BehaviorLog
@@ -80,6 +82,8 @@ import app.omnitask.model.Task
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
 import app.omnitask.model.quadrant
+import app.omnitask.model.SecretaryAi
+import app.omnitask.model.SecretaryAsk
 import app.omnitask.model.tr
 import app.omnitask.notify.NotifySettings
 import app.omnitask.notify.Scheduler
@@ -167,6 +171,8 @@ data class UiState(
     /** Vault-relative paths of every note, e.g. `📁 Folder/งาน/ประชุม.md`. */
     val notePaths: List<String> = emptyList(),
     val vaultName: String? = null,
+    /** The secretary's questions (`Claude/เลขาถาม.md`), as last read; the today page matches them to open tasks. */
+    val secretaryAsks: List<SecretaryAsk.Ask> = emptyList(),
     val profile: Profile = Profile(),
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
@@ -508,7 +514,210 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     // ---- The secretary's own chat (new look): answers by rules, buttons for what comes next, Claude for the rest. ----
 
     /** One turn of the secretary chat: the owner's words, or the secretary's [reply]. [done] once its changes were made. */
-    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false)
+    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false, val ai: AiTurn? = null, val via: String? = null)
+
+    /**
+     * One answer from Claude in the secretary chat: while it is asked ([waiting]), then what the model read, what
+     * the owner can tap from it, and what it cost (real tokens from the API) with the credit left after it. [id] finds
+     * it again when the answer arrives, wherever the chat has moved meanwhile.
+     */
+    data class AiTurn(
+        val id: Long,
+        val mode: SecretaryAi.Mode,
+        val effort: SecretaryAi.Effort,
+        val waiting: Boolean = true,
+        val question: String = "",
+        val reading: SecretaryAi.Reading? = null,
+        /** A command of the app the model named, as a button; null when it named none the app knows. */
+        val command: SecretaryGuide.Action? = null,
+        /** Times the app found for a find_time answer. */
+        val slots: List<Planner.Slot> = emptyList(),
+        val slotTitle: String = "",
+        val error: String? = null,
+        val inTokens: Long = 0,
+        val outTokens: Long = 0,
+        val inUsd: Double = 0.0,
+        val outUsd: Double = 0.0,
+        val leftUsd: Double = 0.0,
+        /** What a tap already did ("สอนแล้ว"...), so the buttons give way to it. */
+        val done: String? = null,
+    ) {
+        val usd get() = inUsd + outUsd
+    }
+
+    /**
+     * A question waiting for the owner to confirm what Claude will cost. Nothing has left the phone yet: the cost is
+     * worked out here (the instructions as the last real answer measured them, plus the sentence), so it reads "ราว".
+     * [fromTurn] is the rules' answer it came from (the Haiku button), so the question is not shown twice.
+     */
+    data class AiPending(
+        val question: String,
+        val mode: SecretaryAi.Mode,
+        val effort: SecretaryAi.Effort,
+        val estimate: SecretaryAi.Estimate,
+        val fromTurn: Int? = null,
+    )
+
+    /**
+     * The model picked in the chat box: the app's rules (free) every time the app starts or the chat starts over, as
+     * the owner asked ("AI only when picked"); the effort is kept.
+     */
+    var deskMode by androidx.compose.runtime.mutableStateOf(SecretaryAi.Mode.RULES)
+        private set
+    var deskEffort by androidx.compose.runtime.mutableStateOf(ClaudeSettings.effort(app))
+        private set
+    var aiPending by androidx.compose.runtime.mutableStateOf<AiPending?>(null)
+        private set
+    /** Bumped when the AI settings change, so what shows them reads them again. */
+    var aiSettingsVersion by androidx.compose.runtime.mutableStateOf(0)
+        private set
+    private var aiNextId = 1L
+
+    fun pickDeskMode(mode: SecretaryAi.Mode) { deskMode = mode }
+
+    fun pickDeskEffort(effort: SecretaryAi.Effort) { deskEffort = effort; ClaudeSettings.setEffort(getApplication(), effort) }
+
+    fun aiSettingsChanged() { aiSettingsVersion++ }
+
+    /** The chat box's send: the rules when no model is picked, otherwise Claude after the owner confirms the cost. */
+    fun deskSend(text: String) {
+        if (!deskMode.isAi) deskType(text) else aiStart(text, deskMode, deskEffort)
+    }
+
+    /**
+     * Gets a question ready for Claude: without a key the owner is told where to put one; otherwise the confirmation
+     * opens with what it will cost. Nothing is sent before "ยืนยันส่ง". Any sentence may go (owner, 2026-10-26).
+     */
+    fun aiStart(text: String, mode: SecretaryAi.Mode, effort: SecretaryAi.Effort, fromTurn: Int? = null) {
+        val app = getApplication<Application>()
+        fun say(line: String) {
+            // Stopped here: nothing went out, so the line under it says so.
+            if (fromTurn == null) desk.add(DeskTurn(mine = text, via = tr("ไม่ได้ส่งให้ AI", "Not sent to the AI")))
+            desk.add(DeskTurn(reply = SecretaryDesk.Reply(listOf(line), emptyList())))
+        }
+        if (ClaudeSettings.key(app) == null) {
+            say(tr("ยังไม่ได้ใส่กุญแจ API ของ Anthropic ใส่ได้ที่ปุ่มเลือกโหมดในกล่องพิมพ์ แล้วเลือก ตั้งค่า AI และกฎถามตอบ", "No Anthropic API key yet: add it from the mode button in the chat box, AI and rules settings"))
+            return
+        }
+        aiPending = AiPending(text, mode, effort, aiEstimate(mode, effort, text), fromTurn)
+    }
+
+    /**
+     * What [text] will cost on [mode], worked out on the phone: the instructions as the last real answer measured them,
+     * plus the sentence; before any answer, a guess from the instructions and the answer's form.
+     */
+    fun aiEstimate(mode: SecretaryAi.Mode, effort: SecretaryAi.Effort, text: String): SecretaryAi.Estimate {
+        val app = getApplication<Application>()
+        val inTokens = ClaudeSettings.baseTokens(app, mode)?.let { it + SecretaryAi.guessInTokens("", text) }
+            ?: SecretaryAi.guessInTokens(SecretaryAi.system(LocalDate.now()) + SecretaryAi.SCHEMA, text)
+        return SecretaryAi.estimate(mode, effort, inTokens)
+    }
+
+    /** A typed sentence the owner cancelled, handed back to the chat box so it need not be typed again. */
+    var deskDraft by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
+    fun deskDraftTaken() { deskDraft = null }
+
+    fun aiCancel() {
+        val p = aiPending ?: return
+        aiPending = null
+        if (p.fromTurn == null) deskDraft = p.question
+    }
+
+    private fun aiTurnIndex(id: Long) = desk.indexOfFirst { it.ai?.id == id }
+
+    /** The owner confirmed: asks Claude, counts what it really cost, and turns the answer into buttons. */
+    fun aiConfirm() {
+        val p = aiPending ?: return
+        aiPending = null
+        val app = getApplication<Application>()
+        val key = ClaudeSettings.key(app) ?: return
+        // The rules' answer the Haiku button came from has done its part: its buttons give way.
+        p.fromTurn?.let { i -> if (i in desk.indices && desk[i].reply?.teach == p.question) desk[i] = desk[i].copy(done = true) }
+        if (p.fromTurn == null) desk.add(DeskTurn(mine = p.question, via = p.mode.sentWith))
+        val id = aiNextId++
+        desk.add(DeskTurn(ai = AiTurn(id, p.mode, p.effort, question = p.question)))
+        deskNote(tr("ถาม ${p.mode.th}: ", "Asked ${p.mode.en}: ") + p.question)
+        viewModelScope.launch {
+            val system = SecretaryAi.system(LocalDate.now())
+            val result = withContext(Dispatchers.IO) { runCatching { ClaudeAi(key).ask(p.mode, p.effort, system, p.question) } }
+            val base = AiTurn(id, p.mode, p.effort, question = p.question)
+            fun spend(inT: Long, outT: Long): AiTurn {
+                val inUsd = inT * p.mode.inPerM / 1e6
+                val outUsd = outT * p.mode.outPerM / 1e6
+                ClaudeSettings.addSpent(app, inUsd + outUsd)
+                // What the instructions really cost, so the next confirmation is closer.
+                ClaudeSettings.setBaseTokens(app, p.mode, inT - SecretaryAi.guessInTokens("", p.question))
+                aiSettingsChanged()
+                return base.copy(waiting = false, inTokens = inT, outTokens = outT, inUsd = inUsd, outUsd = outUsd, leftUsd = ClaudeSettings.credit(app).leftUsd)
+            }
+            val done = result.fold(
+                onSuccess = { a ->
+                    val t = spend(a.inTokens, a.outTokens)
+                    val reading = SecretaryAi.parse(a.json)
+                    if (reading == null) t.copy(error = tr("อ่านคำตอบของ AI ไม่ได้", "Could not read the model's answer")) else aiRead(t, reading)
+                },
+                onFailure = { e ->
+                    when (e) {
+                        is ClaudeAi.Spent -> spend(e.inTokens, e.outTokens).copy(error = e.failure.message)
+                        else -> base.copy(waiting = false, error = e.message ?: tr("เรียก AI ไม่สำเร็จ", "The call failed"), leftUsd = ClaudeSettings.credit(app).leftUsd)
+                    }
+                },
+            )
+            // Found by its id: the chat may have moved on, or started over. Then the answer, and its cost, show in the
+            // new chat, and also in the old one kept for "undo", so undo does not bring back "กำลังถาม..." for good.
+            deskBefore = deskBefore.map { if (it.ai?.id == id) it.copy(ai = done) else it }
+            val at = aiTurnIndex(id)
+            if (at >= 0) desk[at] = desk[at].copy(ai = done) else desk.add(DeskTurn(ai = done))
+        }
+    }
+
+    /** What the owner can tap from a [reading]: a command of the app, times to pick, a task to add, or Claude. */
+    private fun aiRead(turn: AiTurn, reading: SecretaryAi.Reading): AiTurn {
+        val s = _state.value
+        return when (reading.kind) {
+            SecretaryAi.Kind.COMMAND -> turn.copy(reading = reading, command = SecretaryGuide.Action.parse(reading.command))
+            SecretaryAi.Kind.FIND_TIME -> {
+                val plan = Planner.plan(reading.task.ifBlank { turn.question }, s.tasks, s.events, s.profile, LocalDateTime.now(), reading.minutes.takeIf { it > 0 })
+                turn.copy(reading = reading, slots = plan.slots.take(3), slotTitle = plan.title)
+            }
+            else -> turn.copy(reading = reading)
+        }
+    }
+
+    /** Runs the command Claude named, as if its bubble were tapped (the app's own rules: free). */
+    fun aiRunCommand(id: Long) {
+        val t = desk.getOrNull(aiTurnIndex(id))?.ai ?: return
+        val action = t.command ?: return
+        deskRun(action.describe(), action)
+    }
+
+    /** Keeps the sentence and the command Claude found as a taught word, so the rules answer it next time for free. */
+    fun aiTeach(id: Long) {
+        val at = aiTurnIndex(id)
+        val t = desk.getOrNull(at)?.ai ?: return
+        val action = t.command ?: return
+        editGuide { g -> g.copy(words = g.words.filterNot { SecretaryGuide.squash(it.word) == SecretaryGuide.squash(t.question) } + SecretaryGuide.Word(t.question, action)) }
+        desk[at] = desk[at].copy(ai = t.copy(done = tr("สอนแล้ว ครั้งหน้าโหมดเลขาตอบได้เอง ไม่ต้องใช้ AI", "Taught: the rules answer this next time, no AI")))
+    }
+
+    /** Opens quick add with [sentence] typed in, so the owner checks it and taps add (nothing is added by the model). */
+    fun aiAddTask(sentence: String) = requestQuickAdd(QuickAddRequest(text = sentence))
+
+    /** A time Claude's question found: opens quick add with the title, day and time typed in. */
+    fun aiPickSlot(id: Long, slot: Planner.Slot) {
+        val t = desk.getOrNull(aiTurnIndex(id))?.ai ?: return
+        val day = "${slot.day.dayOfMonth}/${slot.day.monthNumber}"
+        val time = "%d:%02d".format(slot.start.hour, slot.start.minute)
+        aiAddTask("${t.slotTitle.ifBlank { t.question }} $day $time")
+    }
+
+    /** Takes the question to Claude in its app, as the Claude bubble does. */
+    fun aiToClaude(id: Long) {
+        val t = desk.getOrNull(aiTurnIndex(id))?.ai ?: return
+        deskRun(tr("ส่งให้ Claude", "Send to Claude"), SecretaryGuide.Action.Claude(t.question))
+    }
 
     val desk = androidx.compose.runtime.mutableStateListOf<DeskTurn>()
     private var deskOffered = emptySet<String>()
@@ -544,6 +753,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.clear()
         deskOffered = emptySet()
         deskOpenedAt = System.currentTimeMillis()
+        // A new chat starts on the free rules again ("AI only when picked").
+        deskMode = SecretaryAi.Mode.RULES
         desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
     }
 
@@ -554,11 +765,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         deskBefore = emptyList()
     }
 
-    /** The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. */
-    fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList()) {
+    /**
+     * The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. [via] is what a typed
+     * sentence was sent with, shown small under it ("ส่งด้วย เลขา (ฟรี)"); a tapped bubble has none.
+     */
+    fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList(), via: String? = null) {
         val ctx = deskCtx()
         val lastReply = desk.lastOrNull { it.reply != null }?.reply
-        desk.add(DeskTurn(mine = chip.label))
+        desk.add(DeskTurn(mine = chip.label, via = via))
         deskNote(chip.label + (lastReply?.task?.let { ": ${it.title}" } ?: ""))
         val n = guide.length.count
         val reply: SecretaryDesk.Reply = when (chip.ask) {
@@ -640,13 +854,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             loadGuide()
             deskNote(tr("พิมพ์: ", "Typed: ") + text)
             val g = guide
+            val via = SecretaryAi.Mode.RULES.sentWith
             val bubble = g.bubbles.firstOrNull { SecretaryGuide.squash(it.label) == SecretaryGuide.squash(text) }
             val word = bubble?.action ?: g.wordIn(text)?.action
-            if (word != null) { deskRun(text, word); return@launch }
+            if (word != null) { deskRun(text, word, via); return@launch }
             val ask = SecretaryDesk.match(text)
-            if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask)); return@launch }
+            if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask), via = via); return@launch }
             deskNote(tr("ไม่รู้จัก: ", "Not understood: ") + text)
-            desk.add(DeskTurn(mine = text))
+            desk.add(DeskTurn(mine = text, via = via))
             desk.add(DeskTurn(reply = SecretaryDesk.Reply(
                 listOf(tr("ยังไม่รู้จักคำนี้ สอนผมไว้ใช้ครั้งหน้า หรือส่งให้ Claude ช่วยคิดก็ได้", "I don't know this yet. Teach me for next time, or take it to Claude")),
                 listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
@@ -659,14 +874,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * Does a guide [action] as if [label] were tapped. A hand-over to Claude only says it in the chat; the screen opens
      * the sheet to send it ([deskClaude] holds what to ask).
      */
-    fun deskRun(label: String, action: SecretaryGuide.Action) {
+    fun deskRun(label: String, action: SecretaryGuide.Action, via: String? = null) {
         if (action is SecretaryGuide.Action.Claude) {
-            desk.add(DeskTurn(mine = label))
+            desk.add(DeskTurn(mine = label, via = via))
             deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + label)
             deskClaude = SecretaryPretext.Part(label, action.text.ifBlank { label })
             return
         }
-        deskAsk(SecretaryDesk.Chip.of(label, action))
+        deskAsk(SecretaryDesk.Chip.of(label, action), via = via)
     }
 
     /** A hand-over to Claude a bubble or a word asked for, waiting for the screen to open the send sheet. */
@@ -1112,6 +1327,40 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
 
+    /** Set when the app comes to the front, so the next load checks once whether Obsidian has synced the book. */
+    @Volatile private var checkSyncOnLoad = false
+
+    /** The app came to the front: read the vault again, and check whether this phone's copy is behind the secretary. */
+    fun resumed() {
+        checkSyncOnLoad = true
+        reload()
+    }
+
+    /**
+     * When this phone's Claude log is older than the newest secretary round that should be in it, Obsidian has not
+     * synced (it syncs only while open): open Obsidian so it does (owner, 2026-10-26). Once per round, so a secretary
+     * that really stopped does not send the owner to Obsidian again and again; the warning card covers that case.
+     */
+    private fun openObsidianIfBehind(last: Long?, attempt: Long?) {
+        val now = System.currentTimeMillis()
+        if (!Secretary.behind(last, now, attempt)) return
+        val round = Secretary.expectedRound(now)
+        if (prefs.getLong(KEY_SYNC_OPENED_FOR, 0L) == round) return
+        prefs.edit().putLong(KEY_SYNC_OPENED_FOR, round).apply()
+        val vault = _state.value.vaultName
+        val uri = if (vault != null) "obsidian://open?vault=${Uri.encode(vault)}" else "obsidian://open"
+        val opened = runCatching {
+            getApplication<Application>().startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+        if (opened.isSuccess) {
+            showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด เปิด Obsidian ให้ซิงก์ ซิงก์เสร็จแล้วกลับมาที่ Omni ได้เลย", "Your copy is older than the secretary's last round. Opened Obsidian to sync; come back when it is done"))
+        } else {
+            showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด แต่เปิด Obsidian ไม่ได้ เปิด Obsidian เองให้ซิงก์", "Your copy is older than the secretary's last round, and Obsidian could not be opened: open it yourself to sync"))
+        }
+    }
+
     fun reload() {
         val vault = _state.value.vault ?: return
         _state.update { it.copy(loading = true) }
@@ -1173,6 +1422,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             claudeLogText = logText
             val secretary = Secretary.lastRun(logText)
             _state.update { it.copy(ai = it.ai.copy(secretaryLast = secretary)) }
+            // The secretary's questions; a file that cannot be read keeps the last ones rather than hiding them.
+            val askText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryAsk.PATH) } }
+            askText.getOrNull().let { t -> if (askText.isSuccess) _state.update { it.copy(secretaryAsks = SecretaryAsk.parse(t)) } }
+            if (checkSyncOnLoad) {
+                checkSyncOnLoad = false
+                val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
+                if (vaultName != null && _state.value.vaultName == null) _state.update { it.copy(vaultName = vaultName) }
+                val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
+                openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
+            }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -3132,6 +3391,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         /** The brief is read again on opening the assistant only when it is older than this. */
         const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"
+        /** The secretary round (its start, epoch ms) for which Obsidian was last opened to sync the book. */
+        const val KEY_SYNC_OPENED_FOR = "secretary.syncOpenedFor"
         const val KEY_URGENT = "urgentRule"
         const val KEY_FUTURE_COUNT = "futureCount"
         const val KEY_SKIPPED = "skippedFuture"

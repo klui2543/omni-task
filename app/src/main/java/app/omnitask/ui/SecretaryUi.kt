@@ -57,6 +57,44 @@ object Secretary {
     /** Whether the warning shows: the secretary ran once, its last round is over a day old, and it is not hidden. */
     fun warns(last: Long?, hiddenUntil: Long, now: Long): Boolean = last != null && now - last > STALE_MS && now >= hiddenUntil
 
+    /** Bangkok time: the secretary's rounds start at 08:07, 11:07, 14:07, 17:07, 20:07 and 23:07. */
+    private val ROUNDS_ZONE: ZoneId = ZoneId.of("Asia/Bangkok")
+    private val ROUND_HOURS = listOf(8, 11, 14, 17, 20, 23)
+    private const val ROUND_MINUTE = 7
+
+    /** How long a round may take to write its marker and reach Obsidian Sync before the phone counts as behind. */
+    const val ROUND_GRACE_MIN = 45L
+
+    /** The round's own record, written at every round whether it worked or not (secretary.md step 10). */
+    const val HEALTH_PATH = "📁 Folder/หลังบ้าน/Claude/system/health.md"
+    private val ATTEMPT = Regex("""(?m)^last_attempt:\s*(\S+)""")
+
+    /** When the last round ran, from health.md's `last_attempt`; null when the file or the line is missing. */
+    fun lastAttempt(health: String?): Long? = health?.let { ATTEMPT.find(it) }?.groupValues?.get(1)
+        ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+
+    /**
+     * The start of the newest round that should already be in the book at [now]: today's latest round whose start plus
+     * [ROUND_GRACE_MIN] has passed, or yesterday's last one before the first round of the day.
+     */
+    fun expectedRound(now: Long): Long {
+        val t = Instant.ofEpochMilli(now).atZone(ROUNDS_ZONE)
+        val starts = ROUND_HOURS.map { t.toLocalDate().atTime(it, ROUND_MINUTE).atZone(ROUNDS_ZONE) }
+        val done = starts.lastOrNull { !it.plusMinutes(ROUND_GRACE_MIN).isAfter(t) }
+            ?: t.toLocalDate().minusDays(1).atTime(ROUND_HOURS.last(), ROUND_MINUTE).atZone(ROUNDS_ZONE)
+        return done.toInstant().toEpochMilli()
+    }
+
+    /**
+     * Whether this phone's copy of the book is older than the newest round that should be in it: Obsidian has not
+     * synced since (it only syncs while open), or the round failed. Unknown (no marker yet) is not behind.
+     */
+    fun behind(last: Long?, now: Long, attempt: Long? = null): Boolean {
+        // A round that ran but failed still wrote health.md: the phone has synced it, the secretary is what stopped.
+        val newest = listOfNotNull(last, attempt).maxOrNull() ?: return false
+        return newest < expectedRound(now)
+    }
+
     /** "2 ชม. ที่แล้ว" and so on. */
     fun ago(last: Long, now: Long): String {
         val min = ((now - last) / 60_000L).coerceAtLeast(0)

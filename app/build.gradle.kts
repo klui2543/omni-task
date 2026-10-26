@@ -39,6 +39,13 @@ android {
         }
     }
 
+    // Anthropic's SDK (the secretary chat's Claude) brings Jackson and Apache HTTP libraries whose jars carry the
+    // same licence and index files; only one copy can go in the APK.
+    packaging {
+        resources {
+            excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST", "META-INF/*.kotlin_module", "META-INF/versions/9/module-info.class")
+        }
+    }
     buildFeatures {
         compose = true
     }
@@ -92,6 +99,8 @@ dependencies {
     // The wake alarm goes to the watch app (see WatchAlarm and the wear module).
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Claude in the secretary chat, through Anthropic's official SDK (only when the owner picks a model and confirms the cost).
+    implementation("com.anthropic:anthropic-java:2.34.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

@@ -114,6 +114,6 @@ class MainActivity : ComponentActivity() {
     // Obsidian or the sync app may have changed files while the app was in the background.
     override fun onResume() {
         super.onResume()
-        viewModel.reload()
+        viewModel.resumed()
     }
 }

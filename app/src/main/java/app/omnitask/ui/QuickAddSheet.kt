@@ -160,7 +160,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
 
     // The full-screen page for what one sentence can't say; it starts from what was typed so far.
     var full by remember { mutableStateOf(false) }
-    if (full) AddDetailPage(state, vm, text, status, link, onClose = { full = false }, onSaved = { full = false; onDismiss() })
+    if (full) AddDetailPage(state, vm, text, status, link, startAsEvent = asEvent, onClose = { full = false }, onSaved = { full = false; onDismiss() })
 
     SheetFrame(onDismiss) {
         if (target == null) {
@@ -285,6 +285,9 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         // Where and when "ลงปฏิทิน" would put it, laid out like Google Calendar's new-event sheet.
         if (asEvent) {
             QuickEventRows(draft, eventPick, state.today, calendars, calendar, onCalendar = { chosen = it }, onMore = { full = true })
+        } else if (target == null) {
+            // A task gets the same way into the full page (date kind, start day, repeat, details, subtasks).
+            Box(Modifier.padding(top = 6.dp)) { MoreOptionsRow { full = true } }
         }
 
         // One button: what it saves follows the choice at the top.

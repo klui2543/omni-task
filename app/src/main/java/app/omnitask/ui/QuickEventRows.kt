@@ -193,14 +193,7 @@ fun QuickEventRows(
                 }
             }
         }
-        if (onMore != null) Row(
-            Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(onClick = onMore),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Spacer(Modifier.width(20.dp))
-            Text(tr("ตัวเลือกเพิ่มเติม", "More options"), Modifier.weight(1f), color = C.muted, fontSize = TS.body)
-            Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(16.dp))
-        }
+        if (onMore != null) MoreOptionsRow(onMore)
     }
 
     when (picking) {
@@ -252,4 +245,17 @@ private fun MenuTime(time: String, length: String?, selected: Boolean, onClick: 
         onClick = onClick,
         modifier = Modifier.height(48.dp).let { if (selected) it.background(C.accentSoft) else it },
     )
+}
+
+/** The row that opens the full add page; the same row under a task and under an event in quick add. */
+@Composable
+fun MoreOptionsRow(onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Spacer(Modifier.width(20.dp))
+        Text(tr("ตัวเลือกเพิ่มเติม", "More options"), Modifier.weight(1f), color = C.muted, fontSize = TS.body)
+        Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(16.dp))
+    }
 }

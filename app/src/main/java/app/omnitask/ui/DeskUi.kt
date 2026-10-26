@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -134,11 +135,17 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             editingBubble = null
         }
     }
+    var aiSettingsOpen by remember { mutableStateOf(false) }
+    if (aiSettingsOpen) AiSettingsSheet(vm, onGuide = { guideOpen = true }) { aiSettingsOpen = false }
+    AiConfirmDialog(vm)
+    val hasKey = remember(vm.aiSettingsVersion) { app.omnitask.data.ClaudeSettings.key(context) != null }
     var briefMore by remember { mutableStateOf<SecretaryBook.Brief?>(null) }
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
     if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
 
-    Column(Modifier.fillMaxSize()) {
+    // The page ends above the keyboard, so the chat box stays in sight while typing (the window does not resize itself:
+    // the app draws edge to edge).
+    Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(tr("เลขา", "Secretary"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
             // Start over: today's greeting only, with a moment to undo it.
@@ -149,16 +156,21 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             )
             SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
         }
+        KeyWarning(vm) { aiSettingsOpen = true }
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(), state = list,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             itemsIndexed(turns) { i, t ->
-                t.mine?.let { Mine(it) }
+                t.mine?.let { Mine(it, t.via) }
+                t.ai?.let { AiAnswer(it, vm) }
                 t.reply?.let { r ->
                     Column {
-                        Answer(r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves, { teaching = it }) { claudeOpen = true }
+                        Answer(
+                            r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves, { teaching = it },
+                            onAskAi = if (hasKey) { said -> vm.aiStart(said, app.omnitask.model.SecretaryAi.Mode.HAIKU, vm.deskEffort, fromTurn = i) } else null,
+                        ) { claudeOpen = true }
                         r.brief?.let { b -> BriefCard(b, state.tasks, onOpen, vm::toggleDone) { briefMore = b } }
                     }
                 }
@@ -216,49 +228,38 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 ) { Icon(Ic.pen, tr("แก้บอลลูน", "Change the bubbles"), tint = C.accentText, modifier = Modifier.size(18.dp)) }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp)
-                .padding(bottom = if (keyboard) 8.dp else NavClearance - 12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val send = { if (input.isNotBlank()) { vm.deskType(input.trim()); input = "" } }
-            BasicTextField(
-                value = input, onValueChange = { input = it },
-                modifier = Modifier.weight(1f).heightIn(min = 46.dp).clip(RoundedCornerShape(23.dp)).background(C.card)
-                    .border(1.dp, C.cardBorder, RoundedCornerShape(23.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
-                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
-                cursorBrush = SolidColor(C.accent),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send() }),
-                decorationBox = { inner -> Box { if (input.isEmpty()) Text(tr("พิมพ์ถามเอง", "Type a question"), color = C.faint, fontSize = TS.body); inner() } },
-            )
-            if (input.isNotBlank()) Box(
-                Modifier.size(44.dp).clip(CircleShape).background(C.accent).clickable { send() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.send, tr("ส่ง", "Send"), tint = C.onAccent, modifier = Modifier.size(20.dp)) }
-            else Box(
-                Modifier.size(44.dp).clip(CircleShape).background(C.raised).clickable { claudeOpen = true },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.mic, tr("คุยเสียงกับ Claude", "Talk to Claude"), tint = C.text2, modifier = Modifier.size(20.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun Mine(text: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Text(
-            text, Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)).background(C.accentDeep).padding(horizontal = 12.dp, vertical = 8.dp),
-            color = C.text, fontSize = TS.body,
+        // A question cancelled at the cost check comes back into the box.
+        LaunchedEffect(vm.deskDraft) { vm.deskDraft?.let { input = it; vm.deskDraftTaken() } }
+        // The chat box, like Claude's: the rules by default, a Claude model only when picked here (owner, 2026-10-26).
+        ChatBox(
+            input, { input = it }, vm,
+            bottom = if (keyboard) 8.dp else NavClearance - 12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            keyboard = keyboard,
+            onSend = { if (input.isNotBlank()) { vm.deskSend(input.trim()); input = "" } },
+            onTalk = { claudeOpen = true },
+            onSettings = { aiSettingsOpen = true },
+            onAdd = { vm.requestQuickAdd(QuickAddRequest()) },
         )
     }
 }
 
+/** The owner's sentence, with what a typed one was sent with in small grey under it ([via]). */
+@Composable
+private fun Mine(text: String, via: String? = null) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+        Text(
+            text, Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)).background(C.accentDeep).padding(horizontal = 12.dp, vertical = 8.dp),
+            color = C.text, fontSize = TS.body,
+        )
+        via?.let { Text(it, Modifier.padding(top = 2.dp, end = 4.dp), color = C.muted, fontSize = TS.caption) }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Answer(
     r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit,
-    onApplyMoves: (List<SecretaryDesk.Move>) -> Unit, onTeach: (String) -> Unit, onClaude: () -> Unit,
+    onApplyMoves: (List<SecretaryDesk.Move>) -> Unit, onTeach: (String) -> Unit, onAskAi: ((String) -> Unit)? = null, onClaude: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(tr("เลขา", "Secretary"), color = C.faint, fontSize = TS.micro)
@@ -331,7 +332,9 @@ private fun Answer(
             }
             // A question the rules did not know: teach the word now, or take it to Claude.
             val teach = r.teach
-            if (teach != null && !done) Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (teach != null && !done) androidx.compose.foundation.layout.FlowRow(
+                Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Box(
                     Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accent).clickable { onTeach(teach) }.padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
@@ -340,6 +343,12 @@ private fun Answer(
                     Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accentDeep).clickable(onClick = onClaude).padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text(tr("ส่งให้ Claude", "Send to Claude"), color = C.text, fontSize = TS.body) }
+                // Haiku only on a tap, and only after its cost is confirmed (owner, 2026-10-26).
+                if (onAskAi != null) Box(
+                    Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(22.dp))
+                        .clickable { onAskAi(teach) }.padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(tr("ถามด้วย Haiku", "Ask Haiku"), color = C.text, fontSize = TS.body) }
             }
             if (done) Text(tr("ทำแล้ว", "Done"), color = C.muted, fontSize = TS.caption)
         }
