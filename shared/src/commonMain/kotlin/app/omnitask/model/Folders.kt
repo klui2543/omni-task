@@ -27,6 +27,8 @@ object Folders {
      */
     fun withFolder(tags: List<String>, folder: String?): List<String> {
         val name = folder?.let(TaskLine::normalizeTag)?.takeIf { it.isNotEmpty() }
+        // A label typed where a folder goes joins the labels; the folder stays.
+        if (name != null && isLabel(name)) return if (tags.any { it.equals(name, ignoreCase = true) }) tags else tags + name
         val old = tags.firstOrNull { !isLabel(it) }
         return listOfNotNull(name) + tags.filter { it != old && !it.equals(name, ignoreCase = true) }
     }

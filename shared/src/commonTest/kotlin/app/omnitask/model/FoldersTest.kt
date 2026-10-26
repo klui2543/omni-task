@@ -44,6 +44,8 @@ class FoldersTest {
         assertEquals(listOf("Siriraj/perf", "kluido", "รอ"), Folders.withFolder(listOf("Omni/เลขา", "kluido", "รอ"), "Siriraj/perf"))
         // No folder: only the labels are left.
         assertEquals(listOf("kluido"), Folders.withFolder(listOf("Omni/เลขา", "kluido"), null))
+        // A label typed where a folder goes is added as a label; the folder stays.
+        assertEquals(listOf("Omni/เลขา", "kluido", "รอ/พี่เอ"), Folders.withFolder(listOf("Omni/เลขา", "kluido"), "รอ/พี่เอ"))
         // A tag typed as "# a b" is written the way the line writes tags.
         assertEquals(listOf("Omni/งาน-บ้าน"), Folders.withFolder(emptyList(), "#Omni/งาน บ้าน"))
     }

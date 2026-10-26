@@ -2083,6 +2083,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun moveToFolder(task: Task, folder: String?) {
         val from = Folders.of(task)
         when {
+            // A label typed into the picker (#รอ/พี่เอ) is added; the folder stays.
+            folder != null && Folders.isLabel(TaskLine.normalizeTag(folder)) -> addTag(task, folder)
             folder == null -> if (from != null) removeTag(task, from)
             from == null -> homeTask(task, folder)
             else -> {

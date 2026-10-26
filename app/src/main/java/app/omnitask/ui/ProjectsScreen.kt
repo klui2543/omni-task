@@ -335,8 +335,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                 Box(Modifier.size(8.dp).clip(CircleShape).background(tint))
                                 Text(p.name, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("${p.done}/${p.tasks.size}", color = C.muted, fontSize = TS.caption)
-                                val on = p.name in state.starred
-                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
+                                val on = p.name in pinned
+                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.setPinned(p.name, !on, projects.map { it.name }) }
                             }
                             Box(Modifier.padding(start = 18.dp, end = 12.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.divider)) {
                                 Box(Modifier.fillMaxWidth(p.ratio.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(tint))
@@ -390,8 +390,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
                                     Text(tr("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", "${p.done} of ${p.tasks.size} done"), color = C.muted, fontSize = TS.caption)
                                 }
-                                val on = p.name in state.starred
-                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
+                                val on = p.name in pinned
+                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.setPinned(p.name, !on, projects.map { it.name }) }
                             }
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 p.next?.let { Pill(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), C.raised, C.text2) }
