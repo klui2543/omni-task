@@ -24,6 +24,9 @@ object SecretaryAi {
         val label get() = tr(th, en)
         val isAi get() = modelId != null
 
+        /** The small line under a typed sentence: what it was sent with. */
+        val sentWith: String get() = if (isAi) tr("ส่งด้วย $th", "Sent with $en") else tr("ส่งด้วย เลขา (ฟรี)", "Sent with the secretary (free)")
+
         val note: String
             get() = when (this) {
                 RULES -> tr("กฎในแอป ทำในเครื่อง ไม่ใช้ AI", "The app's rules, on the phone, no AI")
@@ -92,9 +95,12 @@ object SecretaryAi {
         val t = text.lowercase()
         val words = listOf(
             "ขนาดยา", "ปรับยา", "ปรับขนาด", "ยาตัว", "ใช้ยา", "กินยา", "ให้ยา", "ฉีดยา", "แพ้ยา", "ตีกัน", "interaction",
-            "dose", "dosing", "mg/kg", "มก.", "มิลลิกรัม", "ผู้ป่วย", "คนไข้", "hn ", "hn:", "เลขบัตร", "patient", "drug",
+            "ขอยา", "ยาแก้", "ยาลด", "ยาฆ่าเชื้อ", "ยาปฏิชีวนะ", "สั่งยา",
+            "dose", "dosing", "mg/kg", "มก.", "มิลลิกรัม", "ผู้ป่วย", "คนไข้", "เลขบัตร", "patient", "drug",
         )
         if (words.any { it in t }) return true
+        // A hospital number: "hn" as its own Latin word ("HN 1234", "hn:5678", "hn123"), not inside "john".
+        if (Regex("""(^|[^a-z])hn([^a-z]|$)""").containsMatchIn(t)) return true
         // "ยา" on its own, as a word ("ยา vancomycin", "ถามเรื่องยา"), not inside พยายาม, ยาว, ยาก...
         return Regex("""(^|\s|เรื่อง)ยา(\s|$|[a-z])""").containsMatchIn(t)
     }

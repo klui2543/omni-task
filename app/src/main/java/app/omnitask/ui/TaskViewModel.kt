@@ -514,13 +514,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     // ---- The secretary's own chat (new look): answers by rules, buttons for what comes next, Claude for the rest. ----
 
     /** One turn of the secretary chat: the owner's words, or the secretary's [reply]. [done] once its changes were made. */
-    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false, val ai: AiTurn? = null)
+    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false, val ai: AiTurn? = null, val via: String? = null)
 
     /**
      * One answer from Claude in the secretary chat: while it is asked ([waiting]), then what the model read, what
-     * the owner can tap from it, and what it cost (real tokens from the API) with the credit left after it.
+     * the owner can tap from it, and what it cost (real tokens from the API) with the credit left after it. [id] finds
+     * it again when the answer arrives, wherever the chat has moved meanwhile.
      */
     data class AiTurn(
+        val id: Long,
         val mode: SecretaryAi.Mode,
         val effort: SecretaryAi.Effort,
         val waiting: Boolean = true,
@@ -537,23 +539,30 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val inUsd: Double = 0.0,
         val outUsd: Double = 0.0,
         val leftUsd: Double = 0.0,
-        /** What a tap already did ("เพิ่มเป็นคำที่สอนไว้แล้ว"...), so the buttons give way to it. */
+        /** What a tap already did ("สอนแล้ว"...), so the buttons give way to it. */
         val done: String? = null,
     ) {
         val usd get() = inUsd + outUsd
     }
 
-    /** A question waiting for the owner to confirm what Claude will cost; [estimate] is null while it is counted. */
+    /**
+     * A question waiting for the owner to confirm what Claude will cost. Nothing has left the phone yet: the cost is
+     * worked out here (the instructions as the last real answer measured them, plus the sentence), so it reads "ราว".
+     * [fromTurn] is the rules' answer it came from (the Haiku button), so the question is not shown twice.
+     */
     data class AiPending(
         val question: String,
         val mode: SecretaryAi.Mode,
         val effort: SecretaryAi.Effort,
-        val estimate: SecretaryAi.Estimate? = null,
-        val counted: Boolean = false,
+        val estimate: SecretaryAi.Estimate,
+        val fromTurn: Int? = null,
     )
 
-    /** The model picked in the chat box ([SecretaryAi.Mode.RULES]: the app's own rules, free) and how hard it thinks. */
-    var deskMode by androidx.compose.runtime.mutableStateOf(ClaudeSettings.mode(app))
+    /**
+     * The model picked in the chat box: the app's rules (free) every time the app starts or the chat starts over, as
+     * the owner asked ("AI only when picked"); the effort is kept.
+     */
+    var deskMode by androidx.compose.runtime.mutableStateOf(SecretaryAi.Mode.RULES)
         private set
     var deskEffort by androidx.compose.runtime.mutableStateOf(ClaudeSettings.effort(app))
         private set
@@ -562,8 +571,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Bumped when the AI settings change, so what shows them reads them again. */
     var aiSettingsVersion by androidx.compose.runtime.mutableStateOf(0)
         private set
+    private var aiNextId = 1L
 
-    fun pickDeskMode(mode: SecretaryAi.Mode) { deskMode = mode; ClaudeSettings.setMode(getApplication(), mode) }
+    fun pickDeskMode(mode: SecretaryAi.Mode) { deskMode = mode }
 
     fun pickDeskEffort(effort: SecretaryAi.Effort) { deskEffort = effort; ClaudeSettings.setEffort(getApplication(), effort) }
 
@@ -576,60 +586,55 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Gets a question ready for Claude: medicines and patients never go out; without a key the owner is told where to
-     * put one; otherwise what it sends is counted (the count is free) and the confirmation shows the cost.
+     * put one; otherwise the confirmation opens with what it will cost. Nothing is sent before "ยืนยันส่ง".
      */
-    fun aiStart(text: String, mode: SecretaryAi.Mode, effort: SecretaryAi.Effort) {
+    fun aiStart(text: String, mode: SecretaryAi.Mode, effort: SecretaryAi.Effort, fromTurn: Int? = null) {
+        val app = getApplication<Application>()
+        fun say(line: String) {
+            if (fromTurn == null) desk.add(DeskTurn(mine = text, via = mode.sentWith))
+            desk.add(DeskTurn(reply = SecretaryDesk.Reply(listOf(line), emptyList())))
+        }
         if (SecretaryAi.isMedical(text)) {
-            desk.add(DeskTurn(mine = text))
-            desk.add(DeskTurn(reply = SecretaryDesk.Reply(
-                listOf(tr("แชตเลขาไม่ส่งเรื่องยาและผู้ป่วยให้ AI เพราะผิดไม่ได้ ใช้แหล่งอ้างอิงหรือแอป Peddose แทน", "The secretary does not send medicines or patients to an AI: use your references or Peddose")),
-                emptyList(),
-            )))
+            say(tr("แชตเลขาไม่ส่งเรื่องยาและผู้ป่วยให้ AI เพราะผิดไม่ได้ ใช้แหล่งอ้างอิงหรือแอป Peddose แทน", "The secretary does not send medicines or patients to an AI: use your references or Peddose"))
             return
         }
-        val key = ClaudeSettings.key(getApplication())
-        if (key == null) {
-            desk.add(DeskTurn(mine = text))
-            desk.add(DeskTurn(reply = SecretaryDesk.Reply(
-                listOf(tr("ยังไม่ได้ใส่กุญแจ API ของ Anthropic ใส่ได้ที่ปุ่มเลือกโหมดในกล่องพิมพ์ แล้วเลือก ตั้งค่า AI และกฎถามตอบ", "No Anthropic API key yet: add it from the mode button in the chat box, AI and rules settings")),
-                emptyList(),
-            )))
+        if (ClaudeSettings.key(app) == null) {
+            say(tr("ยังไม่ได้ใส่กุญแจ API ของ Anthropic ใส่ได้ที่ปุ่มเลือกโหมดในกล่องพิมพ์ แล้วเลือก ตั้งค่า AI และกฎถามตอบ", "No Anthropic API key yet: add it from the mode button in the chat box, AI and rules settings"))
             return
         }
         val system = SecretaryAi.system(LocalDate.now())
-        aiPending = AiPending(text, mode, effort)
-        viewModelScope.launch {
-            val counted = withContext(Dispatchers.IO) { runCatching { ClaudeAi(key).count(mode, system, text) }.getOrNull() }
-            val inTokens = counted ?: SecretaryAi.guessInTokens(system, text)
-            val now = aiPending
-            if (now != null && now.question == text && now.mode == mode) {
-                aiPending = now.copy(estimate = SecretaryAi.estimate(mode, effort, inTokens), counted = counted != null)
-            }
-        }
+        val inTokens = ClaudeSettings.baseTokens(app, mode)?.let { it + SecretaryAi.guessInTokens("", text) } ?: SecretaryAi.guessInTokens(system, text)
+        aiPending = AiPending(text, mode, effort, SecretaryAi.estimate(mode, effort, inTokens), fromTurn)
     }
 
     fun aiCancel() { aiPending = null }
+
+    private fun aiTurnIndex(id: Long) = desk.indexOfFirst { it.ai?.id == id }
 
     /** The owner confirmed: asks Claude, counts what it really cost, and turns the answer into buttons. */
     fun aiConfirm() {
         val p = aiPending ?: return
         aiPending = null
-        val key = ClaudeSettings.key(getApplication()) ?: return
         val app = getApplication<Application>()
-        desk.add(DeskTurn(mine = p.question))
-        desk.add(DeskTurn(ai = AiTurn(p.mode, p.effort, question = p.question)))
-        val at = desk.lastIndex
+        val key = ClaudeSettings.key(app) ?: return
+        // The rules' answer the Haiku button came from has done its part: its buttons give way.
+        p.fromTurn?.let { i -> if (i in desk.indices) desk[i] = desk[i].copy(done = true) }
+        if (p.fromTurn == null) desk.add(DeskTurn(mine = p.question, via = p.mode.sentWith))
+        val id = aiNextId++
+        desk.add(DeskTurn(ai = AiTurn(id, p.mode, p.effort, question = p.question)))
         deskNote(tr("ถาม ${p.mode.th}: ", "Asked ${p.mode.en}: ") + p.question)
         viewModelScope.launch {
             val system = SecretaryAi.system(LocalDate.now())
             val result = withContext(Dispatchers.IO) { runCatching { ClaudeAi(key).ask(p.mode, p.effort, system, p.question) } }
-            val turn = desk.getOrNull(at)?.ai ?: AiTurn(p.mode, p.effort, question = p.question)
+            val base = AiTurn(id, p.mode, p.effort, question = p.question)
             fun spend(inT: Long, outT: Long): AiTurn {
                 val inUsd = inT * p.mode.inPerM / 1e6
                 val outUsd = outT * p.mode.outPerM / 1e6
                 ClaudeSettings.addSpent(app, inUsd + outUsd)
+                // What the instructions really cost, so the next confirmation is closer.
+                ClaudeSettings.setBaseTokens(app, p.mode, inT - SecretaryAi.guessInTokens("", p.question))
                 aiSettingsChanged()
-                return turn.copy(waiting = false, inTokens = inT, outTokens = outT, inUsd = inUsd, outUsd = outUsd, leftUsd = ClaudeSettings.credit(app).leftUsd)
+                return base.copy(waiting = false, inTokens = inT, outTokens = outT, inUsd = inUsd, outUsd = outUsd, leftUsd = ClaudeSettings.credit(app).leftUsd)
             }
             val done = result.fold(
                 onSuccess = { a ->
@@ -640,11 +645,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 onFailure = { e ->
                     when (e) {
                         is ClaudeAi.Spent -> spend(e.inTokens, e.outTokens).copy(error = e.failure.message)
-                        else -> turn.copy(waiting = false, error = e.message ?: tr("เรียก AI ไม่สำเร็จ", "The call failed"), leftUsd = ClaudeSettings.credit(app).leftUsd)
+                        else -> base.copy(waiting = false, error = e.message ?: tr("เรียก AI ไม่สำเร็จ", "The call failed"), leftUsd = ClaudeSettings.credit(app).leftUsd)
                     }
                 },
             )
-            if (at < desk.size) desk[at] = desk[at].copy(ai = done)
+            // Found by its id: the chat may have moved on, or started over (then the answer, and its cost, still show).
+            val at = aiTurnIndex(id)
+            if (at >= 0) desk[at] = desk[at].copy(ai = done) else desk.add(DeskTurn(ai = done))
         }
     }
 
@@ -662,14 +669,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Runs the command Claude named, as if its bubble were tapped (the app's own rules: free). */
-    fun aiRunCommand(at: Int) {
-        val t = desk.getOrNull(at)?.ai ?: return
+    fun aiRunCommand(id: Long) {
+        val t = desk.getOrNull(aiTurnIndex(id))?.ai ?: return
         val action = t.command ?: return
-        deskRun(t.question, action)
+        deskRun(action.describe(), action)
     }
 
     /** Keeps the sentence and the command Claude found as a taught word, so the rules answer it next time for free. */
-    fun aiTeach(at: Int) {
+    fun aiTeach(id: Long) {
+        val at = aiTurnIndex(id)
         val t = desk.getOrNull(at)?.ai ?: return
         val action = t.command ?: return
         editGuide { g -> g.copy(words = g.words.filterNot { SecretaryGuide.squash(it.word) == SecretaryGuide.squash(t.question) } + SecretaryGuide.Word(t.question, action)) }
@@ -680,17 +688,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun aiAddTask(sentence: String) = requestQuickAdd(QuickAddRequest(text = sentence))
 
     /** A time Claude's question found: opens quick add with the title, day and time typed in. */
-    fun aiPickSlot(at: Int, slot: Planner.Slot) {
-        val t = desk.getOrNull(at)?.ai ?: return
+    fun aiPickSlot(id: Long, slot: Planner.Slot) {
+        val t = desk.getOrNull(aiTurnIndex(id))?.ai ?: return
         val day = "${slot.day.dayOfMonth}/${slot.day.monthNumber}"
         val time = "%d:%02d".format(slot.start.hour, slot.start.minute)
         aiAddTask("${t.slotTitle.ifBlank { t.question }} $day $time")
     }
 
     /** Takes the question to Claude in its app, as the Claude bubble does. */
-    fun aiToClaude(at: Int) {
-        val t = desk.getOrNull(at)?.ai ?: return
-        deskRun(t.question, SecretaryGuide.Action.Claude(t.question))
+    fun aiToClaude(id: Long) {
+        val t = desk.getOrNull(aiTurnIndex(id))?.ai ?: return
+        deskRun(tr("ส่งให้ Claude", "Send to Claude"), SecretaryGuide.Action.Claude(t.question))
     }
 
     val desk = androidx.compose.runtime.mutableStateListOf<DeskTurn>()
@@ -727,6 +735,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         desk.clear()
         deskOffered = emptySet()
         deskOpenedAt = System.currentTimeMillis()
+        // A new chat starts on the free rules again ("AI only when picked").
+        deskMode = SecretaryAi.Mode.RULES
         desk.add(DeskTurn(reply = SecretaryDesk.opening(deskCtx())))
     }
 
@@ -737,11 +747,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         deskBefore = emptyList()
     }
 
-    /** The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. */
-    fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList()) {
+    /**
+     * The owner tapped a button: say it in the chat, act on it, and answer with the next buttons. [via] is what a typed
+     * sentence was sent with, shown small under it ("ส่งด้วย เลขา (ฟรี)"); a tapped bubble has none.
+     */
+    fun deskAsk(chip: SecretaryDesk.Chip, picked: List<String> = emptyList(), via: String? = null) {
         val ctx = deskCtx()
         val lastReply = desk.lastOrNull { it.reply != null }?.reply
-        desk.add(DeskTurn(mine = chip.label))
+        desk.add(DeskTurn(mine = chip.label, via = via))
         deskNote(chip.label + (lastReply?.task?.let { ": ${it.title}" } ?: ""))
         val n = guide.length.count
         val reply: SecretaryDesk.Reply = when (chip.ask) {
@@ -823,13 +836,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             loadGuide()
             deskNote(tr("พิมพ์: ", "Typed: ") + text)
             val g = guide
+            val via = SecretaryAi.Mode.RULES.sentWith
             val bubble = g.bubbles.firstOrNull { SecretaryGuide.squash(it.label) == SecretaryGuide.squash(text) }
             val word = bubble?.action ?: g.wordIn(text)?.action
-            if (word != null) { deskRun(text, word); return@launch }
+            if (word != null) { deskRun(text, word, via); return@launch }
             val ask = SecretaryDesk.match(text)
-            if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask)); return@launch }
+            if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask), via = via); return@launch }
             deskNote(tr("ไม่รู้จัก: ", "Not understood: ") + text)
-            desk.add(DeskTurn(mine = text))
+            desk.add(DeskTurn(mine = text, via = via))
             desk.add(DeskTurn(reply = SecretaryDesk.Reply(
                 listOf(tr("ยังไม่รู้จักคำนี้ สอนผมไว้ใช้ครั้งหน้า หรือส่งให้ Claude ช่วยคิดก็ได้", "I don't know this yet. Teach me for next time, or take it to Claude")),
                 listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
@@ -842,14 +856,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * Does a guide [action] as if [label] were tapped. A hand-over to Claude only says it in the chat; the screen opens
      * the sheet to send it ([deskClaude] holds what to ask).
      */
-    fun deskRun(label: String, action: SecretaryGuide.Action) {
+    fun deskRun(label: String, action: SecretaryGuide.Action, via: String? = null) {
         if (action is SecretaryGuide.Action.Claude) {
-            desk.add(DeskTurn(mine = label))
+            desk.add(DeskTurn(mine = label, via = via))
             deskNote(tr("ส่งให้ Claude: ", "Sent to Claude: ") + label)
             deskClaude = SecretaryPretext.Part(label, action.text.ifBlank { label })
             return
         }
-        deskAsk(SecretaryDesk.Chip.of(label, action))
+        deskAsk(SecretaryDesk.Chip.of(label, action), via = via)
     }
 
     /** A hand-over to Claude a bubble or a word asked for, waiting for the screen to open the send sheet. */

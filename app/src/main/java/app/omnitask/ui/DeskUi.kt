@@ -160,13 +160,13 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             itemsIndexed(turns) { i, t ->
-                t.mine?.let { Mine(it) }
-                t.ai?.let { AiAnswer(i, it, vm) }
+                t.mine?.let { Mine(it, t.via) }
+                t.ai?.let { AiAnswer(it, vm) }
                 t.reply?.let { r ->
                     Column {
                         Answer(
                             r, t.done, picks[i] ?: r.steps.toSet(), { picks[i] = it }, onOpen, vm::deskApplyMoves, { teaching = it },
-                            onAskAi = if (hasKey) { said -> vm.aiStart(said, app.omnitask.model.SecretaryAi.Mode.HAIKU, vm.deskEffort) } else null,
+                            onAskAi = if (hasKey) { said -> vm.aiStart(said, app.omnitask.model.SecretaryAi.Mode.HAIKU, vm.deskEffort, fromTurn = i) } else null,
                         ) { claudeOpen = true }
                         r.brief?.let { b -> BriefCard(b, state.tasks, onOpen, vm::toggleDone) { briefMore = b } }
                     }
@@ -236,16 +236,19 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     }
 }
 
+/** The owner's sentence, with what a typed one was sent with in small grey under it ([via]). */
 @Composable
-private fun Mine(text: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+private fun Mine(text: String, via: String? = null) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         Text(
             text, Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)).background(C.accentDeep).padding(horizontal = 12.dp, vertical = 8.dp),
             color = C.text, fontSize = TS.body,
         )
+        via?.let { Text(it, Modifier.padding(top = 2.dp, end = 4.dp), color = C.muted, fontSize = TS.caption) }
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Answer(
     r: SecretaryDesk.Reply, done: Boolean, picked: Set<String>, onPick: (Set<String>) -> Unit, onOpen: (Task) -> Unit,
@@ -322,7 +325,9 @@ private fun Answer(
             }
             // A question the rules did not know: teach the word now, or take it to Claude.
             val teach = r.teach
-            if (teach != null && !done) Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (teach != null && !done) androidx.compose.foundation.layout.FlowRow(
+                Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Box(
                     Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(C.accent).clickable { onTeach(teach) }.padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,

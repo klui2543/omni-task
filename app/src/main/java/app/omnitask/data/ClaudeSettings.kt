@@ -24,28 +24,34 @@ object ClaudeSettings {
 
     fun setKeyExpires(context: Context, day: LocalDate?) = setDate(context, "claude.keyExpires", day)
 
-    fun credit(context: Context): SecretaryAi.Credit {
-        val p = prefs(context)
-        return SecretaryAi.Credit(
-            quotaUsd = p.getFloat("claude.quotaUsd", 100f).toDouble(),
-            spentUsd = java.lang.Double.longBitsToDouble(p.getLong("claude.spentUsdBits", java.lang.Double.doubleToLongBits(0.0))),
-            creditExpires = date(context, "claude.creditExpires"),
-            rate = p.getFloat("claude.rate", 33f).toDouble(),
-        )
+    fun credit(context: Context): SecretaryAi.Credit = SecretaryAi.Credit(
+        quotaUsd = double(context, "claude.quotaUsdBits", 100.0),
+        spentUsd = double(context, "claude.spentUsdBits", 0.0),
+        creditExpires = date(context, "claude.creditExpires"),
+        rate = double(context, "claude.rateBits", 33.0),
+    )
+
+    fun setQuota(context: Context, usd: Double) = setDouble(context, "claude.quotaUsdBits", usd)
+
+    fun setRate(context: Context, bahtPerUsd: Double) = setDouble(context, "claude.rateBits", bahtPerUsd)
+
+    /**
+     * What the fixed part of a question on [mode] (the instructions) really cost in input tokens the last time, so the
+     * next confirmation can show a figure close to the real one without sending anything first. Null before the first
+     * answer.
+     */
+    fun baseTokens(context: Context, mode: SecretaryAi.Mode): Long? =
+        prefs(context).getLong("claude.base.${mode.name}", -1L).takeIf { it > 0L }
+
+    fun setBaseTokens(context: Context, mode: SecretaryAi.Mode, tokens: Long) {
+        if (tokens > 0L) prefs(context).edit().putLong("claude.base.${mode.name}", tokens).apply()
     }
-
-    fun setQuota(context: Context, usd: Double) = prefs(context).edit().putFloat("claude.quotaUsd", usd.toFloat()).apply()
-
-    fun setRate(context: Context, bahtPerUsd: Double) = prefs(context).edit().putFloat("claude.rate", bahtPerUsd.toFloat()).apply()
 
     fun setCreditExpires(context: Context, day: LocalDate?) = setDate(context, "claude.creditExpires", day)
 
     /** Adds what one call cost to what this app has spent (kept to the full precision of a Double). */
     @Synchronized
-    fun addSpent(context: Context, usd: Double) {
-        val now = credit(context).spentUsd + usd
-        prefs(context).edit().putLong("claude.spentUsdBits", java.lang.Double.doubleToLongBits(now)).apply()
-    }
+    fun addSpent(context: Context, usd: Double) = setDouble(context, "claude.spentUsdBits", credit(context).spentUsd + usd)
 
     /** Starts counting again (a new credit): what was spent goes back to zero. */
     fun resetSpent(context: Context) = prefs(context).edit().remove("claude.spentUsdBits").apply()
@@ -57,6 +63,13 @@ object ClaudeSettings {
     fun effort(context: Context): SecretaryAi.Effort = SecretaryAi.Effort.of(prefs(context).getString("claude.effort", null))
 
     fun setEffort(context: Context, effort: SecretaryAi.Effort) = prefs(context).edit().putString("claude.effort", effort.name).apply()
+
+    // Money is kept as the bits of a Double, so 33.3 reads back as 33.3 and not 33.29999.
+    private fun double(context: Context, name: String, default: Double): Double =
+        java.lang.Double.longBitsToDouble(prefs(context).getLong(name, java.lang.Double.doubleToLongBits(default)))
+
+    private fun setDouble(context: Context, name: String, value: Double) =
+        prefs(context).edit().putLong(name, java.lang.Double.doubleToLongBits(value)).apply()
 
     private fun date(context: Context, name: String): LocalDate? =
         prefs(context).getString(name, null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }

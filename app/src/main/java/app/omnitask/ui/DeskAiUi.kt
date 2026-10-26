@@ -171,8 +171,8 @@ internal fun AiConfirmDialog(vm: TaskViewModel) {
     val context = LocalContext.current
     val credit = remember(vm.aiSettingsVersion, p) { ClaudeSettings.credit(context) }
     val e = p.estimate
-    val after = e?.let { credit.leftUsd - it.usd }
-    val short = after != null && after < 0
+    val after = credit.leftUsd - e.usd
+    val short = after < 0
     AlertDialog(
         onDismissRequest = vm::aiCancel,
         containerColor = C.raised,
@@ -184,21 +184,19 @@ internal fun AiConfirmDialog(vm: TaskViewModel) {
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    if (e == null) Text(tr("กำลังนับว่าส่งไปกี่ token...", "Counting what goes out..."), color = C.muted, fontSize = TS.body)
-                    else {
-                        CostRow(tr("ส่งไป ${if (p.counted) "" else "ราว "}${e.inTokens} token", "Out ${if (p.counted) "" else "about "}${e.inTokens} tokens"), baht(e.inUsd, credit) + tr(" บาท", " baht"))
-                        CostRow(tr("ตอบกลับ ราว ${e.outTokens} token", "Back about ${e.outTokens} tokens"), baht(e.outUsd, credit) + tr(" บาท", " baht"))
-                        CostRow(tr("ครั้งนี้ ราว", "This question, about"), baht(e.usd, credit) + tr(" บาท", " baht"), strong = true)
-                        CostRow(tr("คงเหลือ", "Left"), SecretaryAi.leftText(credit) + tr(" ถึง ", " to ") + SecretaryAi.leftText(credit, after!!), accent = true)
-                    }
-                    credit.creditExpires?.let { Text(tr("เครดิตหมดอายุ ", "Credit expires ") + longDay(it), color = C.muted, fontSize = TS.caption) }
+                    // Worked out on the phone (nothing has gone out yet), so every figure is "ราว".
+                    CostRow(tr("ส่งไป ราว ${e.inTokens} token", "Out about ${e.inTokens} tokens"), baht(e.inUsd, credit) + tr(" บาท", " baht"))
+                    CostRow(tr("ตอบกลับ ราว ${e.outTokens} token", "Back about ${e.outTokens} tokens"), baht(e.outUsd, credit) + tr(" บาท", " baht"))
+                    CostRow(tr("ครั้งนี้ ราว", "This question, about"), baht(e.usd, credit) + tr(" บาท", " baht"), strong = true)
+                    CostRow(tr("คงเหลือ", "Left"), SecretaryAi.leftText(credit) + tr(" ถึง ", " to ") + SecretaryAi.leftText(credit, after), accent = true)
+                    credit.creditExpires?.let { Text(tr("เครดิตโปรโมชั่นหมดอายุ ", "Promotional credit expires ") + longDay(it), color = C.muted, fontSize = TS.caption) }
                 }
                 if (short) Text(tr("เครดิตคงเหลือไม่พอสำหรับคำถามนี้", "Not enough credit left for this question"), color = C.red, fontSize = TS.caption)
             }
         },
         confirmButton = {
-            TextButton(onClick = vm::aiConfirm, enabled = e != null && !short) {
-                Text(tr("ยืนยันส่ง", "Send"), color = if (e != null && !short) C.accent else C.faint, fontWeight = FontWeight.SemiBold)
+            TextButton(onClick = vm::aiConfirm, enabled = !short) {
+                Text(tr("ยืนยันส่ง", "Send"), color = if (!short) C.accent else C.faint, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = { TextButton(onClick = vm::aiCancel) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
@@ -216,7 +214,7 @@ private fun CostRow(label: String, value: String, strong: Boolean = false, accen
 /** Claude's answer in the chat: what it read, what can be tapped from it, and what it really cost. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AiAnswer(at: Int, t: TaskViewModel.AiTurn, vm: TaskViewModel) {
+internal fun AiAnswer(t: TaskViewModel.AiTurn, vm: TaskViewModel) {
     val context = LocalContext.current
     val credit = remember(vm.aiSettingsVersion) { ClaudeSettings.credit(context) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -233,11 +231,11 @@ internal fun AiAnswer(at: Int, t: TaskViewModel.AiTurn, vm: TaskViewModel) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     when (r.kind) {
                         SecretaryAi.Kind.COMMAND -> if (t.command != null) {
-                            AiButton(tr("แสดงเลย", "Show it"), true) { vm.aiRunCommand(at) }
-                            AiButton(tr("สอนเป็นคำนี้ไว้", "Keep as a taught word"), false) { vm.aiTeach(at) }
+                            AiButton(tr("แสดงเลย", "Show it"), true) { vm.aiRunCommand(t.id) }
+                            AiButton(tr("สอนเป็นคำนี้ไว้", "Keep as a taught word"), false) { vm.aiTeach(t.id) }
                         }
                         SecretaryAi.Kind.ADD_TASK -> if (r.task.isNotBlank()) AiButton(tr("เพิ่มงาน: ", "Add: ") + r.task, true) { vm.aiAddTask(r.task) }
-                        SecretaryAi.Kind.CLAUDE -> AiButton(tr("ส่งให้ Claude", "Send to Claude"), true) { vm.aiToClaude(at) }
+                        SecretaryAi.Kind.CLAUDE -> AiButton(tr("ส่งให้ Claude", "Send to Claude"), true) { vm.aiToClaude(t.id) }
                         else -> {}
                     }
                 }
@@ -246,7 +244,7 @@ internal fun AiAnswer(at: Int, t: TaskViewModel.AiTurn, vm: TaskViewModel) {
                     t.slots.forEach { s ->
                         Column(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.accentDeep).border(1.dp, C.accentLine, RoundedCornerShape(12.dp))
-                                .clickable { vm.aiPickSlot(at, s) }.padding(horizontal = 12.dp, vertical = 8.dp),
+                                .clickable { vm.aiPickSlot(t.id, s) }.padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Text("${s.dayLabel} ${"%d:%02d".format(s.start.hour, s.start.minute)} ${tr("ถึง", "to")} ${"%d:%02d".format(s.end.hour, s.end.minute)}", color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
                             Text(s.why, color = C.muted, fontSize = TS.caption)
@@ -307,13 +305,14 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
     val key = remember(vm.aiSettingsVersion) { ClaudeSettings.key(context) }
     val keyExpires = remember(vm.aiSettingsVersion) { ClaudeSettings.keyExpires(context) }
     var newKey by remember { mutableStateOf("") }
-    var quota by remember(vm.aiSettingsVersion) { mutableStateOf(credit.quotaUsd.toString().removeSuffix(".0")) }
-    var rate by remember(vm.aiSettingsVersion) { mutableStateOf(credit.rate.toString().removeSuffix(".0")) }
+    // Read once when the sheet opens, so typing "33." is not undone when the figures around it are read again.
+    var quota by remember { mutableStateOf(credit.quotaUsd.toString().removeSuffix(".0")) }
+    var rate by remember { mutableStateOf(credit.rate.toString().removeSuffix(".0")) }
     val today = LocalDate.now()
 
     when (picking) {
         "credit" -> DayDialog(tr("เครดิตหมดอายุ", "Credit expires"), credit.creditExpires ?: today, { ClaudeSettings.setCreditExpires(context, null); vm.aiSettingsChanged() }, { ClaudeSettings.setCreditExpires(context, it); vm.aiSettingsChanged() }) { picking = null }
-        "key" -> DayDialog(tr("กุญแจหมดอายุ", "Key expires"), keyExpires ?: today.plusMonths(3L), { ClaudeSettings.setKeyExpires(context, null); vm.aiSettingsChanged() }, { ClaudeSettings.setKeyExpires(context, it); vm.aiSettingsChanged() }) { picking = null }
+        "key" -> DayDialog(tr("กุญแจหมดอายุ", "Key expires"), keyExpires ?: today, { ClaudeSettings.setKeyExpires(context, null); vm.aiSettingsChanged() }, { ClaudeSettings.setKeyExpires(context, it); vm.aiSettingsChanged() }) { picking = null }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.raised) {
@@ -329,9 +328,9 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                 ) {
                     CostRow(tr("คงเหลือ", "Left"), SecretaryAi.leftText(credit), strong = true)
                     CostRow(tr("แอปนี้ใช้ไป", "Spent here"), baht(credit.spentUsd, credit) + tr(" บาท", " baht"))
-                    SettingRow(tr("เครดิตหมดอายุ", "Credit expires"), credit.creditExpires?.let(::longDay) ?: tr("ตั้งค่า", "Set")) { picking = "credit" }
-                    NumberRow(tr("เครดิตตั้งต้น (ดอลลาร์)", "Credit (dollars)"), quota) { v -> quota = v; v.toDoubleOrNull()?.let { ClaudeSettings.setQuota(context, it) } }
-                    NumberRow(tr("บาทต่อ 1 ดอลลาร์", "Baht per dollar"), rate) { v -> rate = v; v.toDoubleOrNull()?.takeIf { it > 0 }?.let { ClaudeSettings.setRate(context, it) } }
+                    SettingRow(tr("เครดิตโปรโมชั่นหมดอายุ", "Promotional credit expires"), credit.creditExpires?.let(::longDay) ?: tr("ตั้งค่า", "Set")) { picking = "credit" }
+                    NumberRow(tr("เครดิตตั้งต้น (ดอลลาร์)", "Credit (dollars)"), quota) { v -> quota = v; v.toDoubleOrNull()?.let { ClaudeSettings.setQuota(context, it); vm.aiSettingsChanged() } }
+                    NumberRow(tr("บาทต่อ 1 ดอลลาร์", "Baht per dollar"), rate) { v -> rate = v; v.toDoubleOrNull()?.takeIf { it > 0 }?.let { ClaudeSettings.setRate(context, it); vm.aiSettingsChanged() } }
                     Text(
                         tr("เริ่มนับใหม่ (เครดิตก้อนใหม่)", "Start counting again (new credit)"),
                         Modifier.clip(RoundedCornerShape(8.dp)).clickable { ClaudeSettings.resetSpent(context); vm.aiSettingsChanged() }.padding(vertical = 6.dp),
@@ -344,7 +343,16 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     CostRow(tr("กุญแจ API ของ Anthropic", "Anthropic API key"), key?.let { tr("ใส่แล้ว (ลงท้าย ...", "Set (ends ...") + it.takeLast(4) + ")" } ?: tr("ยังไม่ได้ใส่", "Not set"))
-                    if (key != null) SettingRow(tr("กุญแจหมดอายุ", "Key expires"), keyExpires?.let(::longDay) ?: tr("ตั้งค่า", "Set")) { picking = "key" }
+                    // The owner's own date (the console shows it when the key is made); amber with the days left, so it is
+                    // seen. No date: amber "ยังไม่ได้ตั้ง", since then nothing can warn before it runs out.
+                    if (key != null) SettingRow(
+                        tr("กุญแจหมดอายุ", "Key expires"),
+                        keyExpires?.let { d ->
+                            val left = ChronoUnit.DAYS.between(today, d)
+                            longDay(d) + if (left >= 0) tr(" (อีก $left วัน)", " ($left days left)") else tr(" (หมดแล้ว)", " (run out)")
+                        } ?: tr("ยังไม่ได้ตั้ง", "Not set"),
+                        valueColor = C.amber,
+                    ) { picking = "key" }
                     BasicTextField(
                         value = newKey, onValueChange = { newKey = it.trim() },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp)).background(C.sunken).padding(12.dp),
@@ -357,8 +365,8 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (newKey.isNotBlank()) AiButton(tr("บันทึกกุญแจ", "Save key"), true) {
                             ClaudeSettings.setKey(context, newKey)
-                            // A new key starts its own three months unless the owner sets another date.
-                            ClaudeSettings.setKeyExpires(context, today.plusMonths(3L))
+                            // A new key has a new date: the old one is cleared and the picker opens for the owner's.
+                            ClaudeSettings.setKeyExpires(context, null)
                             newKey = ""; vm.aiSettingsChanged(); picking = "key"
                         }
                         if (key != null) AiButton(tr("ลบกุญแจออกจากเครื่อง", "Remove the key"), false) { ClaudeSettings.setKey(context, null); ClaudeSettings.setKeyExpires(context, null); vm.pickDeskMode(SecretaryAi.Mode.RULES); vm.aiSettingsChanged() }
@@ -394,10 +402,10 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
 }
 
 @Composable
-private fun SettingRow(label: String, value: String, onClick: () -> Unit) {
+private fun SettingRow(label: String, value: String, valueColor: androidx.compose.ui.graphics.Color = C.accentText, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
-        Text(value, color = C.accentText, fontSize = TS.caption)
+        Text(value, color = valueColor, fontSize = TS.caption)
     }
 }
 

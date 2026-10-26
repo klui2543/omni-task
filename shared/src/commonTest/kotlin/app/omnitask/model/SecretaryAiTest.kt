@@ -41,6 +41,11 @@ class SecretaryAiTest {
         assertTrue(SecretaryAi.isMedical("ยา vancomycin ปรับขนาดในไตเสื่อมยังไง"))
         assertTrue(SecretaryAi.isMedical("ผู้ป่วยรายนี้ควรได้ยาอะไร"))
         assertTrue(SecretaryAi.isMedical("dose ของ amoxicillin เด็ก"))
+        assertTrue(SecretaryAi.isMedical("ขอยาแก้ปวดหน่อย"))
+        assertTrue(SecretaryAi.isMedical("ดูประวัติ HN 1234567 ให้หน่อย"))
+        assertTrue(SecretaryAi.isMedical("hn:7654321"))
+        // A Latin name that contains the letters hn is not a hospital number.
+        assertFalse(SecretaryAi.isMedical("นัด john พรุ่งนี้"))
         // Thai words that merely contain ยา are not questions about medicines.
         assertFalse(SecretaryAi.isMedical("พยายามทำงานให้เสร็จ"))
         assertFalse(SecretaryAi.isMedical("ช่วงนี้ยุ่งมาก งานไหนพอเลื่อนได้บ้าง"))
