@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -58,33 +59,52 @@ private fun baht(usd: Double, credit: SecretaryAi.Credit) = SecretaryAi.bahtText
 private fun longDay(d: LocalDate) = d.format(SHORT_DATE) + " " + (d.year + 543)
 
 /**
- * The secretary's chat box, laid out like Claude's (owner, 2026-10-26): the text on top; below it the mode (the app's
- * rules, or a Claude model picked here before asking) and send. The prices stay hidden until the mode is tapped (the
- * menu shows what one question costs) and again at the confirmation before anything is sent.
+ * The secretary's chat box, like Claude's (owner's pick, mock B, 2026-10-26). At rest one low row: + (add a task), the
+ * text, and the mic. While typing, or while text is left in it, two rows: the text on top; below it +, the mode (the
+ * app's rules, or a Claude model picked here before asking) and send. The bubbles above stay either way. The prices
+ * stay hidden until the mode is tapped (the menu shows what one question costs) and again at the confirmation.
  */
 @Composable
 internal fun ChatBox(
-    input: String, onInput: (String) -> Unit, vm: TaskViewModel, bottom: androidx.compose.ui.unit.Dp,
-    onSend: () -> Unit, onTalk: () -> Unit, onSettings: () -> Unit,
+    input: String, onInput: (String) -> Unit, vm: TaskViewModel, bottom: androidx.compose.ui.unit.Dp, keyboard: Boolean,
+    onSend: () -> Unit, onTalk: () -> Unit, onSettings: () -> Unit, onAdd: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
+    // Open while typing (the field has focus and the keyboard is up) or while text waits in it, as Claude's does.
+    val open = (focused && keyboard) || input.isNotBlank()
+    val shape = RoundedCornerShape(if (open) 22.dp else 26.dp)
     Column(
         Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = bottom)
-            .clip(RoundedCornerShape(22.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(22.dp))
-            .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 8.dp),
+            .clip(shape).background(C.card).border(1.dp, C.cardBorder, shape)
+            .then(if (open) Modifier.padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 8.dp) else Modifier.padding(4.dp)),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        BasicTextField(
-            value = input, onValueChange = onInput,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 30.dp).padding(end = 6.dp),
-            textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
-            cursorBrush = SolidColor(C.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { onSend() }),
-            decorationBox = { inner -> Box { if (input.isEmpty()) Text(tr("ถามเลขา", "Ask the secretary"), color = C.faint, fontSize = TS.body); inner() } },
-        )
+        // The field stays in the same place in both shapes (only what is beside it comes and goes), so it keeps its
+        // focus and the keyboard when the box opens.
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box {
+            if (!open) AddButton(onAdd)
+            BasicTextField(
+                value = input, onValueChange = onInput,
+                modifier = Modifier.weight(1f).heightIn(min = if (open) 30.dp else 40.dp)
+                    .padding(start = if (open) 0.dp else 6.dp, end = 6.dp)
+                    .onFocusChanged { focused = it.isFocused },
+                textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
+                cursorBrush = SolidColor(C.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
+                decorationBox = { inner ->
+                    Box(contentAlignment = if (open) Alignment.TopStart else Alignment.CenterStart) {
+                        if (input.isEmpty()) Text(tr("ถามเลขา", "Ask the secretary"), color = C.faint, fontSize = TS.body)
+                        inner()
+                    }
+                },
+            )
+            if (!open) SendOrTalk(input, onSend, onTalk)
+        }
+        if (open) Row(verticalAlignment = Alignment.CenterVertically) {
+            AddButton(onAdd)
+            Box(Modifier.padding(start = 4.dp)) {
                 Row(
                     Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).clickable { menu = true }.padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -96,16 +116,31 @@ internal fun ChatBox(
                 ModeMenu(menu, vm, { menu = false }) { menu = false; onSettings() }
             }
             Spacer(Modifier.weight(1f))
-            if (input.isNotBlank()) Box(
-                Modifier.size(40.dp).clip(CircleShape).background(C.accent).clickable { onSend() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.up, tr("ส่ง", "Send"), tint = C.onAccent, modifier = Modifier.size(18.dp)) }
-            else Box(
-                Modifier.size(40.dp).clip(CircleShape).background(C.raised).clickable { onTalk() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.mic, tr("คุยเสียงกับ Claude", "Talk to Claude"), tint = C.text2, modifier = Modifier.size(18.dp)) }
+            SendOrTalk(input, onSend, onTalk)
         }
     }
+}
+
+/** + in the chat box: opens quick add, so a task can be added from the secretary page. */
+@Composable
+private fun AddButton(onAdd: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).background(C.raised).clickable(onClick = onAdd),
+        contentAlignment = Alignment.Center,
+    ) { Icon(Ic.plus, tr("เพิ่มงาน", "Add a task"), tint = C.text2, modifier = Modifier.size(18.dp)) }
+}
+
+/** Send when there is text, otherwise the mic (talk to Claude). */
+@Composable
+private fun SendOrTalk(input: String, onSend: () -> Unit, onTalk: () -> Unit) {
+    if (input.isNotBlank()) Box(
+        Modifier.size(40.dp).clip(CircleShape).background(C.accent).clickable { onSend() },
+        contentAlignment = Alignment.Center,
+    ) { Icon(Ic.up, tr("ส่ง", "Send"), tint = C.onAccent, modifier = Modifier.size(18.dp)) }
+    else Box(
+        Modifier.size(40.dp).clip(CircleShape).background(C.raised).clickable { onTalk() },
+        contentAlignment = Alignment.Center,
+    ) { Icon(Ic.mic, tr("คุยเสียงกับ Claude", "Talk to Claude"), tint = C.text2, modifier = Modifier.size(18.dp)) }
 }
 
 /** The modes, each with what one everyday question costs at the effort picked; then the effort, then the settings. */

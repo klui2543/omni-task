@@ -234,9 +234,11 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         ChatBox(
             input, { input = it }, vm,
             bottom = if (keyboard) 8.dp else NavClearance - 12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            keyboard = keyboard,
             onSend = { if (input.isNotBlank()) { vm.deskSend(input.trim()); input = "" } },
             onTalk = { claudeOpen = true },
             onSettings = { aiSettingsOpen = true },
+            onAdd = { vm.requestQuickAdd(QuickAddRequest()) },
         )
     }
 }
