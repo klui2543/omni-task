@@ -78,6 +78,11 @@ class ClaudeAi(private val key: String) {
         }
     }
 
+    /** Anthropic's own words for an error (its "error.message"), shown under ours so the cause can be read. */
+    private fun said(e: AnthropicServiceException): String =
+        e.body().asObject().orElse(null)?.get("error")?.asObject()?.orElse(null)?.get("message")?.asString()?.orElse(null)
+            ?: e.message.orEmpty()
+
     private fun <T> guard(block: () -> T): T = try {
         block()
     } catch (e: Spent) {
@@ -94,13 +99,13 @@ class ClaudeAi(private val key: String) {
         throw Failure(tr("ถามถี่เกินไป รอสักครู่แล้วลองใหม่", "Too many questions; try again in a moment"))
     } catch (e: BadRequestException) {
         // Anthropic answers an empty credit with a 400 that says "credit balance is too low".
-        val body = e.body().toString()
-        if ("credit" in body.lowercase()) {
-            throw Failure(tr("เครดิตไม่พอ ดูยอดที่หน้า Billing ของ Anthropic", "Not enough credit; check Billing at Anthropic"))
+        val said = said(e)
+        if ("credit" in said.lowercase()) {
+            throw Failure(tr("เครดิตไม่พอ ดูยอดที่หน้า Billing ของ Anthropic", "Not enough credit; check Billing at Anthropic") + "\n" + said)
         }
-        throw Failure(tr("Anthropic ไม่รับคำถามนี้ (400) ลองถามใหม่ให้สั้นลง", "Anthropic refused this request (400); try a shorter question"))
+        throw Failure(tr("Anthropic ไม่รับคำถามนี้ (400)", "Anthropic refused this request (400)") + "\n" + said)
     } catch (e: AnthropicServiceException) {
-        throw Failure(tr("Anthropic ตอบผิดพลาด (${e.statusCode()}) ลองใหม่อีกครั้ง", "Anthropic returned an error (${e.statusCode()}); try again"))
+        throw Failure(tr("Anthropic ตอบผิดพลาด (${e.statusCode()}) ลองใหม่อีกครั้ง", "Anthropic returned an error (${e.statusCode()}); try again") + "\n" + said(e))
     } catch (e: AnthropicIoException) {
         throw Failure(tr("ต่อเน็ตไม่ได้ ลองใหม่เมื่อมีสัญญาณ", "No connection; try again when online"))
     } catch (e: RuntimeException) {

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -142,7 +143,9 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
     if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
 
-    Column(Modifier.fillMaxSize()) {
+    // The page ends above the keyboard, so the chat box stays in sight while typing (the window does not resize itself:
+    // the app draws edge to edge).
+    Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(tr("เลขา", "Secretary"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
             // Start over: today's greeting only, with a moment to undo it.
