@@ -117,6 +117,7 @@ fun YgdrasilScreen(
     onBack: () -> Unit,
     embed: YgdrasilEmbed? = null,
     onOpenList: ((OmniList) -> Unit)? = null,
+    onCreateList: (() -> Unit)? = null,
 ) {
     val tree = remember(state.tasks, state.parked, state.branchStates, state.today, state.starred, state.projectOrder, filter) {
         Ygdrasil.grow(state.tasks + state.parked, state.branchStates, state.today, filter, state.starred, state.projectOrder)
@@ -142,7 +143,7 @@ fun YgdrasilScreen(
     // The lists as one more limb before the tray (owner's pick, 2026-10-26, Ygdrasil mock way 1); left out while filtering.
     val listsShown = onOpenList != null && filter.query.text.isBlank() && !filter.starredOnly && !filter.blockedOnly
     val grown = remember(tree, strays, embed, state.lists, listsShown) {
-        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) else tree
+        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) { l -> state.itemsOf(l).filter { it.isOpen } } else tree
     }
     // Desktop pins are the stars; before any star every project is pinned.
     val pinned = if (state.starred.isEmpty()) tree.worlds.map { it.node.tag }.toSet() else state.starred
@@ -206,6 +207,16 @@ fun YgdrasilScreen(
         else -> to.takeIf { Branches.graftTag(c.from, it) != null }
     }
     val dropTag = carry?.let { goesTo(it, targetAt(carryAt)) }
+    // A task held near a list (owner's pick, 2026-10-27, mock round 2): the nearest list within about half a finger
+    // takes it, since a list's card is small on a zoomed-out tree; let go, the task gets the list's tag and stays put.
+    fun listAt(p: Offset): OmniList? {
+        val reach = 30f / scale.coerceAtLeast(0.2f)
+        return spots.filter { it.kind == Ygdrasil.Kind.LIMB && it.limb!!.node.tag.startsWith("$LIST_LIMB/") }
+            .map { s -> s to Offset(maxOf(s.x - p.x, 0f, p.x - s.x - s.w), maxOf(s.y - s.h / 2 - p.y, 0f, p.y - s.y - s.h / 2)).getDistance() }
+            .filter { it.second < reach }.minByOrNull { it.second }
+            ?.let { (s, _) -> state.lists.firstOrNull { listTagOf(it) == s.limb!!.node.tag } }
+    }
+    val listDrop = carry?.takeIf { it.task != null && targetAt(carryAt) == null }?.let { listAt(carryAt) }
     val baseConfig = LocalViewConfiguration.current
     val quickHold = remember(baseConfig) { object : ViewConfiguration by baseConfig { override val longPressTimeoutMillis: Long get() = HOLD_MS } }
     // Folded branches opened for a moment while something is held over them; folded again when it is let go.
@@ -218,8 +229,10 @@ fun YgdrasilScreen(
     fun drop() {
         val c = carry ?: return
         val to = goesTo(c, targetAt(carryAt))
+        val list = if (c.task != null && targetAt(carryAt) == null) listAt(carryAt) else null
         unspring()
         when {
+            list != null -> vm.addTag(c.task!!, list.tag)
             c.stray && to != null -> vm.homeTask(c.task!!, to)
             c.stray -> if (!carryMoved) picking = c.task
             c.task != null && to != null -> vm.moveTask(c.task, to)
@@ -259,7 +272,7 @@ fun YgdrasilScreen(
     LaunchedEffect(carry != null) {
         while (carry != null) {
             delay(16)
-            if (targetAt(carryAt) != null) continue
+            if (targetAt(carryAt) != null || (carry?.task != null && listAt(carryAt) != null)) continue
             val k = density * scale
             val y = carryAt.y * k + pan.y
             val bottom = box.height - (if (trayOpen) trayHeight else 0)
@@ -427,9 +440,9 @@ fun YgdrasilScreen(
                             // The pretend project of tasks with no project: amber outline, opens and folds, never moved or picked.
                             val inbox = Ygdrasil.isInbox(n.tag)
                             val listLimb = isListTag(n.tag)
-                            val list = if (listLimb && !world) state.lists.firstOrNull { "$LIST_LIMB/${it.name.replace('/', ' ')}" == n.tag } else null
+                            val list = if (listLimb && !world) state.lists.firstOrNull { listTagOf(it) == n.tag } else null
                             val picked = sel === s
-                            val target = carry != null && dropTag == n.tag
+                            val target = carry != null && (dropTag == n.tag || (listDrop != null && listTagOf(listDrop) == n.tag))
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
                                     .clip(RoundedCornerShape(10.dp)).background(if (target) C.amberSoft else if (inbox) C.bg else if (world) C.accentSoft else C.card)
@@ -440,8 +453,10 @@ fun YgdrasilScreen(
                                     .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else if (faint(n.tag)) 0.35f else 1f)
                                     .then(
                                         if (embed != null) Modifier
-                                        else if (list != null) Modifier.pointerInput(n.tag) { detectTapGestures(onTap = { onOpenList?.invoke(list) }) }
-                                        else if (inbox || listLimb) Modifier.pointerInput(n.tag, s.folded) {
+                                        else if (listLimb) Modifier.pointerInput(n.tag, s.folded) {
+                                            detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) })
+                                        }
+                                        else if (inbox) Modifier.pointerInput(n.tag, s.folded) {
                                             detectTapGestures(onTap = { onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
                                         else Modifier
@@ -515,7 +530,7 @@ fun YgdrasilScreen(
                             val chosen = embed?.selKey == t.key
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp).clip(RoundedCornerShape(8.dp))
-                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (faint(t)) 0.35f else if (someday) 0.6f else 1f)
+                                    .alpha(if (carry?.task == t) 0.35f else if (embed?.dim?.invoke(t) == true) 0.25f else if (faint(t) && !isListTag(from)) 0.35f else if (someday) 0.6f else 1f)
                                     .then(if (chosen) Modifier.background(C.accentSoft) else Modifier)
                                     .then(if (aiPick) Modifier.border(2.dp, C.accent, RoundedCornerShape(8.dp)) else Modifier)
                                     .then(
@@ -524,6 +539,7 @@ fun YgdrasilScreen(
                                         // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
                                         // A task with no project: a tap picks its home, held it is dragged up onto a project.
                                         else if (Ygdrasil.isInbox(from)) Modifier.pointerInput(t) { detectTapGestures(onTap = { picking = t }) }.carries(Carry(t, "", t.title, stray = true), s.y - s.h / 2, s.x)
+                                        else if (isListTag(from)) Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }
                                         else Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }.carries(Carry(t, from, t.title), s.y - s.h / 2, s.x),
                                     )
                                     .padding(end = 6.dp),
@@ -562,12 +578,14 @@ fun YgdrasilScreen(
                 // What is carried, under the finger, saying where it would go.
                 carry?.let { c ->
                     Column(
-                        Modifier.offset((carryAt.x + 10).dp, (carryAt.y + 10).dp).width(200.dp).clip(RoundedCornerShape(10.dp))
+                        // Centred on the finger (owner, 2026-10-27).
+                        Modifier.offset((carryAt.x - 100).dp, (carryAt.y - 22).dp).width(200.dp).clip(RoundedCornerShape(10.dp))
                             .background(C.card).border(1.5.dp, C.accent, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
                     ) {
                         Text(c.label, color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             when {
+                                listDrop != null -> tr("ติด #${listDrop.tag} (ใส่ใน ${listDrop.name})", "Tag #${listDrop.tag} (into ${listDrop.name})")
                                 dropTag == null && c.stray -> tr("ลากขึ้นไปวางบนกิ่ง", "Drag it up onto a branch")
                                 dropTag == null -> if (c.task != null) tr("ลากไปวางบนกิ่ง", "Drop it on a branch") else tr("ลากไปวางบนโปรเจกต์ กิ่ง หรือลำต้น", "Drop it on a project, branch or the trunk")
                                 c.task != null -> tr("ย้ายไป #$dropTag", "Move to #$dropTag")
@@ -633,6 +651,31 @@ fun YgdrasilScreen(
                         "แตะโปรเจกต์หรือกิ่งเพื่อจัดการ เส้นประสีส้มคืองานที่รองานในโปรเจกต์อื่น งานที่เลยกำหนด (📅) หรือเลยเป้าตัวเอง (⏳) กางโปรเจกต์เสมอ",
                         "Tap a project or branch. Orange dashes: a task waiting on another project. Work past its 📅 date or its own ⏳ target always opens its project",
                     ),
+                    Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+                )
+            } else if (isListTag(node.tag)) {
+                // The lists (owner's pick, mock round 2): the List card makes a list or folds; a list opens.
+                val list = state.lists.firstOrNull { listTagOf(it) == node.tag }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (list != null) Text(list.icon, fontSize = TS.title) else FolderGlyph(C.accent, 18.dp)
+                    Text(list?.name ?: "List", Modifier.weight(1f).padding(start = 8.dp), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (list != null) state.itemsOf(list).let { tr("ทำแล้ว ${it.count { t -> !t.isOpen }} จาก ${it.size}", "${it.count { t -> !t.isOpen }} of ${it.size} done") }
+                        else tr("${state.lists.size} รายการ", "${state.lists.size} lists"),
+                        color = C.faint, fontSize = TS.caption,
+                    )
+                }
+                Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (list != null) MapButton(tr("เปิดรายการ", "Open list"), filled = true) { onOpenList?.invoke(list) }
+                    else {
+                        if (onCreateList != null) MapButton(tr("+ รายการ", "+ List"), filled = true) { onCreateList() }
+                        MapButton(if (node.tag in folded) tr("กาง", "Unfold") else tr("พับ", "Fold")) { onFolded(if (node.tag in folded) folded - node.tag else folded + node.tag) }
+                    }
+                    MapButton(tr("ปิด", "Close")) { selTag = "" }
+                }
+                Text(
+                    if (list != null) tr("ลากงานมาวางบนรายการนี้ = ติด #${list.tag} ให้งาน งานยังอยู่ที่เดิม", "Drop a task here to tag it #${list.tag}; it stays where it is")
+                    else tr("ลากงานไปวางบนรายการไหน งานนั้นจะติดแท็กของรายการ", "Drop a task on a list to give it the list's tag"),
                     Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
                 )
             } else {
@@ -772,10 +815,15 @@ private const val LIST_LIMB = "~List"
 
 private fun isListTag(tag: String) = tag == LIST_LIMB || tag.startsWith("$LIST_LIMB/")
 
-/** [tree] with the lists as one more limb before the tray of tasks with no project (one branch per list). */
-private fun withListLimb(tree: Ygdrasil.Tree, lists: List<OmniList>): Ygdrasil.Tree {
+private fun listTagOf(l: OmniList) = "$LIST_LIMB/${l.name.replace('/', ' ')}"
+
+/** [tree] with the lists as one more limb before the tray of tasks with no project (one branch per list, its open [items] as leaves). */
+private fun withListLimb(tree: Ygdrasil.Tree, lists: List<OmniList>, items: (OmniList) -> List<Task>): Ygdrasil.Tree {
     if (lists.isEmpty()) return tree
-    val kids = lists.map { l -> Ygdrasil.Limb(Branches.Node(LIST_LIMB, l.name.replace('/', ' '), Branches.State.ACTIVE, emptyList(), emptyList(), emptyList()), emptyList(), emptyList()) }
+    val kids = lists.map { l ->
+        val mine = items(l)
+        Ygdrasil.Limb(Branches.Node(LIST_LIMB, l.name.replace('/', ' '), Branches.State.ACTIVE, mine, mine, emptyList()), mine, emptyList())
+    }
     val limb = Ygdrasil.Limb(Branches.Node(LIST_LIMB, "", Branches.State.ACTIVE, emptyList(), emptyList(), kids.map { it.node }), emptyList(), kids)
     val at = tree.worlds.indexOfFirst { Ygdrasil.isInbox(it.node.tag) }.let { if (it < 0) tree.worlds.size else it }
     return tree.copy(worlds = tree.worlds.take(at) + limb + tree.worlds.drop(at))

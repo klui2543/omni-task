@@ -152,6 +152,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             onOpenProject = { name -> world = false; fromWorld = true; openName = name; projectView = null; mapping = true },
             onBack = { world = false },
             onOpenList = { l -> world = false; fromWorld = true; openListPath = l.path },
+            onCreateList = { world = false; shelf = "list"; creatingList = true },
         )
         return
     }
