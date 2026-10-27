@@ -81,7 +81,11 @@ data class Task(
     val firstStep: String?
         get() = notes.firstOrNull { it.startsWith(FIRST_STEP) }?.removePrefix(FIRST_STEP)?.trim()?.ifEmpty { null }
 
-    /** Notes the user wrote (the description), without the image embeds, note links, first step and stuck notes. */
+    /** The next small action, set in the review: `- ก้าวถัดไป: ส่ง mock ให้พี่ดู`, one line, rewritten each time. */
+    val nextStep: String?
+        get() = notes.firstOrNull { it.startsWith(NEXT_STEP) }?.removePrefix(NEXT_STEP)?.trim()?.ifEmpty { null }
+
+    /** Notes the user wrote (the description), without the image embeds, note links, steps, stuck and review notes. */
     val textNotes: List<String>
         get() = notes.filter { isPlainNote(it) }
 
@@ -93,10 +97,12 @@ data class Task(
 
     companion object {
         const val FIRST_STEP = "ก้าวแรก:"
+        const val NEXT_STEP = "ก้าวถัดไป:"
 
         /** A note line that is part of the description, not one of the app's own lines. */
         fun isPlainNote(note: String) =
-            EMBED.find(note) == null && LINK_LINE.find(note) == null && !note.startsWith(FIRST_STEP) && !StuckLog.isNote(note)
+            EMBED.find(note) == null && LINK_LINE.find(note) == null && !note.startsWith(FIRST_STEP) && !note.startsWith(NEXT_STEP) &&
+                !StuckLog.isNote(note) && !ReviewLog.isNote(note)
     }
 
     /** When this task's reminder fires, or null when it has no time or no date to hang it on. */
