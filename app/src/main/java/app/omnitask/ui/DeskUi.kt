@@ -146,7 +146,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
     if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
     // The review mode (โหมดทบทวนงาน): a strip under the head opens it over the whole page.
-    var reviewing by remember { mutableStateOf(false) }
+    var reviewing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (reviewing) { ReviewScreen(state, vm) { reviewing = false }; return }
     val reviewCount = remember(state.tasks, state.today, ReviewMode.on) { if (ReviewMode.on) reviewDeck(state).size else 0 }
 

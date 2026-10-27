@@ -102,6 +102,8 @@ class ReviewTest {
         assertEquals("พี่ต่าย", Review.nameIn("ช่วยดูระบบให้พี่ต่าย"))
         assertEquals("อาจารย์สม", Review.nameIn("ส่งสไลด์ให้อาจารย์สม ก่อนประชุม"))
         assertEquals(null, Review.nameIn("ให้อาหารแมว"))
+        val forHer = app.omnitask.data.TaskLine.parse("- [ ] ช่วยดูระบบให้พี่ต่าย ➕ 2026-10-27")!!
+        assertEquals(Review.Impact.OTHERS, Review.guess(forHer, today).impact)
     }
 
     @Test

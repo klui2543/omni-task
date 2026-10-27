@@ -71,8 +71,8 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
         TaskKind.NORMAL -> null
         TaskKind.WAITING -> (Focus.waitingFor(task)?.let { tr("$it รออยู่", "$it is waiting.") } ?: tr("มีคนรออยู่", "Someone is waiting.")) +
             tr(" ขึ้นในการ์ด \"คนรออยู่\" ตามที่รอนานสุด", " Shows in the \"Waiting\" card, longest wait first")
-        TaskKind.FUTURE -> tr("หมุนเวียนขึ้นหน้าโฟกัสวันละงาน ทบทวนทุก 14 วัน", "Rotates onto Focus one a day, reviewed every 14 days")
-        TaskKind.SOMEDAY -> tr("ไม่ขึ้นในรายการหลัก แต่จะกลับมาให้ทบทวนทุก 30 วัน ไม่หายไปไหน", "Hidden from the main lists, but comes back for review every 30 days")
+        TaskKind.FUTURE -> tr("หมุนเวียนขึ้นหน้าโฟกัสวันละงาน", "Rotates onto Focus one a day")
+        TaskKind.SOMEDAY -> tr("ไม่ขึ้นในรายการหลัก แต่ไม่หายไปไหน", "Hidden from the main lists, but not gone")
     }
     hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption) }
 

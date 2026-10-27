@@ -2140,26 +2140,38 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * when nothing was written (the message says why).
      */
     fun reviewSave(task: Task, answers: ReviewWrite.Answers, priority: Priority?, onDone: (ReviewSaved?) -> Unit) {
+        // Done with work still open under it: the usual tick asks about the subtasks first, so the review does not close it.
+        if (answers.progress == ReviewWrite.Progress.DONE && _state.value.subtasksOf(task).any { it.isOpen }) {
+            _state.update { it.copy(message = tr("งานนี้ยังมีงานย่อยค้างอยู่ ปิดงานย่อยก่อน หรือเลือกสถานะอื่น", "This task still has open subtasks. Close them first, or pick another status.")) }
+            onDone(null)
+            return
+        }
         val vault = _state.value.vault
         val today = LocalDate.now()
         viewModelScope.launch {
             var ask: String? = null
+            var askFailed: Throwable? = null
             val result = writeLock.withLock {
                 withContext(Dispatchers.IO) {
                     runCatching {
                         val (before, after) = repo.editBlock(task) { lines, index -> ask = ReviewWrite.apply(lines, index, task, answers, priority, today) }
-                        ask?.let { line -> repo.appendLine(vault ?: throw java.io.IOException(tr("ยังไม่ได้เลือก vault", "No vault chosen")), VaultRepository.TASK_FILE, line) }
-                        ReviewSaved(task, after, before, ask)
+                        // The task's own lines are written by now: a failure here is told, and the card still moves on with its undo.
+                        val added = ask?.let { line ->
+                            runCatching { repo.appendLine(vault ?: throw java.io.IOException(tr("ยังไม่ได้เลือก vault", "No vault chosen")), VaultRepository.TASK_FILE, line) }
+                                .onFailure { askFailed = it }.getOrNull()?.let { line }
+                        }
+                        ReviewSaved(task, after, before, added)
                     }
                 }
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = saveError(e)) } }
-            result.getOrNull()?.let {
+            askFailed?.let { e -> _state.update { it.copy(message = tr("จดงานนี้แล้ว แต่เพิ่มงานถามไม่ได้: ${e.message}", "Saved, but the task to ask them was not added: ${e.message}")) } }
+            result.getOrNull()?.let { saved ->
                 answers.scheduled?.let { d -> learn(Behavior.moved(task, DateField.SCHEDULED.name, d, LocalDateTime.now(), BehaviorLog.SRC)) }
                 answers.due?.let { d -> learn(Behavior.moved(task, DateField.DUE.name, d, LocalDateTime.now(), BehaviorLog.SRC)) }
-                if (answers.progress == ReviewWrite.Progress.DONE) logDone(task)
+                if (answers.progress == ReviewWrite.Progress.DONE) { logDone(task); offerFinish(task, saved.after) }
                 answers.folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() && !Folders.isLabel(it) }?.let { to -> newProjectRoot(to) }
-                ask?.let(::noteCreated)
+                saved.ask?.let(::noteCreated)
             }
             onDone(result.getOrNull())
             reload()
@@ -2174,23 +2186,32 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             parent = saved.task.parent, list = saved.task.list,
         )
         viewModelScope.launch {
+            var askLeft = false
             val result = writeLock.withLock {
                 withContext(Dispatchers.IO) {
                     runCatching {
                         repo.restoreBlock(now ?: throw VaultRepository.ConflictException(), saved.before)
                         val ask = saved.ask
-                        if (ask != null && vault != null) repo.editPath(vault, VaultRepository.TASK_FILE) { text ->
-                            text?.let { t ->
-                                val sep = if ("\r\n" in t) "\r\n" else "\n"
-                                val lines = t.split(sep).toMutableList()
-                                val i = lines.lastIndexOf(ask)
-                                if (i < 0) null else { lines.removeAt(i); lines.joinToString(sep) }
+                        if (ask != null) {
+                            var found = false
+                            if (vault != null) repo.editPath(vault, VaultRepository.TASK_FILE) { text ->
+                                text?.let { t ->
+                                    val sep = if ("\r\n" in t) "\r\n" else "\n"
+                                    val lines = t.split(sep).toMutableList()
+                                    val i = lines.lastIndexOf(ask)
+                                    if (i < 0) null else { found = true; lines.removeAt(i); lines.joinToString(sep) }
+                                }
                             }
+                            askLeft = !found
                         }
                     }
                 }
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = saveError(e)) } }
+            // Not silent: the task's lines are back, but the added ask task was changed or is gone, so it is left for the owner.
+            if (result.isSuccess && askLeft) _state.update {
+                it.copy(message = tr("ย้อนงานนี้แล้ว แต่หางานถามที่เพิ่มไว้ไม่เจอ (อาจถูกแก้แล้ว) ลบเองได้ในโน้ตงาน", "Undone, but the added ask task was not found (it may have changed). Remove it in the task note if needed."))
+            }
             onDone(result.isSuccess)
             reload()
         }

@@ -121,9 +121,11 @@ object Review {
 
     /** The system's first guess at the impact, from what the note already says. */
     fun guess(task: Task, today: LocalDate): Guess {
-        val dueSoon = task.due?.let { ChronoUnit.DAYS.between(today, it) <= 3 } == true
+        // Less than 3 days left, or late (the mock's rule).
+        val dueSoon = task.due?.let { ChronoUnit.DAYS.between(today, it) < 3 } == true
         return when {
             Focus.isWaiting(task) -> Guess(Impact.OTHERS, Focus.waitingFor(task)?.let { tr("$it รออยู่", "$it is waiting") } ?: tr("มีคนรออยู่ (#รอ)", "Someone is waiting (#รอ)"))
+            nameIn(task.title) != null -> Guess(Impact.OTHERS, tr("ชื่องานบอกว่าทำให้${nameIn(task.title)}", "The title says it is for ${nameIn(task.title)}"))
             dueSoon -> Guess(Impact.SELF, tr("ใกล้หรือเลยวันส่ง", "Due soon or late"))
             Projects.projectOf(task) != null -> Guess(Impact.SELF, tr("อยู่ในโปรเจกต์", "Part of a project"))
             (quietDays(task, today) ?: 0) >= STALE_DAYS -> Guess(Impact.NONE, tr("นิ่งมา ${quietDays(task, today)} วัน ไม่มีใครรอ", "Quiet ${quietDays(task, today)} days, nobody waiting"))

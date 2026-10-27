@@ -200,7 +200,7 @@ private fun questions(task: Task, a: Map<String, Ans>, today: LocalDate, folders
         add(
             Q(
                 "next", tr("ก้าวถัดไป", "Next step"), tr("ก้าวถัดไปคืออะไร", "What is the next step"),
-                task.nextStep?.let { tr("ครั้งก่อน: $it", "Last time: $it") } ?: tr("สั้นๆ ที่ลงมือได้เลย", "Short, something you can start on"),
+                tr("สั้นๆ ที่ลงมือได้เลย", "Short, something you can start on"),
                 listOf(Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure"))), typed = true,
                 ph = tr("เช่น ส่ง mock ให้พี่ดูก่อน", "e.g. send the mock for a look first"),
             ),
@@ -287,7 +287,18 @@ private fun weigh(task: Task, tasks: List<Task>, a: Map<String, Ans>, today: Loc
 
 private fun toAnswersOrNull(a: Map<String, Ans>) = if (a["status"] == null) null else toAnswers(a)
 
+/** The task's flag as the card shows it ("⏫ สูง"). */
 private fun levelName(p: Priority) = (p.emoji?.let { "$it " } ?: "") + p.label
+
+/** The importance level the summary gives, in the mock's words ("⏫ มาก"). */
+private fun importanceName(p: Priority) = (p.emoji?.let { "$it " } ?: "") + when (p) {
+    Priority.HIGHEST -> tr("มากที่สุด", "Highest")
+    Priority.HIGH -> tr("มาก", "High")
+    Priority.MEDIUM -> tr("กลาง", "Medium")
+    Priority.NONE -> tr("ปกติ", "Normal")
+    Priority.LOW -> tr("น้อย", "Low")
+    Priority.LOWEST -> tr("น้อยที่สุด", "Lowest")
+}
 
 /** One card in the pile: where its line is, so the task is found again after a reload. */
 private data class Entry(val task: Task, val group: Review.Group)
@@ -461,12 +472,12 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
                     Text("›", color = C.muted, fontSize = TS.body)
                 }
             }
-            if (weight != null && allDone) {
+            if (weight != null && allDone && cur == null) {
                 Box(Modifier.fillMaxWidth().heightIn(min = 1.dp, max = 1.dp).background(C.divider))
                 Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { whyOpen = true }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(tr("สรุป", "Summary"), Modifier.width(118.dp), color = C.muted, fontSize = TS.body)
                     Text(
-                        tr("สำคัญ ${levelName(weight.priority)}  ด่วน${weight.urgency.label}", "Importance ${levelName(weight.priority)}, urgency ${weight.urgency.label}"),
+                        tr("สำคัญ ${importanceName(weight.priority)}  ด่วน${weight.urgency.label}", "Importance ${importanceName(weight.priority)}, urgency ${weight.urgency.label}"),
                         Modifier.weight(1f), color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text("›", color = C.muted, fontSize = TS.body)
@@ -503,7 +514,12 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
                             o.l,
                             Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) C.accent else C.raised)
                                 .border(1.dp, if (sel) C.accent else C.control, RoundedCornerShape(10.dp))
-                                .clickable { answers = pick(answers, open.k, Ans(o.v, o.l.removeSuffix(tr(" (ระบบเดา)", " (guess)")))); cur = null; typing = "" }
+                                .clickable {
+                                    // "ถูกแล้ว" shows where the task stays, as the mock does.
+                                    val shown = if (open.k == "folder" && o.v == "=") Folders.of(task)?.replace("/", " / ") ?: tr("ยังไม่มีบ้าน", "No home yet")
+                                    else o.l.removeSuffix(tr(" (ระบบเดา)", " (guess)"))
+                                    answers = pick(answers, open.k, Ans(o.v, shown)); cur = null; typing = ""
+                                }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             color = fg, fontSize = TS.body, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                         )
@@ -586,7 +602,7 @@ private fun WhySheet(w: Review.Weight, moves: Int) {
                 Text("+${p.points}", color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
             }
         }
-        Text(tr("รวม ${w.score} คะแนน = สำคัญ ${levelName(w.priority)}", "${w.score} points = ${levelName(w.priority)}"), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+        Text(tr("รวม ${w.score} คะแนน = สำคัญ ${importanceName(w.priority)}", "${w.score} points = ${importanceName(w.priority)}"), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
         Text(
             tr("เกณฑ์: 60 ขึ้นไป 🔺, 45 ⏫, 25 🔼, 10 ปกติ, ต่ำกว่านั้น 🔽 จดลงโน้ตเป็นธงความสำคัญเดิม", "Levels: 60 and up 🔺, 45 ⏫, 25 🔼, 10 normal, below 🔽. Written as the usual priority flag"),
             color = C.muted, fontSize = TS.caption,
