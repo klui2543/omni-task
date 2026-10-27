@@ -196,6 +196,8 @@ fun YgdrasilScreen(
     var carry by remember { mutableStateOf<Carry?>(null) }
     var carryAt by remember { mutableStateOf(Offset.Zero) }
     var carryMoved by remember { mutableStateOf(false) }
+    // Set when a press lifts a card, so letting it go where it was does not also fold or open it.
+    val lifted = remember { booleanArrayOf(false) }
     val spots by rememberUpdatedState(layout.spots)
     fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
         (s.kind == Ygdrasil.Kind.LIMB || s.kind == Ygdrasil.Kind.TRUNK) && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
@@ -250,6 +252,7 @@ fun YgdrasilScreen(
     fun Modifier.carries(what: Carry, top: Float, left: Float): Modifier = pointerInput(what, top, left) {
         detectDragGesturesAfterLongPress(
             onDragStart = { o ->
+                lifted[0] = true
                 carry = what
                 carryMoved = false
                 carryAt = Offset(left + o.x / density, top + o.y / density)
@@ -460,14 +463,20 @@ fun YgdrasilScreen(
                                     .then(
                                         if (embed != null) Modifier
                                         else if (listLimb) Modifier.pointerInput(n.tag, s.folded) {
-                                            detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) })
+                                            detectTapGestures(onTap = { selTag = n.tag; if (world) onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
                                         else if (inbox) Modifier.pointerInput(n.tag, s.folded) {
                                             detectTapGestures(onTap = { onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
                                         else Modifier
-                                            // A tap on a folded project opens it as well.
-                                            .pointerInput(n.tag, s.folded) { detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) }) }
+                                            // A tap picks it and folds or opens it, like the No project card (owner, 2026-10-27).
+                                            .pointerInput(n.tag, s.folded, n.children.size, n.all.size) {
+                                                detectTapGestures(onPress = { lifted[0] = false }, onTap = {
+                                                    selTag = n.tag
+                                                    if (lifted[0]) Unit
+                                                    else if (s.folded) onFolded(foldedNow - n.tag) else if (n.children.isNotEmpty() || n.all.isNotEmpty()) onFolded(foldedNow + n.tag)
+                                                })
+                                            }
                                             .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
                                     )
                                     .padding(horizontal = 10.dp),
@@ -643,7 +652,7 @@ fun YgdrasilScreen(
                 }
                 Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     MapButton(tr("กางทั้งหมด", "Unfold all")) { onFolded(emptySet()) }
-                    MapButton(tr("พับทุกโปรเจกต์", "Fold every project")) { onFolded(tree.worlds.map { it.node.tag }.toSet()) }
+                    MapButton(tr("พับทุกโปรเจกต์", "Fold every project")) { onFolded(grown.worlds.map { it.node.tag }.toSet()) }
                     MapButton(if (filter.links) tr("ซ่อนเส้นงานที่รอกัน", "Hide wait lines") else tr("แสดงเส้นงานที่รอกัน", "Show wait lines")) { onFilter(filter.copy(links = !filter.links)) }
                 }
                 Text(tr("กางเองเมื่อมีงานถึง", "Open on their own with work up to"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
