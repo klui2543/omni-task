@@ -50,6 +50,13 @@ class TreeMoveTest {
         // On one of its groups: that group's tag goes first, so the task lands in it.
         assertEquals("- [ ] งาน #ร้านค้า #อ่าน", TreeMove.line("- [ ] งาน #omni #อ่าน", "omni", emptyList(), TreeMove.To.NoHome("ร้านค้า")))
         assertEquals("- [ ] งาน #ร้านค้า #อ่าน", TreeMove.line("- [ ] งาน #อ่าน", null, emptyList(), TreeMove.To.NoHome("ร้านค้า")))
+        // Already in that group: nothing is written twice.
+        assertEquals("- [ ] งาน #อ่าน/หนังสือ", TreeMove.line("- [ ] งาน #omni #อ่าน/หนังสือ", "omni", emptyList(), TreeMove.To.NoHome("อ่าน")))
+    }
+
+    @Test
+    fun aProjectTaskMovedToAnotherProjectKeepsItsListTag() {
+        assertEquals("- [ ] งาน #siriraj #bucketlist", TreeMove.line("- [ ] งาน #omni #bucketlist", "omni", listOf("bucketlist"), TreeMove.To.Branch("siriraj")))
     }
 
     @Test

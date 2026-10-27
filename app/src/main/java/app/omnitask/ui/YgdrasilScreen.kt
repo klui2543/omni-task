@@ -215,12 +215,13 @@ fun YgdrasilScreen(
     /** Where the carried thing would go if let go now, or null. A task can go to "no project yet"; a project or branch cannot. */
     fun goesTo(c: Carry, to: String?): String? = when {
         to == null -> null
-        c.task != null -> to.takeIf { it.isNotEmpty() && it != c.from }
+        // A task with no project let go on the no-tag group or the whole of "no project yet" stays as it is.
+        c.task != null -> to.takeIf { it.isNotEmpty() && it != c.from && !(c.stray && Ygdrasil.isInbox(it) && inboxGroups[it] == null) }
         else -> to.takeIf { !Ygdrasil.isInbox(it) && Branches.graftTag(c.from, it) != null }
     }
     val dropTag = carry?.let { goesTo(it, targetAt(carryAt)) }
     // A task held near a list (owner's pick, 2026-10-27, mock round 2): the nearest list within about half a finger
-    // takes it, since a list's card is small on a zoomed-out tree; let go, the task gets the list's tag and stays put.
+    // takes it, since a list's card is small on a zoomed-out tree; let go, the task moves into the list (owner, 2026-10-27).
     fun listAt(p: Offset): OmniList? {
         val reach = 30f / scale.coerceAtLeast(0.2f)
         return spots.filter { it.kind == Ygdrasil.Kind.LIMB && it.limb!!.node.tag.startsWith("$LIST_LIMB/") }

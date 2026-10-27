@@ -261,7 +261,9 @@ class VaultRepository(private val context: Context) {
             try {
                 update(treeUri, m.toPath) { text -> VaultText.swapBlock(text ?: throw ConflictException(), -1, m.lines, emptyList()) ?: throw ConflictException() }
             } catch (e: Exception) {
-                runCatching { editText(m.cut.fileUri, m.fromPath) { text -> VaultText.swapBlock(text, m.cut.index, m.cut.lines, emptyList()) ?: text } }
+                val back = runCatching { editText(m.cut.fileUri, m.fromPath) { text -> VaultText.swapBlock(text, m.cut.index, m.cut.lines, emptyList()) ?: throw ConflictException() } }
+                // Taken back out too: nothing changed. Not taken out: the task is in both notes, and the owner is told.
+                back.exceptionOrNull()?.let { throw java.io.IOException(tr("งานอยู่ทั้งใน ${m.fromPath} และ ${m.toPath} ลบอันที่เกินออกเอง", "The task is now in both ${m.fromPath} and ${m.toPath}; remove the extra one"), e) }
                 throw e
             }
         } else {

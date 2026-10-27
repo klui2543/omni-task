@@ -235,15 +235,13 @@ object Ygdrasil {
 
     fun isInbox(tag: String) = tag == INBOX || tag.startsWith("$INBOX/")
 
+    /** Each group of [strays] on the tree, by its tag there (`~ยังไม่มีบ้าน/อ่าน`), to the tag it groups (null: no tag). */
+    fun inboxGroups(strays: List<Strays>): Map<String, String?> = strays.associate { "$INBOX/${inboxPath(it)}" to it.tag }
+
     /**
      * [tree] with the tasks that have no project as one more, pretend, project at the end (owner's pick, 2026-10-24):
      * one branch per first tag (no tag first), drawn and folded like every other project.
      */
-    private fun inboxPath(g: Strays) = (g.tag ?: tr("ไม่มีแท็ก", "No tag")).replace('/', '-')
-
-    /** Each group of [strays] on the tree, by its tag there (`~ยังไม่มีบ้าน/อ่าน`), to the tag it groups (null: no tag). */
-    fun inboxGroups(strays: List<Strays>): Map<String, String?> = strays.associate { "$INBOX/${inboxPath(it)}" to it.tag }
-
     fun withInbox(tree: Tree, strays: List<Strays>): Tree {
         if (strays.isEmpty()) return tree
         val groups = strays.map { g ->
@@ -254,6 +252,8 @@ object Ygdrasil {
         val root = Branches.Node(INBOX, "", Branches.State.ACTIVE, emptyList(), all, groups.map { it.node })
         return tree.copy(worlds = tree.worlds + Limb(root, emptyList(), groups))
     }
+
+    private fun inboxPath(g: Strays) = (g.tag ?: tr("ไม่มีแท็ก", "No tag")).replace('/', '-')
 
     /** Tasks with no project, gathered by the first tag they have ([tag] null: no tag at all). */
     data class Strays(val tag: String?, val tasks: List<Task>)

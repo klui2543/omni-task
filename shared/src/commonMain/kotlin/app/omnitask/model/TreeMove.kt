@@ -28,17 +28,17 @@ object TreeMove {
         fun dropLists(r: String, keep: String? = null) =
             lists.filterNot { keep != null && it.equals(keep, ignoreCase = true) }.fold(r) { acc, l -> removeAnyCase(acc, l) }
         return when (to) {
-            is To.Branch -> {
-                val off = dropLists(raw)
-                if (project != null) TaskLine.retag(off, project, to.tag) else TaskLine.homeTag(off, to.tag)
-            }
+            // From a project its list tags stay (it showed in the project only); from a list it leaves the list.
+            is To.Branch -> if (project != null) TaskLine.retag(raw, project, to.tag) else TaskLine.homeTag(dropLists(raw), to.tag)
             is To.InList -> {
                 val off = dropLists(project?.let { TaskLine.removeTag(raw, it) } ?: raw, keep = to.tag)
                 if (lists.any { it.equals(to.tag, ignoreCase = true) }) off else TaskLine.addTag(off, to.tag)
             }
             is To.NoHome -> {
                 val off = dropLists(project?.let { TaskLine.removeTag(raw, it) } ?: raw)
-                to.group?.let { TaskLine.homeTag(off, it) } ?: off
+                // Already in that group (`#อ่าน/หนังสือ` on อ่าน): the tag is not written twice.
+                val inGroup = TaskLine.parse(off)?.let { Projects.looseTag(it) }
+                to.group?.takeIf { it != inGroup }?.let { TaskLine.homeTag(off, it) } ?: off
             }
         }
     }
