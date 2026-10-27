@@ -106,7 +106,7 @@ fun SecretaryAskSheet(asks: List<SecretaryAsk.Open>, vm: TaskViewModel, onOpen: 
                         Answer.Picking -> {
                             var own by remember(key) { mutableStateOf("") }
                             var typing by remember(key) { mutableStateOf(false) }
-                            Text(tr("ติดอะไร (จดลงความเป็นไปของงานนี้)", "What holds it up (noted on this task)"), color = C.muted, fontSize = TS.caption)
+                            Text(tr("ติดอะไร (จดลงความคืบหน้าของงานนี้)", "What holds it up (noted on this task)"), color = C.muted, fontSize = TS.caption)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 StuckLog.Reason.entries.forEach { r ->
                                     Chip(r.label, false, {
@@ -129,7 +129,7 @@ fun SecretaryAskSheet(asks: List<SecretaryAsk.Open>, vm: TaskViewModel, onOpen: 
                         }
                         Answer.Done -> Text(tr("ติ๊กว่าเสร็จแล้ว", "Ticked as done"), color = C.lime, fontSize = TS.caption)
                         is Answer.Noted -> Text(
-                            tr("จดลงความเป็นไปแล้ว: ค้าง ${today.format(SHORT_DATE)} ${a.reason} พรุ่งนี้เลขาถามข้อนี้อีก", "Noted on the task: ${a.reason}. Asked again tomorrow"),
+                            tr("จดลงความคืบหน้าแล้ว: ค้าง ${today.format(SHORT_DATE)} ${a.reason} พรุ่งนี้เลขาถามข้อนี้อีก", "Noted on the task: ${a.reason}. Asked again tomorrow"),
                             color = C.lime, fontSize = TS.caption,
                         )
                     }

@@ -70,6 +70,7 @@ import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.StuckLog
+import app.omnitask.model.ReviewWrite
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.SecretaryBook
@@ -2142,16 +2143,110 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    enum class ReviewAction { THIS_WEEK, FUTURE, SOMEDAY, KEEP, DROP }
+    // ---- Review mode (โหมดทบทวนงาน), on the secretary page ----
 
-    fun review(task: Task, action: ReviewAction) {
-        when (action) {
-            ReviewAction.THIS_WEEK -> { markReviewed(task); setDate(task, DateField.SCHEDULED, Focus.softDate(LocalDate.now())) }
-            ReviewAction.FUTURE -> setKind(task, TaskKind.FUTURE)
-            ReviewAction.SOMEDAY -> setKind(task, TaskKind.SOMEDAY)
-            ReviewAction.KEEP -> markReviewed(task)
-            ReviewAction.DROP -> { markReviewed(task); setStatus(task, Status.CANCELLED) }
+    /** How often the task was moved to a later day lately, for the review card's warning. */
+    fun reviewMoves(task: Task): Int = Learned.movesLater(task.title, behaviorNow(), _state.value.today)
+
+    /** What one saved review card changed, so "ย้อน" can put it back. */
+    class ReviewSaved(val task: Task, val after: String, val before: List<String>, val ask: String?)
+
+    /**
+     * Writes one review card's answers into the task's note ([ReviewWrite]) and, when the owner was not sure when
+     * the one waiting needs it, adds a task to ask them today. [onDone] gets what is needed to undo it, or null
+     * when nothing was written (the message says why).
+     */
+    fun reviewSave(task: Task, answers: ReviewWrite.Answers, priority: Priority?, onDone: (ReviewSaved?) -> Unit) {
+        // Done with work still open under it: the usual tick asks about the subtasks first, so the review does not close it.
+        if (answers.progress == ReviewWrite.Progress.DONE && _state.value.subtasksOf(task).any { it.isOpen }) {
+            _state.update { it.copy(message = tr("งานนี้ยังมีงานย่อยค้างอยู่ ปิดงานย่อยก่อน หรือเลือกสถานะอื่น", "This task still has open subtasks. Close them first, or pick another status.")) }
+            onDone(null)
+            return
         }
+        val vault = _state.value.vault
+        val today = LocalDate.now()
+        viewModelScope.launch {
+            var ask: String? = null
+            var askFailed: Throwable? = null
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val (before, after) = repo.editBlock(task) { lines, index -> ask = ReviewWrite.apply(lines, index, task, answers, priority, today) }
+                        // The task's own lines are written by now: a failure here is told, and the card still moves on with its undo.
+                        val added = ask?.let { line ->
+                            runCatching { repo.appendLine(vault ?: throw java.io.IOException(tr("ยังไม่ได้เลือก vault", "No vault chosen")), VaultRepository.TASK_FILE, line) }
+                                .onFailure { askFailed = it }.getOrNull()?.let { line }
+                        }
+                        ReviewSaved(task, after, before, added)
+                    }
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = saveError(e)) } }
+            askFailed?.let { e -> _state.update { it.copy(message = tr("จดงานนี้แล้ว แต่เพิ่มงานถามไม่ได้: ${e.message}", "Saved, but the task to ask them was not added: ${e.message}")) } }
+            result.getOrNull()?.let { saved ->
+                answers.scheduled?.let { d -> learn(Behavior.moved(task, DateField.SCHEDULED.name, d, LocalDateTime.now(), BehaviorLog.SRC)) }
+                answers.due?.let { d -> learn(Behavior.moved(task, DateField.DUE.name, d, LocalDateTime.now(), BehaviorLog.SRC)) }
+                if (answers.progress == ReviewWrite.Progress.DONE) { logDone(task); offerFinish(task, saved.after) }
+                answers.folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() && !Folders.isLabel(it) }?.let { to -> newProjectRoot(to) }
+                saved.ask?.let(::noteCreated)
+            }
+            onDone(result.getOrNull())
+            reload()
+        }
+    }
+
+    /** Puts back what [saved] changed: the task's block as it was, and the asking task it added. */
+    fun reviewUndo(saved: ReviewSaved, onDone: (Boolean) -> Unit) {
+        val vault = _state.value.vault
+        val now = TaskLine.parse(saved.after)?.copy(
+            filePath = saved.task.filePath, fileUri = saved.task.fileUri, lineIndex = saved.task.lineIndex,
+            parent = saved.task.parent, list = saved.task.list,
+        )
+        viewModelScope.launch {
+            var askLeft = false
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        repo.restoreBlock(now ?: throw VaultRepository.ConflictException(), saved.before)
+                        val ask = saved.ask
+                        if (ask != null) {
+                            var found = false
+                            if (vault != null) repo.editPath(vault, VaultRepository.TASK_FILE) { text ->
+                                text?.let { t ->
+                                    val sep = if ("\r\n" in t) "\r\n" else "\n"
+                                    val lines = t.split(sep).toMutableList()
+                                    val i = lines.lastIndexOf(ask)
+                                    if (i < 0) null else { found = true; lines.removeAt(i); lines.joinToString(sep) }
+                                }
+                            }
+                            askLeft = !found
+                        }
+                    }
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = saveError(e)) } }
+            // Not silent: the task's lines are back, but the added ask task was changed or is gone, so it is left for the owner.
+            if (result.isSuccess && askLeft) _state.update {
+                it.copy(message = tr("ย้อนงานนี้แล้ว แต่หางานถามที่เพิ่มไว้ไม่เจอ (อาจถูกแก้แล้ว) ลบเองได้ในโน้ตงาน", "Undone, but the added ask task was not found (it may have changed). Remove it in the task note if needed."))
+            }
+            onDone(result.isSuccess)
+            reload()
+        }
+    }
+
+    private fun saveError(e: Throwable) = if (e is VaultRepository.ConflictException) {
+        tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+    } else {
+        tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+    }
+
+    /** A top folder no tag has used yet becomes a project, as [moveToFolder] does. */
+    private fun newProjectRoot(folder: String) {
+        val root = folder.substringBefore('/')
+        val s = _state.value
+        val known = s.projectTags.orEmpty().any { it.equals(root, ignoreCase = true) } ||
+            (s.tasks + s.parked).any { t -> t.tags.any { it.substringBefore('/').equals(root, ignoreCase = true) } }
+        if (!known) s.projectTags?.let { saveProjectTags(it + root) }
     }
 
     /** Links a note on its own line under the task, the same way Obsidian writes `[[links]]`. */

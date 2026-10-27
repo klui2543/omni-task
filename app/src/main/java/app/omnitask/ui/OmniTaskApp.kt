@@ -115,6 +115,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     // Each calendar's colour and label, read once (see CalendarStyles).
     CalendarStyles.load(LocalContext.current)
     NewLook.load(LocalContext.current)
+    ReviewMode.load(LocalContext.current)
     val pickVault = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setVault(uri)
     }

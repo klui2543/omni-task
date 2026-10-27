@@ -208,6 +208,28 @@ class VaultRepository(private val context: Context) {
     /** Replaces the indented line under the task that starts with `prefix` (adds it if missing, removes it when `line` is null). */
     fun setSubLine(task: Task, prefix: String, line: String?) = editLines(task) { lines, index -> VaultText.setSubLine(lines, index, prefix, line) }
 
+    /**
+     * Applies [edit] to the task's block (its line and everything indented under it) and returns the block as it
+     * was and the task's line as written, so [restoreBlock] can undo it.
+     */
+    fun editBlock(task: Task, edit: (MutableList<String>, Int) -> Unit): Pair<List<String>, String> {
+        var before = emptyList<String>()
+        var line = task.raw
+        editLines(task) { lines, index ->
+            before = lines.subList(index, VaultText.blockEnd(lines, index)).toList()
+            edit(lines, index)
+            line = lines[index]
+        }
+        return before to line
+    }
+
+    /** Puts [block] back in place of the block of [task] (found by its line as written now). */
+    fun restoreBlock(task: Task, block: List<String>) = editLines(task) { lines, index ->
+        val end = VaultText.blockEnd(lines, index)
+        repeat(end - index) { lines.removeAt(index) }
+        lines.addAll(index, block)
+    }
+
     /** Lines taken out of a file, and where they were, so they can be put back. */
     class Cut(val fileUri: String, val index: Int, val lines: List<String>)
 

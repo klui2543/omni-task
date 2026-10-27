@@ -71,8 +71,8 @@ fun KindField(task: Task, state: UiState, vm: TaskViewModel) {
         TaskKind.NORMAL -> null
         TaskKind.WAITING -> (Focus.waitingFor(task)?.let { tr("$it รออยู่", "$it is waiting.") } ?: tr("มีคนรออยู่", "Someone is waiting.")) +
             tr(" ขึ้นในการ์ด \"คนรออยู่\" ตามที่รอนานสุด", " Shows in the \"Waiting\" card, longest wait first")
-        TaskKind.FUTURE -> tr("หมุนเวียนขึ้นหน้าโฟกัสวันละงาน ทบทวนทุก 14 วัน", "Rotates onto Focus one a day, reviewed every 14 days")
-        TaskKind.SOMEDAY -> tr("ไม่ขึ้นในรายการหลัก แต่จะกลับมาให้ทบทวนทุก 30 วัน ไม่หายไปไหน", "Hidden from the main lists, but comes back for review every 30 days")
+        TaskKind.FUTURE -> tr("หมุนเวียนขึ้นหน้าโฟกัสวันละงาน", "Rotates onto Focus one a day")
+        TaskKind.SOMEDAY -> tr("ไม่ขึ้นในรายการหลัก แต่ไม่หายไปไหน", "Hidden from the main lists, but not gone")
     }
     hint?.let { Text(it, Modifier.padding(top = 6.dp), color = C.faint, fontSize = TS.caption) }
 
@@ -261,94 +261,4 @@ private fun PickRow(t: Task, on: Boolean, onClick: () -> Unit) {
             if (sub.isNotEmpty()) Text(sub, color = C.faint, fontSize = TS.caption)
         }
     }
-}
-
-/** On Focus: "N งานไม่มีเดดไลน์รอทบทวน", opening a one-at-a-time review. */
-@Composable
-fun ReviewPrompt(state: UiState, onStart: () -> Unit) {
-    val n = state.toReview.size
-    if (n == 0) return
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(C.card).clickable(onClick = onStart).padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(start = 2.dp)) {
-            Text(tr("$n งานไม่มีเดดไลน์ถึงรอบทบทวน", "$n tasks without a deadline are due for review"), color = C.text, fontSize = TS.body)
-            Text(tr("ทีละงาน ทำ พัก หรือทิ้ง ใช้ไม่ถึง 2 นาที", "One at a time: do, park or drop. Under 2 minutes."), color = C.muted, fontSize = TS.caption)
-        }
-        Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
-    }
-}
-
-/** One task at a time: decide, and it disappears from the queue until its next review. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun ReviewDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onDismiss: () -> Unit) {
-    val queue = state.toReview
-    val t = queue.firstOrNull()
-    var handled by remember { mutableStateOf(0) }
-    var why by remember(t?.key) { mutableStateOf("") }
-    var showLog by remember { mutableStateOf(false) }
-    if (showLog) {
-        StuckTimeline(state, onOpen = { showLog = false; onDismiss(); onOpen(it) }) { showLog = false }
-        return
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = C.raised,
-        title = { Text(if (t == null) tr("ทบทวนครบแล้ว", "All reviewed") else tr("ทบทวนงาน (เหลือ ${queue.size})", "Review (${queue.size} left)")) },
-        text = {
-            if (t == null) {
-                Text(
-                    if (handled > 0) {
-                        tr("จัดการไป $handled งาน งานที่เหลือจะกลับมาเมื่อถึงรอบ", "Handled $handled tasks. The rest come back when they are due.")
-                    } else {
-                        tr("ไม่มีงานค้างทบทวน", "Nothing to review")
-                    },
-                    color = C.text2,
-                )
-            } else {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(t.title, Modifier.clickable { onOpen(t) }, style = MaterialTheme.typography.titleMedium, color = C.text)
-                    val age = Focus.ageDays(t, state.today)
-                    val since = state.reviewed[t.title]
-                    Text(
-                        listOfNotNull(
-                            TaskKind.of(t).takeIf { it != TaskKind.NORMAL }?.label,
-                            age?.let { tr("สร้างมา $it วัน", "created $it days ago") },
-                            since?.let { tr("ทบทวนล่าสุด ${it.format(SHORT_DATE)}", "last reviewed ${it.format(SHORT_DATE)}") },
-                        ).joinToString(", "),
-                        Modifier.padding(top = 4.dp), color = C.muted, fontSize = TS.caption,
-                    )
-                    StuckLog.events(t, state.subtasksOf(t)).filter { it.step != StuckLog.Step.START }.takeLast(2).takeIf { it.isNotEmpty() }?.let {
-                        Box(Modifier.padding(top = 10.dp)) { StuckPath(it, state.today) }
-                    }
-                    // Optional: written down with whichever choice comes next, before it.
-                    Text(tr("ติดอะไรอยู่ (ไม่ใส่ก็ได้)", "What holds it up? (optional)"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.text2, fontSize = TS.body)
-                    StuckInput(why) { why = it }
-                    Text(tr("ยังอยากทำไหม", "Still want to do it?"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.text2, fontSize = TS.body)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        fun act(a: TaskViewModel.ReviewAction) { vm.noteStuck(t, why); vm.review(t, a); handled++ }
-                        ReviewButton(tr("ทำเสาร์นี้", "Do this Saturday"), C.lime) { act(TaskViewModel.ReviewAction.THIS_WEEK) }
-                        if (!Focus.isFutureWork(t)) ReviewButton(tr("ลงทุนอนาคต", "Future"), C.accent) { act(TaskViewModel.ReviewAction.FUTURE) }
-                        if (!Focus.isSomeday(t)) ReviewButton(tr("พักไว้ก่อน", "Someday"), C.amber) { act(TaskViewModel.ReviewAction.SOMEDAY) }
-                        ReviewButton(tr("เก็บไว้แบบเดิม", "Keep as is"), C.text2) { act(TaskViewModel.ReviewAction.KEEP) }
-                        ReviewButton(tr("ทิ้ง", "Drop"), C.red) { act(TaskViewModel.ReviewAction.DROP) }
-                    }
-                    Text(tr("ทิ้ง = ทำเครื่องหมายยกเลิก [-] บรรทัดยังอยู่ในไฟล์", "Drop = mark cancelled [-]. The line stays in the file."), Modifier.padding(top = 10.dp), color = C.faint, fontSize = TS.caption)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(if (t == null) tr("ปิด", "Close") else tr("พอก่อน", "Stop for now"), color = C.text2) } },
-        dismissButton = { TextButton(onClick = { showLog = true }) { Text(tr("บันทึกงานค้าง", "Stuck log"), color = C.text2) } },
-    )
-}
-
-@Composable
-private fun ReviewButton(label: String, color: Color, onClick: () -> Unit) {
-    Text(
-        label,
-        Modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.14f)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
-        color = color, fontSize = TS.body,
-    )
 }
