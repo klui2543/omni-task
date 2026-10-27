@@ -51,6 +51,16 @@ class UndoBlockTest {
     }
 
     @Test
+    fun aMovedBlockThatNowStandsTwiceIsLeftAlone() {
+        val (ticked, before, after) = tick(note)
+        // Two lines were added above it and a copy of the ticked line further down: which one to undo is unknown.
+        val twice = ticked.replace("# งาน\n", "# งาน\n- [ ] ก\n- [ ] ข\n") + "\n" + after.joinToString("\n")
+        assertNull(VaultText.swapBlock(twice, 1, after, before))
+        // At its old place it is still found, even with a copy elsewhere.
+        assertEquals(note + "\n" + after.joinToString("\n"), VaultText.swapBlock(ticked + "\n" + after.joinToString("\n"), 1, after, before))
+    }
+
+    @Test
     fun windowsLineEndingsStay() {
         val crlf = note.replace("\n", "\r\n")
         val lines = crlf.split("\r\n").toMutableList()

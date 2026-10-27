@@ -3377,14 +3377,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Ygdrasil's ↶: the newest step goes back and can be done again with ↷. */
     fun treeUndo() {
         val step = _state.value.treeUndo.lastOrNull() ?: return
-        _state.update { it.copy(treeUndo = it.treeUndo.dropLast(1)) }
+        _state.update { it.copy(treeUndo = it.treeUndo.dropLast(1), finished = null) }
         applyStep(step, undo = true) { ok -> if (ok) _state.update { it.copy(treeRedo = it.treeRedo + step) } }
     }
 
     /** Ygdrasil's ↷: the step undone last is done again. */
     fun treeRedo() {
         val step = _state.value.treeRedo.lastOrNull() ?: return
-        _state.update { it.copy(treeRedo = it.treeRedo.dropLast(1)) }
+        _state.update { it.copy(treeRedo = it.treeRedo.dropLast(1), finished = null) }
         applyStep(step, undo = false) { ok -> if (ok) _state.update { it.copy(treeUndo = it.treeUndo + step) } }
     }
 
@@ -3394,8 +3394,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun applyStep(step: UndoStep, undo: Boolean, done: (Boolean) -> Unit) {
         step.retag?.let { (from, to) ->
-            if (undo) retagAll(to, from) else retagAll(from, to)
-            done(true)
+            if (undo) retagAll(to, from, done) else retagAll(from, to, done)
             return
         }
         val blocks = if (undo) step.blocks.asReversed() else step.blocks
@@ -3464,8 +3463,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearMoved() = _state.update { it.copy(moved = null) }
 
-    /** Everything tagged [old] (and under it) gets [new] in every note, as an undo of a move. */
-    private fun retagAll(old: String, new: String) {
+    /** Everything tagged [old] (and under it) gets [new] in every note, as an undo of a move; [done] gets whether it went through. */
+    private fun retagAll(old: String, new: String, done: (Boolean) -> Unit = {}) {
         val files = (_state.value.allTasks + _state.value.parked + _state.value.listItems)
             .filter { t -> t.tags.any { it == old || it.startsWith("$old/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
@@ -3476,6 +3475,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 recordMove(old, new, n, undoable = false)
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
+            done(result.isSuccess)
             reload()
         }
     }
@@ -3787,7 +3787,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_ARCHIVE_SWEPT = "archive.sweptOn"
         const val KEY_ASK_ON_DONE = "archive.askOnDone"
         /** How many steps the tick bar and Ygdrasil's history keep. */
-        const val UNDO_KEEP = 50
+        const val UNDO_KEEP = 500
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
         val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)

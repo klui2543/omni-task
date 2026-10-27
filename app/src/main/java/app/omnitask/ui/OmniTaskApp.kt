@@ -357,7 +357,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
                         Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                     }
-                    state.finished?.let { t -> FinishedBar(t, state.archiveDays, state.ticked.isNotEmpty(), vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
+                    state.finished?.let { t -> FinishedBar(t, state.archiveDays, state.ticked, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
                         ?: state.ticked.lastOrNull()?.let { u -> TickBar(u, state.ticked.size - 1, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
                 }
                 editPane()
@@ -379,7 +379,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                 }
                 state.finished?.let { t ->
-                    FinishedBar(t, state.archiveDays, state.ticked.isNotEmpty(), vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
+                    FinishedBar(t, state.archiveDays, state.ticked, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
                 } ?: state.ticked.lastOrNull()?.let { u ->
                     TickBar(u, state.ticked.size - 1, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
                 }
@@ -423,9 +423,12 @@ fun OmniTaskApp(vm: TaskViewModel) {
  * away on its own after a while, which leaves the task as it is (the daily sweep archives it later).
  */
 @Composable
-private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, canUndo: Boolean, vm: TaskViewModel, modifier: Modifier = Modifier) {
+private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, ticked: List<TaskViewModel.UndoStep>, vm: TaskViewModel, modifier: Modifier = Modifier) {
+    // Its "เลิกทำ" is the newest tick in the bar, and only when that tick is this task (a tick on Ygdrasil is not in the bar).
+    val canUndo = ticked.lastOrNull()?.let { it.kind == TaskViewModel.UndoStep.Kind.DONE && it.title == task.title } == true
+    val left = remember(task.raw) { androidx.compose.animation.core.Animatable(1f) }
     LaunchedEffect(task.raw) {
-        delay(UNDO_BAR_MS)
+        left.animateTo(0f, androidx.compose.animation.core.tween(UNDO_BAR_MS.toInt(), easing = androidx.compose.animation.core.LinearEasing))
         vm.clearFinished()
     }
     Column(
@@ -439,6 +442,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, canUndo
             else tr("เก็บเข้าคลัง หรือลบออกจากโน้ตเลยไหม", "Archive it, or delete it from the note?"),
             Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption,
         )
+        if (canUndo && ticked.size > 1) Text(tr("เลิกทำได้อีก ${ticked.size - 1} งานก่อนหน้า", "${ticked.size - 1} more before it"), color = C.muted, fontSize = TS.caption)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             if (canUndo) TextButton(onClick = vm::undoTick) { Text(tr("เลิกทำ", "Undo"), color = C.accent) }
             Spacer(Modifier.weight(1f))
@@ -446,6 +450,7 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, canUndo
             TextButton(onClick = { vm.resolveFinished(archive = false) }) { Text(tr("ลบ", "Delete"), color = C.red) }
             TextButton(onClick = { vm.resolveFinished(archive = true) }) { Text(tr("เก็บเข้าคลัง", "Archive"), color = C.accent) }
         }
+        Box(Modifier.fillMaxWidth(left.value).height(3.dp).background(C.accent.copy(alpha = 0.6f)))
     }
 }
 
