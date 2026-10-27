@@ -19,6 +19,13 @@ object RecurHistory {
         prefs.edit().putStringSet(KEY, (kept + "$title|$day").toSet()).apply()
     }
 
+    /** Takes back one completion, when a tick is undone. */
+    fun remove(context: Context, title: String, day: LocalDate) {
+        val prefs = context.getSharedPreferences("omnitask", Context.MODE_PRIVATE)
+        val kept = prefs.getStringSet(KEY, emptySet()).orEmpty()
+        if ("$title|$day" in kept) prefs.edit().putStringSet(KEY, kept - "$title|$day").apply()
+    }
+
     /** Completion days per task title. */
     fun all(context: Context): Map<String, List<LocalDate>> =
         context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).getStringSet(KEY, emptySet()).orEmpty()

@@ -160,4 +160,17 @@ class BehaviorTest {
     }
 
     private fun quote(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
+
+    @Test
+    fun anUndoneTickIsTakenOutOfTheFile() {
+        val text = Behavior.merge(null, listOf(done("a"), done("b"), done("c")), today)
+        val out = Behavior.drop(text, setOf("b"))!!
+        assertEquals(listOf("a", "c"), Behavior.parse(out).map { it.id })
+        assertEquals(Behavior.HEADER, out.lines().first())
+        // The other lines keep their exact text.
+        assertEquals(text.lines().filter { "\"b\"" !in it }, out.lines())
+        // Nothing to take out: the same text back.
+        assertSame(out, Behavior.drop(out, setOf("zzz")))
+        assertNull(Behavior.drop(null, setOf("a")))
+    }
 }

@@ -103,6 +103,18 @@ object Behavior {
         return if (text != null && fresh.isEmpty() && all.size == kept.size && text.trimEnd() == out.trimEnd()) text else out
     }
 
+    /**
+     * The file's text without the events [ids]: a tick taken back with "undo" was never done, so the assistant must not
+     * learn from it. Other lines keep their exact text. Returns [text] itself when none of them is there.
+     */
+    fun drop(text: String?, ids: Set<String>): String? {
+        text ?: return null
+        val kept = entries(text)
+        val left = kept.filter { it.second.id !in ids }
+        if (left.size == kept.size) return text
+        return (listOf(HEADER) + left.map { it.first }).joinToString("\n", postfix = "\n")
+    }
+
     // ---- Making events ----
 
     private fun pad(n: Int) = n.toString().padStart(2, '0')

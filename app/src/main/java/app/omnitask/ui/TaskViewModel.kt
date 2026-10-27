@@ -20,6 +20,7 @@ import app.omnitask.data.ClaudeSettings
 import app.omnitask.data.DriveLink
 import app.omnitask.data.ImageAttach
 import app.omnitask.data.BehaviorLog
+import app.omnitask.data.RecurHistory
 import app.omnitask.data.SettingsSync
 import app.omnitask.data.MonthMarksStore
 import app.omnitask.data.GoogleCalendarCheck
@@ -142,6 +143,11 @@ data class UiState(
     val moved: TaskViewModel.MoveUndo? = null,
     /** A task just ticked done: ask whether to archive it, delete it or leave it. */
     val finished: Task? = null,
+    /** Ticks offered for undo in the bar, newest last; the bar goes after 30 seconds (owner, 2026-10-27). */
+    val ticked: List<TaskViewModel.UndoStep> = emptyList(),
+    /** Ygdrasil's own history, kept until the app is closed: steps to undo (newest last), and steps undone, to redo. */
+    val treeUndo: List<TaskViewModel.UndoStep> = emptyList(),
+    val treeRedo: List<TaskViewModel.UndoStep> = emptyList(),
     /** Finished tasks move to the archive note after this many days; 0 leaves them in place. */
     val archiveDays: Int = DEFAULT_ARCHIVE_DAYS,
     /** Whether ticking a task done asks to archive or delete it. */
@@ -1762,17 +1768,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun toggleDone(task: Task) {
+    /** Ticks [task] done, or opens it again; [inTree] when ticked on Ygdrasil, which keeps its own undo history. */
+    fun toggleDone(task: Task, inTree: Boolean = false) {
         // A repeating task moves on with its subtasks opened again, so there is nothing to ask about them.
-        if (task.recurrence != null && task.isOpen) return completeRecurring(task)
+        if (task.recurrence != null && task.isOpen) return completeRecurring(task, inTree)
         if (task.isOpen && _state.value.subtasksOf(task).any { it.isOpen }) {
+            closingInTree = inTree
             _state.update { it.copy(closingParent = task) }
             return
         }
-        if (task.isOpen) logDone(task)
+        val event = if (task.isOpen) logDone(task) else null
         val next = TaskLine.setDone(task.raw, task.isOpen, LocalDate.now())
-        edit(task, onSaved = { if (task.isOpen) offerFinish(task, next) }) { next }
+        val kind = if (task.isOpen) UndoStep.Kind.DONE else UndoStep.Kind.OPENED
+        editRecorded(task, kind, inTree, listOfNotNull(event), onSaved = { if (task.isOpen) offerFinish(task, next) }) { next }
     }
+
+    /** Whether the "tick the open subtasks too?" question was asked from Ygdrasil. */
+    private var closingInTree = false
 
     private fun descendants(task: Task): List<Task> = _state.value.subtasksOf(task).flatMap { listOf(it) + descendants(it) }
 
@@ -1787,12 +1799,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(finished = task.copy(raw = raw, status = Status.DONE)) }
     }
 
-    fun clearFinished() = _state.update { it.copy(finished = null) }
+    /** The "archive or delete?" bar closes, and with it the tick's undo, which it carries. */
+    fun clearFinished() = _state.update { it.copy(finished = null, ticked = emptyList()) }
 
     /** Answers the "archive or delete?" question for the task just finished. */
     fun resolveFinished(archive: Boolean) {
         val task = _state.value.finished ?: return
-        _state.update { it.copy(finished = null) }
+        _state.update { it.copy(finished = null, ticked = emptyList()) }
         if (archive) archiveTask(task) else deleteTask(task)
     }
 
@@ -1855,11 +1868,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Completes a repeating task by moving its line on to the next occurrence; no copy is added. */
-    private fun completeRecurring(task: Task) {
-        logDone(task)
+    private fun completeRecurring(task: Task, inTree: Boolean) {
+        val event = logDone(task)
         TaskLine.advanceRecurring(task.raw, LocalDate.now(), task.todayCopy)?.let { showEdited(task, it) }
         viewModelScope.launch {
-            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, LocalDate.now()) } } }
+            val today = LocalDate.now()
+            var block: VaultRepository.BlockChange? = null
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.completeRecurring(task, today) { block = it } } } }
+            block?.let { b -> remember(UndoStep(UndoStep.Kind.DONE, task.title, listOf(b), listOfNotNull(event), listOf(task.title to today)), inTree) }
             val text = result.fold(
                 { made ->
                     if (made) {
@@ -2230,8 +2246,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun moveTask(task: Task, tag: String) {
         val from = Projects.tagOf(task)
         if (from == tag) return
-        edit(task) { TaskLine.retag(it, from, tag) }
+        editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { TaskLine.retag(it, from, tag) }
     }
+
+    /** Project Ygdrasil: a task dropped on a list joins it ([tag] added), with a step in Ygdrasil's undo history. */
+    fun addToList(task: Task, tag: String) = editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { TaskLine.addTag(it, tag) }
 
     /**
      * The folder picker (owner's pick, 2026-10-26): the task's one folder becomes [folder] where its old one stood, or
@@ -2263,7 +2282,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * new project's name is made a project, so the task shows on the tree at once.
      */
     fun homeTask(task: Task, tag: String) {
-        edit(task) { TaskLine.homeTag(it, tag) }
+        editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { TaskLine.homeTag(it, tag) }
         val root = tag.substringBefore('/')
         _state.value.projectTags?.let { if (root !in it) saveProjectTags(it + root) }
     }
@@ -2411,15 +2430,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val day = LocalDate.now()
         open.forEach { child -> showEdited(child, TaskLine.setDone(child.raw, true, day)) }
         if (parent.recurrence == null) showEdited(parent, TaskLine.setDone(parent.raw, true, day))
+        val inTree = closingInTree
         viewModelScope.launch {
+            val blocks = ArrayList<VaultRepository.BlockChange>()
             val result = writeLock.withLock { withContext(Dispatchers.IO) {
                 runCatching {
                     val today = LocalDate.now()
-                    open.forEach { child -> repo.rewriteLine(child) { TaskLine.setDone(it, true, today) } }
-                    if (parent.recurrence != null) repo.completeRecurring(parent, today) else repo.rewriteLine(parent) { TaskLine.setDone(it, true, today) }
+                    open.forEach { child -> blocks += repo.rewriteLineRecorded(child) { TaskLine.setDone(it, true, today) } }
+                    if (parent.recurrence != null) repo.completeRecurring(parent, today) { blocks += it }
+                    else blocks += repo.rewriteLineRecorded(parent) { TaskLine.setDone(it, true, today) }
                 }
             } }
-            logDone(parent)
+            val event = logDone(parent)
+            // Every line ticked here goes back with one undo, even when a later write failed.
+            if (blocks.isNotEmpty()) remember(
+                UndoStep(UndoStep.Kind.DONE, parent.title, blocks, listOfNotNull(event), if (parent.recurrence != null) listOf(parent.title to LocalDate.now()) else emptyList()),
+                inTree,
+            )
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("บันทึกไม่ได้: ", "Could not save: ") + e.message) } }
             if (result.isSuccess) offerFinish(parent, TaskLine.setDone(parent.raw, true, LocalDate.now()), open.map { it.key }.toSet())
             if (result.isSuccess) reloadNote(parent) else reload()
@@ -3287,14 +3314,140 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** A move made in Ygdrasil, waiting in the bar with "เลิกทำ". */
-    class MoveUndo(val text: String, val undo: () -> Unit)
+    // ---- Undo and redo of ticks and Ygdrasil moves (owner, 2026-10-27) ----
+
+    /**
+     * A change that can be taken back and done again: the note blocks it changed (put back in reverse order), the
+     * "done" events and repeat days it added, or a project or branch moved in every note ([retag] from, to).
+     */
+    class UndoStep(
+        val kind: Kind,
+        val title: String,
+        val blocks: List<VaultRepository.BlockChange> = emptyList(),
+        val events: List<BehaviorEvent> = emptyList(),
+        val recurred: List<Pair<String, LocalDate>> = emptyList(),
+        val retag: Pair<String, String>? = null,
+    ) {
+        enum class Kind { DONE, OPENED, MOVED }
+    }
+
+    /**
+     * Ticks go in the bar's list; on Ygdrasil they join its history, and a new step there ends what could be redone.
+     * The "archive or delete?" bar of an earlier tick closes, so the bar on screen always undoes the newest tick.
+     */
+    private fun remember(step: UndoStep, inTree: Boolean) = _state.update {
+        if (inTree) it.copy(treeUndo = (it.treeUndo + step).takeLast(UNDO_KEEP), treeRedo = emptyList())
+        else it.copy(ticked = (it.ticked + step).takeLast(UNDO_KEEP), finished = null)
+    }
+
+    /** Like [edit], keeping the line's block before and after so the change can be undone. */
+    private fun editRecorded(
+        task: Task, kind: UndoStep.Kind, inTree: Boolean, events: List<BehaviorEvent> = emptyList(),
+        onSaved: (() -> Unit)? = null, transform: (String) -> String,
+    ) {
+        runCatching { transform(task.raw) }.getOrNull()?.let { showEdited(task, it) }
+        viewModelScope.launch {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.rewriteLineRecorded(task, transform) } } }
+            result.onSuccess { block ->
+                remember(UndoStep(kind, task.title, listOf(block), events), inTree)
+                onSaved?.invoke()
+            }
+            result.exceptionOrNull()?.let { e ->
+                val text = if (e is VaultRepository.ConflictException) {
+                    tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+                } else {
+                    tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+                }
+                _state.update { it.copy(message = text) }
+            }
+            if (result.isSuccess) reloadNote(task) else reload()
+        }
+    }
+
+    /** The bar's time is up. */
+    fun clearTicked() = _state.update { it.copy(ticked = emptyList()) }
+
+    /** "เลิกทำ" on the bar: the newest tick goes back; the one before it then waits in the bar. */
+    fun undoTick() {
+        val step = _state.value.ticked.lastOrNull() ?: return
+        _state.update { it.copy(ticked = it.ticked.dropLast(1), finished = null) }
+        applyStep(step, undo = true) { }
+    }
+
+    /** Ygdrasil's ↶: the newest step goes back and can be done again with ↷. */
+    fun treeUndo() {
+        val step = _state.value.treeUndo.lastOrNull() ?: return
+        _state.update { it.copy(treeUndo = it.treeUndo.dropLast(1), finished = null) }
+        applyStep(step, undo = true) { ok -> if (ok) _state.update { it.copy(treeRedo = it.treeRedo + step) } }
+    }
+
+    /** Ygdrasil's ↷: the step undone last is done again. */
+    fun treeRedo() {
+        val step = _state.value.treeRedo.lastOrNull() ?: return
+        _state.update { it.copy(treeRedo = it.treeRedo.dropLast(1), finished = null) }
+        applyStep(step, undo = false) { ok -> if (ok) _state.update { it.copy(treeUndo = it.treeUndo + step) } }
+    }
+
+    /**
+     * Undoes ([undo] true) or does again one step. A block that no longer stands as the step left it (edited in Obsidian
+     * since) is not written over: the step is dropped and the owner told. [done] gets whether it all went through.
+     */
+    private fun applyStep(step: UndoStep, undo: Boolean, done: (Boolean) -> Unit) {
+        step.retag?.let { (from, to) ->
+            if (undo) retagAll(to, from, done) else retagAll(from, to, done)
+            return
+        }
+        val blocks = if (undo) step.blocks.asReversed() else step.blocks
+        // The screen shows the change at once; the write and the read back follow.
+        blocks.forEach { b ->
+            val (expect, put) = if (undo) b.after to b.before else b.before to b.after
+            visibleTask(b.fileUri, expect.first())?.let { showEdited(it, put.first()) }
+        }
+        val vault = _state.value.vault
+        viewModelScope.launch {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { blocks.forEach { repo.swapBlock(it, undo) } } } }
+            val app = getApplication<Application>()
+            if (result.isSuccess) {
+                if (undo) {
+                    step.recurred.forEach { (title, day) -> RecurHistory.remove(app, title, day) }
+                    val ids = step.events.mapTo(HashSet()) { it.id }
+                    if (ids.isNotEmpty()) {
+                        behavior = behavior.filter { it.id !in ids }
+                        if (vault != null) withContext(Dispatchers.IO) { runCatching { BehaviorLog.forget(app, repo, vault, ids) } }.exceptionOrNull()?.let { e ->
+                            _state.update { it.copy(message = tr("เลิกทำแล้ว แต่ลบบันทึกการทำเสร็จออกไม่ได้: ${e.message}", "Undone, but the done record could not be removed: ${e.message}")) }
+                        }
+                    }
+                } else {
+                    step.recurred.forEach { (title, day) -> RecurHistory.add(app, title, day) }
+                    step.events.forEach { learn(it) }
+                }
+            } else {
+                val e = result.exceptionOrNull()
+                val text = if (e is VaultRepository.ConflictException) {
+                    tr("\"${step.title}\" ถูกแก้จากที่อื่นแล้ว จึงไม่ได้เขียนทับ", "\"${step.title}\" was changed elsewhere, so it was not written over")
+                } else {
+                    tr("บันทึกไม่ได้: ${e?.message}", "Cannot save: ${e?.message}")
+                }
+                _state.update { it.copy(message = text) }
+            }
+            done(result.isSuccess)
+            reload()
+        }
+    }
+
+    /** The task on screen whose line in [fileUri] is [raw], if any. */
+    private fun visibleTask(fileUri: String, raw: String): Task? = _state.value.let { s ->
+        (s.tasks + s.parked + s.listItems).firstOrNull { it.fileUri == fileUri && it.raw == raw }
+    }
+
+    /** A move made in Ygdrasil, told in the bar, with "เลิกทำ" when [undo] is there. */
+    class MoveUndo(val text: String, val undo: (() -> Unit)?)
 
     /**
      * Writes the owner's move of [old] to [new] into `ชื่อโปรเจกต์.md`, so the secretary writes the new names and old
      * ones are read as new, and offers to undo it. [n] is how many task lines moved.
      */
-    private suspend fun recordMove(old: String, new: String, n: Int, undoable: Boolean = true) {
+    private suspend fun recordMove(old: String, new: String, n: Int, undoable: Boolean = true, tell: Boolean = undoable) {
         val vault = _state.value.vault ?: return
         val today = LocalDate.now()
         val r = withContext(Dispatchers.IO) {
@@ -3305,13 +3458,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
         r.getOrNull()?.let { ProjectNames.current = ProjectNames.parse(it) }
         val text = tr("ย้าย #$old ไปเป็น #$new แล้ว ($n งาน)\nจดลงตาราง ชื่อโปรเจกต์.md แล้ว เลขาจะเขียนชื่อใหม่ตามนี้", "Moved #$old to #$new ($n tasks)\nNoted in ชื่อโปรเจกต์.md: the secretary writes the new name")
-        if (undoable) _state.update { it.copy(moved = MoveUndo(text) { retagAll(new, old) }) }
+        if (tell) _state.update { it.copy(moved = MoveUndo(text, if (undoable) { { retagAll(new, old) } } else null)) }
     }
 
     fun clearMoved() = _state.update { it.copy(moved = null) }
 
-    /** Everything tagged [old] (and under it) gets [new] in every note, as an undo of a move. */
-    private fun retagAll(old: String, new: String) {
+    /** Everything tagged [old] (and under it) gets [new] in every note, as an undo of a move; [done] gets whether it went through. */
+    private fun retagAll(old: String, new: String, done: (Boolean) -> Unit = {}) {
         val files = (_state.value.allTasks + _state.value.parked + _state.value.listItems)
             .filter { t -> t.tags.any { it == old || it.startsWith("$old/") } }.map { it.fileUri }.distinct()
         viewModelScope.launch {
@@ -3322,6 +3475,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 recordMove(old, new, n, undoable = false)
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
+            done(result.isSuccess)
             reload()
         }
     }
@@ -3342,7 +3496,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 saveBranchStates(Branches.moveTag(_state.value.branchStates, oldTag, newTag))
                 // A branch dropped on the trunk becomes a project of its own.
                 _state.value.projectTags?.let { tags -> saveProjectTags(tags + newTag.substringBefore('/')) }
-                recordMove(oldTag, newTag, n)
+                // Undone with Ygdrasil's own button, so the bar only tells what moved.
+                recordMove(oldTag, newTag, n, undoable = false, tell = true)
+                remember(UndoStep(UndoStep.Kind.MOVED, "#$oldTag", retag = oldTag to newTag), inTree = true)
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
             reload()
@@ -3529,7 +3685,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun habits(): List<String> = Learned.summary(_state.value.tasks, behaviorNow(), _state.value.today)
 
     /** Remembers when work gets done, so the assistant can notice the owner's rhythm. */
-    private fun logDone(task: Task) = learn(Behavior.of(Behavior.DONE, task, LocalDateTime.now(), BehaviorLog.SRC))
+    private fun logDone(task: Task): BehaviorEvent? = Behavior.of(Behavior.DONE, task, LocalDateTime.now(), BehaviorLog.SRC).also { learn(it) }
 
     /** A task line just added, as a "create" event. */
     private fun noteCreated(line: String) {
@@ -3630,6 +3786,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_ARCHIVE_DAYS = "archive.days"
         const val KEY_ARCHIVE_SWEPT = "archive.sweptOn"
         const val KEY_ASK_ON_DONE = "archive.askOnDone"
+        /** How many steps the tick bar and Ygdrasil's history keep. */
+        const val UNDO_KEEP = 500
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
         val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)

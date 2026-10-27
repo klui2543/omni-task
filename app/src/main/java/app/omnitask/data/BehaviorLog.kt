@@ -48,6 +48,23 @@ object BehaviorLog {
     fun waiting(context: Context): List<BehaviorEvent> =
         synchronized(lock) { Behavior.parse(runCatching { file(context).takeIf { it.exists() }?.readText() }.getOrNull()) }
 
+    /**
+     * Takes the events [ids] back, wherever they are now (still waiting, or already in the vault's file): a tick undone
+     * was never done. Throws when the vault cannot be written; the events are then already gone from the phone.
+     */
+    fun forget(context: Context, repo: VaultRepository, vault: Uri, ids: Set<String>) = synchronized(this) {
+        if (ids.isEmpty()) return@synchronized
+        synchronized(lock) {
+            val all = waiting(context)
+            val left = all.filter { it.id !in ids }
+            if (left.size != all.size) file(context).writeText(left.joinToString("") { Behavior.line(it) + "\n" })
+        }
+        val text = repo.readPath(vault, Behavior.PATH) ?: return@synchronized
+        if (Behavior.parse(text).none { it.id in ids }) return@synchronized
+        repo.editPath(vault, Behavior.PATH) { old -> Behavior.drop(old, ids) }
+        repo.readPath(vault, Behavior.PATH)?.let { runCatching { File(context.filesDir, CACHE).writeText(it) } }
+    }
+
     /** The old preference log and the questions answered "no", as events; the same ids on every phone. */
     private fun fromPrefs(context: Context): List<BehaviorEvent> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
