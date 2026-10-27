@@ -1,0 +1,334 @@
+<title>Omni ทบทวนงาน 4 แบบ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: one phone screen, no page scroll. Tabs pick the card style; header, card, controls stack in a fixed column. Graphite palette from the app. */
+:root{
+  --bg:#F2F3F5; --card:#FFFFFF; --line:#E1E3E8; --raised:#ECEEF1; --sunken:#EBEDF0;
+  --text:#1B1E23; --text2:#3C424C; --muted:#667080;
+  --accent:#3D4F6E; --accentSoft:#E6EAF1; --onAccent:#FFFFFF;
+  --red:#BF4B47; --redSoft:#FBE9E8; --amber:#9A6A12; --amberSoft:#F5EEDC; --green:#4C8566; --greenSoft:#E3F0E9;
+  --shade:rgba(20,24,32,.35);
+  --sans:"IBM Plex Sans Thai",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E0E10; --card:#18181B; --line:#2A2A2F; --raised:#222226; --sunken:#131315;
+  --text:#ECECEE; --text2:#C4C4C9; --muted:#8E8E96;
+  --accent:#9DB4D3; --accentSoft:#1D2330; --onAccent:#0E1118;
+  --red:#D9726C; --redSoft:#2D1B1A; --amber:#C4A56A; --amberSoft:#2A2418; --green:#7FAE93; --greenSoft:#1A2620; --shade:rgba(0,0,0,.55); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E0E10; --card:#18181B; --line:#2A2A2F; --raised:#222226; --sunken:#131315;
+  --text:#ECECEE; --text2:#C4C4C9; --muted:#8E8E96;
+  --accent:#9DB4D3; --accentSoft:#1D2330; --onAccent:#0E1118;
+  --red:#D9726C; --redSoft:#2D1B1A; --amber:#C4A56A; --amberSoft:#2A2418; --green:#7FAE93; --greenSoft:#1A2620; --shade:rgba(0,0,0,.55); color-scheme:dark}
+[hidden]{display:none!important}
+html{height:100%}
+body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.45;display:flex;flex-direction:column;overflow:hidden;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px;box-sizing:border-box}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tabs{display:flex;gap:4px;max-width:420px;width:100%;margin:0 auto;background:var(--raised);border-radius:10px;padding:3px;box-sizing:border-box}
+.tabs button{flex:1;border:0;background:none;padding:6px 2px;border-radius:8px;font-size:13px;color:var(--muted);line-height:1.2}
+.tabs button.on{background:var(--card);color:var(--text);font-weight:600}
+.app{flex:1;min-height:0;max-width:420px;width:100%;margin:8px auto 0;display:flex;flex-direction:column;gap:8px}
+.hd{display:flex;align-items:center;gap:8px}
+.hd .mid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.hd .mid b{font-size:16px} .hd .mid span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ic{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;font-size:13px}
+.ic:disabled{opacity:.4;cursor:default}
+.grp{display:flex;gap:4px;justify-content:center}
+.grp span{font-size:11.5px;padding:1px 9px;border-radius:999px;color:var(--muted)}
+.grp span.on{background:var(--accentSoft);color:var(--accent);font-weight:600}
+.main{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px;overflow:hidden;transition:transform .25s,opacity .25s}
+.card.out{opacity:0;transform:translateY(16px) scale(.97)}
+.where{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t{margin:0;font-size:18px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-wrap:balance}
+.t.big{font-size:22px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.ch{font-size:12px;padding:2px 8px;border-radius:6px;background:var(--raised);color:var(--text2);white-space:nowrap}
+.ch.red{background:var(--redSoft);color:var(--red)} .ch.amb{background:var(--amberSoft);color:var(--amber)} .ch.grn{background:var(--greenSoft);color:var(--green)}
+.quote{font-size:13px;color:var(--text2);border-left:3px solid var(--line);padding:2px 0 2px 8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 8px;font-size:14px;line-height:1.25}
+.btn.on{background:var(--accent);border-color:var(--accent);color:var(--onAccent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--onAccent);font-weight:600}
+.row{display:flex;gap:6px} .row>*{flex:1;min-width:0}
+.lbl{font-size:12px;color:var(--muted);margin-bottom:-2px}
+/* A: swipe */
+.zoneA{flex:1;min-height:0;display:flex;align-items:center;position:relative}
+.zoneA .card{width:100%;box-sizing:border-box;touch-action:none;user-select:none;max-height:100%;cursor:grab}
+.wrapA{position:relative;width:100%;max-height:100%;display:flex}
+.zoneA .stack{position:absolute;left:10px;right:10px;bottom:-6px;height:30px;border:1px solid var(--line);border-radius:0 0 16px 16px;background:var(--card);opacity:.6}
+.stamp{position:absolute;top:14px;right:14px;font-weight:600;font-size:14px;padding:3px 10px;border-radius:8px;border:2px solid;opacity:0}
+.dirs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.dirs .btn{font-size:13px;padding:8px 2px}
+.dirs .stuck{color:var(--red)} .dirs .done{color:var(--green)}
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tool{border:1px solid var(--line);background:var(--sunken);border-radius:10px;padding:6px 8px;text-align:left;font-size:12px;color:var(--muted);line-height:1.25;min-width:0}
+.tool b{display:block;font-size:13px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* B: one question at a time */
+.qbox{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+.dots{display:flex;gap:5px;justify-content:center}
+.dots i{width:22px;height:4px;border-radius:3px;background:var(--line)} .dots i.on{background:var(--accent)}
+.qq{font-size:17px;font-weight:600;text-align:center;margin:2px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.grid2 .btn{padding:12px 6px}
+.now{display:block;font-size:11px;opacity:.75}
+input[type=text],input[type=date]{font:inherit;font-size:15px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);min-width:0;width:100%;box-sizing:border-box}
+/* C: control panel */
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{flex:1;border:0;background:none;padding:8px 2px;font-size:13px;border-right:1px solid var(--line);min-width:0;line-height:1.2}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:var(--onAccent);font-weight:600}
+.panel{display:flex;flex-direction:column;gap:8px}
+.linkrow{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--card);font-size:13.5px;text-align:left;width:100%}
+.linkrow span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .linkrow em{font-style:normal;color:var(--accent);flex:none}
+/* D: flip */
+.zoneD{flex:1;min-height:0;display:flex}
+.zoneD .card{flex:1;cursor:pointer}
+.front{flex:1;display:flex;flex-direction:column;justify-content:center;gap:10px;text-align:center}
+.front .hint{font-size:13px;color:var(--muted)}
+.anki{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.anki .btn{padding:12px 2px;font-weight:600}
+.anki .s{background:var(--redSoft);color:var(--red);border-color:transparent}
+.anki .p{background:var(--raised);border-color:transparent}
+.anki .g{background:var(--accentSoft);color:var(--accent);border-color:transparent}
+.anki .d{background:var(--greenSoft);color:var(--green);border-color:transparent}
+/* sheet + toast */
+.sheet{position:fixed;inset:0;background:var(--shade);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.sheet .pn{background:var(--card);width:100%;max-width:460px;max-height:85%;overflow:auto;border-radius:18px 18px 0 0;box-sizing:border-box;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:8px}
+.sheet h3{margin:0;font-size:16px}
+.sheet pre{font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;word-break:break-word;background:var(--sunken);padding:10px;border-radius:10px;margin:0;color:var(--text2)}
+.opt{text-align:left;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 12px;font-size:14px}
+.opt.on{border-color:var(--accent);background:var(--accentSoft)}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:13px;padding:7px 14px;border-radius:999px;z-index:30;white-space:nowrap;transition:opacity .2s}
+@media (prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+
+<div class="tabs" id="tabs">
+  <button data-tab="A">ก ปัด</button><button data-tab="B">ข ทีละข้อ</button><button data-tab="C">ค แผงปุ่ม</button><button data-tab="D">ง พลิก</button>
+</div>
+<div class="app" id="app"></div>
+<div class="sheet" id="sheet" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const TODAY="2026-10-27";
+const GROUP={proj:"งานในโปรเจกต์",other:"งานอื่น",stale:"ไม่ขยับนาน"};
+const PRI=[["🔺","ด่วนสุด"],["⏫","สูง"],["🔼","กลาง"],["","ปกติ"],["🔽","ต่ำ"]];
+const FOLDERS=["Siriraj / Peddose","Siriraj / ตารางเวรเภสัช","Siriraj (ทั่วไป)","Omni","อนาคต / หุ้น","อนาคต / ai-r2r","ส่วนตัว","ยังไม่มีบ้าน"];
+const STUCK=["รอคนอื่น","ไม่รู้จะเริ่มยังไง","งานใหญ่เกิน","ไม่มีเวลา","ไม่มีแรง","เป็นงานยาวอยู่แล้ว"];
+const PROG={go:"ยังดี",stuck:"ติด",park:"พักไว้",done:"เสร็จ",skip:"ข้าม"};
+let id=0;
+const T=o=>Object.assign({id:++id,tags:"",pri:"",stuck:[],waiting:false,waitName:"",guess:"",due:"",sched:"",last:""},o);
+const S={v:"A",count:0,hist:[],a:null,step:0,sub:null,flip:false,
+ deck:[
+  T({g:"proj",t:"Mock UX UI และ จัดการโครงสร้างหลังบ้าน",tags:"#รอ #Siriraj/Peddose",folder:"Siriraj / Peddose",pri:"⏫",add:"2026-10-02",stuck:["2026-10-26 งานใหญ่กว่าที่คิด"],waiting:true}),
+  T({g:"proj",t:"เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)",tags:"#Siriraj/ตารางเวรเภสัช/wording #kluido",folder:"Siriraj / ตารางเวรเภสัช",add:"2026-10-20",due:"2026-10-21"}),
+  T({g:"proj",t:"หรือจะสมัครให้ทุกคนแล้วใช้ SAP ในการ login?",tags:"#Siriraj/ตารางเวรเภสัช",folder:"Siriraj / ตารางเวรเภสัช",add:"2026-10-12",stuck:["2026-10-26 เก็บไว้เป็นไอเดียแล้ว"]}),
+  T({g:"proj",t:"How to ดูหุ้นแบบรอบด้านและลึก",tags:"#อนาคต",folder:"อนาคต / หุ้น",pri:"🔼",add:"2026-09-29",sched:"2026-10-11",stuck:["2026-10-14 ยังติดงานที่มีคนรออยู่ และกลับห้องไปก็เหนื่อย"]}),
+  T({g:"proj",t:"Super-app รวมหลายโปรแกรมให้เปิดง่าย ไม่ต้องรีเฟรชข้ามแอป",tags:"#Siriraj",folder:"Siriraj (ทั่วไป)",add:"2026-10-12"}),
+  T({g:"other",t:"ช่วยดูระบบให้พี่ต่าย",folder:"ยังไม่มีบ้าน",add:"2026-10-27",due:"2026-10-29",guess:"พี่ต่าย"}),
+  T({g:"other",t:"ดูงานใน Gemini ให้พี่สวย",folder:"ยังไม่มีบ้าน",add:"2026-10-27",sched:"2026-10-27",guess:"พี่สวย"}),
+  T({g:"other",t:"นับยา",folder:"ยังไม่มีบ้าน",add:"2026-10-24"}),
+  T({g:"stale",t:"คู่มืออุปกรณ์?",tags:"#Siriraj #สักวัน",folder:"Siriraj (ทั่วไป)",add:"2026-09-29"}),
+  T({g:"stale",t:"จัดการ Note",tags:"#Siriraj",folder:"Siriraj (ทั่วไป)",pri:"🔼",add:"2026-09-29"}),
+  T({g:"stale",t:"เปลี่ยนแบตโน๊ตบุ๊ค",tags:"#สักวัน",folder:"ส่วนตัว",add:"2026-10-19"}),
+ ]};
+
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const days=d=>Math.round((new Date(TODAY)-new Date(d))/864e5);
+const MON=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const thai=d=>{const x=new Date(d);return x.getDate()+" "+MON[x.getMonth()]};
+const cur=()=>S.deck[0];
+const priLabel=e=>{const p=PRI.find(x=>x[0]===e);return (e?e+" ":"")+p[1]};
+function A(){ if(!S.a){const c=cur();S.a={progress:null,reason:"",pri:c.pri,waiting:c.waiting?"yes":"",name:c.waitName||c.guess||"",when:c.due?"date":"",date:c.due||"",ask:true,folder:c.folder};} return S.a; }
+
+function chips(c){
+  const out=[], lastS=c.stuck.length?c.stuck[c.stuck.length-1]:"";
+  out.push(`<span class="ch">อายุ ${days(c.add)} วัน</span>`);
+  const quiet=lastS?days(lastS.slice(0,10)):days(c.add);
+  out.push(`<span class="ch ${quiet>=14?"red":""}">${lastS?`ขยับ ${quiet} วันก่อน`:"ยังไม่เคยจดความคืบหน้า"}</span>`);
+  if(c.due){const l=days(c.due);out.push(`<span class="ch ${l>0?"red":""}">ส่ง ${thai(c.due)}${l>0?` เลย ${l} วัน`:""}</span>`);}
+  else if(c.sched) out.push(`<span class="ch">เริ่ม ${thai(c.sched)}</span>`);
+  if(c.pri) out.push(`<span class="ch">${priLabel(c.pri)}</span>`);
+  if(c.waiting&&!c.due) out.push(`<span class="ch amb">มีคนรอ แต่ไม่มีวันส่ง</span>`);
+  else if(c.waiting) out.push(`<span class="ch amb">${esc(c.waitName||"มีคน")}รอ</span>`);
+  else if(c.guess) out.push(`<span class="ch amb">ทำให้${esc(c.guess)}: เขารอไหม</span>`);
+  out.push(`<span class="ch ${c.last?"grn":""}">${c.last?(c.last===TODAY?"ทบทวนแล้ววันนี้":`ทบทวน ${days(c.last)} วันก่อน`):"ยังไม่เคยทบทวน"}</span>`);
+  return `<div class="chips">${out.join("")}</div>`;
+}
+const quote=c=>c.stuck.length?`<div class="quote">${esc(c.stuck[c.stuck.length-1].slice(11))}</div>`:"";
+const info=(c,big)=>`<div class="where">${esc(A().folder)}</div><h2 class="t ${big?"big":""}">${esc(c.t)}</h2>${chips(c)}`;
+
+function header(){
+  const c=cur();
+  return `<div class="hd"><button class="ic" data-act="undo" ${S.hist.length?"":"disabled"}>↶ ย้อน</button>
+   <div class="mid"><b>ทบทวนงาน</b><span>ทบทวนแล้ว ${S.count} ใบ กองนี้ ${S.deck.length} ใบ</span></div>
+   <button class="ic" data-act="sheet" data-v="note">โน้ต</button></div>
+   <div class="grp">${Object.entries(GROUP).map(([k,v])=>`<span class="${k===c.g?"on":""}">${v}</span>`).join("")}</div>`;
+}
+function toolsRow(){
+  const a=A();
+  return `<div class="tools">
+   <button class="tool" data-act="sheet" data-v="pri">ความสำคัญ<b>${priLabel(a.pri)}</b></button>
+   <button class="tool" data-act="sheet" data-v="wait">มีคนรอเรา<b>${a.waiting==="yes"?esc(a.name||"มี"):a.waiting==="no"?"ไม่มี":"ยังไม่ตอบ"}</b></button>
+   <button class="tool" data-act="sheet" data-v="move">อยู่ที่<b>${esc(a.folder)}</b></button></div>`;
+}
+
+const VIEWS={
+ A(c){return `${header()}<div class="main">
+   <div class="zoneA"><div class="wrapA"><div class="stack"></div><div class="card" id="sw" style="position:relative">${info(c,true)}${quote(c)}<span class="stamp" id="stamp"></span></div></div></div>
+   <div class="dirs"><button class="btn stuck" data-act="go" data-v="stuck">← ติด</button><button class="btn" data-act="go" data-v="park">↓ พักไว้</button><button class="btn done" data-act="go" data-v="done">↑ เสร็จ</button><button class="btn" data-act="go" data-v="go">ยังดี →</button></div>
+   ${toolsRow()}</div>`;},
+ B(c){
+  const a=A(), st=S.step;
+  let q="",body="";
+  if(st===0&&S.sub!=="reason"){q="ตอนนี้เป็นยังไง";body=`<div class="grid2">${["go","stuck","park","done"].map(k=>`<button class="btn ${a.progress===k?"on":""}" data-act="b-prog" data-v="${k}">${PROG[k]}</button>`).join("")}</div>`;}
+  else if(st===0){q="ติดเพราะอะไร";body=`<div class="grid2">${STUCK.map(r=>`<button class="btn ${a.reason===r?"on":""}" data-act="b-reason" data-v="${r}">${r}</button>`).join("")}</div>`;}
+  else if(st===1){q="ความสำคัญถูกไหม";body=`<div class="grid2">${PRI.map(([e,l])=>`<button class="btn ${a.pri===e?"on":""}" data-act="b-pri" data-v="${e}">${e} ${l}${c.pri===e?'<span class="now">ตอนนี้</span>':""}</button>`).join("")}</div>`;}
+  else if(st===2&&S.sub!=="who"){q="มีคนรอเราไหม";body=`${c.guess&&!c.waiting?`<div class="chips" style="justify-content:center"><span class="ch amb">ชื่องานมี ${esc(c.guess)}</span></div>`:""}<div class="grid2"><button class="btn ${a.waiting==="no"?"on":""}" data-act="b-wait" data-v="no">ไม่มี</button><button class="btn ${a.waiting==="yes"?"on":""}" data-act="b-wait" data-v="yes">มี</button></div>`;}
+  else if(st===2){q="ใครรอ และต้องการเมื่อไร";body=waitForm(a)+`<button class="btn pri" data-act="b-next">ต่อไป</button>`;}
+  else {q="อยู่ถูกที่ไหม";body=`<div class="grid2"><button class="btn on" data-act="b-move" data-v="${esc(a.folder)}">ถูกแล้ว<span class="now">${esc(a.folder)}</span></button>${FOLDERS.filter(f=>f!==a.folder).map(f=>`<button class="btn" data-act="b-move" data-v="${f}">${f}</button>`).join("")}</div>`;}
+  return `${header()}<div class="main"><div class="card" id="sw">${info(c,false)}</div>
+   <div class="qbox"><div class="dots">${[0,1,2,3].map(i=>`<i class="${i<=st?"on":""}"></i>`).join("")}</div><div class="qq">${q}</div>${body}</div>
+   <div class="row"><button class="btn" data-act="b-back">↶ ข้อก่อน</button><button class="btn" data-act="go" data-v="skip">ข้ามใบนี้</button></div></div>`;},
+ C(c){
+  const a=A();
+  return `${header()}<div class="main"><div class="card" id="sw">${info(c,false)}${quote(c)}</div>
+   <div class="panel">
+    <div class="lbl">ความคืบหน้า</div>
+    <div class="seg">${["go","stuck","park","done"].map(k=>`<button class="${a.progress===k?"on":""}" data-act="c-prog" data-v="${k}">${k==="stuck"&&a.reason?"ติด: "+a.reason:PROG[k]}</button>`).join("")}</div>
+    <div class="lbl">ความสำคัญ</div>
+    <div class="seg">${PRI.map(([e,l])=>`<button class="${a.pri===e?"on":""}" data-act="c-pri" data-v="${e}">${e||"ปกติ"}</button>`).join("")}</div>
+    <div class="row"><button class="linkrow" data-act="sheet" data-v="wait"><span>คนรอ: ${a.waiting==="yes"?esc(a.name||"มี")+(a.when==="date"&&a.date?" ส่ง "+thai(a.date):a.when==="ask"?" ยังไม่รู้วัน":""):a.waiting==="no"?"ไม่มี":"ยังไม่ตอบ"}</span><em>แก้</em></button>
+     <button class="linkrow" data-act="sheet" data-v="move"><span>${esc(a.folder)}</span><em>ย้าย</em></button></div>
+   </div></div>
+   <div class="row"><button class="btn" data-act="go" data-v="skip" style="flex:0 0 30%">ข้าม</button><button class="btn pri" data-act="c-save">บันทึก ใบถัดไป</button></div>`;},
+ D(c){
+  const front=`<div class="front"><div class="where">${esc(A().folder)}</div><h2 class="t big">${esc(c.t)}</h2><div class="hint">นึกก่อนว่างานนี้ไปถึงไหน แล้วแตะเพื่อพลิก</div></div>`;
+  const back=`${info(c,false)}${quote(c)}<div style="flex:1"></div>${toolsRow()}`;
+  return `${header()}<div class="main"><div class="zoneD"><div class="card" id="sw" ${S.flip?"":'data-act="flip"'}>${S.flip?back:front}</div></div>
+   ${S.flip?`<div class="anki"><button class="btn s" data-act="go" data-v="stuck">ติด</button><button class="btn p" data-act="go" data-v="park">พักไว้</button><button class="btn g" data-act="go" data-v="go">ยังดี</button><button class="btn d" data-act="go" data-v="done">เสร็จ</button></div>`
+     :`<button class="btn pri" data-act="flip">พลิกการ์ด</button>`}</div>`;},
+};
+
+function waitForm(a){
+  return `<input type="text" id="who" value="${esc(a.name)}" placeholder="ใครรอ เช่น พี่เอ">
+   <div class="row"><button class="btn ${a.when==="date"?"on":""}" data-act="when" data-v="date">รู้วันส่ง</button><button class="btn ${a.when==="ask"?"on":""}" data-act="when" data-v="ask">ยังไม่รู้</button></div>
+   ${a.when==="date"?`<input type="date" id="date" value="${a.date}">`:""}
+   ${a.when==="ask"?`<label class="check"><input type="checkbox" id="ask" ${a.ask?"checked":""}><span>เพิ่มงาน "ถาม${esc(a.name||"เขา")}ว่าต้องการเมื่อไร" ไว้วันนี้</span></label>`:""}`;
+}
+
+function render(){
+  document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("on",b.dataset.tab===S.v));
+  document.getElementById("app").innerHTML=VIEWS[S.v](cur());
+  if(S.v==="A") swipe();
+}
+
+/* ---- sheets ---- */
+function sheet(kind,then){
+  const a=A(), c=cur(), s=document.getElementById("sheet");
+  let h="";
+  if(kind==="reason") h=`<h3>ติดเพราะอะไร</h3>${STUCK.map(r=>`<button class="opt" data-pick="${r}">${r}</button>`).join("")}`;
+  if(kind==="pri") h=`<h3>ความสำคัญ</h3>${PRI.map(([e,l])=>`<button class="opt ${a.pri===e?"on":""}" data-pick="${e}">${e} ${l}${c.pri===e?" (ตอนนี้)":""}</button>`).join("")}`;
+  if(kind==="move") h=`<h3>ย้ายไปที่</h3>${FOLDERS.map(f=>`<button class="opt ${a.folder===f?"on":""}" data-pick="${f}">${f}</button>`).join("")}`;
+  if(kind==="wait") h=`<h3>มีคนรอเราไหม</h3><div class="row"><button class="btn ${a.waiting==="no"?"on":""}" data-act="w" data-v="no">ไม่มี</button><button class="btn ${a.waiting==="yes"?"on":""}" data-act="w" data-v="yes">มี</button></div>${a.waiting==="yes"?waitForm(a):""}<button class="btn pri" data-close>ตกลง</button>`;
+  if(kind==="note") h=`<h3>จะเขียนลงโน้ตแบบนี้ (ทาง ข)</h3><pre>${esc(preview(c,a))}</pre><button class="btn" data-close>ปิด</button>`;
+  s.innerHTML=`<div class="pn" role="dialog">${h}</div>`; s.hidden=false;
+  s.onclick=e=>{
+    const t=e.target.closest("button,input,label");
+    if(e.target===s||(t&&t.hasAttribute("data-close"))){s.hidden=true;render();return;}
+    if(t&&t.dataset.pick!==undefined){const v=t.dataset.pick;
+      if(kind==="reason"){a.reason=v;a.progress="stuck";} if(kind==="pri")a.pri=v; if(kind==="move")a.folder=v;
+      s.hidden=true; if(then)then(); else render(); return;}
+    if(t&&t.dataset.act==="w"){a.waiting=t.dataset.v;sheet("wait");return;}
+    if(t&&t.dataset.act==="when"){a.when=t.dataset.v;sheet("wait");return;}
+  };
+  s.oninput=e=>{if(e.target.id==="who")a.name=e.target.value;};
+  s.onchange=e=>{if(e.target.id==="date")a.date=e.target.value;if(e.target.id==="ask")a.ask=e.target.checked;};
+}
+
+function preview(c,a){
+  if(a.progress==="done") return `- [x] ${c.t} ${c.tags} ➕ ${c.add} ✅ ${TODAY}`.replace(/\s+/g," ");
+  let tags=c.tags.split(" ").filter(x=>x&&!x.startsWith("#รอ"));
+  if(a.progress==="park"&&!tags.includes("#สักวัน")) tags.push("#สักวัน");
+  if(a.waiting==="yes") tags.unshift("#รอ"+(a.name?"/"+a.name.replace(/\s/g,""):""));
+  let line=`- [ ] ${c.t} ${tags.join(" ")}`.trim();
+  if(a.pri) line+=" "+a.pri;
+  line+=` ➕ ${c.add}`; if(c.sched) line+=` ⏳ ${c.sched}`;
+  const due=a.waiting==="yes"&&a.when==="date"&&a.date?a.date:c.due; if(due) line+=` 📅 ${due}`;
+  const out=[line]; c.stuck.forEach(s=>out.push("    - ค้าง "+s));
+  if(a.progress==="stuck"&&a.reason) out.push(`    - ค้าง ${TODAY} ${a.reason}`);
+  out.push(`    - ทบทวน ${TODAY}`);
+  if(a.waiting==="yes"&&a.when==="ask"&&a.ask) out.push("",`- [ ] ถาม${a.name||"เขา"}ว่าต้องการ "${c.t}" เมื่อไร ➕ ${TODAY} ⏳ ${TODAY}`);
+  return out.join("\n");
+}
+
+/* ---- commit and undo ---- */
+function commit(kind){
+  const c=cur(), a=A();
+  if(kind==="stuck"&&!a.reason){sheet("reason",()=>commit("stuck"));return;}
+  if(kind!=="skip") a.progress=kind;
+  S.hist.push({snap:JSON.stringify({deck:S.deck,count:S.count}),a:JSON.parse(JSON.stringify(a))});
+  if(kind!=="skip"){
+    c.pri=a.pri; c.folder=a.folder;
+    if(a.waiting==="yes"){c.waiting=true;c.guess="";c.waitName=a.name;if(a.when==="date"&&a.date)c.due=a.date;}
+    if(a.waiting==="no"){c.waiting=false;c.guess="";}
+    if(kind==="stuck") c.stuck.push(`${TODAY} ${a.reason}`);
+    if(kind==="park"&&!c.tags.includes("#สักวัน")) c.tags+=" #สักวัน";
+    if(a.waiting==="yes"&&a.when==="ask"&&a.ask) S.deck.push(T({g:"other",t:`ถาม${a.name||"เขา"}ว่าต้องการ "${c.t}" เมื่อไร`,folder:a.folder,add:TODAY,sched:TODAY}));
+  }
+  c.last=TODAY;
+  const el=document.getElementById("sw"); if(el) el.classList.add("out");
+  setTimeout(()=>{const x=S.deck.shift(); if(kind!=="done") S.deck.push(x); S.count++; S.a=null;S.step=0;S.sub=null;S.flip=false;
+    render(); toast(kind==="done"?"เสร็จ ออกจากกองแล้ว":kind==="skip"?"ข้าม ไปไว้ท้ายกอง":`${PROG[kind]} ไปไว้ท้ายกอง`);},220);
+}
+function undo(){
+  const h=S.hist.pop(); if(!h) return;
+  const s=JSON.parse(h.snap); S.deck=s.deck; S.count=s.count; S.a=h.a; S.step=0; S.sub=null; S.flip=true;
+  render(); toast("กลับมาใบก่อนหน้า แก้ได้เลย");
+}
+let tt; function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,1600);}
+
+/* ---- swipe (A) ---- */
+function swipe(){
+  const el=document.getElementById("sw"), st=document.getElementById("stamp"); let x0,y0,on=false;
+  const pick=(dx,dy)=>Math.abs(dx)>Math.abs(dy)?(dx>80?"go":dx<-80?"stuck":null):(dy<-80?"done":dy>80?"park":null);
+  const col={go:"var(--accent)",stuck:"var(--red)",done:"var(--green)",park:"var(--muted)"};
+  el.onpointerdown=e=>{on=true;x0=e.clientX;y0=e.clientY;el.setPointerCapture(e.pointerId);el.style.transition="none";};
+  el.onpointermove=e=>{if(!on)return;const dx=e.clientX-x0,dy=e.clientY-y0;el.style.transform=`translate(${dx}px,${dy}px) rotate(${dx/20}deg)`;
+    const k=pick(dx,dy);st.style.opacity=k?1:0;if(k){st.textContent=PROG[k];st.style.color=col[k];st.style.borderColor=col[k];}};
+  el.onpointerup=e=>{if(!on)return;on=false;const k=pick(e.clientX-x0,e.clientY-y0);el.style.transition="";el.style.transform="";st.style.opacity=0;if(k)commit(k);};
+  el.onpointercancel=()=>{on=false;el.style.transition="";el.style.transform="";st.style.opacity=0;};
+}
+
+/* ---- taps ---- */
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-act],[data-tab]"); if(!t||t.closest("#sheet")) return;
+  if(t.dataset.tab){S.v=t.dataset.tab;S.step=0;S.sub=null;S.flip=false;render();return;}
+  const v=t.dataset.v, a=A();
+  switch(t.dataset.act){
+    case "undo": undo(); break;
+    case "sheet": sheet(v); break;
+    case "go": commit(v); break;
+    case "flip": S.flip=true; render(); break;
+    case "b-prog": a.progress=v; if(v==="done"){commit("done");break;} if(v==="stuck"){a.reason="";S.sub="reason";}else{S.step=1;} render(); break;
+    case "b-reason": a.reason=v; S.sub=null; S.step=1; render(); break;
+    case "b-pri": a.pri=v; S.step=2; render(); break;
+    case "b-wait": a.waiting=v; if(v==="yes"){S.sub="who";}else{S.step=3;} render(); break;
+    case "when": a.when=v; render(); break;
+    case "b-next": S.sub=null; S.step=3; render(); break;
+    case "b-move": a.folder=v; commit(a.progress||"go"); break;
+    case "b-back": if(S.sub){S.sub=null;render();} else if(S.step>0){S.step--;render();} else undo(); break;
+    case "c-prog": a.progress=v; if(v==="stuck"){a.reason="";sheet("reason");} else {a.reason="";render();} break;
+    case "c-pri": a.pri=v; render(); break;
+    case "c-save": commit(a.progress||"go"); break;
+  }
+});
+document.addEventListener("input",e=>{if(e.target.id==="who"&&!e.target.closest("#sheet"))A().name=e.target.value;});
+document.addEventListener("change",e=>{if(e.target.closest("#sheet"))return;if(e.target.id==="date")A().date=e.target.value;if(e.target.id==="ask")A().ask=e.target.checked;});
+render();
+</script>

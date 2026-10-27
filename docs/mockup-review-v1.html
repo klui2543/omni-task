@@ -1,0 +1,243 @@
+<title>Omni ทบทวนงาน</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: one phone column; a deck of cards with the current card on top, questions stacked inside it, two actions pinned under it. Graphite palette from the app. */
+:root{
+  --bg:#F2F3F5; --card:#FFFFFF; --line:#E1E3E8; --raised:#ECEEF1; --sunken:#EBEDF0;
+  --text:#1B1E23; --text2:#3C424C; --muted:#667080;
+  --accent:#3D4F6E; --accentSoft:#E6EAF1; --onAccent:#FFFFFF;
+  --red:#BF4B47; --redSoft:#FBE9E8; --amber:#9A6A12; --amberSoft:#F5F1E6; --green:#4C8566; --greenSoft:#E3F0E9;
+  --sans:"IBM Plex Sans Thai",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E0E10; --card:#161618; --line:#26262A; --raised:#1E1E22; --sunken:#121214;
+  --text:#ECECEE; --text2:#C4C4C9; --muted:#8E8E96;
+  --accent:#9DB4D3; --accentSoft:#1D2330; --onAccent:#0E1118;
+  --red:#D9726C; --redSoft:#2D1B1A; --amber:#C4A56A; --amberSoft:#26221A; --green:#7FAE93; --greenSoft:#1A2620; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E0E10; --card:#161618; --line:#26262A; --raised:#1E1E22; --sunken:#121214;
+  --text:#ECECEE; --text2:#C4C4C9; --muted:#8E8E96;
+  --accent:#9DB4D3; --accentSoft:#1D2330; --onAccent:#0E1118;
+  --red:#D9726C; --redSoft:#2D1B1A; --amber:#C4A56A; --amberSoft:#26221A; --green:#7FAE93; --greenSoft:#1A2620; color-scheme:dark}
+html,body{background:var(--bg);color:var(--text)}
+[hidden]{display:none!important}
+body{font-family:var(--sans);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 32px}
+.wrap{max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.top h1{font-size:19px;font-weight:600;margin:0}
+.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{height:4px;background:var(--raised);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .25s}
+.groups{display:flex;gap:6px;flex-wrap:wrap}
+.gp{font-size:12px;padding:2px 10px;border-radius:999px;background:var(--raised);color:var(--muted)}
+.gp.on{background:var(--accentSoft);color:var(--accent);font-weight:600}
+.deck{position:relative;padding-bottom:10px}
+.deck::before,.deck::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:20px;border:1px solid var(--line);border-top:0;border-radius:0 0 14px 14px;background:var(--card)}
+.deck::before{left:22px;right:22px;bottom:-6px;opacity:.6}
+.card{position:relative;z-index:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:14px;transition:transform .28s,opacity .28s}
+.card.out{transform:translateY(24px) scale(.96);opacity:0}
+.where{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.where b{color:var(--text2);font-weight:500}
+.title{font-size:18px;font-weight:600;margin:0;line-height:1.4;text-wrap:balance}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
+.meta dt{color:var(--muted)} .meta dd{margin:0;color:var(--text2);min-width:0}
+.warn{color:var(--red)} .ok{color:var(--green)}
+.flag{border-radius:10px;padding:10px 12px;font-size:14px;background:var(--amberSoft);color:var(--text);border:1px solid var(--line)}
+.flag b{color:var(--amber)}
+.q{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.q h3{margin:0;font-size:14px;font-weight:600;color:var(--text2)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:14px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--onAccent)}
+.chip:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sub{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:var(--sunken)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=text],input[type=date]{font:inherit;font-size:14px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);min-width:0}
+label.check{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.move{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
+.move span{min-width:0}
+.btn{font:inherit;font-size:15px;padding:10px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--onAccent);font-weight:600;flex:1}
+.btn.small{font-size:13px;padding:5px 12px}
+.actions{display:flex;gap:8px}
+.peek{font-size:12px;color:var(--muted)}
+.peek summary{cursor:pointer}
+.peek pre{font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;word-break:break-word;background:var(--sunken);padding:8px;border-radius:8px;color:var(--text2);margin:6px 0 0}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.sheet .panel{background:var(--card);width:100%;max-width:460px;border-radius:16px 16px 0 0;padding:16px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:6px}
+.sheet h3{margin:0 0 6px;font-size:16px}
+.opt{text-align:left;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.opt.on{border-color:var(--accent);background:var(--accentSoft)}
+.done{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.done h2{margin:0;font-size:18px}
+.done ul{margin:0;padding-left:18px;color:var(--text2)}
+.note{font-size:12.5px;color:var(--muted);line-height:1.6}
+@media (prefers-reduced-motion:reduce){.card,.bar i{transition:none}}
+</style>
+
+<div class="wrap">
+  <div class="top"><h1>ทบทวนงาน</h1><span class="count" id="count"></span></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="groups" id="groups"></div>
+  <div id="stage"></div>
+  <p class="note">mock เท่านั้น ใช้งานจริงจากโน้ต 27 ต.ค. กด "ทบทวนแล้ว" หรือ "ข้าม" การ์ดจะถูกสับไปไว้ท้ายกอง ไม่มีการเว้นวัน รอบละ 7 ใบ ช่อง "จะเขียนลงโน้ต" มีไว้ให้ดูใน mock ส่วนที่จดวันทบทวนยังรอ Klui เคาะ</p>
+</div>
+<div class="sheet" id="sheet" hidden></div>
+
+<script>
+const TODAY = new Date("2026-10-27");
+const G = {proj:"งานในโปรเจกต์", other:"งานอื่น", stale:"ไม่ขยับนาน"};
+const PRI = [["🔺","ด่วนสุด"],["⏫","สูง"],["🔼","กลาง"],["","ปกติ"],["🔽","ต่ำ"]];
+const FOLDERS = ["Siriraj / Peddose","Siriraj / ตารางเวรเภสัช","Siriraj (ทั่วไป)","Omni","อนาคต / หุ้น","อนาคต / ai-r2r","ส่วนตัว","ยังไม่มีบ้าน"];
+const STUCK = ["รอคนอื่น","ไม่รู้จะเริ่มยังไง","งานใหญ่เกิน","ไม่มีเวลา","ไม่มีแรง","เป็นงานยาวอยู่แล้ว"];
+const deck = [
+ {g:"proj", t:"Mock UX UI และ จัดการโครงสร้างหลังบ้าน", tags:"#รอ #Siriraj/Peddose", folder:"Siriraj / Peddose", pri:"⏫", add:"2026-10-02", stuck:["2026-10-26 งานใหญ่กว่าที่คิด"], waitName:"", waiting:true},
+ {g:"proj", t:"เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)", tags:"#Siriraj/ตารางเวรเภสัช/wording #kluido", folder:"Siriraj / ตารางเวรเภสัช", pri:"", add:"2026-10-20", due:"2026-10-21"},
+ {g:"proj", t:"หรือจะสมัครให้ทุกคนแล้วใช้ SAP ในการ login?", tags:"#Siriraj/ตารางเวรเภสัช", folder:"Siriraj / ตารางเวรเภสัช", pri:"", add:"2026-10-12", stuck:["2026-10-26 เก็บไว้เป็นไอเดียแล้ว"]},
+ {g:"proj", t:"How to ดูหุ้นแบบรอบด้านและลึก", tags:"#อนาคต", folder:"อนาคต / หุ้น", pri:"🔼", add:"2026-09-29", sched:"2026-10-11", stuck:["2026-10-14 ยังติดงานที่มีคนรออยู่ และกลับห้องไปก็เหนื่อย"]},
+ {g:"proj", t:"Super-app รวมหลายโปรแกรมให้เปิดง่าย ไม่ต้องรีเฟรชข้ามแอป", tags:"#Siriraj", folder:"Siriraj (ทั่วไป)", pri:"", add:"2026-10-12"},
+ {g:"other", t:"ช่วยดูระบบให้พี่ต่าย", tags:"", folder:"ยังไม่มีบ้าน", pri:"", add:"2026-10-27", due:"2026-10-29", guess:"พี่ต่าย"},
+ {g:"other", t:"ดูงานใน Gemini ให้พี่สวย", tags:"", folder:"ยังไม่มีบ้าน", pri:"", add:"2026-10-27", sched:"2026-10-27", guess:"พี่สวย"},
+ {g:"other", t:"นับยา", tags:"", folder:"ยังไม่มีบ้าน", pri:"", add:"2026-10-24"},
+ {g:"stale", t:"คู่มืออุปกรณ์?", tags:"#Siriraj #สักวัน", folder:"Siriraj (ทั่วไป)", pri:"", add:"2026-09-29"},
+ {g:"stale", t:"จัดการ Note", tags:"#Siriraj", folder:"Siriraj (ทั่วไป)", pri:"🔼", add:"2026-09-29"},
+ {g:"stale", t:"เปลี่ยนแบตโน๊ตบุ๊ค", tags:"#สักวัน", folder:"ส่วนตัว", pri:"", add:"2026-10-19"},
+];
+const ROUND = 7;
+let done = 0, log = [];
+const days = d => Math.round((TODAY - new Date(d)) / 864e5);
+const thai = d => { const x=new Date(d); return x.getDate()+" "+["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."][x.getMonth()]; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function fresh(c){ // answers start from what the note says today
+  return {progress:null, reason:null, pri:c.pri, waiting:c.waiting?"yes":(c.guess?null:null), name:c.waitName||c.guess||"", when:c.due?"date":null, date:c.due||"", ask:true, folder:c.folder};
+}
+let a;
+
+function lastMove(c){ if(c.stuck&&c.stuck.length){const s=c.stuck[c.stuck.length-1];return {d:s.slice(0,10),txt:s.slice(11)};} return null; }
+
+function render(){
+  document.getElementById("count").textContent = done>=ROUND ? "ครบรอบ" : `ใบ ${done+1} จาก ${ROUND}`;
+  document.getElementById("bar").style.width = Math.min(done,ROUND)/ROUND*100+"%";
+  const st = document.getElementById("stage");
+  if(done>=ROUND){ document.getElementById("groups").innerHTML=""; st.innerHTML = summary(); return; }
+  const c = deck[0];
+  if(!a) a = fresh(c);
+  document.getElementById("groups").innerHTML = Object.entries(G).map(([k,v])=>`<span class="gp ${k===c.g?"on":""}">${v}</span>`).join("");
+  const lm = lastMove(c), age = days(c.add), quiet = lm ? days(lm.d) : age;
+  const late = c.due && days(c.due)>0;
+  let flag = "";
+  if(c.waiting && !c.due) flag = `<div class="flag"><b>มีคนรอ แต่ไม่มีวันส่ง</b><br>ใครรอ และเขาต้องการเมื่อไร</div>`;
+  else if(c.guess && a.waiting===null) flag = `<div class="flag"><b>งานนี้ทำให้${esc(c.guess)}</b><br>${esc(c.guess)}รองานนี้อยู่ไหม</div>`;
+  st.innerHTML = `<div class="deck"><article class="card" id="card">
+    <div class="where">อยู่ที่ <b>${esc(a.folder)}</b></div>
+    <h2 class="title">${esc(c.t)}</h2>
+    <dl class="meta">
+      <dt>อายุงาน</dt><dd>${age} วัน (จดเมื่อ ${thai(c.add)})</dd>
+      <dt>ขยับล่าสุด</dt><dd class="${quiet>=14?"warn":""}">${lm?`${quiet} วันก่อน: ${esc(lm.txt)}`:"ยังไม่เคยจดความคืบหน้า"}</dd>
+      <dt>กำหนด</dt><dd class="${late?"warn":""}">${c.due?`ส่ง ${thai(c.due)}${late?` (เลยมา ${days(c.due)} วัน)`:""}`:c.sched?`เริ่ม ${thai(c.sched)}`:"ไม่มี"}</dd>
+    </dl>
+    ${flag}
+    <section class="q"><h3>ความคืบหน้า</h3>
+      <div class="chips">${[["go","เดินอยู่"],["stuck","ติด"],["done","เสร็จแล้ว"],["park","พักไว้ก่อน"]].map(([k,v])=>`<button class="chip ${a.progress===k?"on":""}" data-p="${k}">${v}</button>`).join("")}</div>
+      ${a.progress==="stuck"?`<div class="sub"><div class="chips">${STUCK.map(r=>`<button class="chip ${a.reason===r?"on":""}" data-r="${r}">${r}</button>`).join("")}</div></div>`:""}
+    </section>
+    <section class="q"><h3>ความสำคัญถูกไหม</h3>
+      <div class="chips">${PRI.map(([e,l])=>`<button class="chip ${a.pri===e?"on":""}" data-pri="${e}">${e?e+" ":""}${l}</button>`).join("")}</div>
+    </section>
+    <section class="q"><h3>มีคนรอเราไหม</h3>
+      <div class="chips"><button class="chip ${a.waiting==="no"?"on":""}" data-w="no">ไม่มี</button><button class="chip ${a.waiting==="yes"?"on":""}" data-w="yes">มี</button></div>
+      ${a.waiting==="yes"?`<div class="sub">
+        <div class="row"><span>ใคร</span><input type="text" id="who" value="${esc(a.name)}" placeholder="เช่น พี่เอ" size="12"></div>
+        <div class="row"><span>เขาต้องการเมื่อไร</span>
+          <button class="chip ${a.when==="date"?"on":""}" data-when="date">รู้วัน</button><button class="chip ${a.when==="ask"?"on":""}" data-when="ask">ยังไม่รู้</button></div>
+        ${a.when==="date"?`<div class="row"><input type="date" id="date" value="${a.date}"></div>`:""}
+        ${a.when==="ask"?`<label class="check"><input type="checkbox" id="ask" ${a.ask?"checked":""}> <span>เพิ่มงาน "ถาม${esc(a.name||"เขา")}ว่าต้องการเมื่อไร" ไว้วันนี้</span></label>`:""}
+      </div>`:""}
+    </section>
+    <section class="q"><h3>อยู่ถูกที่ไหม</h3>
+      <div class="move"><span>${esc(a.folder)}</span><button class="btn small" id="mv">ย้าย</button></div>
+    </section>
+    <details class="peek"><summary>จะเขียนลงโน้ต (ดูใน mock)</summary><pre>${esc(preview(c))}</pre></details>
+  </article></div>
+  <div class="actions"><button class="btn" id="skip">ข้าม</button><button class="btn primary" id="next">ทบทวนแล้ว ใบถัดไป</button></div>`;
+  bind(c);
+}
+
+function preview(c){
+  if(a.progress==="done") return `- [x] ${c.t} ${c.tags} ... ✅ 2026-10-27`;
+  let tags = c.tags.split(" ").filter(x=>x && !x.startsWith("#รอ"));
+  if(a.progress==="park" && !tags.includes("#สักวัน")) tags.push("#สักวัน");
+  if(a.waiting==="yes") tags.unshift("#รอ"+(a.name?"/"+a.name.replace(/\s/g,""):""));
+  let line = `- [ ] ${c.t} ${tags.join(" ")}`.trim();
+  if(a.pri) line += " "+a.pri;
+  line += ` ➕ ${c.add}`;
+  if(c.sched) line += ` ⏳ ${c.sched}`;
+  const due = a.waiting==="yes"&&a.when==="date"&&a.date ? a.date : c.due;
+  if(due) line += ` 📅 ${due}`;
+  let out = [line];
+  (c.stuck||[]).forEach(s=>out.push("    - ค้าง "+s));
+  if(a.progress==="stuck"&&a.reason) out.push("    - ค้าง 2026-10-27 "+a.reason);
+  out.push("    - (วันทบทวน 2026-10-27: ที่จดรอ Klui เคาะ)");
+  if(a.waiting==="yes"&&a.when==="ask"&&a.ask) out.push("", `- [ ] ถาม${a.name||"เขา"}ว่าต้องการ "${c.t}" เมื่อไร ➕ 2026-10-27 ⏳ 2026-10-27`);
+  return out.join("\n");
+}
+
+function bind(c){
+  const q = s => document.querySelectorAll(s);
+  q("[data-p]").forEach(b=>b.onclick=()=>{a.progress=b.dataset.p; if(a.progress!=="stuck")a.reason=null; render();});
+  q("[data-r]").forEach(b=>b.onclick=()=>{a.reason=b.dataset.r; render();});
+  q("[data-pri]").forEach(b=>b.onclick=()=>{a.pri=b.dataset.pri; render();});
+  q("[data-w]").forEach(b=>b.onclick=()=>{a.waiting=b.dataset.w; render();});
+  q("[data-when]").forEach(b=>b.onclick=()=>{a.when=b.dataset.when; render();});
+  const who=document.getElementById("who"); if(who) who.oninput=()=>{a.name=who.value; const p=document.querySelector(".peek pre"); if(p)p.textContent=preview(c);};
+  const dt=document.getElementById("date"); if(dt) dt.onchange=()=>{a.date=dt.value; render();};
+  const ask=document.getElementById("ask"); if(ask) ask.onchange=()=>{a.ask=ask.checked; render();};
+  document.getElementById("mv").onclick=()=>sheet();
+  document.getElementById("skip").onclick=()=>next(c,true);
+  document.getElementById("next").onclick=()=>next(c,false);
+}
+
+function sheet(){
+  const s=document.getElementById("sheet");
+  s.innerHTML=`<div class="panel" role="dialog" aria-label="ย้ายไปที่"><h3>ย้ายไปที่</h3>${FOLDERS.map(f=>`<button class="opt ${f===a.folder?"on":""}" data-f="${f}">${f}</button>`).join("")}<button class="btn" id="cl">ปิด</button></div>`;
+  s.hidden=false;
+  s.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{a.folder=b.dataset.f; s.hidden=true; render();});
+  document.getElementById("cl").onclick=()=>s.hidden=true;
+  s.onclick=e=>{if(e.target===s)s.hidden=true;};
+}
+
+function next(c,skip){
+  const changed=[];
+  if(!skip){
+    if(a.progress==="done") changed.push("เสร็จ");
+    if(a.progress==="park") changed.push("พักไว้");
+    if(a.progress==="stuck") changed.push("ติด"+(a.reason?": "+a.reason:""));
+    if(a.pri!==c.pri) changed.push("เปลี่ยนความสำคัญ");
+    if(a.waiting==="yes"&&!c.waiting) changed.push("ติด #รอ");
+    if(a.waiting==="yes"&&a.when==="ask"&&a.ask) changed.push("เพิ่มงานถามวันส่ง");
+    if(a.waiting==="yes"&&a.when==="date"&&a.date&&a.date!==c.due) changed.push("ใส่วันส่ง");
+    if(a.folder!==c.folder) changed.push("ย้ายไป "+a.folder);
+    // what the note would hold after this card
+    c.pri=a.pri; c.folder=a.folder; if(a.waiting==="yes"){c.waiting=true; c.guess=null; c.waitName=a.name; if(a.when==="date"&&a.date)c.due=a.date;}
+    if(a.progress==="stuck"&&a.reason){c.stuck=(c.stuck||[]).concat("2026-10-27 "+a.reason);}
+  }
+  log.push({t:c.t, skip, changed});
+  const card=document.getElementById("card"); card.classList.add("out");
+  setTimeout(()=>{ const x=deck.shift(); if(a.progress!=="done") deck.push(x); a=null; done++; render(); window.scrollTo({top:0}); }, 260);
+}
+
+function summary(){
+  const ch=log.filter(l=>l.changed.length), sk=log.filter(l=>l.skip);
+  return `<div class="done"><h2>ทบทวนครบ ${ROUND} ใบ</h2>
+    <ul>${log.map(l=>`<li>${esc(l.t)}: ${l.skip?"ข้าม":l.changed.length?esc(l.changed.join(", ")):"ยังดีอยู่"}</li>`).join("")}</ul>
+    <p class="note">แก้ ${ch.length} งาน ข้าม ${sk.length} งาน ทุกใบถูกสับไปท้ายกอง (เสร็จแล้วออกจากกอง) รอบหน้าเริ่มที่ "${esc(deck[0].t)}"</p>
+    <div class="actions"><button class="btn" id="stop">พอแค่นี้</button><button class="btn primary" id="more">ทบทวนต่ออีก ${ROUND} ใบ</button></div></div>`;
+}
+document.addEventListener("click",e=>{
+  if(e.target.id==="more"){done=0;log=[];render();}
+  if(e.target.id==="stop"){document.getElementById("stage").innerHTML=`<div class="done"><h2>เก็บแล้ว</h2><p class="note">กองไพ่จำลำดับไว้ เปิดครั้งหน้าเริ่มที่ใบถัดไป</p></div>`;}
+});
+render();
+</script>
