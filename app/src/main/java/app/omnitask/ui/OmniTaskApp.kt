@@ -288,6 +288,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                                 state, vm, open, menu,
                                 onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE },
                                 onAsk = { if (NewLook.on) vm.deskType(it) else vm.askAi(it); screen = Screen.AI },
+                                onSecretary = { screen = Screen.AI },
                             )
                         }
                         Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }

@@ -90,20 +90,13 @@ object SecretaryDesk {
     /** The buttons when the chat opens, picked from the time of day, tomorrow and the overdue work. */
     fun opening(ctx: Ctx): Reply {
         val late = lateTasks(ctx)
-        val tomorrow = ownEvents(ctx, ctx.today.plusDays(1))
         val evening = ctx.now.hour >= 17
         val brief = SecretaryBook.brief(ctx.tasks, ctx.claudeLog, ctx.today).takeUnless { it.isEmpty }
+        // Two lines at most (owner's pick, 2026-10-27): tomorrow, the deadlines and the left-over work are on Focus and
+        // one tap away in the buttons, so the greeting no longer repeats them.
         val lines = buildList {
             add(greeting(ctx.now.hour) + freeLine(ctx))
             brief?.waiting?.size?.takeIf { it > 0 }?.let { add(tr("วันนี้มี $it เรื่องรอคุณ", "$it things wait on you today")) }
-            tomorrow.firstOrNull()?.let { add(tr("พรุ่งนี้: ", "Tomorrow: ") + it.title + if (tomorrow.size > 1) tr(" และอีก ${tomorrow.size - 1} นัด", " and ${tomorrow.size - 1} more") else "") }
-            val soon = ctx.tasks.count { it.isOpen && it.due.let { d -> d != null && d >= ctx.today && d <= ctx.today.plusDays(3) } }
-            if (soon > 0 || late.isNotEmpty()) add(
-                listOfNotNull(
-                    if (soon > 0) tr("กำหนดจริงใน 3 วัน $soon งาน", "$soon real deadlines in 3 days") else null,
-                    if (late.isNotEmpty()) tr("ค้างจากก่อนหน้า ${late.size} งาน", "${late.size} left over") else null,
-                ).joinToString(", "),
-            )
         }
         val chips = buildList {
             if (evening) add(Chip(tr("พรุ่งนี้มีอะไร", "What's tomorrow"), Ask.TOMORROW))
