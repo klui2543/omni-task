@@ -17,6 +17,14 @@ object ClaudeSettings {
 
     fun key(context: Context): String? = prefs(context).getString("claude.key", null)?.takeIf { it.isNotBlank() }
 
+    /**
+     * "เลขาเรียนรู้เอง" (plan docs/PLAN_assistant_ml_2026-10-26.md): the secretary chat also reads sentences by the
+     * examples taught in Assistant ML.md. Off until the owner turns it on; off, the chat works as it did. The one reader.
+     */
+    fun learnOn(context: Context): Boolean = prefs(context).getBoolean("secretary.learn", false)
+
+    fun setLearnOn(context: Context, on: Boolean) = prefs(context).edit().putBoolean("secretary.learn", on).apply()
+
     fun setKey(context: Context, key: String?) {
         prefs(context).edit().apply { if (key.isNullOrBlank()) remove("claude.key") else putString("claude.key", key.trim()) }.apply()
     }

@@ -405,8 +405,21 @@ internal fun AiSettingsSheet(vm: TaskViewModel, onGuide: () -> Unit, onDismiss: 
                 }
                 Text(tr("ส่งให้ AI แค่ประโยคที่พิมพ์ วันนี้ และรายชื่อคำสั่งของแอป ไม่ส่งงานทั้งหมด", "Only the sentence, today's date and the app's commands go out, never your tasks"), color = C.faint, fontSize = TS.caption)
             } else {
+                // The learning secretary (plan docs/PLAN_assistant_ml_2026-10-26.md): off until the owner turns it on.
+                var learn by remember { mutableStateOf(ClaudeSettings.learnOn(context)) }
+                var taught by remember { mutableStateOf<Int?>(-1) }
+                androidx.compose.runtime.LaunchedEffect(Unit) { taught = vm.mlCount() }
+                FilterSwitch(
+                    tr("เลขาเรียนรู้เอง", "Secretary learns"),
+                    tr("เทียบประโยคกับตัวอย่างที่สอนไว้ในโน้ต Assistant ML ทายในเครื่อง ไม่เสียเงิน", "Compares a sentence with the examples taught in Assistant ML, on the phone, free") +
+                        when (val n = taught) { null -> tr("\nอ่านโน้ตไม่ได้", "\nCould not read the note"); -1 -> ""; else -> tr("\nสอนไว้ $n ตัวอย่าง", "\n$n examples taught") },
+                    learn,
+                ) { learn = !learn; ClaudeSettings.setLearnOn(context, learn) }
                 Text(
-                    tr(
+                    if (learn) tr(
+                        "โหมดเลขาลองตามลำดับ: ชื่อบอลลูน, คำที่สอนไว้, ตัวอย่างที่สอน (ถ้ามั่นใจ ทำเลย), คำในรายการ ถ้าไม่แน่ใจ จะถามว่าหมายถึงอันไหน หรือให้ถามด้วย Haiku (ยืนยันราคาก่อน) หรือสอนแบบลากไฮไลต์",
+                        "The rules try, in order: bubble names, taught words, taught examples (done when sure), the built-in words; when unsure, they ask which you mean, or offer Haiku (cost confirmed first) or teaching by highlight",
+                    ) else tr(
                         "โหมดเลขาลองตามลำดับ: ชื่อบอลลูน, คำที่สอนไว้, คำในรายการ ถ้าไม่รู้จัก จะเสนอสอนคำ ส่งให้ Claude หรือถามด้วย Haiku (ยืนยันราคาก่อน)",
                         "The rules try, in order: bubble names, taught words, the built-in words; when none fits, teach it, send it to Claude, or ask Haiku (cost confirmed first)",
                     ),

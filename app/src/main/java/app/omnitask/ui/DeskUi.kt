@@ -104,6 +104,8 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     var guideOpen by remember { mutableStateOf(false) }
     var editingBubble by remember { mutableStateOf<SecretaryGuide.Bubble?>(null) }
     var teaching by remember { mutableStateOf<String?>(null) }
+    // The sentence on the highlight page of the learning secretary.
+    var mlTeaching by remember { mutableStateOf<String?>(null) }
 
     fun ask(chip: SecretaryDesk.Chip) {
         val handOver = chip.action as? SecretaryGuide.Action.Claude
@@ -125,6 +127,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         LaunchedEffect(part) { sending = vm.pretext() to part; vm.deskClaude = null }
     }
     teaching?.let { said -> TeachSheet(state, vm, said) { teaching = null } }
+    mlTeaching?.let { said -> MlTeachSheet(state, vm, said) { mlTeaching = null } }
     editingBubble?.let { b ->
         BubbleSheet(
             state, vm, b.label, b.action, isWord = false,
@@ -165,6 +168,12 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             itemsIndexed(turns) { i, t ->
                 t.mine?.let { Mine(it, t.via) }
                 t.ai?.let { AiAnswer(it, vm) }
+                t.ml?.let { m ->
+                    MlAnswer(
+                        m, { g -> vm.mlPick(i, g) }, { mlTeaching = m.question }, { s -> vm.mlPickSlot(m.slotTitle.ifBlank { m.question }, s) },
+                        onAskAi = if (hasKey) { { vm.aiStart(m.question, app.omnitask.model.SecretaryAi.Mode.HAIKU, vm.deskEffort, fromTurn = i) } } else null,
+                    )
+                }
                 t.reply?.let { r ->
                     Column {
                         Answer(

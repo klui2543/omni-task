@@ -471,7 +471,7 @@ private fun Choice(on: Boolean, title: String, note: String?, onPick: () -> Unit
 
 /** What the app can do, as a row that opens the list. */
 @Composable
-private fun BuiltinPicker(value: Builtin, onPick: (Builtin) -> Unit) {
+internal fun BuiltinPicker(value: Builtin, onPick: (Builtin) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -491,7 +491,7 @@ private fun BuiltinPicker(value: Builtin, onPick: (Builtin) -> Unit) {
 /** The conditions of a list bubble, laid out as in the mock: tags, real deadlines, priority, order, and more. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterEditor(state: UiState, f: Filter, onChange: (Filter) -> Unit) {
+internal fun FilterEditor(state: UiState, f: Filter, onChange: (Filter) -> Unit) {
     var more by remember { mutableStateOf(f.kinds.isNotEmpty() || f.statuses.isNotEmpty() || f.lists.isNotEmpty() || f.text.isNotBlank() || f.staleDays != null) }
     val count = remember(f, state.tasks) { state.tasks.count { it.parent == null && f.matches(it, state.today) } }
     fun <T> Set<T>.flip(v: T) = if (v in this) this - v else this + v

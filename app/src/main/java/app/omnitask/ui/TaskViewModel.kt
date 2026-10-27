@@ -46,6 +46,7 @@ import app.omnitask.model.Projects
 import app.omnitask.model.Lang
 import app.omnitask.model.locale
 import app.omnitask.model.load
+import app.omnitask.model.AssistantMl
 import app.omnitask.model.Planner
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
@@ -515,7 +516,24 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     // ---- The secretary's own chat (new look): answers by rules, buttons for what comes next, Claude for the rest. ----
 
     /** One turn of the secretary chat: the owner's words, or the secretary's [reply]. [done] once its changes were made. */
-    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false, val ai: AiTurn? = null, val via: String? = null)
+    data class DeskTurn(val mine: String? = null, val reply: SecretaryDesk.Reply? = null, val done: Boolean = false, val ai: AiTurn? = null, val via: String? = null, val ml: MlTurn? = null)
+
+    /**
+     * An answer of the learning secretary ("เลขาเรียนรู้เอง"): what it read in [question]. [acted] is the guess it acted
+     * on (it was sure, or the owner picked or taught it); without one it asks "หมายถึงอันไหน", or offers Haiku and
+     * teaching. [slots] are free times found for "หาเวลา"; [note] says whether the sentence was kept as an example.
+     */
+    data class MlTurn(
+        val question: String,
+        val reading: app.omnitask.model.AssistantMl.Reading,
+        val acted: app.omnitask.model.AssistantMl.Guess? = null,
+        val slots: List<Planner.Slot> = emptyList(),
+        val slotTitle: String = "",
+        val note: String? = null,
+        val done: Boolean = false,
+        /** Finds the answer again when the note is written (the chat may have moved on). */
+        val id: Long = 0,
+    )
 
     /**
      * One answer from Claude in the secretary chat: while it is asked ([waiting]), then what the model read, what
@@ -636,6 +654,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val key = ClaudeSettings.key(app) ?: return
         // The rules' answer the Haiku button came from has done its part: its buttons give way.
         p.fromTurn?.let { i -> if (i in desk.indices && desk[i].reply?.teach == p.question) desk[i] = desk[i].copy(done = true) }
+        p.fromTurn?.let { i -> desk.getOrNull(i)?.ml?.takeIf { it.question == p.question }?.let { m -> desk[i] = desk[i].copy(ml = m.copy(done = true)) } }
         if (p.fromTurn == null) desk.add(DeskTurn(mine = p.question, via = p.mode.sentWith))
         val id = aiNextId++
         desk.add(DeskTurn(ai = AiTurn(id, p.mode, p.effort, question = p.question)))
@@ -859,16 +878,155 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val bubble = g.bubbles.firstOrNull { SecretaryGuide.squash(it.label) == SecretaryGuide.squash(text) }
             val word = bubble?.action ?: g.wordIn(text)?.action
             if (word != null) { deskRun(text, word, via); return@launch }
+            // The learning secretary, when it is on: sure from what the owner taught, it acts before the built-in words
+            // (which read "พรุ่งนี้" in any sentence as tomorrow's list).
+            val reading = if (ClaudeSettings.learnOn(getApplication())) loadMl().read(text) else null
+            if (reading?.level == AssistantMl.Level.HIGH) {
+                val best = reading.best!!
+                deskNote(tr("ทายเอง: ", "Guessed: ") + "${mlSaid(text)} → ${best.intent.render()}")
+                mlDo(text, reading, best, via = via, note = null)
+                return@launch
+            }
             val ask = SecretaryDesk.match(text)
             if (ask != null) { deskAsk(SecretaryDesk.Chip(text, ask), via = via); return@launch }
             deskNote(tr("ไม่รู้จัก: ", "Not understood: ") + text)
             desk.add(DeskTurn(mine = text, via = via))
+            if (reading != null) { desk.add(DeskTurn(ml = MlTurn(text, reading))); return@launch }
             desk.add(DeskTurn(reply = SecretaryDesk.Reply(
                 listOf(tr("ยังไม่รู้จักคำนี้ สอนผมไว้ใช้ครั้งหน้า หรือส่งให้ Claude ช่วยคิดก็ได้", "I don't know this yet. Teach me for next time, or take it to Claude")),
                 listOf(SecretaryDesk.Chip(tr("ตอนนี้ทำอะไรดี", "What now"), SecretaryDesk.Ask.NEXT)),
                 teach = text,
             )))
         }
+    }
+
+    /** The examples as last read, learned; kept for the buttons of an answer (pick, teach). */
+    private var mlModel: AssistantMl.Model = AssistantMl.Model(emptyList())
+
+    /** Reads Assistant ML.md again (the owner may have changed it in Obsidian) and learns from it with the guide's hints. */
+    private suspend fun loadMl(): AssistantMl.Model {
+        val vault = _state.value.vault
+        val read = if (vault == null) Result.success(null) else withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, AssistantMl.PATH) } }
+        // Not read: the chat still answers from the app's own hints, and says the taught examples were left out.
+        read.exceptionOrNull()?.let { e -> showMessage(tr("อ่านโน้ต Assistant ML ไม่ได้: ${e.message}", "Could not read Assistant ML: ${e.message}")) }
+        if (read.getOrNull() != null) mlNoteSeenIn = vault
+        return AssistantMl.Model(AssistantMl.examples(read.getOrNull()), AssistantMl.seeds(guide)).also { mlModel = it }
+    }
+
+    /** The vault whose note was read in this run: a later read there that finds nothing is a failed lookup, not a missing note. */
+    private var mlNoteSeenIn: Any? = null
+
+    /**
+     * Keeps [e] in Assistant ML.md (read fresh, added at the end of the examples, written back) and says whether it
+     * was kept, once the write is done. Not kept: a sentence that may hold a patient's number, and a note that was
+     * there before but is not found now (writing then would replace every taught example).
+     */
+    private suspend fun mlKeep(e: AssistantMl.Example): String {
+        if (AssistantMl.sensitive(e.text)) {
+            return tr("ไม่ได้จำ เพราะมีเลขยาวหรือคำที่อาจเป็นข้อมูลผู้ป่วย", "Not kept: it has a long number or words that may be a patient's")
+        }
+        val vault = _state.value.vault ?: return tr("ยังไม่ได้เลือก vault จึงจำไม่ได้", "No vault picked, so it was not kept")
+        val r = mlLock.withLock {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val old = repo.readPath(vault, AssistantMl.PATH)
+                    if (old == null && mlNoteSeenIn == vault) error(tr("เปิดโน้ต Assistant ML ไม่เจอ จึงไม่เขียนทับ", "Assistant ML was not found, so nothing was written over it"))
+                    repo.writePath(vault, AssistantMl.PATH, AssistantMl.add(old, e))
+                    mlNoteSeenIn = vault
+                }
+            }
+        }
+        r.exceptionOrNull()?.let { x -> return tr("ไม่ได้จำ: ", "Not kept: ") + (x.message ?: x.toString()) }
+        deskNote(tr("สอนตัวอย่าง: ", "Taught: ") + e.render().removePrefix("- "))
+        return tr("จำแล้ว ครั้งหน้าพิมพ์แบบนี้ เลขาทำเลย", "Kept: next time this is done right away")
+    }
+    private val mlLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Does what [guess] says for [text]: a command or a list as its bubble would; a task opens quick add filled in for
+     * the owner to check (nothing is added on a guess); "หาเวลา" shows free times. [spans] are the parts the owner
+     * highlighted, when taught. [via] is set when [text] is said here for the first time.
+     */
+    private fun mlDo(
+        text: String, reading: AssistantMl.Reading, guess: AssistantMl.Guess, via: String?, note: String?,
+        spans: List<AssistantMl.Span>? = null, id: Long = 0,
+    ) {
+        val model = mlModel
+        // The task's own words: what was highlighted, or the sentence without the taught command words.
+        fun taskText(): String = AssistantMl.forQuickAdd(spans?.let { ss ->
+            // The task's own words and its project's (no tag yet: stage 2); the command and urgency words go.
+            val words = ss.filter { it.label != AssistantMl.Label.COMMAND && it.label != AssistantMl.Label.PRIORITY }.joinToString("") { it.text }.replace(Regex("""\s+"""), " ").trim()
+            // Urgency as quick add reads it: !!! highest, !! high, ! medium.
+            val level = ss.firstOrNull { it.label == AssistantMl.Label.PRIORITY }?.let { it.value ?: "สูง" }
+            words + when (level) { "สูงสุด" -> " !!!"; "สูง" -> " !!"; "กลาง" -> " !"; else -> "" }
+        } ?: model.taskText(text), _state.value.timeWords, LocalDate.now(), java.time.LocalTime.now().let { kotlinx.datetime.LocalTime(it.hour, it.minute) })
+        when (val intent = guess.intent) {
+            is AssistantMl.Intent.Do -> {
+                deskRun(text, intent.action, via)
+                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note, id = id)))
+            }
+            AssistantMl.Intent.AddTask -> {
+                // Said here for the first time ([via] set); a pick or a teach is about a sentence already in the chat.
+                if (via != null) desk.add(DeskTurn(mine = text, via = via))
+                requestQuickAdd(QuickAddRequest(text = taskText()))
+                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, note = note, id = id)))
+            }
+            AssistantMl.Intent.FindTime -> {
+                if (via != null) desk.add(DeskTurn(mine = text, via = via))
+                val s = _state.value
+                val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now())
+                desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, slots = plan.slots.take(3), slotTitle = plan.title, note = note, id = id)))
+            }
+        }
+    }
+
+    /**
+     * Does it at once, then keeps [e] in the note; the line under the answer says "กำลังจำ" until the write is done,
+     * then whether it was kept.
+     */
+    private fun mlDoThenKeep(text: String, reading: AssistantMl.Reading, guess: AssistantMl.Guess, e: AssistantMl.Example, spans: List<AssistantMl.Span>?) {
+        val id = ++mlNextId
+        mlDo(text, reading, guess, via = null, note = tr("กำลังจำ...", "Keeping..."), spans = spans, id = id)
+        viewModelScope.launch {
+            val note = mlKeep(e)
+            val at = desk.indexOfFirst { it.ml?.id == id }
+            if (at >= 0) desk[at] = desk[at].copy(ml = desk[at].ml!!.copy(note = note))
+        }
+    }
+    private var mlNextId = 0L
+
+    /** A sentence for the secretary's stats: left out when it may hold a patient's number. */
+    private fun mlSaid(text: String) = if (AssistantMl.sensitive(text)) tr("(ประโยคมีเลขยาว ไม่จด)", "(has a long number, not written)") else text
+
+    /** "หมายถึงอันนี้ไหม": the owner picked [guess] for the sentence of turn [index]; it is done and kept as an example. */
+    fun mlPick(index: Int, guess: AssistantMl.Guess) {
+        val t = desk.getOrNull(index)?.ml ?: return
+        if (t.done) return
+        desk[index] = desk[index].copy(ml = t.copy(done = true))
+        deskNote(tr("เลือก: ", "Picked: ") + "${mlSaid(t.question)} → ${guess.intent.render()}")
+        val e = AssistantMl.Example(mlModel.spansFor(t.question, guess.intent), guess.intent, LocalDate.now(), "หมายถึงอันนี้ไหม")
+        mlDoThenKeep(t.question, t.reading, guess, e, spans = null)
+    }
+
+    /** Taught on the highlight page: kept as an example, then done for [said]. */
+    fun mlTeach(said: String, spans: List<AssistantMl.Span>, intent: AssistantMl.Intent) {
+        desk.indices.filter { desk[it].ml?.question == said && desk[it].ml?.done == false }.forEach { i -> desk[i] = desk[i].copy(ml = desk[i].ml!!.copy(done = true)) }
+        val e = AssistantMl.Example(spans, intent, LocalDate.now(), "สอนในแอป")
+        val guess = AssistantMl.Guess(intent, 1.0, e)
+        mlDoThenKeep(said, AssistantMl.Reading(AssistantMl.Level.HIGH, listOf(guess)), guess, e, spans)
+    }
+
+    /** A free time the learning secretary found: quick add with the title, day and time typed in. */
+    fun mlPickSlot(title: String, slot: Planner.Slot) {
+        val day = "${slot.day.dayOfMonth}/${slot.day.monthNumber}"
+        val time = "%d:%02d".format(slot.start.hour, slot.start.minute)
+        aiAddTask("$title $day $time")
+    }
+
+    /** How many examples are taught, for the settings (read when the sheet opens). */
+    suspend fun mlCount(): Int? {
+        val vault = _state.value.vault ?: return 0
+        return withContext(Dispatchers.IO) { runCatching { AssistantMl.examples(repo.readPath(vault, AssistantMl.PATH)).size }.getOrNull() }
     }
 
     /**
