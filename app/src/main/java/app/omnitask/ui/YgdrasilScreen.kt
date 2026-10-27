@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -65,6 +66,8 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -239,7 +242,7 @@ fun YgdrasilScreen(
         val list = if (c.task != null && carryMoved && targetAt(carryAt) == null) listAt(carryAt) else null
         unspring()
         when {
-            list != null -> vm.addTag(c.task!!, list.tag)
+            list != null -> vm.addToList(c.task!!, list.tag)
             c.stray && to != null -> vm.homeTask(c.task!!, to)
             c.stray -> if (!carryMoved) picking = c.task
             c.task != null && to != null -> vm.moveTask(c.task, to)
@@ -561,7 +564,7 @@ fun YgdrasilScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 // The ring is a button of its own, a little larger than it looks (only a mark inside the assistant).
-                                Box(Modifier.size(28.dp).clip(CircleShape).then(if (embed == null) Modifier.clickable { vm.toggleDone(t) } else Modifier), contentAlignment = Alignment.Center) {
+                                Box(Modifier.size(28.dp).clip(CircleShape).then(if (embed == null) Modifier.clickable { vm.toggleDone(t, inTree = true) } else Modifier), contentAlignment = Alignment.Center) {
                                     Box(
                                         Modifier.size(15.dp).clip(CircleShape).background(if (done) C.lime else C.sunken)
                                             .border(1.5.dp, if (done) C.lime else priorityTint(t.priority), CircleShape),
@@ -625,6 +628,7 @@ fun YgdrasilScreen(
                 ZoomKey("−", tr("ซูมออก", "Zoom out")) { zoomBy(0.8f, mid) }
                 ZoomKey(tr("พอดี", "Fit"), tr("พอดีจอ", "Fit")) { fit() }
             }
+            if (embed == null) UndoPill(state.treeUndo, state.treeRedo, vm::treeUndo, vm::treeRedo, Modifier.align(Alignment.BottomStart).padding(12.dp))
         }
         // The tray rises over the bottom of the tree, which still moves above it; low while a task is carried up.
         if (trayOpen && strayCount > 0) StrayTray(
@@ -842,4 +846,36 @@ private fun withListLimb(tree: Ygdrasil.Tree, lists: List<OmniList>, items: (Omn
     val limb = Ygdrasil.Limb(Branches.Node(LIST_LIMB, "", Branches.State.ACTIVE, emptyList(), emptyList(), kids.map { it.node }), emptyList(), kids)
     val at = tree.worlds.indexOfFirst { Ygdrasil.isInbox(it.node.tag) }.let { if (it < 0) tree.worlds.size else it }
     return tree.copy(worlds = tree.worlds.take(at) + limb + tree.worlds.drop(at))
+}
+
+/**
+ * Ygdrasil's undo and redo, always there (owner, 2026-10-27): ↶ takes the newest tick or move back, ↷ does it again,
+ * and the words beside them say which task the next tap acts on. A button with nothing to act on is faded.
+ */
+@Composable
+private fun UndoPill(undo: List<TaskViewModel.UndoStep>, redo: List<TaskViewModel.UndoStep>, onUndo: () -> Unit, onRedo: () -> Unit, modifier: Modifier = Modifier) {
+    fun word(s: TaskViewModel.UndoStep) = when (s.kind) {
+        TaskViewModel.UndoStep.Kind.DONE -> tr("ติ๊ก ${s.title}", "tick ${s.title}")
+        TaskViewModel.UndoStep.Kind.OPENED -> tr("เปิดคืน ${s.title}", "reopen ${s.title}")
+        TaskViewModel.UndoStep.Kind.MOVED -> tr("ย้าย ${s.title}", "move ${s.title}")
+    }
+    val what = undo.lastOrNull()?.let { tr("ย้อน: ", "Undo: ") + word(it) } ?: redo.lastOrNull()?.let { tr("ทำซ้ำ: ", "Redo: ") + word(it) }
+    Row(
+        modifier.widthIn(max = 260.dp).clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UndoKey("↶", tr("เลิกทำ", "Undo"), undo.isNotEmpty(), onUndo)
+        Box(Modifier.width(1.dp).height(28.dp).background(C.cardBorder))
+        UndoKey("↷", tr("ทำซ้ำ", "Redo"), redo.isNotEmpty(), onRedo)
+        what?.let { Text(it, Modifier.padding(start = 4.dp, end = 12.dp), color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
+@Composable
+private fun UndoKey(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp).clickable(enabled = enabled, onClickLabel = label, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) { Text(glyph, color = if (enabled) C.text else C.faint.copy(alpha = 0.45f), fontSize = TS.title) }
 }

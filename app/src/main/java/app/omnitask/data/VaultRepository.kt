@@ -164,12 +164,28 @@ class VaultRepository(private val context: Context) {
      * and notes the completion in the app's history. Returns false (and writes nothing) when the rule cannot be read.
      * Ticking today's round of a task left open ([Task.todayCopy]) moves the line past today.
      */
-    fun completeRecurring(task: Task, today: LocalDate): Boolean {
+    fun completeRecurring(task: Task, today: LocalDate, changed: ((BlockChange) -> Unit)? = null): Boolean {
         if (TaskLine.advanceRecurring(task.raw, today, task.todayCopy) == null) return false
         // Its subtasks are unticked in the same write, so the next round starts with the checklist open.
-        editLines(task) { lines, index -> VaultText.advanceRecurring(lines, index, today, task.todayCopy) }
+        val change = editLinesRecorded(task) { lines, index -> VaultText.advanceRecurring(lines, index, today, task.todayCopy) }
         RecurHistory.add(context, task.title, today)
+        changed?.invoke(change)
         return true
+    }
+
+    /** [rewriteLine], returning the task's block before and after, for undo. */
+    fun rewriteLineRecorded(task: Task, transform: (String) -> String): BlockChange = editLinesRecorded(task) { lines, index ->
+        lines[index] = transform(task.raw)
+    }
+
+    /**
+     * Undoes ([undo] true) or does again a change made by [rewriteLineRecorded] or [completeRecurring]: the block is
+     * swapped back only where it still stands as that change left it, so an edit made in Obsidian since is never
+     * overwritten ([ConflictException]).
+     */
+    fun swapBlock(change: BlockChange, undo: Boolean) {
+        val (expect, put) = if (undo) change.after to change.before else change.before to change.after
+        editText(change.fileUri, change.filePath) { text -> VaultText.swapBlock(text, change.index, expect, put) ?: throw ConflictException() }
     }
 
     /** Adds a subtask as the last line of the parent's block, one level deeper. */
@@ -287,16 +303,31 @@ class VaultRepository(private val context: Context) {
         return changed
     }
 
-    private fun editLines(task: Task, edit: (MutableList<String>, Int) -> Unit) {
-        drivePath(task.fileUri)?.let { rel ->
-            DriveLink.use(context) { store ->
-                store.edit(rel) { text -> VaultText.edit(text ?: throw ConflictException(), task, edit) ?: throw ConflictException() }
-            }
+    private fun editLines(task: Task, edit: (MutableList<String>, Int) -> Unit) =
+        editText(task.fileUri, task.filePath) { text -> VaultText.edit(text, task, edit) ?: throw ConflictException() }
+
+    /** A task's block before and after one edit, and where it stood: what undo puts back and redo puts again. */
+    class BlockChange(val fileUri: String, val filePath: String, val index: Int, val before: List<String>, val after: List<String>)
+
+    private fun editLinesRecorded(task: Task, edit: (MutableList<String>, Int) -> Unit): BlockChange {
+        var change: BlockChange? = null
+        editLines(task) { lines, index ->
+            val before = VaultText.blockAt(lines, index)
+            edit(lines, index)
+            change = BlockChange(task.fileUri, task.filePath, index, before, VaultText.blockAt(lines, index))
+        }
+        return change ?: throw ConflictException()
+    }
+
+    /** Reads a note's text, changes it and writes it back; a missing note is a [ConflictException]. */
+    private fun editText(fileUri: String, filePath: String, change: (String) -> String) {
+        drivePath(fileUri)?.let { rel ->
+            DriveLink.use(context) { store -> store.edit(rel) { text -> change(text ?: throw ConflictException()) } }
             return
         }
-        val uri = Uri.parse(task.fileUri)
-        val out = VaultText.edit(readText(uri), task, edit) ?: throw ConflictException()
-        writeText(uri, out) ?: throw java.io.IOException("Cannot open ${task.filePath} for writing")
+        val uri = Uri.parse(fileUri)
+        val out = change(readText(uri))
+        writeText(uri, out) ?: throw java.io.IOException("Cannot open $filePath for writing")
     }
 
     /** The text of a vault file by its path, or null when it does not exist. */

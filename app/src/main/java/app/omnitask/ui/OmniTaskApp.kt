@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.focus.onFocusChanged
@@ -205,9 +206,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
     // A move made in Ygdrasil: what moved, that the secretary was told, and a way back.
     LaunchedEffect(state.moved) {
         state.moved?.let { u ->
-            val r = snackbar.showSnackbar(u.text, actionLabel = tr("เลิกทำ", "Undo"), duration = SnackbarDuration.Long)
+            val r = snackbar.showSnackbar(u.text, actionLabel = u.undo?.let { tr("เลิกทำ", "Undo") }, duration = SnackbarDuration.Long)
             vm.clearMoved()
-            if (r == SnackbarResult.ActionPerformed) u.undo()
+            if (r == SnackbarResult.ActionPerformed) u.undo?.invoke()
         }
     }
 
@@ -356,7 +357,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) {
                         Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                     }
-                    state.finished?.let { t -> FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
+                    state.finished?.let { t -> FinishedBar(t, state.archiveDays, state.ticked.isNotEmpty(), vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
+                        ?: state.ticked.lastOrNull()?.let { u -> TickBar(u, state.ticked.size - 1, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp)) }
                 }
                 editPane()
             }
@@ -377,7 +379,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
                     Snackbar(it, containerColor = C.raised, contentColor = C.text, shape = RoundedCornerShape(14.dp))
                 }
                 state.finished?.let { t ->
-                    FinishedBar(t, state.archiveDays, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
+                    FinishedBar(t, state.archiveDays, state.ticked.isNotEmpty(), vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
+                } ?: state.ticked.lastOrNull()?.let { u ->
+                    TickBar(u, state.ticked.size - 1, vm, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = popupLift))
                 }
             }
             editPane()
@@ -419,9 +423,9 @@ fun OmniTaskApp(vm: TaskViewModel) {
  * away on its own after a while, which leaves the task as it is (the daily sweep archives it later).
  */
 @Composable
-private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: TaskViewModel, modifier: Modifier = Modifier) {
+private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, canUndo: Boolean, vm: TaskViewModel, modifier: Modifier = Modifier) {
     LaunchedEffect(task.raw) {
-        delay(10_000)
+        delay(UNDO_BAR_MS)
         vm.clearFinished()
     }
     Column(
@@ -436,10 +440,42 @@ private fun FinishedBar(task: app.omnitask.model.Task, archiveDays: Int, vm: Tas
             Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            if (canUndo) TextButton(onClick = vm::undoTick) { Text(tr("เลิกทำ", "Undo"), color = C.accent) }
+            Spacer(Modifier.weight(1f))
             TextButton(onClick = vm::clearFinished) { Text(tr("ไว้ก่อน", "Keep"), color = C.text2) }
             TextButton(onClick = { vm.resolveFinished(archive = false) }) { Text(tr("ลบ", "Delete"), color = C.red) }
             TextButton(onClick = { vm.resolveFinished(archive = true) }) { Text(tr("เก็บเข้าคลัง", "Archive"), color = C.accent) }
         }
+    }
+}
+
+/** How long the undo bar (and the "archive or delete?" bar that carries it) stays, owner's pick 2026-10-27. */
+private const val UNDO_BAR_MS = 30_000L
+
+/**
+ * After a tick anywhere but Ygdrasil: what was ticked, and "เลิกทำ" for 30 seconds. Several ticks in a row go back one
+ * at a time, newest first; [more] says how many wait behind this one. A thin line shows the time left.
+ */
+@Composable
+private fun TickBar(step: TaskViewModel.UndoStep, more: Int, vm: TaskViewModel, modifier: Modifier = Modifier) {
+    val left = remember(step) { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(step) {
+        left.animateTo(0f, androidx.compose.animation.core.tween(UNDO_BAR_MS.toInt(), easing = androidx.compose.animation.core.LinearEasing))
+        vm.clearTicked()
+    }
+    val what = if (step.kind == TaskViewModel.UndoStep.Kind.OPENED) tr("เปิดงานอีกครั้ง", "Opened again") else tr("เสร็จแล้ว", "Done")
+    Column(
+        modifier.padding(horizontal = 12.dp).widthIn(max = 520.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("$what: ${step.title}", color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (more > 0) Text(tr("เลิกทำได้อีก $more งานก่อนหน้า", "$more more before it"), color = C.muted, fontSize = TS.caption)
+            }
+            TextButton(onClick = vm::undoTick) { Text(tr("เลิกทำ", "Undo"), color = C.accent) }
+        }
+        Box(Modifier.fillMaxWidth(left.value).height(3.dp).background(C.accent.copy(alpha = 0.6f)))
     }
 }
 

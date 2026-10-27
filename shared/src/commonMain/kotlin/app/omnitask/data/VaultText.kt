@@ -52,6 +52,26 @@ object VaultText {
         return lines.joinToString(separator)
     }
 
+    /** The task's block at [index]: its line and everything indented under it, as it stands now. */
+    fun blockAt(lines: List<String>, index: Int): List<String> = lines.subList(index, blockEnd(lines, index)).toList()
+
+    /**
+     * Puts the lines [put] where the lines [expect] stand: how a tick or a move is undone and done again. [expect] is
+     * looked for at [hint] first and then anywhere, so the line may have moved; null (write nothing) when it is no
+     * longer there, so an edit made in Obsidian since is never overwritten.
+     */
+    fun swapBlock(text: String, hint: Int, expect: List<String>, put: List<String>): String? {
+        if (expect.isEmpty()) return null
+        val separator = separatorOf(text)
+        val lines = text.split(separator).toMutableList()
+        fun at(i: Int) = i >= 0 && i + expect.size <= lines.size && (expect.indices).all { lines[i + it] == expect[it] }
+        val index = if (at(hint)) hint else lines.indices.firstOrNull { at(it) } ?: return null
+        val region = lines.subList(index, index + expect.size)
+        region.clear()
+        region.addAll(put)
+        return lines.joinToString(separator)
+    }
+
     /** Puts lines back at [index] (or at the end when the file got shorter). */
     fun restore(text: String, index: Int, block: List<String>): String {
         val separator = separatorOf(text)
