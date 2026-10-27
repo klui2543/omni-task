@@ -142,8 +142,8 @@ fun YgdrasilScreen(
     // The tasks with no project are one more (pretend) project at the end of the tree, drawn like the others.
     // The lists as one more limb before the tray (owner's pick, 2026-10-26, Ygdrasil mock way 1); left out while filtering.
     val listsShown = onOpenList != null && filter.query.text.isBlank() && !filter.starredOnly && !filter.blockedOnly
-    val grown = remember(tree, strays, embed, state.lists, listsShown) {
-        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) { l -> state.itemsOf(l).filter { it.isOpen } } else tree
+    val grown = remember(tree, strays, embed, state.lists, state.listItems, listsShown) {
+        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) { l -> state.itemsOf(l).filter { it.isOpen && !it.todayCopy && it.parent == null } } else tree
     }
     // Desktop pins are the stars; before any star every project is pinned.
     val pinned = if (state.starred.isEmpty()) tree.worlds.map { it.node.tag }.toSet() else state.starred
@@ -216,7 +216,11 @@ fun YgdrasilScreen(
             .filter { it.second < reach }.minByOrNull { it.second }
             ?.let { (s, _) -> state.lists.firstOrNull { listTagOf(it) == s.limb!!.node.tag } }
     }
-    val listDrop = carry?.takeIf { it.task != null && targetAt(carryAt) == null }?.let { listAt(carryAt) }
+    val listDrop = carry?.takeIf { it.task != null && carryMoved && targetAt(carryAt) == null }?.let { listAt(carryAt) }
+    // A folded List limb under a carried task: it springs open like a folded project, so its lists can take it.
+    fun listRootAt(p: Offset): String? = spots.firstOrNull { s ->
+        s.kind == Ygdrasil.Kind.LIMB && s.limb!!.node.tag == LIST_LIMB && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
+    }?.let { LIST_LIMB }
     val baseConfig = LocalViewConfiguration.current
     val quickHold = remember(baseConfig) { object : ViewConfiguration by baseConfig { override val longPressTimeoutMillis: Long get() = HOLD_MS } }
     // Folded branches opened for a moment while something is held over them; folded again when it is let go.
@@ -229,7 +233,8 @@ fun YgdrasilScreen(
     fun drop() {
         val c = carry ?: return
         val to = goesTo(c, targetAt(carryAt))
-        val list = if (c.task != null && targetAt(carryAt) == null) listAt(carryAt) else null
+        // Only after a real drag: a task held and let go where it was still opens.
+        val list = if (c.task != null && carryMoved && targetAt(carryAt) == null) listAt(carryAt) else null
         unspring()
         when {
             list != null -> vm.addTag(c.task!!, list.tag)
@@ -258,7 +263,7 @@ fun YgdrasilScreen(
             onDragCancel = { unspring(); carry = null },
         )
     }
-    val hovered = carry?.let { targetAt(carryAt) }
+    val hovered = carry?.let { c -> targetAt(carryAt) ?: if (c.task != null) listRootAt(carryAt) else null }
     // Held over a folded project or branch for a moment, it opens to show its branches.
     LaunchedEffect(hovered, carry != null) {
         val tag = hovered ?: return@LaunchedEffect
@@ -432,7 +437,8 @@ fun YgdrasilScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text("Ygdrasil", Modifier.weight(1f), color = C.onAccent, fontSize = TS.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                            Text("${s.count}", color = C.onAccent, fontSize = TS.caption)
+                            // The tasks on the tree; list items (some also under their project) are not counted again.
+                            Text("${grown.worlds.filter { !isListTag(it.node.tag) }.sumOf { it.matched }}", color = C.onAccent, fontSize = TS.caption)
                         }
                         Ygdrasil.Kind.LIMB -> {
                             val n = s.limb!!.node

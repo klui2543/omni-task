@@ -371,7 +371,8 @@ object Ygdrasil {
         val height = maxOf(TRUNK_H, y)
         val trunk = Spot(Kind.TRUNK, 0f, height / 2, NODE_W, TRUNK_H, count = tree.matched)
         spots += trunk
-        spots.filter { it.kind == Kind.TASK }.forEach { taskAt[it.task!!] = it }
+        // A task shown twice (under its project and under a list in the app's List limb) keeps its first place for wait lines.
+        spots.filter { it.kind == Kind.TASK }.forEach { taskAt.getOrPut(it.task!!) { it } }
 
         fun curve(kind: EdgeKind, x1: Float, y1: Float, x2: Float, y2: Float, state: Branches.State? = null): Edge {
             val mx = (x1 + x2) / 2
