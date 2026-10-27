@@ -239,11 +239,15 @@ object Ygdrasil {
      * [tree] with the tasks that have no project as one more, pretend, project at the end (owner's pick, 2026-10-24):
      * one branch per first tag (no tag first), drawn and folded like every other project.
      */
+    private fun inboxPath(g: Strays) = (g.tag ?: tr("ไม่มีแท็ก", "No tag")).replace('/', '-')
+
+    /** Each group of [strays] on the tree, by its tag there (`~ยังไม่มีบ้าน/อ่าน`), to the tag it groups (null: no tag). */
+    fun inboxGroups(strays: List<Strays>): Map<String, String?> = strays.associate { "$INBOX/${inboxPath(it)}" to it.tag }
+
     fun withInbox(tree: Tree, strays: List<Strays>): Tree {
         if (strays.isEmpty()) return tree
         val groups = strays.map { g ->
-            val path = (g.tag ?: tr("ไม่มีแท็ก", "No tag")).replace('/', '-')
-            val node = Branches.Node(INBOX, path, Branches.State.ACTIVE, g.tasks, g.tasks, emptyList())
+            val node = Branches.Node(INBOX, inboxPath(g), Branches.State.ACTIVE, g.tasks, g.tasks, emptyList())
             Limb(node, g.tasks, emptyList())
         }
         val all = strays.flatMap { it.tasks }
@@ -268,10 +272,13 @@ object Ygdrasil {
     /**
      * The tray under the tree: the tasks that passed [filter] but have no project, so the tree cannot show them.
      * Tasks with no tag come first, then each tag that is not a project, most tasks first. Subtasks stay with their
-     * parent, list items and the stand-in rounds of repeating tasks are left out.
+     * parent, list items and the stand-in rounds of repeating tasks are left out, and so are tasks carrying the tag of
+     * one of the [lists], which show under their list instead (one place only, owner, 2026-10-27).
      */
-    fun strays(tasks: List<Task>, today: LocalDate, filter: Filter, sort: StraySort = StraySort.DUE): List<Strays> {
-        val live = tasks.filter { !it.todayCopy && it.status != Status.CANCELLED && it.parent == null && it.list == null }
+    fun strays(tasks: List<Task>, today: LocalDate, filter: Filter, sort: StraySort = StraySort.DUE, lists: Collection<String> = emptyList()): List<Strays> {
+        val live = tasks.filter {
+            !it.todayCopy && it.status != Status.CANCELLED && it.parent == null && it.list == null && TreeMove.listTagsOn(it, lists).isEmpty()
+        }
         val blocked = Projects.blocked(live)
         return live.filter { Projects.projectOf(it) == null && passes(it, filter, today, blocked) }
             .groupBy { Projects.looseTag(it) }

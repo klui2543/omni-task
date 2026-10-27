@@ -82,6 +82,7 @@ import app.omnitask.model.CustomKind
 import app.omnitask.model.TaskQuery
 import app.omnitask.notify.CalendarEvent
 import app.omnitask.model.Task
+import app.omnitask.model.TreeMove
 import app.omnitask.model.UrgentRule
 import app.omnitask.model.bucket
 import app.omnitask.model.quadrant
@@ -2249,8 +2250,40 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { TaskLine.retag(it, from, tag) }
     }
 
-    /** Project Ygdrasil: a task dropped on a list joins it ([tag] added), with a step in Ygdrasil's undo history. */
-    fun addToList(task: Task, tag: String) = editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { TaskLine.addTag(it, tag) }
+    /**
+     * Project Ygdrasil: [task] carried to [to] moves for real and shows in one place only (owner's pick, 2026-10-27):
+     * see [TreeMove]. A task written in a list note leaves that note: to another list it goes into that list's note,
+     * anywhere else into the task note. Every move is a step in Ygdrasil's undo history.
+     */
+    fun moveInTree(task: Task, to: TreeMove.To) {
+        val s = _state.value
+        val lists = s.lists.map { it.tag }
+        val project = Projects.tagOf(task)
+        val transform = { raw: String -> TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to) }
+        val home = task.list?.let { name -> s.lists.firstOrNull { it.name == name } }
+        if (home == null) {
+            if (transform(task.raw) == task.raw) return
+            editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { transform(it) }
+            return
+        }
+        val target = if (to is TreeMove.To.InList) s.lists.firstOrNull { it.tag.equals(to.tag, ignoreCase = true) } else null
+        if (target == home) return
+        val toPath = target?.path ?: VaultRepository.TASK_FILE
+        val vault = s.vault ?: return
+        viewModelScope.launch {
+            val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.moveToNote(vault, task, toPath, transform) } } }
+            result.onSuccess { m -> remember(UndoStep(UndoStep.Kind.MOVED, task.title, moved = m), inTree = true) }
+            result.exceptionOrNull()?.let { e ->
+                val text = if (e is VaultRepository.ConflictException) {
+                    tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+                } else {
+                    tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+                }
+                _state.update { it.copy(message = text) }
+            }
+            reload()
+        }
+    }
 
     /**
      * The folder picker (owner's pick, 2026-10-26): the task's one folder becomes [folder] where its old one stood, or
@@ -3327,6 +3360,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val events: List<BehaviorEvent> = emptyList(),
         val recurred: List<Pair<String, LocalDate>> = emptyList(),
         val retag: Pair<String, String>? = null,
+        val moved: VaultRepository.Moved? = null,
     ) {
         enum class Kind { DONE, OPENED, MOVED }
     }
@@ -3395,6 +3429,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyStep(step: UndoStep, undo: Boolean, done: (Boolean) -> Unit) {
         step.retag?.let { (from, to) ->
             if (undo) retagAll(to, from, done) else retagAll(from, to, done)
+            return
+        }
+        step.moved?.let { m ->
+            val vault = _state.value.vault ?: return done(false)
+            viewModelScope.launch {
+                val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.swapMoved(vault, m, undo) } } }
+                result.exceptionOrNull()?.let { e ->
+                    val text = if (e is VaultRepository.ConflictException) {
+                        tr("\"${step.title}\" ถูกแก้จากที่อื่นแล้ว จึงไม่ได้เขียนทับ", "\"${step.title}\" was changed elsewhere, so it was not written over")
+                    } else {
+                        tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+                    }
+                    _state.update { it.copy(message = text) }
+                }
+                done(result.isSuccess)
+                reload()
+            }
             return
         }
         val blocks = if (undo) step.blocks.asReversed() else step.blocks
