@@ -22,4 +22,15 @@ object WebLinks {
         val host = text.substring(m.range.first, end + 1).substringAfter("://")
         if (host.isEmpty()) null else m.range.first..end
     }.toList()
+
+    /**
+     * The short name a link is shown by on the task's page: the site without `www.`, so a long address leaves room
+     * to tap the details and write. `https://www.youtube.com/watch?v=x` is `youtube.com`.
+     */
+    fun label(url: String): String {
+        val site = url.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#')
+            .substringAfterLast('@').substringBefore(':')
+        val short = site.removePrefix("www.")
+        return short.ifEmpty { url }
+    }
 }

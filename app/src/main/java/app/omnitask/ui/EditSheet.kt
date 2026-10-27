@@ -772,14 +772,14 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
 }
 
 /**
- * The details with each web address (a shared link sits there as `- https://...`) underlined and opening in the
+ * The details with each web address (a shared link sits there as `- https://...`) shown as a short site label that opens in the
  * browser; a phone with nothing to open it says so instead of failing quietly.
  */
 @Composable
 private fun withWebLinks(text: String): androidx.compose.ui.text.AnnotatedString {
     val context = androidx.compose.ui.platform.LocalContext.current
     val style = androidx.compose.ui.text.TextLinkStyles(
-        androidx.compose.ui.text.SpanStyle(color = C.accentText, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+        androidx.compose.ui.text.SpanStyle(color = C.accentText, background = C.accentSoft),
     )
     return androidx.compose.ui.text.buildAnnotatedString {
         var at = 0
@@ -793,7 +793,11 @@ private fun withWebLinks(text: String): androidx.compose.ui.text.AnnotatedString
                     Toast.makeText(context, tr("ไม่พบแอปที่เปิดลิงก์นี้ได้", "No app can open this link"), Toast.LENGTH_SHORT).show()
                 }
             }
-            withLink(androidx.compose.ui.text.LinkAnnotation.Url(url, style, open)) { append(url) }
+            // Shown by its site only, so a long address does not cover the whole box (the full one stays in the
+            // note and in the editor).
+            withLink(androidx.compose.ui.text.LinkAnnotation.Url(url, style, open)) {
+                append("\u00A0${app.omnitask.model.WebLinks.label(url)}\u00A0\u2197\u00A0")
+            }
             at = r.last + 1
         }
         append(text.substring(at))
