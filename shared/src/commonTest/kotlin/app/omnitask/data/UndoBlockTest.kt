@@ -46,8 +46,15 @@ class UndoBlockTest {
         val (ticked, before, after) = tick(note)
         // The task was renamed in Obsidian after the tick: undo must write nothing.
         assertNull(VaultText.swapBlock(ticked.replace("เตรียมสไลด์", "เตรียมสไลด์ใหม่"), 1, after, before))
-        // A subtask added under it in Obsidian also changes the block.
-        assertNull(VaultText.swapBlock(ticked.replace("    - [ ] ทำโครงสไลด์", "    - [ ] ทำโครงสไลด์\n    - [ ] ซ้อม"), 1, after, before))
+        // A subtask ticked in Obsidian since: the block no longer stands as the tick left it.
+        assertNull(VaultText.swapBlock(ticked.replace("    - [ ] ทำโครงสไลด์", "    - [x] ทำโครงสไลด์ ✅ 2026-10-27"), 1, after, before))
+    }
+
+    @Test
+    fun aSubtaskAddedBelowSinceIsKept() {
+        val (ticked, before, after) = tick(note)
+        val added = ticked.replace("    - [ ] ทำโครงสไลด์", "    - [ ] ทำโครงสไลด์\n    - [ ] ซ้อม")
+        assertEquals(note.replace("    - [ ] ทำโครงสไลด์", "    - [ ] ทำโครงสไลด์\n    - [ ] ซ้อม"), VaultText.swapBlock(added, 1, after, before))
     }
 
     @Test
