@@ -229,6 +229,55 @@ class VaultRepository(private val context: Context) {
     }
 
     /**
+     * A task block moved from one note to the end of another by Ygdrasil: [cut] is where it was and what it was,
+     * [toPath] the note it went to and [lines] the block as written there.
+     */
+    class Moved(val cut: Cut, val fromPath: String, val toPath: String, val lines: List<String>)
+
+    /**
+     * Moves the task with its whole block to the end of the note [toPath], its line changed by [transform] (a list
+     * item dragged to a project goes into the task note). If [toPath] cannot be written, the task is put back.
+     */
+    fun moveToNote(treeUri: Uri, task: Task, toPath: String, transform: (String) -> String): Moved {
+        val cut = deleteTask(task)
+        val lines = listOf(transform(cut.lines.first())) + cut.lines.drop(1)
+        try {
+            update(treeUri, toPath) { text -> VaultText.appendBlock(text ?: throw java.io.IOException(tr("ไม่พบ $toPath", "Not found: $toPath")), lines) }
+        } catch (e: Exception) {
+            restore(cut)
+            throw e
+        }
+        return Moved(cut, task.filePath, toPath, lines)
+    }
+
+    /**
+     * Undoes ([undo] true) or does again a [moveToNote]. The block is taken out only where it still stands as the move
+     * left it, so an edit made in Obsidian since is never lost ([ConflictException]).
+     */
+    fun swapMoved(treeUri: Uri, m: Moved, undo: Boolean) {
+        if (undo) {
+            // Put back first, then take out: a failure in between never leaves the task in neither note.
+            restore(m.cut)
+            try {
+                update(treeUri, m.toPath) { text -> VaultText.swapBlock(text ?: throw ConflictException(), -1, m.lines, emptyList()) ?: throw ConflictException() }
+            } catch (e: Exception) {
+                val back = runCatching { editText(m.cut.fileUri, m.fromPath) { text -> VaultText.swapBlock(text, m.cut.index, m.cut.lines, emptyList()) ?: throw ConflictException() } }
+                // Taken back out too: nothing changed. Not taken out: the task is in both notes, and the owner is told.
+                back.exceptionOrNull()?.let { throw java.io.IOException(tr("งานอยู่ทั้งใน ${m.fromPath} และ ${m.toPath} ลบอันที่เกินออกเอง", "The task is now in both ${m.fromPath} and ${m.toPath}; remove the extra one"), e) }
+                throw e
+            }
+        } else {
+            editText(m.cut.fileUri, m.fromPath) { text -> VaultText.swapBlock(text, m.cut.index, m.cut.lines, emptyList()) ?: throw ConflictException() }
+            try {
+                update(treeUri, m.toPath) { text -> VaultText.appendBlock(text ?: throw ConflictException(), m.lines) }
+            } catch (e: Exception) {
+                restore(m.cut)
+                throw e
+            }
+        }
+    }
+
+    /**
      * Moves the task with its whole block to the end of the archive note and returns what was cut, for undo.
      * If the archive cannot be written, the task is put back.
      */

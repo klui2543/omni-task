@@ -95,6 +95,9 @@ object VaultText {
         return text.trimEnd('\r', '\n') + separator + line + separator
     }
 
+    /** Adds a task's whole block (its line and the lines under it) at the end of a note, keeping its line endings. */
+    fun appendBlock(text: String, block: List<String>): String = appendLine(text, block.joinToString(separatorOf(text)))
+
     /** Appends `line` as the last indented line under the task at [index] (after its existing notes). */
     fun addSubLine(lines: MutableList<String>, index: Int, line: String) {
         val indent = lines[index].takeWhile { it.isWhitespace() } + "    "

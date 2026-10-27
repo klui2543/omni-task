@@ -79,6 +79,7 @@ import app.omnitask.model.Priority
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
+import app.omnitask.model.TreeMove
 import app.omnitask.model.Ygdrasil
 import app.omnitask.model.tr
 
@@ -139,14 +140,20 @@ fun YgdrasilScreen(
     fun faint(tag: String) = lit != null && tag !in lit && !Ygdrasil.isInbox(tag) && !isListTag(tag)
     // The tray of tasks with no project, under the tree, and the task whose new home is being picked.
     var straySort by remember { mutableStateOf(Ygdrasil.StraySort.DUE) }
-    val strays = remember(state.tasks, state.today, state.projectTags, filter, straySort) { Ygdrasil.strays(state.tasks, state.today, filter, straySort) }
-    val strayCount = strays.sumOf { it.tasks.size }
-    var trayOpen by rememberSaveable { mutableStateOf(false) }
-    // The tasks with no project are one more (pretend) project at the end of the tree, drawn like the others.
     // The lists as one more limb before the tray (owner's pick, 2026-10-26, Ygdrasil mock way 1); left out while filtering.
     val listsShown = onOpenList != null && filter.query.text.isBlank() && !filter.starredOnly && !filter.blockedOnly
+    // A task shows in one place only (owner, 2026-10-27): in its project if it has one, else on its list, else with
+    // the tasks that have no project.
+    val listTags = if (listsShown) state.lists.map { it.tag } else emptyList()
+    val strays = remember(state.tasks, state.today, state.projectTags, filter, straySort, listTags) { Ygdrasil.strays(state.tasks, state.today, filter, straySort, listTags) }
+    val strayCount = strays.sumOf { it.tasks.size }
+    val inboxGroups = remember(strays) { Ygdrasil.inboxGroups(strays) }
+    var trayOpen by rememberSaveable { mutableStateOf(false) }
+    // The tasks with no project are one more (pretend) project at the end of the tree, drawn like the others.
     val grown = remember(tree, strays, embed, state.lists, state.listItems, listsShown) {
-        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) { l -> state.itemsOf(l).filter { it.isOpen && !it.todayCopy && it.parent == null } } else tree
+        if (embed == null) withListLimb(Ygdrasil.withInbox(tree, strays), if (listsShown) state.lists else emptyList()) { l ->
+            state.itemsOf(l).filter { it.isOpen && !it.todayCopy && it.parent == null && (it.list != null || Projects.projectOf(it) == null) }
+        } else tree
     }
     // Desktop pins are the stars; before any star every project is pinned.
     val pinned = if (state.starred.isEmpty()) tree.worlds.map { it.node.tag }.toSet() else state.starred
@@ -204,16 +211,17 @@ fun YgdrasilScreen(
     val spots by rememberUpdatedState(layout.spots)
     fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
         (s.kind == Ygdrasil.Kind.LIMB || s.kind == Ygdrasil.Kind.TRUNK) && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
-    }?.let { it.limb?.node?.tag ?: "" }?.takeUnless { Ygdrasil.isInbox(it) || isListTag(it) }
-    /** Where the carried thing would go if let go now, or null. */
+    }?.let { it.limb?.node?.tag ?: "" }?.takeUnless { isListTag(it) }
+    /** Where the carried thing would go if let go now, or null. A task can go to "no project yet"; a project or branch cannot. */
     fun goesTo(c: Carry, to: String?): String? = when {
         to == null -> null
-        c.task != null -> to.takeIf { it.isNotEmpty() && it != c.from }
-        else -> to.takeIf { Branches.graftTag(c.from, it) != null }
+        // A task with no project let go on the no-tag group or the whole of "no project yet" stays as it is.
+        c.task != null -> to.takeIf { it.isNotEmpty() && it != c.from && !(c.stray && Ygdrasil.isInbox(it) && inboxGroups[it] == null) }
+        else -> to.takeIf { !Ygdrasil.isInbox(it) && Branches.graftTag(c.from, it) != null }
     }
     val dropTag = carry?.let { goesTo(it, targetAt(carryAt)) }
     // A task held near a list (owner's pick, 2026-10-27, mock round 2): the nearest list within about half a finger
-    // takes it, since a list's card is small on a zoomed-out tree; let go, the task gets the list's tag and stays put.
+    // takes it, since a list's card is small on a zoomed-out tree; let go, the task moves into the list (owner, 2026-10-27).
     fun listAt(p: Offset): OmniList? {
         val reach = 30f / scale.coerceAtLeast(0.2f)
         return spots.filter { it.kind == Ygdrasil.Kind.LIMB && it.limb!!.node.tag.startsWith("$LIST_LIMB/") }
@@ -221,7 +229,7 @@ fun YgdrasilScreen(
             .filter { it.second < reach }.minByOrNull { it.second }
             ?.let { (s, _) -> state.lists.firstOrNull { listTagOf(it) == s.limb!!.node.tag } }
     }
-    val listDrop = carry?.takeIf { it.task != null && carryMoved && targetAt(carryAt) == null }?.let { listAt(carryAt) }
+    val listDrop = carry?.takeIf { it.task != null && carryMoved && targetAt(carryAt) == null }?.let { c -> listAt(carryAt)?.takeIf { listTagOf(it) != c.from } }
     // A folded List limb under a carried task: it springs open like a folded project, so its lists can take it.
     fun listRootAt(p: Offset): String? = spots.firstOrNull { s ->
         s.kind == Ygdrasil.Kind.LIMB && s.limb!!.node.tag == LIST_LIMB && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
@@ -239,15 +247,20 @@ fun YgdrasilScreen(
         val c = carry ?: return
         val to = goesTo(c, targetAt(carryAt))
         // Only after a real drag: a task held and let go where it was still opens.
-        val list = if (c.task != null && carryMoved && targetAt(carryAt) == null) listAt(carryAt) else null
+        val list = if (c.task != null && carryMoved && targetAt(carryAt) == null) listAt(carryAt)?.takeIf { listTagOf(it) != c.from } else null
         unspring()
+        // A task moves for real, to one place only (owner's pick, 2026-10-27, way ก).
+        val dest = when {
+            c.task == null -> null
+            list != null -> TreeMove.To.InList(list.tag)
+            to == null -> null
+            Ygdrasil.isInbox(to) -> TreeMove.To.NoHome(inboxGroups[to])
+            else -> TreeMove.To.Branch(to)
+        }
         when {
-            list != null -> vm.addToList(c.task!!, list.tag)
-            c.stray && to != null -> vm.homeTask(c.task!!, to)
-            c.stray -> if (!carryMoved) picking = c.task
-            c.task != null && to != null -> vm.moveTask(c.task, to)
-            c.task != null && !carryMoved -> onOpen(c.task)
-            to != null -> vm.graftBranch(c.from, to)
+            dest != null -> vm.moveInTree(c.task!!, dest)
+            c.task != null && !carryMoved -> if (c.stray) picking = c.task else onOpen(c.task)
+            c.task == null && to != null -> vm.graftBranch(c.from, to)
         }
         carry = null
     }
@@ -556,8 +569,7 @@ fun YgdrasilScreen(
                                         // A tap opens it (its ring ticks it); held, the task lifts and follows the finger
                                         // (the drag consumes the touch, so neither the tap nor the map's own drag sees it).
                                         // A task with no project: a tap picks its home, held it is dragged up onto a project.
-                                        else if (Ygdrasil.isInbox(from)) Modifier.pointerInput(t) { detectTapGestures(onTap = { picking = t }) }.carries(Carry(t, "", t.title, stray = true), s.y - s.h / 2, s.x)
-                                        else if (isListTag(from)) Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }
+                                        else if (Ygdrasil.isInbox(from)) Modifier.pointerInput(t) { detectTapGestures(onTap = { picking = t }) }.carries(Carry(t, from, t.title, stray = true), s.y - s.h / 2, s.x)
                                         else Modifier.pointerInput(t) { detectTapGestures(onTap = { onOpen(t) }) }.carries(Carry(t, from, t.title), s.y - s.h / 2, s.x),
                                     )
                                     .padding(end = 6.dp),
@@ -603,9 +615,10 @@ fun YgdrasilScreen(
                         Text(c.label, color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             when {
-                                listDrop != null -> tr("ติด #${listDrop.tag} (ใส่ใน ${listDrop.name})", "Tag #${listDrop.tag} (into ${listDrop.name})")
+                                listDrop != null -> tr("ย้ายไป ${listDrop.name}", "Move to ${listDrop.name}")
                                 dropTag == null && c.stray -> tr("ลากขึ้นไปวางบนกิ่ง", "Drag it up onto a branch")
                                 dropTag == null -> if (c.task != null) tr("ลากไปวางบนกิ่ง", "Drop it on a branch") else tr("ลากไปวางบนโปรเจกต์ กิ่ง หรือลำต้น", "Drop it on a project, branch or the trunk")
+                                c.task != null && Ygdrasil.isInbox(dropTag) -> tr("ย้ายไป ยังไม่มีบ้าน", "Move to No project yet")
                                 c.task != null -> tr("ย้ายไป #$dropTag", "Move to #$dropTag")
                                 dropTag.isEmpty() -> tr("แยกเป็นโปรเจกต์ของตัวเอง", "Make it a project of its own")
                                 else -> tr("ไปไว้ใต้ #$dropTag", "Put it under #$dropTag")
@@ -699,8 +712,8 @@ fun YgdrasilScreen(
                     MapButton(tr("ปิด", "Close")) { selTag = "" }
                 }
                 Text(
-                    if (list != null) tr("ลากงานมาวางบนรายการนี้ = ติด #${list.tag} ให้งาน งานยังอยู่ที่เดิม", "Drop a task here to tag it #${list.tag}; it stays where it is")
-                    else tr("ลากงานไปวางบนรายการไหน งานนั้นจะติดแท็กของรายการ", "Drop a task on a list to give it the list's tag"),
+                    if (list != null) tr("ลากงานมาวางบนรายการนี้ = ย้ายงานมาอยู่ในรายการนี้ (ออกจากโปรเจกต์เดิม)", "Drop a task here to move it into this list (it leaves its project)")
+                    else tr("ลากงานไปวางบนรายการไหน งานนั้นจะย้ายไปอยู่ในรายการนั้น", "Drop a task on a list to move it into that list"),
                     Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
                 )
             } else {
