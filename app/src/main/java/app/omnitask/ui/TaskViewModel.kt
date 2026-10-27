@@ -32,6 +32,7 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.Folders
 import app.omnitask.model.SpokenWhen
 import app.omnitask.model.TimeWords
 import app.omnitask.model.Ygdrasil
@@ -2233,6 +2234,31 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * The folder picker (owner's pick, 2026-10-26): the task's one folder becomes [folder] where its old one stood, or
+     * goes in front when it had none; null takes it out of its folder. Labels stay. A brand-new top folder becomes a
+     * project, so the task shows on the desktop and in Ygdrasil at once.
+     */
+    fun moveToFolder(task: Task, folder: String?) {
+        val from = Folders.of(task)
+        val to = folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() }
+        when {
+            // A label typed into the picker (#รอ/พี่เอ) is added; the folder stays.
+            to != null && Folders.isLabel(to) -> addTag(task, to)
+            to == null -> if (from != null) removeTag(task, from)
+            from == to -> return
+            else -> {
+                // Only a top folder no tag has used yet becomes a project; a tag already in use (#siriraj) stays as it is.
+                val root = to.substringBefore('/')
+                val s = _state.value
+                val known = s.projectTags.orEmpty().any { it.equals(root, ignoreCase = true) } ||
+                    (s.tasks + s.parked).any { t -> t.tags.any { it.substringBefore('/').equals(root, ignoreCase = true) } }
+                if (from == null) edit(task) { TaskLine.homeTag(it, to) } else edit(task) { TaskLine.retag(it, from, to) }
+                if (!known) s.projectTags?.let { saveProjectTags(it + root) }
+            }
+        }
+    }
+
+    /**
      * A task with no project gets one (from the tray under Ygdrasil): [tag] goes in front of its tags, which stay. A
      * new project's name is made a project, so the task shows on the tree at once.
      */
@@ -2263,6 +2289,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleStar(project: String) {
         val next = _state.value.starred.let { if (project in it) it - project else it + project }
+        prefs.edit().putStringSet(KEY_STARRED, next).apply()
+        _state.update { it.copy(starred = next) }
+    }
+
+    /**
+     * Desktop pins are the stars (owner's pick, 2026-10-26). Before any star every project sits on the desktop, so the
+     * first unpin stars all the others; unpinning the last one keeps [NO_PIN], so the desktop does not fill up again.
+     */
+    fun setPinned(project: String, on: Boolean, all: List<String>) {
+        val s = _state.value.starred
+        val next = when {
+            on -> s - NO_PIN + project
+            s.isEmpty() -> all.toSet() - project
+            else -> s - project
+        }.ifEmpty { setOf(NO_PIN) }
         prefs.edit().putStringSet(KEY_STARRED, next).apply()
         _state.update { it.copy(starred = next) }
     }
@@ -3561,6 +3602,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
         const val KEY_PROJECT_TAGS = "projectTags"
+        /** Kept among the stars when the owner has unpinned every project; no tag can hold a tab. */
+        const val NO_PIN = "\t"
         const val KEY_PROJECT_TASKS = "projectTaskOrder"
         const val KEY_STRICT = "strictProjects"
         const val KEY_OFF_PROJECTS = "declinedProjects"
