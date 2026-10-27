@@ -34,6 +34,9 @@ object Projects {
     private fun plain(tag: String) =
         !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags
 
+    /** Whether [tag] could name a project at all (see [plain]); the folder rules build on it. */
+    fun isPlain(tag: String) = plain(tag)
+
     /** The task's project tag in full, branch included ("peddose/แอป/มือถือ"): its first tag of a chosen project. */
     fun tagOf(t: Task): String? {
         val made = chosen

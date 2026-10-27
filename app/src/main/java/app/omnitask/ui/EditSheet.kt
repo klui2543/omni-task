@@ -68,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +82,7 @@ import app.omnitask.data.ImageAttach
 import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.model.Focus
+import app.omnitask.model.Folders
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Projects
@@ -105,6 +107,7 @@ import app.omnitask.time.*
 fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Unit, onOpen: (Task) -> Unit = {}) {
     var picking by remember { mutableStateOf<DateField?>(null) }
     var addingTag by remember { mutableStateOf(false) }
+    var choosingFolder by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     var linking by remember { mutableStateOf(false) }
@@ -192,8 +195,11 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             PropChip(task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }
             val custom = CustomKind.of(task, state.customKinds)
             PropChip(custom?.label ?: TaskKind.of(task).takeIf { it != TaskKind.NORMAL }?.label, tr("ประเภท", "Type"), open == Prop.KIND) { toggle(Prop.KIND) }
-            val tags = task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) || custom?.tag.equals(it, ignoreCase = true) }
-            PropChip(tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, "Tag", open == Prop.TAG) { toggle(Prop.TAG) }
+            // One folder, then the labels (owner's pick, 2026-10-26); both are still tags on the line.
+            val folder = Folders.of(task)
+            PropChip(folder?.substringAfterLast('/'), tr("โฟลเดอร์", "Folder"), false) { choosingFolder = true }
+            val tags = task.tags.filterNot { it == folder || it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) || custom?.tag.equals(it, ignoreCase = true) }
+            PropChip(tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" }, tr("ป้าย", "Labels"), open == Prop.TAG) { toggle(Prop.TAG) }
         }
 
         // The open chip's choices, right under the chips.
@@ -246,7 +252,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                     }
                     Prop.KIND -> KindField(task, state, vm)
                     Prop.TAG -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        task.tags.filterNot { it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }.forEach { tag ->
+                        task.tags.filterNot { it == Folders.of(task) || it.startsWith("remind-at-") || TaskKind.kindTags(task).contains(it) }.forEach { tag ->
                             Row(
                                 Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(C.accentSoft)
                                     .clickable { vm.removeTag(task, tag) }.padding(start = 12.dp, end = 8.dp),
@@ -257,7 +263,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                                 Icon(Ic.close, tr("ลบ #$tag", "Remove #$tag"), tint = C.muted, modifier = Modifier.size(13.dp))
                             }
                         }
-                        Chip(tr("+ เพิ่ม Tag", "+ Add tag"), false, { addingTag = true })
+                        Chip(tr("+ เพิ่มป้าย", "+ Add label"), false, { addingTag = true })
                     }
                 }
             }
@@ -356,6 +362,15 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
     if (repeating) RepeatDialog(task, { vm.setRecurrence(task, it) }) { repeating = false }
     if (notingStuck) StuckDialog(task, state.subtasksOf(task), today, { vm.noteStuck(task, it) }) { notingStuck = false }
     if (stuckLog) StuckTimeline(state, onOpen = { stuckLog = false; onOpen(it) }) { stuckLog = false }
+    if (choosingFolder) {
+        val folder = Folders.of(task)
+        FolderPicker(
+            state, folder,
+            labels = task.tags.filter { it != folder && !it.startsWith("remind-at-") },
+            onLabel = { l -> if (l in task.tags) vm.removeTag(task, l) else vm.addTag(task, l) },
+            onPick = { vm.moveToFolder(task, it); choosingFolder = false },
+        ) { choosingFolder = false }
+    }
     if (addingTag) {
         AddTagDialog(state.tags.filterNot { it.startsWith("remind-at-") || it in task.tags }, { vm.addTag(task, it); addingTag = false }) { addingTag = false }
     }
@@ -437,11 +452,11 @@ private fun DescriptionBlock(task: Task, vm: TaskViewModel) {
                 GhostButton(tr("ยกเลิก", "Cancel"), { text = task.description; editing = false })
                 PrimaryButton(tr("บันทึก", "Save"), { vm.setDescription(task, text); editing = false })
             }
+        } else if (task.description.isEmpty()) {
+            Text(tr("แตะเพื่อเขียนรายละเอียด", "Tap to add details"), Modifier.padding(top = 4.dp), color = C.faint, fontSize = TS.body)
         } else {
-            Text(
-                task.description.ifEmpty { tr("แตะเพื่อเขียนรายละเอียด", "Tap to add details") },
-                Modifier.padding(top = 4.dp), color = if (task.description.isEmpty()) C.faint else C.text, fontSize = TS.body,
-            )
+            // Web addresses open in the browser; a tap anywhere else still starts writing.
+            Text(withWebLinks(task.description), Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.body)
         }
     }
 }
@@ -756,6 +771,35 @@ private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss:
     )
 }
 
+/**
+ * The details with each web address (a shared link sits there as `- https://...`) underlined and opening in the
+ * browser; a phone with nothing to open it says so instead of failing quietly.
+ */
+@Composable
+private fun withWebLinks(text: String): androidx.compose.ui.text.AnnotatedString {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val style = androidx.compose.ui.text.TextLinkStyles(
+        androidx.compose.ui.text.SpanStyle(color = C.accentText, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+    )
+    return androidx.compose.ui.text.buildAnnotatedString {
+        var at = 0
+        app.omnitask.model.WebLinks.find(text).forEach { r ->
+            append(text.substring(at, r.first))
+            val url = text.substring(r.first, r.last + 1)
+            val open = androidx.compose.ui.text.LinkInteractionListener {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(context, tr("ไม่พบแอปที่เปิดลิงก์นี้ได้", "No app can open this link"), Toast.LENGTH_SHORT).show()
+                }
+            }
+            withLink(androidx.compose.ui.text.LinkAnnotation.Url(url, style, open)) { append(url) }
+            at = r.last + 1
+        }
+        append(text.substring(at))
+    }
+}
+
 /** Opens a vault note in Obsidian; the vault is named after its folder. */
 private fun openNote(context: Context, vault: String?, path: String) {
     val file = Uri.encode(path.removeSuffix(".md"))
@@ -775,7 +819,7 @@ private fun AddTagDialog(suggestions: List<String>, onAdd: (String) -> Unit, onD
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text(tr("เพิ่ม Tag", "Add tag")) },
+        title = { Text(tr("เพิ่มป้าย", "Add a label")) },
         text = {
             Column {
                 BasicTextField(

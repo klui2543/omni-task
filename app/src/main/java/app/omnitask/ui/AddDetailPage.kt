@@ -310,9 +310,15 @@ fun AddDetailPage(
                                     color = if (priority == Priority.NONE) C.faint else C.text, fontSize = TS.body,
                                 )
                             }
+                            // One folder and any labels (owner's pick, 2026-10-26); still written as tags.
                             FormRow(Ic.tag, onClick = { picking = "tags" }) {
+                                val folder = app.omnitask.model.Folders.ofTags(tags)
+                                if (folder != null) FolderGlyph(folderTint(folder), 20.dp, Modifier.padding(end = 8.dp))
                                 Text(
-                                    if (tags.isEmpty()) tr("เพิ่ม Tag", "Add a tag") else tags.joinToString("  ") { "#$it" },
+                                    listOfNotNull(
+                                        folder?.let(::folderTrail) ?: tr("เลือกโฟลเดอร์", "Choose a folder"),
+                                        tags.filter { it != folder }.takeIf { it.isNotEmpty() }?.joinToString("  ") { "#$it" },
+                                    ).joinToString("   "),
                                     color = if (tags.isEmpty()) C.faint else C.text, fontSize = TS.body,
                                 )
                             }
@@ -378,7 +384,13 @@ fun AddDetailPage(
             tr("ปฏิทิน", "Calendar"), writable.map { it.id to it.name.ifBlank { it.account } }, calendar?.id ?: -1L,
             { calendarId = it }, { picking = null },
         )
-        "tags" -> TagsDialog(state, tags) { picking = null }
+        "tags" -> FolderPicker(
+            state,
+            current = app.omnitask.model.Folders.ofTags(tags),
+            labels = app.omnitask.model.Folders.ofTags(tags).let { f -> tags.filter { it != f } },
+            onLabel = { l -> if (l in tags) tags.remove(l) else tags.add(l) },
+            onPick = { f -> val next = app.omnitask.model.Folders.withFolder(tags.toList(), f); tags.clear(); tags.addAll(next); picking = null },
+        ) { picking = null }
         "repeat" -> RepeatDialog(rep, event, date, { rep = it }) { picking = null }
     }
 }
@@ -457,35 +469,6 @@ internal fun DayDialog(title: String, current: LocalDate, clear: (() -> Unit)?, 
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
     ) { DatePicker(state = ps, title = { Text(title, Modifier.padding(start = 24.dp, top = 16.dp), color = C.muted, fontSize = TS.caption) }, colors = DatePickerDefaults.colors(containerColor = C.raised)) }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TagsDialog(state: UiState, tags: MutableList<String>, onDismiss: () -> Unit) {
-    var typed by remember { mutableStateOf("") }
-    val known = remember(state.tasks) {
-        state.tasks.flatMap { it.tags }.filter { !it.startsWith("remind-at-") }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }.take(24)
-    }
-    fun addTyped() {
-        val t = app.omnitask.data.TaskLine.normalizeTag(typed)
-        if (t.isNotEmpty() && t !in tags) tags.add(t)
-        typed = ""
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = C.raised,
-        title = { Text("Tag") },
-        text = {
-            Column {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (tags + known.filter { it !in tags }).forEach { t -> Chip("#$t", t in tags, { if (t in tags) tags.remove(t) else tags.add(t) }) }
-                }
-                Box(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.sunken).padding(14.dp)) {
-                    PlainField(typed, { typed = it }, tr("Tag ใหม่", "New tag"), Modifier.fillMaxWidth(), imeAction = ImeAction.Done, onDone = { addTyped() })
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { addTyped(); onDismiss() }) { Text(tr("ตกลง", "OK"), color = C.accent) } },
-    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

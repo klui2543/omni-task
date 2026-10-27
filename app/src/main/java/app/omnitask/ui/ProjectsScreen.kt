@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import app.omnitask.model.Branches
+import app.omnitask.model.Folders
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -86,14 +87,27 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     var ygFolded by rememberSaveable { mutableStateOf("") }
     // A project opened from Ygdrasil: back goes back to the tree, not to the project cards.
     var fromWorld by rememberSaveable { mutableStateOf(false) }
-    fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; world = true }
-    BackHandler(enabled = open != null || openList != null || world) {
+    // The desktop (owner's pick, 2026-10-26): a folder inside a project ("Siriraj/ตารางเวรเภสัช"), and the folders
+    // "อื่นๆ" ("other") and "List" ("list") that hold what is not pinned.
+    var folderPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var shelf by rememberSaveable { mutableStateOf<String?>(null) }
+    val pinned = if (state.starred.isEmpty()) projects.map { it.name }.toSet() else state.starred
+    fun folderUp() { val p = folderPath ?: return; folderPath = p.substringBeforeLast('/').takeIf { '/' in it } }
+    // A folder belongs to the project it was opened in: another project (or none) starts at its own page. Keyed on the
+    // name, so a project missing for a moment while the tasks reload keeps its folder.
+    LaunchedEffect(openName) { if (folderPath?.startsWith("$openName/") != true) folderPath = null }
+    // A tag in "อื่นๆ" opened to see its tasks, before it is made a project.
+    var tagShown by remember { mutableStateOf<String?>(null) }
+    fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; openListPath = null; listCategory = null; world = true }
+    BackHandler(enabled = open != null || openList != null || world || shelf != null) {
         when {
             world -> world = false
             mapping && fromWorld -> backToWorld()
             mapping -> mapping = false
             projectView != null -> projectView = null
+            folderPath != null -> folderUp()
             fromWorld -> backToWorld()
+            open == null && openList == null -> shelf = null
             else -> { openName = null; openListPath = null; listCategory = null }
         }
     }
@@ -110,12 +124,23 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     if (renaming && open != null) {
         RenameProjectDialog(open.name, vm.renameCount(open.name), { new -> vm.renameProject(open.name, new); openName = new; renaming = false }) { renaming = false }
     }
+    tagShown?.let { tag ->
+        TagTasksSheet(
+            state, tag, canMakeProject = tag != app.omnitask.model.Focus.WAITING_TAG,
+            onOpen = { tagShown = null; onOpen(it) },
+            onToggle = { vm.toggleDone(it) },
+            onMakeProject = { vm.setProject(tag, true); tagShown = null },
+        ) { tagShown = null }
+    }
     if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
     if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
     if (deletingList && openList != null) {
         val own = state.itemsOf(openList).count { it.list != null }
         val pulled = state.itemsOf(openList).size - own
-        DeleteListDialog(openList, own, pulled, { vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null }) { deletingList = false }
+        DeleteListDialog(openList, own, pulled, {
+            vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null
+            if (fromWorld) backToWorld()
+        }) { deletingList = false }
     }
 
     if (world && open == null && openList == null) {
@@ -126,6 +151,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             onOpen = onOpen,
             onOpenProject = { name -> world = false; fromWorld = true; openName = name; projectView = null; mapping = true },
             onBack = { world = false },
+            onOpenList = { l -> world = false; fromWorld = true; openListPath = l.path },
+            onCreateList = { world = false; shelf = "list"; creatingList = true },
         )
         return
     }
@@ -159,24 +186,49 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (open != null || openList != null) {
-                    SquareButton(Ic.back, tr("กลับ", "Back"), { if (fromWorld) backToWorld() else { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false } })
+                if (open != null || openList != null || shelf != null) {
+                    SquareButton(Ic.back, tr("กลับ", "Back"), {
+                        when {
+                            folderPath != null -> folderUp()
+                            fromWorld -> backToWorld()
+                            open == null && openList == null -> shelf = null
+                            else -> { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false }
+                        }
+                    })
                     Box(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(open?.name ?: openList?.name ?: tr("โปรเจกต์/ลิสต์", "Projects/Lists"), style = MaterialTheme.typography.headlineSmall, color = C.text)
+                    val shelfName = when (shelf) { "other" -> tr("อื่นๆ", "Other"); "list" -> "List"; else -> null }
                     Text(
+                        folderPath?.takeIf { open != null }?.substringAfterLast('/') ?: open?.name ?: openList?.name ?: shelfName ?: tr("โปรเจกต์", "Projects"),
+                        style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    if (open != null && folderPath != null) {
+                        FolderCrumbs(folderPath ?: open.name, { folderPath = null; openName = null; shelf = null }) { to -> folderPath = to.takeIf { '/' in it } }
+                    } else Text(
                         when {
                             open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
                             openList != null -> tr("แตะวงกลมเพื่อติ๊กว่าทำหรือดูแล้ว", "Tap the ring to tick what you've done or watched")
-                            else -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
+                            shelf == "other" -> tr("โปรเจกต์ที่ไม่ได้ปักหมุด แท็กเดี่ยว และป้าย", "Projects not pinned, lone tags and labels")
+                            shelf == "list" -> tr("รายการทั้งหมดอยู่ในโฟลเดอร์นี้", "Every list lives in this folder")
+                            arranging -> tr("ติดดาวให้ขึ้นบนสุด กดจัดลำดับเพื่อลากขึ้นลง", "Star to keep on top, Arrange to drag")
+                            else -> tr("หมุดอยู่บนเดสก์ท็อป ที่เหลืออยู่ในโฟลเดอร์ อื่นๆ", "Pinned folders stay on the desktop; the rest are in Other")
                         },
                         color = C.muted, fontSize = TS.caption,
                     )
                 }
-                if (open != null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
+                if (open != null && folderPath == null) {
+                    val on = open.name in pinned
+                    Text(
+                        if (on) tr("ถอดหมุด", "Unpin") else tr("ปักหมุด", "Pin"),
+                        Modifier.padding(end = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(12.dp))
+                            .clickable { vm.setPinned(open.name, !on, projects.map { it.name }) }.padding(horizontal = 12.dp, vertical = 9.dp),
+                        color = C.text2, fontSize = TS.caption,
+                    )
+                }
+                if (open != null && folderPath == null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
                 if (openList != null) SquareButton(Ic.trash, tr("ลบรายการนี้", "Delete this list"), { deletingList = true })
-                if (open == null && openList == null && projects.size > 1) {
+                if (open == null && openList == null && shelf == null && projects.size > 1) {
                     Text(
                         if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
                         Modifier.clip(RoundedCornerShape(12.dp)).background(if (arranging) C.accent else C.card)
@@ -189,20 +241,108 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
 
         if (openList != null) {
             listDetail(openList, state, vm, listCategory, { listCategory = it }, onOpen) { pickingIcon = true }
+        } else if (open == null && shelf == "list") {
+            listCards(state, { openListPath = it.path }) { creatingList = true }
+        } else if (open == null && shelf == "other") {
+            val unpinned = projects.filter { it.name !in pinned }
+            val loose = others.filter { !Folders.isLabel(it.first) }
+            // #รอ is a label too, though it never names a project.
+            val waits = (state.tasks + state.parked).count { t -> t.status != app.omnitask.model.Status.CANCELLED && t.tags.any { it == app.omnitask.model.Focus.WAITING_TAG || it.startsWith(app.omnitask.model.Focus.WAITING_TAG + "/") } }
+            val labels = others.filter { Folders.isLabel(it.first) } + listOfNotNull(if (waits > 0) app.omnitask.model.Focus.WAITING_TAG to waits else null)
+            if (unpinned.isNotEmpty()) item(key = "other projects") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DeskHead(tr("โปรเจกต์ที่ไม่ได้ปักหมุด", "Projects not pinned"))
+                    TileGrid(unpinned.map { p -> Tile(p.name, p.name, "${p.done}/${p.tasks.size}", folderTint(p.name), { openName = p.name }, late = p.overdue) })
+                }
+            }
+            // Tags that are not projects yet; a tap shows their tasks, with the way to make one a project.
+            if (loose.isNotEmpty()) item(key = "other loose") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DeskHead(tr("แท็กเดี่ยว", "Lone tags"))
+                    TileGrid(loose.map { (tag, n) -> Tile(tag, tag, tr("$n งาน", "$n tasks"), folderTint(tag), { tagShown = tag }, dashed = true) })
+                }
+            }
+            if (labels.isNotEmpty()) item(key = "other labels") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DeskHead(tr("ป้าย (ไม่ใช่โฟลเดอร์ ติดได้หลายอัน)", "Labels (not folders, any number per task)"))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        labels.forEach { (tag, n) -> Chip("#$tag  $n", false, { tagShown = tag }) }
+                    }
+                }
+            }
+            if (unpinned.isEmpty() && loose.isEmpty() && labels.isEmpty()) item(key = "other empty") {
+                Text(tr("ยังไม่มีอะไรในโฟลเดอร์นี้", "Nothing in this folder yet"), Modifier.padding(6.dp), color = C.muted, fontSize = TS.body)
+            }
         } else if (open == null) {
             if (projects.isEmpty()) {
                 item {
                     Card {
                         Text(
                             if (others.isEmpty()) tr("ยังไม่มีงานที่ติด Tag", "No tagged tasks yet")
-                            else tr("ยังไม่มีโปรเจกต์ แตะแท็กด้านล่างเพื่อทำเป็นโปรเจกต์", "No projects yet. Tap a tag below to make it one."),
+                            else tr("ยังไม่มีโปรเจกต์ เปิดโฟลเดอร์ อื่นๆ แล้วเลือกแท็กเพื่อทำเป็นโปรเจกต์", "No projects yet. Open Other and pick a tag to make it one."),
                             Modifier.padding(16.dp), color = C.muted,
                         )
                     }
                 }
             }
             if (projects.isNotEmpty() && !arranging) item(key = "ygdrasil entry") { YgdrasilEntry { world = true } }
-            shown.forEachIndexed { i, p ->
+            if (!arranging) {
+                val pins = projects.filter { it.name in pinned }
+                val unpinnedCount = projects.count { it.name !in pinned } + others.count { !Folders.isLabel(it.first) }
+                val hasLabels = others.any { Folders.isLabel(it.first) }
+                item(key = "desk pins") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DeskHead(tr("ปักหมุด", "Pinned"))
+                        if (pins.isEmpty()) Text(
+                            tr("ยังไม่มีโฟลเดอร์ที่ปักหมุด เปิดโฟลเดอร์ใน อื่นๆ แล้วกด ปักหมุด", "Nothing pinned yet. Open a folder in Other and tap Pin"),
+                            color = C.faint, fontSize = TS.caption,
+                        )
+                        else TileGrid(pins.map { p -> Tile(p.name, p.name, "${p.done}/${p.tasks.size}", folderTint(p.name), { openName = p.name }, pinned = true, late = p.overdue) })
+                    }
+                }
+                item(key = "desk folders") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DeskHead(tr("โฟลเดอร์", "Folders"))
+                        TileGrid(
+                            listOf(
+                                Tile(
+                                    "other", tr("อื่นๆ", "Other"),
+                                    tr("$unpinnedCount โฟลเดอร์", "$unpinnedCount folders") + if (hasLabels) tr(" + ป้าย", " + labels") else "",
+                                    C.muted, { shelf = "other" }, mark = "⋯",
+                                ),
+                                Tile("list", "List", tr("${state.lists.size} รายการ", "${state.lists.size} lists"), C.accent, { shelf = "list" }, mark = "☰"),
+                            ),
+                        )
+                    }
+                }
+                // What the pinned folders hold next, as the project rows showed it.
+                if (pins.isNotEmpty()) item(key = "desk next") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DeskHead(tr("ถัดไปของที่ปักหมุด", "Next in the pinned folders"))
+                        pins.forEach { p ->
+                            val tint = folderTint(p.name)
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { openName = p.name }.padding(start = 4.dp, top = 8.dp, bottom = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    FolderGlyph(tint, 18.dp)
+                                    Text(p.name, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${p.done}/${p.tasks.size}", Modifier.padding(end = 8.dp), color = C.muted, fontSize = TS.caption)
+                                }
+                                Box(Modifier.padding(start = 28.dp, end = 12.dp, top = 6.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.divider)) {
+                                    Box(Modifier.fillMaxWidth(p.ratio.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(tint))
+                                }
+                                Row(Modifier.padding(start = 28.dp, top = 6.dp, end = 12.dp)) {
+                                    Text(
+                                        p.next?.let { tr("ถัดไป: ", "Next: ") + it.title } ?: tr("ไม่มีงานค้าง", "Nothing open"),
+                                        Modifier.weight(1f, fill = false), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (p.overdue > 0) Text(tr("  เลยกำหนดจริง ${p.overdue}", "  ${p.overdue} past deadline"), color = C.red, fontSize = TS.caption, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (arranging) shown.forEachIndexed { i, p ->
                 item(key = p.name) {
                     val lifted = dragging == p.name
                     // The new look: a row, not a card. Name, steps done, a thin bar, and the next step.
@@ -213,8 +353,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                 Box(Modifier.size(8.dp).clip(CircleShape).background(tint))
                                 Text(p.name, Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("${p.done}/${p.tasks.size}", color = C.muted, fontSize = TS.caption)
-                                val on = p.name in state.starred
-                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
+                                val on = p.name in pinned
+                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.setPinned(p.name, !on, projects.map { it.name }) }
                             }
                             Box(Modifier.padding(start = 18.dp, end = 12.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.divider)) {
                                 Box(Modifier.fillMaxWidth(p.ratio.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(tint))
@@ -268,8 +408,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = C.text)
                                     Text(tr("เสร็จ ${p.done} จาก ${p.tasks.size} งาน", "${p.done} of ${p.tasks.size} done"), color = C.muted, fontSize = TS.caption)
                                 }
-                                val on = p.name in state.starred
-                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.toggleStar(p.name) }
+                                val on = p.name in pinned
+                                IconTap(Ic.star, if (on) tr("เอาดาวออก", "Unstar") else tr("ติดดาว", "Star"), if (on) C.amber else C.faint) { vm.setPinned(p.name, !on, projects.map { it.name }) }
                             }
                             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 p.next?.let { Pill(tr("ถัดไป: ${it.title}", "Next: ${it.title}"), C.raised, C.text2) }
@@ -280,24 +420,61 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     }
                 }
             }
-            if (!arranging && others.isNotEmpty()) {
-                item(key = "other tags") {
-                    Card {
-                        SectionHead(tr("แท็กอื่น", "Other tags"), C.text2, "${others.size}")
-                        Text(
-                            tr("แตะเพื่อทำเป็นโปรเจกต์", "Tap one to make it a project"),
-                            Modifier.padding(horizontal = 16.dp), color = C.muted, fontSize = TS.caption,
-                        )
-                        FlowRow(
-                            Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            others.forEach { (tag, n) -> Chip("#$tag  $n", false, { vm.setProject(tag, true) }) }
+        } else if (folderPath != null) {
+            // A folder inside a project: its folders, then its own open work, then the work further in.
+            val tree = Branches.tree(open.name, projectTasks, state.branchStates)
+            val node = tree.flatten().firstOrNull { it.tag == folderPath }
+            if (node == null) item(key = "folder gone") {
+                Text(tr("ไม่พบโฟลเดอร์นี้แล้ว อาจถูกย้ายหรือเปลี่ยนชื่อ", "This folder is gone; it may have been moved or renamed"), Modifier.padding(6.dp), color = C.muted, fontSize = TS.body)
+            } else {
+                item(key = "folder progress") {
+                    val tint = folderTint(node.tag)
+                    Column {
+                        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.divider)) {
+                            val r = if (node.all.isEmpty()) 0f else node.done.toFloat() / node.all.size
+                            Box(Modifier.fillMaxWidth(r.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(tint))
                         }
+                        Text(
+                            tr("ทำแล้ว ${node.done} จาก ${node.all.size}", "${node.done} of ${node.all.size} done") +
+                                if (node.state == Branches.State.PARKED) tr(", พับเก็บอยู่", ", parked") else "",
+                            Modifier.padding(top = 6.dp), color = C.muted, fontSize = TS.caption,
+                        )
                     }
                 }
+                if (node.children.isNotEmpty()) item(key = "folder kids") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DeskHead(tr("โฟลเดอร์ย่อย", "Folders inside"))
+                        TileGrid(node.children.map { n -> subTile(n, state.today) { folderPath = n.tag } }, small = true)
+                    }
+                }
+                val own = node.own.filter { it.isOpen && it.parent == null }
+                item(key = "folder own") {
+                    Card {
+                        SectionHead(tr("งานในโฟลเดอร์นี้", "In this folder"), C.accentText, "${own.size}")
+                        if (own.isEmpty()) Text(
+                            tr("ไม่มีงานค้างตรงนี้ เปิดโฟลเดอร์ย่อยเพื่อดูงานข้างใน", "Nothing open here. Open a folder inside to see its work"),
+                            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp), color = C.muted, fontSize = TS.caption,
+                        )
+                        own.forEachIndexed { i, t ->
+                            if (i > 0) Divider(start = 48.dp)
+                            TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) })
+                        }
+                        Box(Modifier.height(4.dp))
+                    }
+                }
+                val deeper = node.all.filter { it.isOpen && it.parent == null && it !in node.own }
+                if (deeper.isNotEmpty()) item(key = "folder deeper") {
+                    Card {
+                        SectionHead(tr("ในโฟลเดอร์ย่อย", "In the folders inside"), C.text2, "${deeper.size}")
+                        deeper.forEachIndexed { i, t ->
+                            if (i > 0) Divider(start = 48.dp)
+                            TaskRow(t, state.today, { vm.toggleDone(t) }, { onOpen(t) })
+                        }
+                        Box(Modifier.height(4.dp))
+                    }
+                }
+                item(key = "folder map") { BranchSection(tree) { mapping = true } }
             }
-            if (!arranging) listCards(state, { openListPath = it.path }) { creatingList = true }
         } else {
             item(key = "views") { ProjectViewSwitch(null) { projectView = it } }
             if (!NewLook.on) item {
@@ -307,7 +484,14 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     StatCard("${open.blocked.size}", tr("ติดรองานอื่น", "Blocked"), if (open.blocked.isNotEmpty()) C.amber else C.text, Modifier.weight(1f))
                 }
             }
-            item(key = "branches") { BranchSection(Branches.tree(open.name, projectTasks, state.branchStates)) { mapping = true } }
+            val tree = Branches.tree(open.name, projectTasks, state.branchStates)
+            if (tree.children.isNotEmpty()) item(key = "subfolders") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DeskHead(tr("โฟลเดอร์ย่อย", "Folders inside"))
+                    TileGrid(tree.children.map { n -> subTile(n, state.today) { folderPath = n.tag } }, small = true)
+                }
+            }
+            item(key = "branches") { BranchSection(tree) { mapping = true } }
             // Open work in the owner's order (1, 2, 3...), then what is done; parked branches stay out.
             val parked = state.parked.toSet()
             val openTasks = vm.orderedProjectTasks(open.name, open.tasks.filter { it.isOpen && it.parent == null && it !in parked })
@@ -439,3 +623,10 @@ private fun ProjectViewSwitch(selected: Mode?, modifier: Modifier = Modifier, on
     }
     Segmented(listOf<Pair<Mode?, String>>(null to tr("ภาพรวม", "Overview")) + Mode.entries.map { it to it.label }, selected, onSelect, modifier.fillMaxWidth())
 }
+
+/** A folder inside a project, as an icon: its own colour stays its project's, and a parked one is faded. */
+private fun subTile(n: Branches.Node, today: kotlinx.datetime.LocalDate, onClick: () -> Unit) = Tile(
+    n.tag, n.name, "${n.done}/${n.all.size}", folderTint(n.tag), onClick,
+    late = n.all.count { t -> t.isOpen && t.due?.let { it < today } == true },
+    dim = n.state == Branches.State.PARKED,
+)
