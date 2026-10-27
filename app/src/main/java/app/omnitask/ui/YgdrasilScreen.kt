@@ -460,14 +460,19 @@ fun YgdrasilScreen(
                                     .then(
                                         if (embed != null) Modifier
                                         else if (listLimb) Modifier.pointerInput(n.tag, s.folded) {
-                                            detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) })
+                                            detectTapGestures(onTap = { selTag = n.tag; if (world) onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
                                         else if (inbox) Modifier.pointerInput(n.tag, s.folded) {
                                             detectTapGestures(onTap = { onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
                                         else Modifier
-                                            // A tap on a folded project opens it as well.
-                                            .pointerInput(n.tag, s.folded) { detectTapGestures(onTap = { selTag = n.tag; if (world && s.folded) onFolded(foldedNow - n.tag) }) }
+                                            // A tap picks it and folds or opens it, like the No project card (owner, 2026-10-27).
+                                            .pointerInput(n.tag, s.folded) {
+                                                detectTapGestures(onTap = {
+                                                    selTag = n.tag
+                                                    if (s.folded) onFolded(foldedNow - n.tag) else if (n.children.isNotEmpty() || n.all.isNotEmpty()) onFolded(foldedNow + n.tag)
+                                                })
+                                            }
                                             .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
                                     )
                                     .padding(horizontal = 10.dp),
@@ -643,7 +648,7 @@ fun YgdrasilScreen(
                 }
                 Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     MapButton(tr("กางทั้งหมด", "Unfold all")) { onFolded(emptySet()) }
-                    MapButton(tr("พับทุกโปรเจกต์", "Fold every project")) { onFolded(tree.worlds.map { it.node.tag }.toSet()) }
+                    MapButton(tr("พับทุกโปรเจกต์", "Fold every project")) { onFolded(grown.worlds.map { it.node.tag }.toSet()) }
                     MapButton(if (filter.links) tr("ซ่อนเส้นงานที่รอกัน", "Hide wait lines") else tr("แสดงเส้นงานที่รอกัน", "Show wait lines")) { onFilter(filter.copy(links = !filter.links)) }
                 }
                 Text(tr("กางเองเมื่อมีงานถึง", "Open on their own with work up to"), Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption)
