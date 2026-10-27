@@ -196,6 +196,8 @@ fun YgdrasilScreen(
     var carry by remember { mutableStateOf<Carry?>(null) }
     var carryAt by remember { mutableStateOf(Offset.Zero) }
     var carryMoved by remember { mutableStateOf(false) }
+    // Set when a press lifts a card, so letting it go where it was does not also fold or open it.
+    val lifted = remember { booleanArrayOf(false) }
     val spots by rememberUpdatedState(layout.spots)
     fun targetAt(p: Offset): String? = spots.firstOrNull { s ->
         (s.kind == Ygdrasil.Kind.LIMB || s.kind == Ygdrasil.Kind.TRUNK) && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
@@ -250,6 +252,7 @@ fun YgdrasilScreen(
     fun Modifier.carries(what: Carry, top: Float, left: Float): Modifier = pointerInput(what, top, left) {
         detectDragGesturesAfterLongPress(
             onDragStart = { o ->
+                lifted[0] = true
                 carry = what
                 carryMoved = false
                 carryAt = Offset(left + o.x / density, top + o.y / density)
@@ -467,10 +470,11 @@ fun YgdrasilScreen(
                                         }
                                         else Modifier
                                             // A tap picks it and folds or opens it, like the No project card (owner, 2026-10-27).
-                                            .pointerInput(n.tag, s.folded) {
-                                                detectTapGestures(onTap = {
+                                            .pointerInput(n.tag, s.folded, n.children.size, n.all.size) {
+                                                detectTapGestures(onPress = { lifted[0] = false }, onTap = {
                                                     selTag = n.tag
-                                                    if (s.folded) onFolded(foldedNow - n.tag) else if (n.children.isNotEmpty() || n.all.isNotEmpty()) onFolded(foldedNow + n.tag)
+                                                    if (lifted[0]) Unit
+                                                    else if (s.folded) onFolded(foldedNow - n.tag) else if (n.children.isNotEmpty() || n.all.isNotEmpty()) onFolded(foldedNow + n.tag)
                                                 })
                                             }
                                             .carries(Carry(null, n.tag, if (world) "#" + n.name else n.name), s.y - s.h / 2, s.x),
