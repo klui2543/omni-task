@@ -57,6 +57,11 @@ object Review {
                     .thenBy(nullsFirst()) { lastMove(it.task) },
             )
 
+    private val FOR_SOMEONE = Regex("""ให้((?:พี่|น้อง|อาจารย์|คุณ|หมอ)[^\s"]{1,12})(?:\s|$)""")
+
+    /** A name the title says the task is for ("ช่วยดูระบบให้พี่ต่าย" gives "พี่ต่าย"), offered on the "คนที่รอ" question. */
+    fun nameIn(title: String): String? = FOR_SOMEONE.find(title)?.groupValues?.get(1)
+
     // ---- Weighing ----
 
     /** "ถ้าไม่ทำเลย จะเกิดอะไร": the answer and its points toward importance. */

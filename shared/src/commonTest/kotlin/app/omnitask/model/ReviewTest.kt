@@ -98,6 +98,13 @@ class ReviewTest {
     }
 
     @Test
+    fun aNameInTheTitleIsOfferedAsTheOneWaiting() {
+        assertEquals("พี่ต่าย", Review.nameIn("ช่วยดูระบบให้พี่ต่าย"))
+        assertEquals("อาจารย์สม", Review.nameIn("ส่งสไลด์ให้อาจารย์สม ก่อนประชุม"))
+        assertEquals(null, Review.nameIn("ให้อาหารแมว"))
+    }
+
+    @Test
     fun levels() {
         assertEquals(
             listOf(Priority.HIGHEST, Priority.HIGH, Priority.MEDIUM, Priority.NONE, Priority.LOW),

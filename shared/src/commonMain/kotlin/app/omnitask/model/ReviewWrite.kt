@@ -42,7 +42,7 @@ object ReviewWrite {
         val due: LocalDate? = null,
         /** "เขาต้องการ: ไม่แน่ใจ": a task to ask them is added for today. */
         val askWhen: Boolean = false,
-        /** "อยู่ที่": the folder to move to. */
+        /** "อยู่ที่": the folder to move to; an empty one takes the task out of its folder ("ยังไม่มีบ้าน"). */
         val folder: String? = null,
         val delay: Review.Delay? = null,
         val impact: Review.Impact? = null,
@@ -73,9 +73,10 @@ object ReviewWrite {
         }
         a.scheduled?.let { line = TaskLine.setDate(line, DateField.SCHEDULED, it) }
         a.due?.let { line = TaskLine.setDate(line, DateField.DUE, it) }
-        a.folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() }?.let { to ->
+        a.folder?.let(Folders::clean)?.let { to ->
             val from = Folders.of(task)
             line = when {
+                to.isEmpty() -> from?.let { TaskLine.removeTag(line, it) } ?: line
                 Folders.isLabel(to) -> TaskLine.addTag(line, to)
                 from == null -> TaskLine.homeTag(line, to)
                 else -> TaskLine.retag(line, from, to)

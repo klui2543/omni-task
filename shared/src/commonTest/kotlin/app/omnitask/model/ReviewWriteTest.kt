@@ -88,6 +88,8 @@ class ReviewWriteTest {
         assertEquals("- [ ] Mock UX UI #peddose ⏫ 🆔 mock1 ➕ 2026-10-02", run(0, Answers(Progress.GO, waiting = false)).first[0])
         // Moving to another folder keeps the labels where they are.
         assertEquals("- [ ] Mock UX UI #omni #รอ ⏫ 🆔 mock1 ➕ 2026-10-02", run(0, Answers(Progress.GO, folder = "omni")).first[0])
+        // "ยังไม่มีบ้าน" takes it out of its folder, labels stay.
+        assertEquals("- [ ] Mock UX UI #รอ ⏫ 🆔 mock1 ➕ 2026-10-02", run(0, Answers(Progress.GO, folder = "")).first[0])
     }
 
     @Test

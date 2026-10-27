@@ -310,7 +310,7 @@ fun StuckBlock(task: Task, subtasks: List<Task>, today: LocalDate, onAdd: () -> 
     val done = subtasks.count { it.status == app.omnitask.model.Status.DONE }
     Column(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.sunken).padding(horizontal = 12.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("ความเป็นไป", "How it is going"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
+            Text(tr("ความคืบหน้า", "Progress"), Modifier.weight(1f), color = C.muted, fontSize = TS.caption)
             if (subtasks.isNotEmpty()) Text(tr("งานย่อย $done/${subtasks.size}", "Subtasks $done/${subtasks.size}"), color = C.muted, fontSize = TS.caption)
         }
         if (subtasks.isNotEmpty()) {

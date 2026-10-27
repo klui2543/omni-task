@@ -78,11 +78,9 @@ fun FocusScreen(
     val nl = NewLook.on
     var lateOpen by rememberSaveable { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
-    var reviewing by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
     val voice by vm.voice.collectAsStateWithLifecycle()
     if (picking) FuturePicker(state, vm) { picking = false }
-    if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
     // The calendar choice, opened from an event (its calendar pointed out) or from the line under the day.
     var calendarsOpen by remember { mutableStateOf(false) }
     var calendarsFrom by remember { mutableStateOf<CalendarEvent?>(null) }
@@ -263,8 +261,6 @@ fun FocusScreen(
         }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
         // The new look leaves out the nudges ("3 days without touching..."): the secretary brings them up in its chat.
         if (!nl) brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
-
-        if (!nl && state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
 
         // Overdue work is not part of the day's timeline: it sits in its own card below it.
         val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
