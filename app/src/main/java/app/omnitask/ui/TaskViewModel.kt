@@ -2811,6 +2811,77 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Project Ygdrasil (owner, 2026-10-28: list folders move like a project's branches): the folder [fromPath] of
+     * [from] let go on the folder [toPath] of [to] ("" for the list itself) goes under it with everything inside.
+     * In the same list every line is retagged where it is, as one step of Ygdrasil's undo; to another list, the lines
+     * written in the old note move into the new one.
+     */
+    fun moveListFolder(from: OmniList, fromPath: String, to: OmniList, toPath: String) {
+        val vault = _state.value.vault ?: return
+        val same = from.path == to.path
+        val base = ListFolders.movedTo(fromPath, toPath, same) ?: return
+        val moving = _state.value.itemsOf(from).filter { ListFolders.inside(fromPath, ListFolders.pathOf(from, it)) }
+        val saved = ListFolders.savedInside(from, fromPath).map { ListFolders.rebase(it, fromPath, base) }
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        if (same) {
+                            // Lines still placed by an old category tag get the nested tag first, so one retag moves all.
+                            val bad = moving.filter { t -> t.tags.none { it.startsWith(from.tag + "/", ignoreCase = true) } }.count { t ->
+                                runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, from, ListFolders.pathOf(from, t), inNote = t.list == from.name) } }.isFailure
+                            }
+                            repo.renameProject(moving.map { it.fileUri }, ListFolders.tagOf(from, fromPath), ListFolders.tagOf(from, base))
+                            bad
+                        } else {
+                            // A subtask travels in its parent's block, so only the top of each block is moved.
+                            val keys = moving.map { it.key }.toSet()
+                            moving.filter { t -> t.list != from.name || t.parent == null || t.parent !in keys }.count { t ->
+                                val at = ListFolders.rebase(ListFolders.pathOf(from, t), fromPath, base)
+                                val transform = { raw: String -> TaskLine.addTag(ListFolders.unplace(raw, from, inNote = t.list == from.name), ListFolders.tagOf(to, at)) }
+                                runCatching { if (t.list == from.name) repo.moveToNote(vault, t, to.path, transform) else repo.rewriteLine(t, transform) }.isFailure
+                            }
+                        }
+                    }.also {
+                        // The empty folders saved in the notes' headers go along.
+                        runCatching {
+                            if (same) {
+                                writeHeadNow(vault, from) { now -> saved.fold(ListFolders.withoutFolder(now, fromPath)) { l, f -> ListFolders.withFolder(l, f) } }
+                            } else {
+                                writeHeadNow(vault, from) { now -> ListFolders.withoutFolder(now, fromPath) }
+                                writeHeadNow(vault, to) { now -> saved.fold(now) { l, f -> ListFolders.withFolder(l, f) } }
+                            }
+                        }
+                    }
+                }
+            }
+            result.onSuccess { bad ->
+                if (same && bad == 0) remember(UndoStep(UndoStep.Kind.MOVED, "#" + ListFolders.tagOf(from, fromPath), retag = ListFolders.tagOf(from, fromPath) to ListFolders.tagOf(from, base)), inTree = true)
+                val where = if (toPath.isEmpty()) to.name else ListFolders.nameOf(toPath)
+                _state.update {
+                    it.copy(
+                        message = if (bad == 0) tr("ย้าย ${ListFolders.nameOf(fromPath)} ไปไว้ใต้ $where แล้ว", "Moved ${ListFolders.nameOf(fromPath)} under $where")
+                        else tr("ย้ายไม่ได้ $bad รายการ ไฟล์อาจถูกแก้จากที่อื่น", "$bad items could not move; a file may have changed"),
+                    )
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Rewrites the header of the list note at [list]'s path from what [change] makes of the header it has now. */
+    private fun writeHeadNow(vault: android.net.Uri, list: OmniList, change: (OmniList) -> OmniList) {
+        val text = repo.readPath(vault, list.path) ?: return
+        val end = text.indexOf("\n---", 3)
+        if (!text.startsWith("---") || end < 0) return
+        val now = OmniList.parse(list.path, text) ?: return
+        val next = change(now)
+        if (next == now) return
+        repo.writePath(vault, list.path, next.render().substringBefore("# ") + text.substring(end + 4).trimStart('\r', '\n'))
+    }
+
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
 
     fun requestStuck(on: Boolean) = _state.update { it.copy(askStuck = on) }
@@ -3738,7 +3809,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, new) } }
             result.onSuccess { n ->
                 saveBranchStates(Branches.moveTag(_state.value.branchStates, old, new))
-                _state.value.projectTags?.let { tags -> saveProjectTags(tags + new.substringBefore('/')) }
+                // A list's folder moved back stays a list's folder, never a project.
+                val root = new.substringBefore('/')
+                if (Projects.listRoots.none { it.equals(root, ignoreCase = true) }) _state.value.projectTags?.let { tags -> saveProjectTags(tags + root) }
                 recordMove(old, new, n, undoable = false)
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }

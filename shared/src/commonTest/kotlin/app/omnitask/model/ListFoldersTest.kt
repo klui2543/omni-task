@@ -116,4 +116,26 @@ class ListFoldersTest {
         assertFalse("icon:" in text)
         assertEquals("Books", OmniList.parse("Omni/Books.md", text)?.name)
     }
+
+    @Test
+    fun aFolderLetGoOnAnotherGoesUnderItKeepingItsName() {
+        assertEquals("ประสบการณ์/ญี่ปุ่น", ListFolders.movedTo("เที่ยว/ญี่ปุ่น", "ประสบการณ์", sameList = true))
+        assertEquals("ญี่ปุ่น", ListFolders.movedTo("เที่ยว/ญี่ปุ่น", "", sameList = true))
+        // Let go where it already is, or inside itself: nothing to do.
+        assertEquals(null, ListFolders.movedTo("เที่ยว/ญี่ปุ่น", "เที่ยว", sameList = true))
+        assertEquals(null, ListFolders.movedTo("เที่ยว", "เที่ยว/ญี่ปุ่น", sameList = true))
+        // To another list, the same spot is fine.
+        assertEquals("เที่ยว/ญี่ปุ่น", ListFolders.movedTo("เที่ยว/ญี่ปุ่น", "เที่ยว", sameList = false))
+    }
+
+    @Test
+    fun itemsDeeperInAMovedFolderKeepTheirPlaceInIt() {
+        assertEquals("ประสบการณ์/ญี่ปุ่น/ฮอกไกโด", ListFolders.rebase("เที่ยว/ญี่ปุ่น/ฮอกไกโด", "เที่ยว/ญี่ปุ่น", "ประสบการณ์/ญี่ปุ่น"))
+        assertEquals("ประสบการณ์/ญี่ปุ่น", ListFolders.rebase("เที่ยว/ญี่ปุ่น", "เที่ยว/ญี่ปุ่น", "ประสบการณ์/ญี่ปุ่น"))
+    }
+
+    @Test
+    fun aLineLeavesItsListWithItsPlacingCategory() {
+        assertEquals("- [ ] Shogun #อ่าน", ListFolders.unplace("- [ ] Shogun #bucketlist #เที่ยว #อ่าน", bucket))
+    }
 }

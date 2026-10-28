@@ -66,13 +66,33 @@ object ListFolders {
      * already in the list ([inNote] for a line written in the list's note): a task pulled in keeps a tag like
      * `#หนังสือ` that only shares a category's name. Other tags stay.
      */
-    fun place(raw: String, list: OmniList, path: String, inNote: Boolean = false): String {
+    fun place(raw: String, list: OmniList, path: String, inNote: Boolean = false): String =
+        if (TaskLine.parse(raw) == null) raw else TaskLine.addTag(unplace(raw, list, inNote), tagOf(list, path))
+
+    /** The line [raw] out of [list]: its list and folder tags, and the old category tag that placed it, come off. */
+    fun unplace(raw: String, list: OmniList, inNote: Boolean = false): String {
         val task = TaskLine.parse(raw) ?: return raw
         val inList = inNote || task.tags.any { isListTag(list, it) }
-        val off = (task.tags.filter { isListTag(list, it) } + listOfNotNull(categoryTagOf(list, task)?.takeIf { inList }))
+        return (task.tags.filter { isListTag(list, it) } + listOfNotNull(categoryTagOf(list, task)?.takeIf { inList }))
             .fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) }
-        return TaskLine.addTag(off, tagOf(list, path))
     }
+
+    /**
+     * Where a folder [from] goes when it is let go on [to] (owner, 2026-10-28: list folders move on Ygdrasil like a
+     * project's branches): under it, keeping its name. Null when that changes nothing or would put it inside itself.
+     */
+    fun movedTo(from: String, to: String, sameList: Boolean): String? {
+        if (from.isEmpty()) return null
+        if (sameList && (parentOf(from).equals(to, ignoreCase = true) || inside(from, to))) return null
+        return if (to.isEmpty()) nameOf(from) else "$to/${nameOf(from)}"
+    }
+
+    /** An item at [itemPath], inside the folder [from] that moved to [base], at its new place. */
+    fun rebase(itemPath: String, from: String, base: String): String = base + itemPath.substring(minOf(from.length, itemPath.length))
+
+    /** The saved folders of [list] inside [path] ([path] too), cleaned. */
+    fun savedInside(list: OmniList, path: String): List<String> =
+        (list.categories + list.folders).map(::clean).filter { it.isNotEmpty() && inside(path, it) }
 
     /** [list] with the empty folder [path] saved: one level in `categories:`, deeper in `folders:`. */
     fun withFolder(list: OmniList, path: String): OmniList {
