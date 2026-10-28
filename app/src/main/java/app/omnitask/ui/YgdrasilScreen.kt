@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.Branches
+import app.omnitask.model.GroupMove
 import app.omnitask.model.ListFolders
 import app.omnitask.model.OmniList
 import app.omnitask.model.Priority
@@ -235,22 +236,40 @@ fun YgdrasilScreen(
     }
     /** The list or folder [c] would go into if let go at [p]: not where it is, and a folder never into itself. */
     fun listDropAt(c: Carry, p: Offset): Pair<OmniList, String>? {
-        if (!carryMoved || (c.task == null && !isListTag(c.from)) || (c.task != null && targetAt(p) != null)) return null
-        val at = listAt(p) ?: return null
-        val tag = limbTagOf(at)
-        if (tag == c.from) return null
-        if (c.task == null) {
-            if (tag.startsWith(c.from + "/")) return null
-            val from = listPlace(state.lists, c.from) ?: return null
-            if (ListFolders.movedTo(from.second, at.second, from.first.path == at.first.path) == null) return null
-        }
-        return at
+        if (!carryMoved || c.task == null || targetAt(p) != null) return null
+        return listAt(p)?.takeIf { limbTagOf(it) != c.from }
     }
-    val listDrop = carry?.let { listDropAt(it, carryAt) }
     // A folded List limb under a carried task: it springs open like a folded project, so its lists can take it.
     fun listRootAt(p: Offset): String? = spots.firstOrNull { s ->
         s.kind == Ygdrasil.Kind.LIMB && s.limb!!.node.tag == LIST_LIMB && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
     }?.let { LIST_LIMB }
+    /** The group a carried card stands for: a list or a folder of one, or a project or a branch. */
+    fun groupOf(c: Carry): GroupMove.From? = when {
+        c.task != null || c.from.isEmpty() || Ygdrasil.isInbox(c.from) -> null
+        isListTag(c.from) -> listPlace(state.lists, c.from)?.let { GroupMove.From.Folder(it.first, it.second) }
+        else -> GroupMove.From.Branch(c.from)
+    }
+    /**
+     * Where a carried group would go if let go at [p], beyond a branch's own move onto a project or branch (owner,
+     * 2026-10-28: "ต้องทำไปหมดทุกคุณสมบัติ"): a list's folder onto a project, a branch or the trunk; anything onto
+     * the List card, a list of its own; a project or branch onto a list or a folder of one.
+     */
+    fun groupDropAt(c: Carry, p: Offset): GroupDrop? {
+        if (!carryMoved) return null
+        val from = groupOf(c) ?: return null
+        val hit = targetAt(p)
+        if (hit != null) {
+            if (from !is GroupMove.From.Folder || Ygdrasil.isInbox(hit)) return null
+            return GroupMove.To.Branch(hit).let { to -> GroupMove.placeOf(from, to)?.let { GroupDrop(to, hit.ifEmpty { null }?.let { "#$it" }) } }
+        }
+        if (listRootAt(p) != null) return if (from is GroupMove.From.Folder && from.path.isEmpty()) null else GroupDrop(null, null)
+        val at = listAt(p) ?: return null
+        val to = GroupMove.To.Folder(at.first, at.second)
+        GroupMove.placeOf(from, to) ?: return null
+        return GroupDrop(to, if (at.second.isEmpty()) at.first.name else ListFolders.nameOf(at.second), limbTagOf(at))
+    }
+    val groupDrop = carry?.let { groupDropAt(it, carryAt) }
+    val listDrop = carry?.let { listDropAt(it, carryAt) }
     val baseConfig = LocalViewConfiguration.current
     val quickHold = remember(baseConfig) { object : ViewConfiguration by baseConfig { override val longPressTimeoutMillis: Long get() = HOLD_MS } }
     // Folded branches opened for a moment while something is held over them; folded again when it is let go.
@@ -266,9 +285,15 @@ fun YgdrasilScreen(
         // Only after a real drag: a task held and let go where it was still opens.
         val list = listDropAt(c, carryAt)
         unspring()
+        // A whole group: a list, a list's folder, a project or a branch (owner, 2026-10-28).
+        val group = groupDropAt(c, carryAt)
+        val from = groupOf(c)
+        if (c.task == null && group != null && from != null) {
+            if (group.to == null) vm.moveToNewList(from) else vm.moveGroup(from, group.to)
+            carry = null
+            return
+        }
         if (c.task == null && isListTag(c.from)) {
-            val from = listPlace(state.lists, c.from)
-            if (from != null && list != null) vm.moveListFolder(from.first, from.second, list.first, list.second)
             carry = null
             return
         }
@@ -306,8 +331,7 @@ fun YgdrasilScreen(
         )
     }
     val hovered = carry?.let { c ->
-        if (c.task == null && isListTag(c.from)) listRootAt(carryAt) ?: listAt(carryAt)?.let { limbTagOf(it) }
-        else targetAt(carryAt) ?: if (c.task != null) listRootAt(carryAt) ?: listAt(carryAt)?.let { limbTagOf(it) } else null
+        targetAt(carryAt) ?: listRootAt(carryAt) ?: listAt(carryAt)?.let { limbTagOf(it) }
     }
     // Held over a folded project or branch for a moment, it opens to show its branches.
     LaunchedEffect(hovered, carry != null) {
@@ -322,7 +346,7 @@ fun YgdrasilScreen(
     LaunchedEffect(carry != null) {
         while (carry != null) {
             delay(16)
-            if (targetAt(carryAt) != null || ((carry?.task != null || carryingList) && listAt(carryAt) != null)) continue
+            if (targetAt(carryAt) != null || listAt(carryAt) != null) continue
             val k = density * scale
             val y = carryAt.y * k + pan.y
             val bottom = box.height - (if (trayOpen) trayHeight else 0)
@@ -477,7 +501,7 @@ fun YgdrasilScreen(
                             Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
                                 .clip(RoundedCornerShape(12.dp)).background(C.accent)
                                 .then(if (sel == null) Modifier.border(2.dp, C.accentText, RoundedCornerShape(12.dp)) else Modifier)
-                                .then(if (carry != null && dropTag == "") Modifier.border(2.dp, C.amber, RoundedCornerShape(12.dp)) else Modifier)
+                                .then(if (carry != null && (dropTag == "" || (groupDrop?.to as? GroupMove.To.Branch)?.tag == "")) Modifier.border(2.dp, C.amber, RoundedCornerShape(12.dp)) else Modifier)
                                 .clickable { selTag = "" }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -493,7 +517,9 @@ fun YgdrasilScreen(
                             val listLimb = isListTag(n.tag)
                             val list = if (listLimb && !world) listPlace(state.lists, n.tag)?.takeIf { it.second.isEmpty() }?.first else null
                             val picked = sel === s
-                            val target = carry != null && (dropTag == n.tag || (listDrop != null && limbTagOf(listDrop) == n.tag))
+                            val target = carry != null && (dropTag == n.tag || (listDrop != null && limbTagOf(listDrop) == n.tag) ||
+                                (groupDrop != null && (groupDrop.limb == n.tag || (groupDrop.to == null && n.tag == LIST_LIMB) ||
+                                    (groupDrop.to is GroupMove.To.Branch && (groupDrop.to as GroupMove.To.Branch).tag == n.tag))))
                             Row(
                                 Modifier.offset(s.x.dp, (s.y - s.h / 2).dp).width(s.w.dp).height(s.h.dp)
                                     .clip(RoundedCornerShape(10.dp)).background(if (target) C.amberSoft else if (inbox) C.bg else if (world) C.accentSoft else C.card)
@@ -504,10 +530,10 @@ fun YgdrasilScreen(
                                     .alpha(if (n.state == Branches.State.PARKED) 0.5f else if (carry?.task == null && carry?.from == n.tag) 0.35f else if (faint(n.tag)) 0.35f else 1f)
                                     .then(
                                         if (embed != null) Modifier
-                                        else if (listLimb && (world || list != null)) Modifier.pointerInput(n.tag, s.folded) {
+                                        else if (listLimb && world) Modifier.pointerInput(n.tag, s.folded) {
                                             detectTapGestures(onTap = { selTag = n.tag; onFolded(if (s.folded) foldedNow - n.tag else foldedNow + n.tag) })
                                         }
-                                        // A folder in a list: picked, folded and carried like a project's branch (owner, 2026-10-28).
+                                        // A list, or a folder in one: picked, folded and carried like a project or its branch (owner, 2026-10-28).
                                         else if (listLimb) Modifier
                                             .pointerInput(n.tag, s.folded, n.children.size, n.all.size) {
                                                 detectTapGestures(onPress = { lifted[0] = false }, onTap = {
@@ -653,8 +679,11 @@ fun YgdrasilScreen(
                         Text(
                             when {
                                 listDrop != null -> (if (listDrop.second.isEmpty()) listDrop.first.name else ListFolders.nameOf(listDrop.second))
-                                    .let { if (c.task == null) tr("ไปไว้ใต้ $it", "Put it under $it") else tr("ย้ายไป $it", "Move to $it") }
-                                carryingList -> tr("ลากไปวางบนรายการหรือโฟลเดอร์ใน List", "Drop it on a list or a folder in List")
+                                    .let { tr("ย้ายไป $it", "Move to $it") }
+                                groupDrop != null && groupDrop.to == null -> tr("เป็นรายการใหม่ใน List", "Make it a list of its own")
+                                groupDrop != null && groupDrop.where == null -> tr("แยกเป็นโปรเจกต์ของตัวเอง", "Make it a project of its own")
+                                groupDrop != null -> tr("ไปไว้ใต้ ${groupDrop.where}", "Put it under ${groupDrop.where}")
+                                carryingList -> tr("ลากไปวางบนรายการ โฟลเดอร์ โปรเจกต์ กิ่ง หรือลำต้น", "Drop it on a list, folder, project, branch or the trunk")
                                 dropTag == null && c.stray -> tr("ลากขึ้นไปวางบนกิ่ง", "Drag it up onto a branch")
                                 dropTag == null -> if (c.task != null) tr("ลากไปวางบนกิ่ง", "Drop it on a branch") else tr("ลากไปวางบนโปรเจกต์ กิ่ง หรือลำต้น", "Drop it on a project, branch or the trunk")
                                 c.task != null && Ygdrasil.isInbox(dropTag) -> tr("ย้ายไป ยังไม่มีบ้าน", "Move to No project yet")
@@ -768,10 +797,13 @@ fun YgdrasilScreen(
                 }
                 Text(
                     if (place != null && place.second.isNotEmpty()) tr(
-                        "กดค้างที่โฟลเดอร์แล้วลากไปวางบนรายการหรือโฟลเดอร์อื่นเพื่อย้าย ของข้างในย้ายตามไปด้วย ลากงานมาวางที่นี่เพื่อย้ายงานเข้าโฟลเดอร์นี้",
-                        "Hold the folder and drag it onto another list or folder to move it with everything inside. Drop a task here to move it in",
+                        "กดค้างที่โฟลเดอร์แล้วลากไปวางบนรายการ โฟลเดอร์ โปรเจกต์ กิ่ง หรือลำต้นเพื่อย้าย วางบนการ์ด List เป็นรายการใหม่ ของข้างในย้ายตามไปด้วย",
+                        "Hold the folder and drag it onto a list, folder, project, branch or the trunk to move it with everything inside; on the List card it becomes a list",
                     )
-                    else if (list != null) tr("ลากงานหรือโฟลเดอร์มาวางบนรายการนี้ = ย้ายมาอยู่ในรายการนี้ (งานออกจากโปรเจกต์เดิม)", "Drop a task or folder here to move it into this list (a task leaves its project)")
+                    else if (list != null) tr(
+                        "ลากงาน โฟลเดอร์ หรือกิ่งมาวางบนรายการนี้ = ย้ายมาอยู่ในรายการนี้ กดค้างที่รายการแล้วลากไปวางใต้รายการ โฟลเดอร์ หรือกิ่งอื่นก็ได้",
+                        "Drop a task, folder or branch here to move it into this list. Hold the list and drag it under another list, folder or branch",
+                    )
                     else tr("ลากงานไปวางบนรายการไหน งานนั้นจะย้ายไปอยู่ในรายการนั้น", "Drop a task on a list to move it into that list"),
                     Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
                 )
@@ -790,7 +822,13 @@ fun YgdrasilScreen(
                     MapButton(if (node.tag in folded) tr("กาง", "Unfold") else tr("พับ", "Fold")) { onFolded(if (node.tag in folded) folded - node.tag else folded + node.tag) }
                     MapButton(tr("เปิด Mind map", "Open mind map")) { onOpenProject(node.project) }
                 }
-                Text(tr("แตะงานเพื่อติ๊ก กดค้างแล้วลากไปวางบนโปรเจกต์หรือกิ่งอื่นเพื่อย้าย ปล่อยที่เดิมเพื่อเปิด", "Tap a task to tick it. Hold and drag it onto another project or branch to move it, or let go to open it"), Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption)
+                Text(
+                    tr(
+                        "แตะงานเพื่อติ๊ก กดค้างแล้วลากไปวางบนโปรเจกต์หรือกิ่งอื่นเพื่อย้าย ปล่อยที่เดิมเพื่อเปิด กิ่งลากไปวางบนรายการหรือโฟลเดอร์ใน List ก็ได้",
+                        "Tap a task to tick it. Hold and drag it onto another project or branch to move it, or let go to open it. A branch can go onto a list or a folder in List too",
+                    ),
+                    Modifier.padding(top = 8.dp), color = C.muted, fontSize = TS.caption,
+                )
             }
         }
         }
@@ -799,6 +837,9 @@ fun YgdrasilScreen(
 
 /** What is carried across the tree: a task ([task] set), or a project or branch; [from] is its tag. */
 private data class Carry(val task: Task?, val from: String, val label: String, val stray: Boolean = false)
+
+/** Where a carried group would land: [to] null for a new list on the List card; [where] says it, [limb] is the list limb lit. */
+private data class GroupDrop(val to: GroupMove.To?, val where: String?, val limb: String? = null)
 
 /** Tasks, projects and branches lift after this short a hold (the system's long press is slower). */
 private const val HOLD_MS = 250L

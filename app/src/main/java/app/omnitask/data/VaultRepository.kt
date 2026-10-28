@@ -257,12 +257,13 @@ class VaultRepository(private val context: Context) {
     class Moved(val cut: Cut, val fromPath: String, val toPath: String, val lines: List<String>)
 
     /**
-     * Moves the task with its whole block to the end of the note [toPath], its line changed by [transform] (a list
-     * item dragged to a project goes into the task note). If [toPath] cannot be written, the task is put back.
+     * Moves the task with its whole block to the end of the note [toPath], its line changed by [transform] and the
+     * lines under it by [rest] (a list item dragged to a project goes into the task note). If [toPath] cannot be
+     * written, the task is put back.
      */
-    fun moveToNote(treeUri: Uri, task: Task, toPath: String, transform: (String) -> String): Moved {
+    fun moveToNote(treeUri: Uri, task: Task, toPath: String, transform: (String) -> String, rest: (String) -> String = { it }): Moved {
         val cut = deleteTask(task)
-        val lines = listOf(transform(cut.lines.first())) + cut.lines.drop(1)
+        val lines = listOf(transform(cut.lines.first())) + cut.lines.drop(1).map(rest)
         try {
             update(treeUri, toPath) { text -> VaultText.appendBlock(text ?: throw java.io.IOException(tr("ไม่พบ $toPath", "Not found: $toPath")), lines) }
         } catch (e: Exception) {

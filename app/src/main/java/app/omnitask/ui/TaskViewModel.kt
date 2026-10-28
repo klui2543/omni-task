@@ -34,6 +34,7 @@ import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Folders
+import app.omnitask.model.GroupMove
 import app.omnitask.model.ListFolders
 import app.omnitask.model.SpokenWhen
 import app.omnitask.model.TimeWords
@@ -2814,56 +2815,123 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Project Ygdrasil (owner, 2026-10-28: list folders move like a project's branches): the folder [fromPath] of
-     * [from] let go on the folder [toPath] of [to] ("" for the list itself) goes under it with everything inside.
-     * In the same list every line is retagged where it is, as one step of Ygdrasil's undo; to another list, the lines
-     * written in the old note move into the new one.
+     * [from] ("" for the whole list) let go on the folder [toPath] of [to] ("" for the list itself) goes under it with
+     * everything inside; see [moveGroup].
      */
-    fun moveListFolder(from: OmniList, fromPath: String, to: OmniList, toPath: String) {
-        val vault = _state.value.vault ?: return
-        val same = from.path == to.path
-        val base = ListFolders.movedTo(fromPath, toPath, same) ?: return
-        val moving = _state.value.itemsOf(from).filter { !it.todayCopy && ListFolders.inside(fromPath, ListFolders.pathOf(from, it)) }
-        val saved = ListFolders.savedInside(from, fromPath).map { ListFolders.rebase(it, fromPath, base) }
+    fun moveListFolder(from: OmniList, fromPath: String, to: OmniList, toPath: String) =
+        moveGroup(GroupMove.From.Folder(from, fromPath), GroupMove.To.Folder(to, toPath))
+
+    /**
+     * A list, a folder of a list, or a project's branch let go on the List card becomes a list of its own (owner,
+     * 2026-10-28: "ต้องทำไปหมดทุกคุณสมบัติ", like a branch let go on the trunk becomes a project).
+     */
+    fun moveToNewList(from: GroupMove.From) {
+        val s = _state.value
+        val name = when (from) {
+            is GroupMove.From.Folder -> if (from.path.isEmpty()) return else ListFolders.nameOf(from.path)
+            is GroupMove.From.Branch -> from.tag.substringAfterLast('/')
+        }.replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").trim()
+        if (name.isEmpty()) return
+        val made = OmniList(name, "${OmniList.FOLDER}/$name.md", "", emptyList())
+        // A tag a task outside the group already starts with would pull that project or list into the new one.
+        val pool = s.allTasks + s.parked
+        val inside = GroupMove.members(from, pool).map { it.key }.toSet()
+        val taken = s.lists.any { it.name.equals(name, ignoreCase = true) || it.tag.equals(made.tag, ignoreCase = true) } ||
+            pool.any { t -> t.key !in inside && t.tags.any { it.substringBefore('/').equals(made.tag, ignoreCase = true) } }
+        if (taken) {
+            _state.update { it.copy(message = tr("มี #${made.tag} อยู่แล้ว จึงทำเป็นรายการใหม่ชื่อนี้ไม่ได้", "#${made.tag} is already in use, so no new list can take this name")) }
+            return
+        }
+        moveGroup(from, GroupMove.To.Folder(made, "", made = true))
+    }
+
+    /**
+     * Project Ygdrasil (owner, 2026-10-28: "ต้องทำไปหมดทุกคุณสมบัติ", a list's folders do all that a project's branches
+     * do): a list, a folder of a list, or a project's branch carried with everything inside to a list or a folder of
+     * one, a new list, or a project, a branch or the trunk (see [GroupMove]). The saved empty folders and branches go
+     * along, a list left with nothing in its note goes, and the whole of it is one step of Ygdrasil's undo.
+     */
+    fun moveGroup(from: GroupMove.From, to: GroupMove.To) {
+        val s = _state.value
+        val vault = s.vault ?: return
+        val branches = s.branchStates.keys.map { (p, path) -> if (path.isEmpty()) p else "$p/$path" }
+        val plan = GroupMove.plan(from, to, s.allTasks + s.parked, branches, VaultRepository.TASK_FILE) ?: return
+        val title = GroupMove.nameOf(from)
+        val statesBefore = s.branchStates
+        val tagsBefore = s.projectTags
         viewModelScope.launch {
             val result = writeLock.withLock {
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        val bad = if (same) {
-                            // Each line gets the tag of its new place, spelled as the move writes it, so the undo's retag finds them all.
-                            moving.count { t ->
-                                val at = ListFolders.rebase(ListFolders.pathOf(from, t), fromPath, base)
-                                runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, from, at, inNote = t.list == from.name) } }.isFailure
-                            }
-                        } else {
-                            // A subtask travels in its parent's block, so only the top of each block is moved.
-                            val keys = moving.map { it.key }.toSet()
-                            moving.filter { t -> t.list != from.name || t.parent == null || t.parent !in keys }.count { t ->
-                                val at = ListFolders.rebase(ListFolders.pathOf(from, t), fromPath, base)
-                                val transform = { raw: String -> TaskLine.addTag(ListFolders.unplace(raw, from, inNote = t.list == from.name), ListFolders.tagOf(to, at)) }
-                                runCatching { if (t.list == from.name) repo.moveToNote(vault, t, to.path, transform) else repo.rewriteLine(t, transform) }.isFailure
-                            }
+                        val g = GroupUndo()
+                        if (to is GroupMove.To.Folder && to.made) {
+                            if (repo.readPath(vault, to.list.path) != null) error(tr("มีโน้ตชื่อ ${to.list.name} แล้ว", "A note named ${to.list.name} exists"))
+                            val text = to.list.render()
+                            repo.writePath(vault, to.list.path, text)
+                            g.made = to.list.path to (repo.readPath(vault, to.list.path) ?: text)
                         }
-                        // The empty folders saved in the notes' headers go along, only when every line went: a half move keeps them where they were.
-                        val headOk = bad > 0 || runCatching {
-                            if (same) {
-                                writeHeadNow(vault, from) { now -> saved.fold(ListFolders.withoutFolder(now, fromPath)) { l, f -> ListFolders.withFolder(l, f) } }
-                            } else {
-                                writeHeadNow(vault, from) { now -> ListFolders.withoutFolder(now, fromPath) }
-                                writeHeadNow(vault, to) { now -> saved.fold(now) { l, f -> ListFolders.withFolder(l, f) } }
+                        var bad = 0
+                        plan.steps.forEach { st ->
+                            runCatching {
+                                if (st.note != null) g.parts += repo.moveToNote(vault, st.task, st.note!!, st.line, st.rest)
+                                else g.parts += repo.rewriteLineRecorded(st.task, st.line)
+                            }.onFailure { bad++ }
+                        }
+                        // The notes' headers and a list left empty change only when every line went: a half move keeps them.
+                        var headOk = true
+                        if (bad == 0) headOk = runCatching {
+                            val heads = linkedMapOf<String, MutableList<(OmniList) -> OmniList>>()
+                            fun head(path: String, change: (OmniList) -> OmniList) { heads.getOrPut(path) { mutableListOf() } += change }
+                            if (from is GroupMove.From.Folder && from.path.isNotEmpty()) head(from.list.path) { ListFolders.withoutFolder(it, from.path) }
+                            if (to is GroupMove.To.Folder) head(to.list.path) { l -> plan.empty.fold(l) { acc, f -> ListFolders.withFolder(acc, f) } }
+                            heads.forEach { (path, changes) -> headSwap(vault, path) { l -> changes.fold(l) { acc, c -> c(acc) } }?.let { g.heads += it } }
+                            if (from is GroupMove.From.Folder && from.path.isEmpty()) {
+                                val text = repo.readPath(vault, from.list.path)
+                                if (text != null && listIsBare(text)) {
+                                    repo.deletePath(vault, from.list.path)
+                                    g.gone = from.list.path to text
+                                }
                             }
                         }.isSuccess
-                        bad to headOk
+                        Triple(g, bad, headOk)
                     }
                 }
             }
-            result.onSuccess { (bad, headOk) ->
-                if (same && bad == 0) remember(UndoStep(UndoStep.Kind.MOVED, "#" + ListFolders.tagOf(from, fromPath), retag = ListFolders.tagOf(from, fromPath) to ListFolders.tagOf(from, base)), inTree = true)
-                val where = if (toPath.isEmpty()) to.name else ListFolders.nameOf(toPath)
+            result.onSuccess { (g, bad, headOk) ->
+                if (bad == 0) {
+                    // Branches and projects: the group's own go, its empty ones stand where it landed.
+                    var states = statesBefore
+                    var tags = tagsBefore
+                    if (from is GroupMove.From.Branch) {
+                        states = states.filterKeys { (p, path) -> (if (path.isEmpty()) p else "$p/$path").let { it != from.tag && !it.startsWith(from.tag + "/") } }
+                        if ('/' !in from.tag) tags = tags?.minus(from.tag)
+                    }
+                    if (to is GroupMove.To.Branch) {
+                        plan.empty.filter { '/' in it }.forEach { e ->
+                            val path = e.substringAfter('/')
+                            states = states + ((e.substringBefore('/') to path) to if ('/' in path) Branches.State.TRYING else Branches.State.ACTIVE)
+                        }
+                        if (to.tag.isEmpty()) tags = tags?.plus(plan.at)
+                    }
+                    g.states = statesBefore to states
+                    g.tags = tagsBefore to tags
+                    if (states != statesBefore) saveBranchStates(states)
+                    if (tags != null && tags != tagsBefore) saveProjectTags(tags)
+                }
+                if (!g.isEmpty()) remember(UndoStep(UndoStep.Kind.MOVED, title, group = g), inTree = true)
+                val where = when (to) {
+                    is GroupMove.To.Folder -> if (to.made) null else if (to.path.isEmpty()) to.list.name else ListFolders.nameOf(to.path)
+                    is GroupMove.To.Branch -> to.tag.ifEmpty { null }?.let { "#$it" }
+                }
                 _state.update {
                     it.copy(
-                        message = if (bad == 0 && headOk) tr("ย้าย ${ListFolders.nameOf(fromPath)} ไปไว้ใต้ $where แล้ว", "Moved ${ListFolders.nameOf(fromPath)} under $where")
-                        else if (bad == 0) tr("ย้าย ${ListFolders.nameOf(fromPath)} แล้ว แต่จดโฟลเดอร์ว่างที่หัวโน้ตไม่ได้", "Moved ${ListFolders.nameOf(fromPath)}, but the empty folders could not be noted in the list's header")
-                        else tr("ย้ายไม่ได้ $bad รายการ ไฟล์อาจถูกแก้จากที่อื่น", "$bad items could not move; a file may have changed"),
+                        message = when {
+                            bad > 0 -> tr("ย้ายไม่ได้ $bad รายการ ไฟล์อาจถูกแก้จากที่อื่น ที่ย้ายไปแล้วกดย้อนได้", "$bad items could not move; a file may have changed. What moved can be undone")
+                            !headOk -> tr("ย้าย $title แล้ว แต่จดโฟลเดอร์ว่างที่หัวโน้ตไม่ได้", "Moved $title, but the empty folders could not be noted in the list's header")
+                            to is GroupMove.To.Folder && to.made -> tr("$title เป็นรายการใหม่แล้ว", "$title is a list of its own now")
+                            where == null -> tr("$title เป็นโปรเจกต์ของตัวเองแล้ว", "$title is a project of its own now")
+                            else -> tr("ย้าย $title ไปไว้ใต้ $where แล้ว", "Moved $title under $where")
+                        },
                     )
                 }
             }
@@ -2872,15 +2940,66 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Rewrites the header of the list note at [list]'s path from what [change] makes of the header it has now. */
-    private fun writeHeadNow(vault: android.net.Uri, list: OmniList, change: (OmniList) -> OmniList) {
-        val text = repo.readPath(vault, list.path) ?: return
+    /** Whether a list note holds nothing but its header and its title, so it can go once its items moved away. */
+    private fun listIsBare(text: String): Boolean {
         val end = text.indexOf("\n---", 3)
-        if (!text.startsWith("---") || end < 0) return
-        val now = OmniList.parse(list.path, text) ?: return
+        if (!text.startsWith("---") || end < 0) return false
+        val body = text.substring(end + 4).lines().map { it.trim() }.filter { it.isNotEmpty() }
+        return body.size <= 1 && body.all { it.startsWith("# ") }
+    }
+
+    /**
+     * One move of a whole group on Ygdrasil, undone and done again as one step: a list note it made, every line it
+     * changed or moved in order, the headers it rewrote, and a list note it took away; with the branch states and
+     * projects as they were before and after.
+     */
+    class GroupUndo {
+        var made: Pair<String, String>? = null
+        val parts = mutableListOf<Any>()
+        val heads = mutableListOf<Triple<String, String, String>>()
+        var gone: Pair<String, String>? = null
+        var states: Pair<Map<Pair<String, String>, Branches.State>, Map<Pair<String, String>, Branches.State>>? = null
+        var tags: Pair<Set<String>?, Set<String>?>? = null
+        fun isEmpty() = made == null && parts.isEmpty() && heads.isEmpty() && gone == null &&
+            states?.let { it.first == it.second } != false && tags?.let { it.first == it.second } != false
+    }
+
+    /** Rewrites the header of the list note at [path] by [change]; what it was and is now, null when nothing changed. */
+    private fun headSwap(vault: android.net.Uri, path: String, change: (OmniList) -> OmniList): Triple<String, String, String>? {
+        val text = repo.readPath(vault, path) ?: return null
+        val end = text.indexOf("\n---", 3)
+        if (!text.startsWith("---") || end < 0) throw java.io.IOException(tr("หัวโน้ต $path อ่านไม่ได้", "Cannot read the header of $path"))
+        val now = OmniList.parse(path, text) ?: throw java.io.IOException(tr("หัวโน้ต $path อ่านไม่ได้", "Cannot read the header of $path"))
         val next = change(now)
-        if (next == now) return
-        repo.writePath(vault, list.path, next.render().substringBefore("# ") + text.substring(end + 4).trimStart('\r', '\n'))
+        if (next == now) return null
+        repo.writePath(vault, path, next.render().substringBefore("# ") + text.substring(end + 4).trimStart('\r', '\n'))
+        return Triple(path, text, repo.readPath(vault, path) ?: "")
+    }
+
+    /** Undoes ([undo] true) or does again a [GroupUndo]; a note changed since is never written over. */
+    private fun swapGroup(vault: android.net.Uri, g: GroupUndo, undo: Boolean) {
+        fun conflict(): Nothing = throw VaultRepository.ConflictException()
+        if (undo) {
+            g.gone?.let { (path, text) -> if (repo.readPath(vault, path) == null) repo.writePath(vault, path, text) else conflict() }
+            g.heads.asReversed().forEach { (path, before, after) -> if (repo.readPath(vault, path) == after) repo.writePath(vault, path, before) else conflict() }
+            g.parts.asReversed().forEach { p ->
+                when (p) {
+                    is VaultRepository.BlockChange -> repo.swapBlock(p, true)
+                    is VaultRepository.Moved -> repo.swapMoved(vault, p, true)
+                }
+            }
+            g.made?.let { (path, text) -> if (repo.readPath(vault, path) == text) repo.deletePath(vault, path) else conflict() }
+        } else {
+            g.made?.let { (path, text) -> if (repo.readPath(vault, path) == null) repo.writePath(vault, path, text) else conflict() }
+            g.parts.forEach { p ->
+                when (p) {
+                    is VaultRepository.BlockChange -> repo.swapBlock(p, false)
+                    is VaultRepository.Moved -> repo.swapMoved(vault, p, false)
+                }
+            }
+            g.heads.forEach { (path, before, after) -> if (repo.readPath(vault, path) == before) repo.writePath(vault, path, after) else conflict() }
+            g.gone?.let { (path, text) -> if (repo.readPath(vault, path) == text) repo.deletePath(vault, path) else conflict() }
+        }
     }
 
     fun requestQuickAdd(request: QuickAddRequest?) = _state.update { it.copy(quickAdd = request) }
@@ -3649,6 +3768,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val recurred: List<Pair<String, LocalDate>> = emptyList(),
         val retag: Pair<String, String>? = null,
         val moved: VaultRepository.Moved? = null,
+        val group: GroupUndo? = null,
     ) {
         enum class Kind { DONE, OPENED, MOVED }
     }
@@ -3717,6 +3837,35 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyStep(step: UndoStep, undo: Boolean, done: (Boolean) -> Unit) {
         step.retag?.let { (from, to) ->
             if (undo) retagAll(to, from, done) else retagAll(from, to, done)
+            return
+        }
+        step.group?.let { g ->
+            val vault = _state.value.vault ?: return done(false)
+            viewModelScope.launch {
+                val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { swapGroup(vault, g, undo) } } }
+                result.onSuccess {
+                    // Branch states and projects: only what the move itself changed is turned back or done again.
+                    g.states?.let { (before, after) ->
+                        val (was, now) = if (undo) after to before else before to after
+                        val next = _state.value.branchStates.filterKeys { it !in was || it in now } + now.filterKeys { it !in was || was[it] != now[it] }
+                        if (next != _state.value.branchStates) saveBranchStates(next)
+                    }
+                    g.tags?.let { (before, after) ->
+                        val (was, now) = if (undo) after.orEmpty() to before.orEmpty() else before.orEmpty() to after.orEmpty()
+                        _state.value.projectTags?.let { cur -> (cur - (was - now) + (now - was)).let { if (it != cur) saveProjectTags(it) } }
+                    }
+                }
+                result.exceptionOrNull()?.let { e ->
+                    val text = if (e is VaultRepository.ConflictException) {
+                        tr("\"${step.title}\" ถูกแก้จากที่อื่นแล้ว จึงไม่ได้เขียนทับ", "\"${step.title}\" was changed elsewhere, so it was not written over")
+                    } else {
+                        tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+                    }
+                    _state.update { it.copy(message = text) }
+                }
+                done(result.isSuccess)
+                reload()
+            }
             return
         }
         step.moved?.let { m ->
