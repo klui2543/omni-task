@@ -166,7 +166,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                 ) {
                     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
                     var had by remember { mutableStateOf(false) }
-                    fun save() { vm.setTitle(task, newTitle); renaming = false }
+                    fun save() { if (renaming) vm.setTitle(task, newTitle); newTitle = task.title; renaming = false }
                     androidx.compose.foundation.text.BasicTextField(
                         newTitle, { newTitle = it.replace("\n", " ") },
                         Modifier.weight(1f).focusRequester(focus).onFocusChanged { f -> if (f.isFocused) had = true else if (had && renaming) save() },
@@ -176,6 +176,9 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
                         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
                     )
                     LaunchedEffect(Unit) { focus.requestFocus() }
+                    // Closing the sheet while typing keeps what was typed.
+                    val latest by androidx.compose.runtime.rememberUpdatedState(newTitle)
+                    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (latest.trim() != task.title) vm.setTitle(task, latest) } }
                     Text(
                         tr("บันทึก", "Save"),
                         Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(C.accent).clickable { save() }.padding(horizontal = 10.dp, vertical = 3.dp),

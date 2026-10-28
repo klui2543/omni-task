@@ -2833,7 +2833,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         val vault = s.vault ?: return
         val lists = s.lists
-        if (lists.isEmpty()) return
+        if (lists.isEmpty() || migratingLists) return
+        migratingLists = true
         val pulled = lists.flatMap { l -> (s.tasks + s.parked).mapNotNull { t -> ListToFolders.pulledLine(l, t)?.let { t to it } } }.distinctBy { it.first.key }
         viewModelScope.launch {
             val result = writeLock.withLock {
@@ -2843,7 +2844,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                         val folders = mutableListOf<String>()
                         val done = mutableListOf<OmniList>()
                         pulled.forEach { (t, line) -> if (runCatching { repo.rewriteLine(t) { line } }.isFailure) bad++ }
-                        lists.forEach { l ->
+                        // A line elsewhere not yet written keeps the lists as they are, so the change can be tried again.
+                        if (bad == 0) lists.forEach { l ->
                             val text = repo.readPath(vault, l.path)
                             val r = text?.let { ListToFolders.migrate(l.path, it, lists.filter { o -> o.path != l.path }.map { o -> o.tag }) }
                             if (r == null) { if (text == null) bad++; return@forEach }
@@ -2870,9 +2872,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนไม่ได้: ", "Cannot change: ") + e.message) } }
+            migratingLists = false
+            if (result.getOrNull()?.first?.let { it > 0 } == true) _state.update { it.copy(listsLater = false) }
             reload()
         }
     }
+
+    private var migratingLists = false
 
     /**
      * Project Ygdrasil (owner, 2026-10-28: list folders move like a project's branches): the folder [fromPath] of
