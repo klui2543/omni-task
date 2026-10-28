@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.omnitask.model.tr
 
 /** One card of a [CardDeck]: its name in the corner, and what it shows. */
 class DeckCard(
