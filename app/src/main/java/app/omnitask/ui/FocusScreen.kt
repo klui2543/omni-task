@@ -427,7 +427,7 @@ fun FocusScreen(
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
             item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
-            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards, 124.dp) }
+            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards, 140.dp) }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
@@ -977,17 +977,13 @@ private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, t
     var all by rememberSaveable { mutableStateOf(false) }
     val shown = if (all) week else week.take(6)
     Column {
-        Text(tr("สัปดาห์หน้า", "Next week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+        if (countdowns.isNotEmpty() || week.isNotEmpty()) {
+            Text(tr("สัปดาห์หน้า", "Next week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+        }
         Card {
             countdowns.forEachIndexed { i, c ->
                 if (i > 0) Divider(start = 14.dp)
                 AheadRow(c.isEvent, c.title, tr("ปักหมุด", "Pinned"), c.text, if (c.late) C.red else C.accentText, onPick)
-            }
-            if (week.isEmpty()) {
-                Text(
-                    tr("ยังไม่มีงานใน 7 วันข้างหน้า", "Nothing due in the next 7 days"),
-                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp), color = C.muted, fontSize = TS.body,
-                )
             }
             shown.groupBy { it.day }.forEach { (day, items) ->
                 PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
@@ -1007,7 +1003,7 @@ private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, t
                     color = C.accentText, fontSize = TS.caption,
                 )
             }
-            Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+            if (countdowns.isNotEmpty() || week.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
             FooterRow(onClick = onPick) {
                 Text(
                     if (countdowns.isEmpty()) tr("ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ", "Count down to an important task or event") else tr("ปักหมุดนับถอยหลังเพิ่ม", "Pin another countdown"),

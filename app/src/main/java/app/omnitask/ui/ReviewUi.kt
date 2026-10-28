@@ -337,7 +337,7 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
     // Folders the owner picked lately first (Folders.recent went with the folders fix), then every folder in use.
     val folders = remember(state.tasks, state.pickedFolders) {
         val all = state.tasks.filter { it.isOpen && it.list == null }.mapNotNull { Folders.of(it) }.distinct()
-        val recent = state.pickedFolders.mapNotNull { p -> all.firstOrNull { it.equals(p, ignoreCase = true) } }
+        val recent = state.pickedFolders.mapNotNull { p -> all.firstOrNull { it.equals(app.omnitask.model.ProjectNames.canonical(p), ignoreCase = true) } }
         (recent + all).distinct()
     }
     val moves = remember(task?.title) { task?.let(vm::reviewMoves) ?: 0 }

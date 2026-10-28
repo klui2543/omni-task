@@ -81,7 +81,7 @@ fun CardDeck(cards: List<DeckCard>, height: Dp, modifier: Modifier = Modifier) {
                 pager, Modifier.padding(top = 8.dp).fillMaxWidth().height(height * Appearance.factor),
                 pageSpacing = 14.dp, verticalAlignment = Alignment.Top,
             ) { i ->
-                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) { cards[i].content(this) }
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) { cards.getOrNull(i)?.content?.invoke(this) }
             }
             if (n > 1) Row(
                 Modifier.padding(top = 8.dp).fillMaxWidth().height(5.dp),

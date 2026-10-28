@@ -72,7 +72,7 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
         suggestions.firstOrNull()?.let { s ->
             add(
-                DeckCard("suggest", tr("ข้อเสนอ ${suggestions.size}", "Suggestions ${suggestions.size}")) {
+                DeckCard("suggest", tr("ข้อเสนอ ${suggestions.size}", "Suggestions ${suggestions.size}"), C.amber) {
                     Text(
                         s.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(s.task) },
                         color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -95,7 +95,7 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             },
         )
         if (waiting.isNotEmpty() || future.isNotEmpty()) add(
-            DeckCard("waiting", tr("คนรอ และ อนาคต", "Waiting and future")) {
+            DeckCard("waiting", tr("คนรอ และ อนาคต", "Waiting and future"), if (waiting.isNotEmpty()) C.red else null) {
                 val rows = (waiting.take(2).map { it to true } + future.take(1).map { it to false }).take(3)
                 rows.forEach { (t, isWaiting) ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onOpen(t) }, verticalAlignment = Alignment.CenterVertically) {
