@@ -334,9 +334,10 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
     val entry = deck.firstOrNull()
     // The task as loaded now (its notes may have changed since the pile was made).
     val task = entry?.let { e -> state.tasks.firstOrNull { it.filePath == e.task.filePath && it.raw == e.task.raw } ?: e.task }
-    val folders = remember(state.tasks) {
-        val recent = Folders.recent(state.tasks.filter { it.list == null }, 50)
+    // Folders the owner picked lately first (Folders.recent went with the folders fix), then every folder in use.
+    val folders = remember(state.tasks, state.pickedFolders) {
         val all = state.tasks.filter { it.isOpen && it.list == null }.mapNotNull { Folders.of(it) }.distinct()
+        val recent = state.pickedFolders.mapNotNull { p -> all.firstOrNull { it.equals(p, ignoreCase = true) } }
         (recent + all).distinct()
     }
     val moves = remember(task?.title) { task?.let(vm::reviewMoves) ?: 0 }
