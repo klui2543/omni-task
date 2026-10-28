@@ -169,7 +169,8 @@ fun FolderPicker(
 
             if (query.isNotBlank()) {
                 val hits = Folders.search(all, query)
-                val listHits = if (withLists) lists.filter { it.name.contains(query.trim().removePrefix("#"), ignoreCase = true) } else emptyList()
+                val listQuery = query.trim().removePrefix("#")
+                val listHits = if (withLists && listQuery.isNotEmpty()) lists.filter { it.name.contains(listQuery, ignoreCase = true) } else emptyList()
                 Hint(tr("ผลค้นหา ${hits.size + listHits.size}", "${hits.size + listHits.size} found"))
                 listHits.forEach { l -> ListRow(l, "List", currentList?.first?.path == l.path && currentList?.second == null) { onPickList!!(l, null) } }
                 hits.forEach { p -> FolderRow(p, p.substringAfterLast('/'), p.substringBeforeLast('/', "").let { if (it.isEmpty()) tr("ชั้นบนสุด", "Top level") else folderTrail(it) }, p == current) { onPick(p) } }
@@ -311,7 +312,6 @@ fun FolderPicker(
     }
 }
 
-@Composable
 /** A list in the picker: its emoji, its name and what is in it. */
 @Composable
 private fun ListRow(list: app.omnitask.model.OmniList, sub: String, here: Boolean, step: Boolean = false, onClick: () -> Unit) {

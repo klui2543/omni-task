@@ -232,17 +232,17 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 fun day(d: LocalDate) = when (d) { state.today -> tr("วันนี้", "Today"); state.today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow"); else -> d.format(SHORT_DATE) }
                 AddChip(
                     { Icon(Ic.calendar, null, tint = it, modifier = Modifier.size(15.dp)) },
-                    draft.due?.takeIf { list == null }?.let(::day), tr("วันที่", "Date"), enabled = list == null,
+                    draft.due?.takeIf { list == null }?.let { d -> day(d) + (draft.endDue?.let { tr(" ถึง ", " to ") + day(it) } ?: "") }, tr("วันที่", "Date"), enabled = list == null,
                     // A reminder needs its day, so taking the day out takes the time with it.
                     onClear = { setText(QuickAddChips.withoutTime(QuickAddChips.withoutDue(text, state.today), state.today)) },
                 ) { pickSystemDate(context, draft.due ?: state.today) { setText(QuickAddChips.withDue(text, it, state.today, Lang.english)) } }
                 AddChip(
                     { Icon(Ic.clock, null, tint = it, modifier = Modifier.size(15.dp)) },
-                    draft.time?.takeIf { list == null }?.let { tr("เตือน ", "Remind ") + hm(it) }, tr("เวลา", "Time"), enabled = list == null,
+                    draft.time?.takeIf { list == null }?.let { t -> draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เตือน ", "Remind ") + hm(t)) }, tr("เวลา", "Time"), enabled = list == null,
                     onClear = { setText(QuickAddChips.withoutTime(text, state.today)) },
                 ) { pickSystemTime(context, draft.time ?: kotlinx.datetime.LocalTime(9, 0)) { setText(QuickAddChips.withTime(text, it, state.today)) } }
                 AddChip(
-                    { if (list != null) Text(ListEmoji.of(list.list.icon), fontSize = TS.caption) else FolderGlyph(if (folder != null) folderTint(folder) else it, 16.dp) },
+                    { FolderGlyph(if (list != null) C.accent else if (folder != null) folderTint(folder) else it, 16.dp) },
                     list?.let { it.list.name + (it.category?.let { c -> " / $c" } ?: "") } ?: folder?.substringAfterLast('/'),
                     tr("โฟลเดอร์", "Folder"),
                     onClear = { if (list != null) target = null else setText(QuickAddChips.withFolder(text, null, state.today)) },
