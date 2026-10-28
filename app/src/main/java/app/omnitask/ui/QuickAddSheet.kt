@@ -239,7 +239,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 ) { pickSystemDate(context, draft.due ?: state.today) { setText(QuickAddChips.withDue(text, it, state.today, Lang.english)) } }
                 AddChip(
                     { Icon(Ic.clock, null, tint = it, modifier = Modifier.size(15.dp)) },
-                    draft.time?.takeIf { list == null }?.let { t -> draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เตือน ", "Remind ") + hm(t)) }, tr("เวลา", "Time"), enabled = list == null,
+                    draft.time?.takeIf { list == null }?.let { t -> draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เวลา ", "Time ") + hm(t)) }, tr("เวลา", "Time"), enabled = list == null,
                     onClear = { setText(QuickAddChips.withoutTime(text, state.today)) },
                 ) { pickSystemTime(context, draft.time ?: kotlinx.datetime.LocalTime(9, 0)) { setText(QuickAddChips.withTime(text, it, state.today)) } }
                 AddChip(
@@ -296,7 +296,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             fun day(d: LocalDate) = if (d == state.today) tr("วันนี้", "Today") else d.format(SHORT_DATE)
             if (asEvent) {
                 draft.due?.let { d -> add(day(d) + (draft.endDue?.let { tr(" ถึง ", " to ") + day(it) } ?: "")) }
-                draft.time?.let { t -> add(draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เตือน ", "Remind ") + hm(t))) }
+                draft.time?.let { t -> add(draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เวลา ", "Time ") + hm(t))) }
             }
             val folder = if (asEvent) null else Folders.ofTags(draft.tags)
             draft.tags.filter { it != folder }.forEach { add("#$it") }

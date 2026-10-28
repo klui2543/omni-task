@@ -189,7 +189,7 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
             PropChip(task.scheduled?.let { dayText(it, today) }, tr("นัดทำ", "Scheduled"), open == Prop.SCHEDULED) { toggle(Prop.SCHEDULED) }
             PropChip(
                 task.reminderTime?.let { "%02d:%02d".format(it.hour, it.minute) },
-                tr("เตือน", "Remind"), open == Prop.REMIND,
+                tr("เวลา", "Time"), open == Prop.REMIND,
             ) { toggle(Prop.REMIND) }
             PropChip(task.recurrence?.let { Recurrence.describe(it) }, tr("วนซ้ำ", "Repeat"), open == Prop.REPEAT) { toggle(Prop.REPEAT) }
             PropChip(task.priority.takeIf { it != Priority.NONE }?.label, tr("ความสำคัญ", "Priority"), open == Prop.PRIORITY, tint = task.priority.tint) { toggle(Prop.PRIORITY) }

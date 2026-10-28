@@ -323,7 +323,7 @@ fun metaOf(t: Task, today: LocalDate, blockedBy: String? = null, compact: Boolea
     }
     if (t.status == Status.IN_PROGRESS) add(Meta(tr("กำลังทำ", "In progress"), C.accentSoft, C.accentText))
     // The new look leaves the reminder and repeat out of the row; the task sheet still shows them.
-    if (!NewLook.on) t.reminderTime?.let { add(Meta(tr("เตือน ", "Remind ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
+    if (!NewLook.on) t.reminderTime?.let { add(Meta(tr("เวลา ", "Time ") + "%02d:%02d".format(it.hour, it.minute), Color.Transparent, C.muted)) }
     if (!NewLook.on) t.recurrence?.let { add(Meta(Recurrence.describe(it), Color.Transparent, C.muted)) }
     if (!compact) {
         val project = Projects.projectOf(t)
