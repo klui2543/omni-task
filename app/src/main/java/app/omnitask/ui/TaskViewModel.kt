@@ -1591,7 +1591,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val made = _state.value.projectTags.orEmpty()
                     val off = prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty()
                     val fresh = Projects.newOnes(tasks, made, off, LocalDate.now()).filterNot(Folders::isLabel)
-                    val inUse = tasks.filter { it.list == null && it.status != app.omnitask.model.Status.CANCELLED }
+                    val inUse = tasks.filter { it.list == null && it.status != Status.CANCELLED }
                         .flatMap { t -> t.tags.map { it.substringBefore('/').lowercase() } }.toSet()
                     // Kept until answered, while some task still carries the tag and it is not a project or dropped.
                     val next = (_state.value.proposedProjects + fresh).distinctBy { it.lowercase() }.filter { n ->
