@@ -617,7 +617,7 @@ fun YgdrasilScreen(
                         Text(c.label, color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             when {
-                                listDrop != null -> tr("ย้ายไป ${listDrop.name}", "Move to ${listDrop.name}")
+                                listDrop != null -> (if (listDrop.second.isEmpty()) listDrop.first.name else ListFolders.nameOf(listDrop.second)).let { tr("ย้ายไป $it", "Move to $it") }
                                 dropTag == null && c.stray -> tr("ลากขึ้นไปวางบนกิ่ง", "Drag it up onto a branch")
                                 dropTag == null -> if (c.task != null) tr("ลากไปวางบนกิ่ง", "Drop it on a branch") else tr("ลากไปวางบนโปรเจกต์ กิ่ง หรือลำต้น", "Drop it on a project, branch or the trunk")
                                 c.task != null && Ygdrasil.isInbox(dropTag) -> tr("ย้ายไป ยังไม่มีบ้าน", "Move to No project yet")
