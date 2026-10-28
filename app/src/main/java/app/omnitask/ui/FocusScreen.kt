@@ -72,17 +72,15 @@ private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 @Composable
 fun FocusScreen(
     state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
-    onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {},
+    onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {}, onSecretary: () -> Unit = {},
 ) {
     // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
     val nl = NewLook.on
     var lateOpen by rememberSaveable { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
-    var reviewing by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
     val voice by vm.voice.collectAsStateWithLifecycle()
     if (picking) FuturePicker(state, vm) { picking = false }
-    if (reviewing) ReviewDeck(state, vm, onOpen) { reviewing = false }
     // The calendar choice, opened from an event (its calendar pointed out) or from the line under the day.
     var calendarsOpen by remember { mutableStateOf(false) }
     var calendarsFrom by remember { mutableStateOf<CalendarEvent?>(null) }
@@ -138,17 +136,29 @@ fun FocusScreen(
     var pickingCountdown by remember { mutableStateOf(false) }
     if (pickingCountdown) CountdownPicker(state, vm) { pickingCountdown = false }
     var hidden by remember { mutableStateOf(emptySet<String>()) }
+    // Overdue work is not part of the day's timeline: it sits in its own card below it (or in the deck, new look).
+    val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
+    val daySections = plan.filter { it.part != DayPlan.Part.LATE }
+    if (nl && lateOpen && overdueSection != null) LateSheet(overdueSection, state, vm, onOpen, blocked) { lateOpen = false }
 
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
         verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
+        // The new look's card of what to do next, left over and to decide: built with the rest of the top, shown last.
+        var deckCards = emptyList<DeckCard>()
         if (nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(tr("วันนี้", "Today"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
                     Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
+                    // The day in one line (owner's pick, 2026-10-27), in place of the old ring and numbers.
+                    val left = if (night != null && isNight) tr("ก่อนนอน ${hm(night.toBed)}", "${hm(night.toBed)} to bed") else tr("ว่างเหลือ ${hours(free)}", "${hours(free)} free")
+                    Text(
+                        tr("เสร็จ $doneToday จาก $total, นัด $eventCount, ", "$doneToday of $total done, $eventCount events, ") + left,
+                        Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption,
+                    )
                 }
                 menu()
                 SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
@@ -165,49 +175,120 @@ fun FocusScreen(
             }
         }
 
-        // The new look (Settings switch): one task to do next, at the top.
-        if (NewLook.on) {
+        // The new look (owner's picks, 2026-10-27): what is broken folds into one line, then one deck holds what to do
+        // next, the work left over and what the secretary waits on Klui to decide. The rest of what used to sit here
+        // moved into the deck on the secretary's page.
+        if (nl) {
+            val fixes = buildList<Pair<String, @Composable () -> Unit>> {
+                if (voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
+                    add(tr("เสียงยังไม่ถอด ${voice.waiting.size} ไฟล์", "${voice.waiting.size} recordings not written down") to @Composable { VoiceWaitingCard(voice, vm) })
+                }
+                val last = state.ai.secretaryLast
+                val nowMs = now.let { System.currentTimeMillis() }
+                if (last != null && Secretary.warns(last, state.ai.secretaryHiddenUntil, nowMs)) {
+                    val days = ((nowMs - last) / Secretary.STALE_MS).coerceAtLeast(1)
+                    add(tr("เลขาไม่ได้บันทึก $days วัน", "the secretary has not logged for $days days") to @Composable { SecretaryWarning(last, nowMs, vm::hideSecretaryWarning) })
+                }
+                val clashes = state.conflicts.map { syncNotice(it) }.filter { it !in hidden }
+                if (clashes.isNotEmpty()) add(
+                    tr("ไฟล์ซ้ำจาก sync ${clashes.size} ไฟล์", "${clashes.size} sync copies") to @Composable {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { clashes.forEach { w -> Notice(w) { hidden = hidden + w } } }
+                    },
+                )
+                if (calendarConnectShows(state)) add(tr("ยังไม่ได้เชื่อม Google ปฏิทิน", "Google Calendar not connected") to @Composable { CalendarConnect(state, vm) })
+            }
+            if (fixes.isNotEmpty()) item(key = "fixes") { FixCard(fixes) }
+
             val skippedToday = NewLook.skippedFor(today)
-            val next = NextUp.ranked(state.tasks, today, skippedToday).firstOrNull()
-            // Everything put off with "not now": say so, one tap from seeing them again.
-            if (next == null && skippedToday.isNotEmpty() && NextUp.ranked(state.tasks, today).isNotEmpty()) item(key = "next-up-skipped") {
-                Text(
-                    tr("ข้ามงานถัดไปไว้ ${skippedToday.size} งานวันนี้ แตะเพื่อดูอีกครั้ง", "${skippedToday.size} tasks put off today. Tap to see them again"),
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { NewLook.clearSkips(context) }.padding(horizontal = 4.dp, vertical = 10.dp),
-                    color = C.muted, fontSize = TS.caption,
+            val ranked = NextUp.ranked(state.tasks, today, skippedToday)
+            val next = ranked.firstOrNull()
+            val lateTasks = overdueSection?.items.orEmpty().mapNotNull { (it as? DayPlan.Item.TaskItem)?.task }.filter { it.isOpen }
+            val decide = Decisions.counts(state, asks.size)
+            val cards = buildList {
+                if (next != null) add(
+                    DeckCard("next", tr("ทำต่อไป", "Do next")) {
+                        val doing = next.task.status == Status.IN_PROGRESS
+                        val red = next.why == NextUp.Why.DUE_LATE || next.why == NextUp.Why.DUE_TODAY
+                        Text(
+                            next.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(next.task) },
+                            color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            next.reason + if (free > 0) tr(", ว่างเหลือ ${hours(free)}", ", ${hours(free)} free") else "",
+                            color = if (red) C.red else C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        // What comes after it: the next task in line and the next event today.
+                        val after = ranked.getOrNull(1)?.task?.title
+                        val event = events.filter { !it.allDay && it.begin > now }.minByOrNull { it.begin }
+                        val then = listOfNotNull(
+                            after?.let { tr("ถัดไป: ", "Then: ") + it },
+                            event?.let { tr("นัด ", "event ") + it.title + " " + it.begin.toLocalTime().format(HM) },
+                        ).joinToString(", ")
+                        if (then.isNotEmpty()) Text(then, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        DeckButtons {
+                            DeckButton(tr("ไม่ใช่ตอนนี้", "Not now"), false) { NewLook.skip(context, next.task.key, today) }
+                            DeckButton(if (doing) tr("เสร็จแล้ว", "Done") else tr("เริ่ม", "Start"), true) {
+                                if (doing) vm.toggleDone(next.task) else vm.setStatus(next.task, Status.IN_PROGRESS)
+                            }
+                        }
+                    },
+                ) else if (skippedToday.isNotEmpty() && NextUp.ranked(state.tasks, today).isNotEmpty()) add(
+                    // Everything put off with "not now": say so, one tap from seeing them again.
+                    DeckCard("next", tr("ทำต่อไป", "Do next")) {
+                        Text(tr("ข้ามงานถัดไปไว้ ${skippedToday.size} งานวันนี้", "${skippedToday.size} tasks put off today"), color = C.text2, fontSize = TS.body)
+                        DeckButtons { DeckButton(tr("ดูอีกครั้ง", "See them again"), true) { NewLook.clearSkips(context) } }
+                    },
+                )
+                if (lateTasks.isNotEmpty()) add(
+                    DeckCard("late", tr("ค้าง ${lateTasks.size} งาน", "${lateTasks.size} left over"), if (realLate) C.red else null) {
+                        lateTasks.take(3).forEach { t ->
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onOpen(t) }, verticalAlignment = Alignment.CenterVertically) {
+                                Text(t.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val (word, red) = lateWord(t, today)
+                                Text(word, Modifier.padding(start = 8.dp), color = if (red) C.red else C.muted, fontSize = TS.caption, maxLines = 1)
+                            }
+                        }
+                        if (lateTasks.size > 3) Text(tr("และอีก ${lateTasks.size - 3} งาน", "and ${lateTasks.size - 3} more"), color = C.muted, fontSize = TS.caption)
+                        DeckButtons {
+                            DeckButton(tr("ดูทั้งหมด", "See all"), false) { lateOpen = true }
+                            DeckButton(tr("ให้เลขาจัดวันใหม่", "Ask for new dates"), true) {
+                                val n = lateTasks.size
+                                onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
+                            }
+                        }
+                    },
+                )
+                if (decide.isNotEmpty()) add(
+                    DeckCard("decide", tr("เลขามีเรื่องให้ตัดสิน ${decide.sumOf { it.second }}", "${decide.sumOf { it.second }} for you to decide"), C.amber) {
+                        DeckSentence(decide)
+                        DeckButtons { DeckButton(tr("ไปหน้าเลขา", "Open the secretary"), true, onSecretary) }
+                    },
                 )
             }
-            next?.let { pick ->
-                item(key = "next-up") {
-                    NextUpCard(
-                        pick, if (free > 0) hours(free) else null, onOpen,
-                        onStart = { vm.setStatus(pick.task, Status.IN_PROGRESS) },
-                        onDone = { vm.toggleDone(pick.task) },
-                        onSkip = { NewLook.skip(context, pick.task.key, today) },
-                    )
-                }
-            }
+            deckCards = cards
         }
 
         // The secretary's questions: one line however many, the answers in a sheet (owner's pick, 2026-10-26).
-        if (asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
+        if (!nl && asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
 
         // Recordings not written down yet (no network, or the check was closed): try again or throw away.
-        if (voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
+        if (!nl && voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
             item { VoiceWaitingCard(voice, vm) }
         }
 
         // The secretary stopped writing Claude log (over a day since its last round): say so until it is back or hidden.
         val nowMs = now.let { System.currentTimeMillis() }
         val secretaryLast = state.ai.secretaryLast
-        if (secretaryLast != null && Secretary.warns(secretaryLast, state.ai.secretaryHiddenUntil, nowMs)) {
+        if (!nl && secretaryLast != null && Secretary.warns(secretaryLast, state.ai.secretaryHiddenUntil, nowMs)) {
             item { SecretaryWarning(secretaryLast, nowMs, vm::hideSecretaryWarning) }
         }
 
         // Items that draw nothing would still take a gap in the column, so they are only added when they show.
-        if (calendarConnectShows(state)) item { CalendarConnect(state, vm) }
+        if (!nl && calendarConnectShows(state)) item { CalendarConnect(state, vm) }
 
-        item {
+        // The ring, the numbers and the countdowns: the look before. The new look has them in the day line and the
+        // card of what is ahead, under the day.
+        if (!nl) item {
             Card {
                 if (!nl) Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     DoneRing(doneToday, total)
@@ -255,20 +336,10 @@ fun FocusScreen(
         }
 
         // A sync clash left a second copy of a note: say so, since its tasks are left out until it is sorted.
-        state.conflicts.map { path ->
-            tr(
-                "มีไฟล์ซ้ำจากการ sync: ${path.substringAfterLast('/')}\nแอปไม่อ่านไฟล์นี้ ดูว่ามีอะไรที่ไฟล์หลักไม่มีไหม แล้วลบทิ้ง",
-                "A sync clash left a copy: ${path.substringAfterLast('/')}\nThe app skips it. Check it for anything the main note lacks, then delete it.",
-            )
-        }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
+        if (!nl) state.conflicts.map { syncNotice(it) }.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
         // The new look leaves out the nudges ("3 days without touching..."): the secretary brings them up in its chat.
         if (!nl) brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
-        if (!nl && state.toReview.isNotEmpty()) item { ReviewPrompt(state) { reviewing = true } }
-
-        // Overdue work is not part of the day's timeline: it sits in its own card below it.
-        val overdueSection = plan.firstOrNull { it.part == DayPlan.Part.LATE }
-        val daySections = plan.filter { it.part != DayPlan.Part.LATE }
         if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
                 Box(Modifier.height(6.dp))
@@ -317,32 +388,6 @@ fun FocusScreen(
             }
         }
 
-        // The new look folds overdue work into one line: open it to see the list, or hand it to the secretary.
-        if (nl && overdueSection != null) item {
-            val n = overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
-            Card {
-                Row(Modifier.fillMaxWidth().clickable { lateOpen = !lateOpen }.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(tr("ค้าง $n งาน", "$n open from before"), color = if (realLate) C.red else C.text, fontSize = TS.body, fontWeight = FontWeight.Medium)
-                        Text(if (lateOpen) tr("แตะเพื่อพับ", "Tap to fold") else tr("แตะเพื่อดูรายการ", "Tap to see them"), color = C.muted, fontSize = TS.caption)
-                    }
-                    Text(
-                        tr("ให้เลขาจัด", "Ask the secretary"),
-                        Modifier.clip(RoundedCornerShape(10.dp)).clickable {
-                            onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
-                        }.padding(horizontal = 10.dp, vertical = 10.dp),
-                        color = C.accentText, fontSize = TS.body,
-                    )
-                }
-                if (lateOpen) {
-                    overdueSection.items.forEach { item ->
-                        if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
-                    }
-                    Box(Modifier.height(8.dp))
-                }
-            }
-        }
-
         if (!nl && overdueSection != null) item {
             Card {
                 Box(Modifier.height(6.dp))
@@ -354,7 +399,7 @@ fun FocusScreen(
             }
         }
 
-        if (brief.suggestions.isNotEmpty()) {
+        if (!nl && brief.suggestions.isNotEmpty()) {
             item {
                 Card {
                     Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -376,25 +421,13 @@ fun FocusScreen(
             }
         }
 
-        // Either card goes when its kind is hidden; the other then takes the row.
-        // The new look: real deadlines (📅) in the next week, instead of the waiting and future cards.
+        // The new look: the next week (owner's pick, 2026-10-28), the pinned countdowns and then the open tasks due (📅)
+        // or scheduled (⏳) in the 7 days from tomorrow, by day. Then, last on the page, the card of what to do next.
         if (nl) {
-            val soon = state.tasks.filter { it.isOpen && it.list == null && it.due.let { d -> d != null && d > today && d <= today.plusDays(7) } }
-                .sortedBy { it.due }.take(3)
-            if (soon.isNotEmpty()) item {
-                Column {
-                    Text(tr("กำหนดจริงใน 7 วัน", "Real deadlines this week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-                    Card {
-                        soon.forEachIndexed { i, t ->
-                            if (i > 0) Divider(start = 14.dp)
-                            Row(Modifier.fillMaxWidth().clickable { onOpen(t) }.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(t.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(t.due!!.format(SHORT_DATE), Modifier.padding(start = 10.dp), color = C.amber, fontSize = TS.caption)
-                            }
-                        }
-                    }
-                }
-            }
+            val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
+            val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
+            item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
+            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards) }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
@@ -504,7 +537,7 @@ private fun <T : Task> PagedCard(
 }
 
 @Composable
-private fun Stepper(value: Int, onStep: (Int) -> Unit) {
+internal fun Stepper(value: Int, onStep: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(tr("วันละ", "Per day"), Modifier.padding(end = 4.dp), color = C.muted, fontSize = TS.caption)
         StepDot("−") { onStep(-1) }
@@ -853,3 +886,163 @@ private fun hm(minutes: Long): String = tr("%d:%02d ชม.", "%d:%02d h").forma
 
 private fun hours(minutes: Long): String =
     if (minutes >= 60) tr("${minutes / 60} ชม.", "${minutes / 60} h") else tr("$minutes นาที", "$minutes min")
+
+/** The notice for a second copy of a note left by a sync clash: its tasks are left out until it is sorted. */
+private fun syncNotice(path: String) = tr(
+    "มีไฟล์ซ้ำจากการ sync: ${path.substringAfterLast('/')}\nแอปไม่อ่านไฟล์นี้ ดูว่ามีอะไรที่ไฟล์หลักไม่มีไหม แล้วลบทิ้ง",
+    "A sync clash left a copy: ${path.substringAfterLast('/')}\nThe app skips it. Check it for anything the main note lacks, then delete it.",
+)
+
+/** How late a left-over task is: past its real deadline (red), or past its own target (quiet). */
+private fun lateWord(t: Task, today: LocalDate): Pair<String, Boolean> {
+    val due = t.due
+    if (due != null && due < today) return tr("เลย ${ChronoUnit.DAYS.between(due, today)} วัน", "${ChronoUnit.DAYS.between(due, today)} days late") to true
+    val target = t.scheduled ?: return "" to false
+    return tr("เลยเป้า ${ChronoUnit.DAYS.between(target, today)} วัน", "target ${ChronoUnit.DAYS.between(target, today)} days ago") to false
+}
+
+/**
+ * The new look's "ต้องแก้ N เรื่อง": everything that is broken (a recording not written down, the secretary not
+ * logging, a sync copy, the calendar not connected) in one amber line that opens to the cards as they were.
+ */
+@Composable
+private fun FixCard(fixes: List<Pair<String, @Composable () -> Unit>>) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.amberSoft)
+            .border(1.dp, C.amber.copy(alpha = 0.35f), RoundedCornerShape(14.dp)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open }.heightIn(min = 52.dp).padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(tr("ต้องแก้ ${fixes.size} เรื่อง", "${fixes.size} things to fix"), color = C.amber, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                Text(fixes.joinToString(", ") { it.first }, color = C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(if (open) Ic.up else Ic.down, if (open) tr("พับ", "Fold") else tr("เปิดดู", "Open"), tint = C.muted, modifier = Modifier.size(16.dp))
+        }
+        if (open) Column(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            fixes.forEach { it.second() }
+        }
+    }
+}
+
+/** Every left-over task, as on the timeline, opened from "ดูทั้ง N" on the deck's left-over card. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun LateSheet(section: DayPlan.Section, state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, blocked: Set<Task>, onDismiss: () -> Unit) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.raised) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+            val n = section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
+            Text(tr("ค้าง $n งาน", "$n left over"), Modifier.padding(start = 18.dp, bottom = 6.dp), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            LazyColumn(Modifier.heightIn(max = 520.dp)) {
+                items(section.items.size) { i ->
+                    val item = section.items[i]
+                    if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, { onDismiss(); onOpen(it) }, item.task in blocked)
+                }
+            }
+        }
+    }
+}
+
+/** The open tasks of this week and the next, each on the day it is due (📅) or else scheduled (⏳). */
+internal object Week {
+    class Item(val task: Task, val day: LocalDate, val due: Boolean)
+
+    /** The last day of the week [day] is in; weeks start on Monday. */
+    fun sunday(day: LocalDate): LocalDate = day.plusDays((6 - day.dayOfWeek.ordinal).toLong())
+
+    /**
+     * Tasks with a date from tomorrow to the end of next week (Monday to Sunday), earliest first; a due date in
+     * that span wins over a scheduled one.
+     */
+    fun ahead(tasks: List<Task>, today: LocalDate): List<Item> {
+        val first = today.plusDays(1)
+        val last = sunday(today).plusDays(7)
+        fun inSpan(d: LocalDate?) = d != null && d >= first && d <= last
+        return tasks.mapNotNull { t ->
+            when {
+                inSpan(t.due) -> Item(t, t.due!!, true)
+                inSpan(t.scheduled) -> Item(t, t.scheduled!!, false)
+                else -> null
+            }
+        }.sortedBy { it.day }
+    }
+}
+
+private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d MMM", TH)
+private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d", TH)
+
+/**
+ * The new look's two weeks (owner's picks, 2026-10-28): the pinned countdowns, then "สัปดาห์นี้" (tomorrow to Sunday)
+ * and "สัปดาห์หน้า" (Monday to Sunday after), each with its tasks under a line for each day. Six tasks show;
+ * "ดูอีก N งาน" opens the rest in place. On a Sunday this week has no days left and only next week shows.
+ */
+@Composable
+private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, onPick: () -> Unit) {
+    var all by rememberSaveable { mutableStateOf(false) }
+    val shown = if (all) week else week.take(6)
+    val sunday = Week.sunday(today)
+    val spans = buildList {
+        if (sunday > today) add(Triple(tr("สัปดาห์นี้", "This week"), today.plusDays(1), sunday))
+        add(Triple(tr("สัปดาห์หน้า", "Next week"), sunday.plusDays(1), sunday.plusDays(7)))
+    }
+    Card {
+        countdowns.forEachIndexed { i, c ->
+            if (i > 0) Divider(start = 14.dp)
+            AheadRow(c.isEvent, c.title, tr("ปักหมุด", "Pinned"), c.text, if (c.late) C.red else C.accentText, onPick)
+        }
+        spans.forEachIndexed { n, (name, from, to) ->
+            if (n > 0 || countdowns.isNotEmpty()) Box(Modifier.padding(top = 4.dp).fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                Text(
+                    from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' '),
+                    Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption,
+                )
+            }
+            val inSpan = week.filter { it.day >= from && it.day <= to }
+            if (inSpan.isEmpty()) {
+                Text(tr("ยังไม่มีงาน", "Nothing yet"), Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = C.faint, fontSize = TS.caption)
+            }
+            shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }.forEach { (day, items) ->
+                PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
+                items.forEach { w ->
+                    val days = ChronoUnit.DAYS.between(today, day)
+                    AheadRow(
+                        false, w.task.title,
+                        if (w.due) tr("📅 กำหนดจริง", "📅 Due") else tr("⏳ นัดทำ", "⏳ Scheduled"),
+                        tr("อีก $days วัน", "in $days days"),
+                        C.amber,
+                    ) { onOpen(w.task) }
+                }
+            }
+        }
+        if (week.size > 6) FooterRow(onClick = { all = !all }) {
+            Text(
+                if (all) tr("ย่อ", "Show less") else tr("ดูอีก ${week.size - 6} งาน", "${week.size - 6} more"),
+                color = C.accentText, fontSize = TS.caption,
+            )
+        }
+        Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+        FooterRow(onClick = onPick) {
+            Text(
+                if (countdowns.isEmpty()) tr("ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ", "Count down to an important task or event") else tr("ปักหมุดนับถอยหลังเพิ่ม", "Pin another countdown"),
+                color = C.faint, fontSize = TS.caption,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AheadRow(event: Boolean, title: String, sub: String, right: String, rightColor: Color, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        CountdownMark(event)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(sub, color = C.muted, fontSize = TS.caption, maxLines = 1)
+        }
+        Text(right, Modifier.padding(start = 8.dp), color = rightColor, fontSize = TS.caption, fontWeight = FontWeight.Medium, maxLines = 1)
+    }
+}

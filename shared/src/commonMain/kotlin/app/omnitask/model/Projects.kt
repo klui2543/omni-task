@@ -24,6 +24,9 @@ object Projects {
     /** Tags that never name a project: lists, their categories, and the owner's own kinds. Set on each load. */
     @kotlin.concurrent.Volatile var ignoredTags: Set<String> = emptySet()
 
+    /** The lists' own tags: a folder under one (`bucketlist/เที่ยว`, owner's pick 2026-10-28) never names a project either. Set on each load. */
+    @kotlin.concurrent.Volatile var listRoots: Set<String> = emptySet()
+
     /**
      * The projects the owner made on the Projects page; any other tag is a plain tag. Null until the owner's settings
      * hold a choice, when every task's first tag still names a project (see [seed]). Set on each load.
@@ -32,7 +35,30 @@ object Projects {
 
     /** A tag that can name a project at all: not a reminder, a wait or a list, kind or category. */
     private fun plain(tag: String) =
-        !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags
+        !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags &&
+            listRoots.none { tag.startsWith("$it/", ignoreCase = true) }
+
+    /**
+     * [tag] with its first part in the spelling of the chosen project it names in another case (`siriraj/flow` is
+     * `Siriraj/flow` when Siriraj is a project), so one project never splits by case. Other tags stay as written.
+     */
+    fun spell(tag: String): String {
+        val made = chosen ?: return tag
+        val root = tag.substringBefore('/')
+        if (root.isEmpty() || root in made) return tag
+        val hit = made.firstOrNull { it.equals(root, ignoreCase = true) } ?: return tag
+        return hit + tag.substring(root.length)
+    }
+
+    /**
+     * The chosen projects with one spelling each: names that differ only by case are one project, kept in the
+     * names table's spelling ([ProjectNames]) when it has one, else the one with capitals.
+     */
+    fun oneSpelling(tags: Set<String>): Set<String> =
+        tags.groupBy { it.lowercase() }.values.map { same ->
+            same.firstOrNull { ProjectNames.current.canonical(it) == it && it != it.lowercase() }
+                ?: same.firstOrNull { it != it.lowercase() } ?: same.first()
+        }.toSet()
 
     /** Whether [tag] could name a project at all (see [plain]); the folder rules build on it. */
     fun isPlain(tag: String) = plain(tag)
@@ -55,13 +81,13 @@ object Projects {
 
     /**
      * Project names a task added in the last [days] days brings that are not projects yet (and were not taken off
-     * by the owner, [declined]): the secretary writes a task with its project's tag, and the project then grows
-     * its own branch in Ygdrasil without the owner making it by hand.
+     * by the owner, [declined]): the secretary writes a task with a new project's tag, and proposes it; it becomes a
+     * project only when the owner takes it (owner, 2026-10-28; before, it was made one at once).
      */
     fun newOnes(tasks: List<Task>, made: Set<String>, declined: Set<String>, today: LocalDate, days: Int = 3): Set<String> =
         tasks.filter { it.isOpen && it.list == null && it.created?.let { c -> c >= today.plusDays(-days.toLong()) } == true }
             .mapNotNull { t -> t.tags.firstOrNull(::plain)?.substringBefore('/')?.takeIf { it.isNotEmpty() } }
-            .filter { it !in made && it !in declined }.toSet()
+            .filter { n -> made.none { it.equals(n, ignoreCase = true) } && declined.none { it.equals(n, ignoreCase = true) } }.toSet()
 
     /** Tags on [tasks] that are not projects and could be made one, with how many tasks carry each; most used first. */
     fun others(tasks: List<Task>): List<Pair<String, Int>> {

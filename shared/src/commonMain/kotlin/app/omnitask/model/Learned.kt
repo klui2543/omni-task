@@ -32,6 +32,10 @@ object Learned {
 
     data class Slip(val task: Task, val moves: Int)
 
+    /** How many times the task titled [title] was moved to a later day in the last [DAYS] days. */
+    fun movesLater(title: String, events: List<BehaviorEvent>, today: LocalDate): Int =
+        recent(events, today).count { it.title == title && later(it) }
+
     /** Open tasks moved to a later day at least [SLIP_MOVES] times, the most moved first. */
     fun slipping(tasks: List<Task>, events: List<BehaviorEvent>, today: LocalDate): List<Slip> {
         val moves = recent(events, today).filter { later(it) }.groupingBy { it.title.orEmpty() }.eachCount()

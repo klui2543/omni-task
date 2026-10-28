@@ -73,9 +73,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val open = projects.firstOrNull { it.name == openName }
     var openListPath by rememberSaveable { mutableStateOf<String?>(null) }
     val openList = state.lists.firstOrNull { it.path == openListPath }
-    var listCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    // The folder open inside the list ("เที่ยว/ญี่ปุ่น"), "" for the list itself (owner's pick, 2026-10-28, way ก).
+    var listFolder by rememberSaveable { mutableStateOf("") }
     var creatingList by remember { mutableStateOf(false) }
-    var pickingIcon by remember { mutableStateOf(false) }
+    var creatingListFolder by remember { mutableStateOf(false) }
     var deletingList by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     // Inside a project: the overview (null) or one of the views over just its tasks.
@@ -98,7 +99,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     LaunchedEffect(openName) { if (folderPath?.startsWith("$openName/") != true) folderPath = null }
     // A tag in "อื่นๆ" opened to see its tasks, before it is made a project.
     var tagShown by remember { mutableStateOf<String?>(null) }
-    fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; openListPath = null; listCategory = null; world = true }
+    fun backToWorld() { fromWorld = false; mapping = false; projectView = null; openName = null; openListPath = null; listFolder = ""; world = true }
     BackHandler(enabled = open != null || openList != null || world || shelf != null) {
         when {
             world -> world = false
@@ -106,9 +107,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             mapping -> mapping = false
             projectView != null -> projectView = null
             folderPath != null -> folderUp()
+            openList != null && listFolder.isNotEmpty() -> listFolder = app.omnitask.model.ListFolders.parentOf(listFolder)
             fromWorld -> backToWorld()
             open == null && openList == null -> shelf = null
-            else -> { openName = null; openListPath = null; listCategory = null }
+            else -> { openName = null; openListPath = null; listFolder = "" }
         }
     }
     LaunchedEffect(Unit) { vm.ensureStarterLists() }
@@ -132,13 +134,25 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             onMakeProject = { vm.setProject(tag, true); tagShown = null },
         ) { tagShown = null }
     }
-    if (creatingList) CreateListDialog({ n, i, c -> vm.createList(n, i, c); creatingList = false }) { creatingList = false }
-    if (pickingIcon && openList != null) IconPickerDialog(openList.icon, { vm.updateList(openList, icon = it); pickingIcon = false }) { pickingIcon = false }
-    if (deletingList && openList != null) {
+    if (creatingList) NewListFolderDialog("List", { n -> vm.createList(n); creatingList = false }) { creatingList = false }
+    if (creatingListFolder && openList != null) {
+        NewListFolderDialog(if (listFolder.isEmpty()) openList.name else app.omnitask.model.ListFolders.nameOf(listFolder), { n ->
+            val name = app.omnitask.model.ListFolders.clean(n)
+            if (name.isNotEmpty()) vm.addListFolder(openList, if (listFolder.isEmpty()) name else "$listFolder/$name")
+            creatingListFolder = false
+        }) { creatingListFolder = false }
+    }
+    if (deletingList && openList != null && listFolder.isNotEmpty()) {
+        val inside = state.itemsOf(openList).count { app.omnitask.model.ListFolders.inside(listFolder, app.omnitask.model.ListFolders.pathOf(openList, it)) }
+        val up = app.omnitask.model.ListFolders.parentOf(listFolder)
+        DeleteListFolderDialog(listFolder, if (up.isEmpty()) openList.name else app.omnitask.model.ListFolders.nameOf(up), inside, {
+            vm.deleteListFolder(openList, listFolder); deletingList = false; listFolder = up
+        }) { deletingList = false }
+    } else if (deletingList && openList != null) {
         val own = state.itemsOf(openList).count { it.list != null }
         val pulled = state.itemsOf(openList).size - own
         DeleteListDialog(openList, own, pulled, {
-            vm.deleteList(openList); deletingList = false; openListPath = null; listCategory = null
+            vm.deleteList(openList); deletingList = false; openListPath = null; listFolder = ""
             if (fromWorld) backToWorld()
         }) { deletingList = false }
     }
@@ -151,8 +165,8 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             onOpen = onOpen,
             onOpenProject = { name -> world = false; fromWorld = true; openName = name; projectView = null; mapping = true },
             onBack = { world = false },
-            onOpenList = { l -> world = false; fromWorld = true; openListPath = l.path },
-            onCreateList = { world = false; shelf = "list"; creatingList = true },
+            onOpenList = { l, f -> world = false; fromWorld = true; openListPath = l.path; listFolder = f },
+            onCreateList = null,
         )
         return
     }
@@ -190,9 +204,10 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     SquareButton(Ic.back, tr("กลับ", "Back"), {
                         when {
                             folderPath != null -> folderUp()
+                            openList != null && listFolder.isNotEmpty() -> listFolder = app.omnitask.model.ListFolders.parentOf(listFolder)
                             fromWorld -> backToWorld()
                             open == null && openList == null -> shelf = null
-                            else -> { openName = null; openListPath = null; listCategory = null; projectView = null; mapping = false }
+                            else -> { openName = null; openListPath = null; listFolder = ""; projectView = null; mapping = false }
                         }
                     })
                     Box(Modifier.width(10.dp))
@@ -200,11 +215,22 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
                     val shelfName = when (shelf) { "other" -> tr("อื่นๆ", "Other"); "list" -> "List"; else -> null }
                     Text(
-                        folderPath?.takeIf { open != null }?.substringAfterLast('/') ?: open?.name ?: openList?.name ?: shelfName ?: tr("โปรเจกต์", "Projects"),
+                        folderPath?.takeIf { open != null }?.substringAfterLast('/') ?: open?.name
+                            ?: openList?.let { if (listFolder.isEmpty()) it.name else app.omnitask.model.ListFolders.nameOf(listFolder) } ?: shelfName ?: tr("โปรเจกต์", "Projects"),
                         style = MaterialTheme.typography.headlineSmall, color = C.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     if (open != null && folderPath != null) {
                         FolderCrumbs(folderPath ?: open.name, { folderPath = null; openName = null; shelf = null }) { to -> folderPath = to.takeIf { '/' in it } }
+                    } else if (openList != null) {
+                        // โปรเจกต์ › List › Bucket list › เที่ยว, every level a tap back.
+                        val trail = listOf("List", openList.name.replace('/', ' ')) + listFolder.split('/').filter { it.isNotEmpty() }
+                        FolderCrumbs(trail.joinToString("/"), { openListPath = null; listFolder = ""; shelf = null; fromWorld = false }) { to ->
+                            val parts = to.split('/')
+                            when {
+                                parts.size == 1 -> { openListPath = null; listFolder = ""; shelf = "list"; fromWorld = false }
+                                else -> listFolder = parts.drop(2).joinToString("/")
+                            }
+                        }
                     } else Text(
                         when {
                             open != null -> tr("ติ๊กงานต้นทางเพื่อปลดล็อกงานที่รออยู่", "Tick the blocking tasks to unlock the ones waiting")
@@ -227,7 +253,9 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     )
                 }
                 if (open != null && folderPath == null) SquareButton(Ic.pen, tr("เปลี่ยนชื่อโปรเจกต์", "Rename project"), { renaming = true })
-                if (openList != null) SquareButton(Ic.trash, tr("ลบรายการนี้", "Delete this list"), { deletingList = true })
+                if (openList != null) SquareButton(
+                    Ic.trash, if (listFolder.isEmpty()) tr("ลบรายการนี้", "Delete this list") else tr("ลบโฟลเดอร์นี้", "Remove this folder"), { deletingList = true },
+                )
                 if (open == null && openList == null && shelf == null && projects.size > 1) {
                     Text(
                         if (arranging) tr("เสร็จ", "Done") else tr("จัดลำดับ", "Arrange"),
@@ -240,15 +268,20 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
 
         if (openList != null) {
-            listDetail(openList, state, vm, listCategory, { listCategory = it }, onOpen) { pickingIcon = true }
+            listFolderPage(openList, listFolder, state, vm, { listFolder = it }, { creatingListFolder = true }, onOpen)
         } else if (open == null && shelf == "list") {
-            listCards(state, { openListPath = it.path }) { creatingList = true }
+            listShelf(state, { openListPath = it.path; listFolder = "" }) { creatingList = true }
         } else if (open == null && shelf == "other") {
             val unpinned = projects.filter { it.name !in pinned }
-            val loose = others.filter { !Folders.isLabel(it.first) }
+            val proposed = state.proposedProjects
+            val loose = others.filter { o -> !Folders.isLabel(o.first) && proposed.none { it.equals(o.first, ignoreCase = true) } }
             // #รอ is a label too, though it never names a project.
             val waits = (state.tasks + state.parked).count { t -> t.status != app.omnitask.model.Status.CANCELLED && t.tags.any { it == app.omnitask.model.Focus.WAITING_TAG || it.startsWith(app.omnitask.model.Focus.WAITING_TAG + "/") } }
             val labels = others.filter { Folders.isLabel(it.first) } + listOfNotNull(if (waits > 0) app.omnitask.model.Focus.WAITING_TAG to waits else null)
+            // The secretary's proposals on top (owner's pick, 2026-10-28, mock way 1): take one as a project, or drop it.
+            if (proposed.isNotEmpty()) item(key = "other proposals") {
+                ProposalBox(state, proposed, { vm.answerProposal(it, true) }, { vm.answerProposal(it, false) })
+            }
             if (unpinned.isNotEmpty()) item(key = "other projects") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     DeskHead(tr("โปรเจกต์ที่ไม่ได้ปักหมุด", "Projects not pinned"))
@@ -304,13 +337,15 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         DeskHead(tr("โฟลเดอร์", "Folders"))
                         TileGrid(
-                            listOf(
+                            listOfNotNull(
                                 Tile(
                                     "other", tr("อื่นๆ", "Other"),
                                     tr("$unpinnedCount โฟลเดอร์", "$unpinnedCount folders") + if (hasLabels) tr(" + ป้าย", " + labels") else "",
                                     C.muted, { shelf = "other" }, mark = "⋯",
+                                    badge = state.proposedProjects.size.takeIf { it > 0 }?.let { tr("ใหม่ $it", "$it new") },
                                 ),
-                                Tile("list", "List", tr("${state.lists.size} รายการ", "${state.lists.size} lists"), C.accent, { shelf = "list" }, mark = "☰"),
+                                // Lists are plain folders now (owner, 2026-10-28); the shelf stays only until the notes are changed.
+                                Tile("list", "List", tr("${state.lists.size} รายการ", "${state.lists.size} lists"), C.accent, { shelf = "list" }, mark = "☰").takeIf { state.lists.isNotEmpty() },
                             ),
                         )
                     }
@@ -576,6 +611,36 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     ),
                     Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = TS.caption,
                 )
+            }
+        }
+    }
+}
+
+/** The secretary's proposed projects: each tag, how many tasks carry it and one of them, and the two answers. */
+@Composable
+private fun ProposalBox(state: UiState, tags: List<String>, onTake: (String) -> Unit, onDrop: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.amberSoft).border(1.dp, C.amber.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(C.amber))
+            Text(tr("เลขาเสนอเป็นโปรเจกต์", "The secretary proposes these as projects"), Modifier.padding(start = 8.dp), color = C.amber, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+        }
+        tags.forEachIndexed { i, tag ->
+            val mine = (state.tasks + state.parked).filter { t -> t.isOpen && t.tags.any { it.equals(tag, ignoreCase = true) || it.startsWith("$tag/", ignoreCase = true) } }
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.amber.copy(alpha = 0.2f)))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("#$tag", color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(tr("  ${mine.size} งาน", "  ${mine.size} tasks"), color = C.muted, fontSize = TS.caption)
+                }
+                mine.firstOrNull()?.let { Text(it.title, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    MapButton(tr("ไม่ใช่โปรเจกต์", "Not a project")) { onDrop(tag) }
+                    MapButton(tr("รับเป็นโปรเจกต์", "Make it a project"), filled = true) { onTake(tag) }
+                }
             }
         }
     }

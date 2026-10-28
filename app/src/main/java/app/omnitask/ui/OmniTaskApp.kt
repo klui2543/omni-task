@@ -115,6 +115,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     // Each calendar's colour and label, read once (see CalendarStyles).
     CalendarStyles.load(LocalContext.current)
     NewLook.load(LocalContext.current)
+    ReviewMode.load(LocalContext.current)
     val pickVault = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setVault(uri)
     }
@@ -288,6 +289,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
                                 state, vm, open, menu,
                                 onSettings = { if (rail) settingsOpen = true else screen = Screen.MORE },
                                 onAsk = { if (NewLook.on) vm.deskType(it) else vm.askAi(it); screen = Screen.AI },
+                                onSecretary = { screen = Screen.AI },
                             )
                         }
                         Screen.TASKS -> PullToReload(state.loading, vm::pullRefresh) { TasksScreen(state, vm, open) }
@@ -394,6 +396,26 @@ fun OmniTaskApp(vm: TaskViewModel) {
     }
     // Waits for the tasks to load, so opening from the notification never shows an empty deck first.
     if (state.askStuck && state.tasks.isNotEmpty()) StuckDeck(state, vm, onOpen = open) { vm.requestStuck(false) }
+    // Lists become plain folders (owner's pick, 2026-10-28, way ก); the notes change only when the owner says so here.
+    if (state.lists.isNotEmpty() && !state.listsLater && state.vault != null) {
+        AlertDialog(
+            onDismissRequest = { vm.listsToFoldersLater() },
+            containerColor = C.raised,
+            title = { Text(tr("เปลี่ยน List เป็นโฟลเดอร์", "Turn lists into folders")) },
+            text = {
+                Text(
+                    state.lists.joinToString(", ") { l -> tr("${l.name} ${state.itemsOf(l).count { !it.todayCopy }} งาน", "${l.name} ${state.itemsOf(l).count { !it.todayCopy }} tasks") } + "\n" +
+                        tr(
+                            "งานอยู่ในโน้ตเดิม ไม่ย้ายไฟล์\nแท็กหมวดเก่าเปลี่ยนเป็นแท็กโฟลเดอร์\nหัวโน้ตที่บอกว่าเป็น List ถูกเอาออก",
+                            "Tasks stay in their notes\nOld category tags become folder tags\nThe list header is taken out of the notes",
+                        ),
+                    color = C.text2,
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.listsToFoldersLater(); vm.listsToFolders() }) { Text(tr("เปลี่ยนเลย", "Change now"), color = C.accentText) } },
+            dismissButton = { TextButton(onClick = { vm.listsToFoldersLater() }) { Text(tr("ยังก่อน", "Not yet"), color = C.text2) } },
+        )
+    }
     state.pendingImage?.let { AttachChoiceDialog(it, vm::resolvePendingImage) }
     state.crash?.let { report -> CrashDialog(report, vm::dismissCrash) }
     state.closingParent?.let { parent ->

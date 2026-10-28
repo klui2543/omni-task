@@ -67,7 +67,7 @@ private fun longDay(d: LocalDate) = d.format(SHORT_DATE) + " " + (d.year + 543)
 @Composable
 internal fun ChatBox(
     input: String, onInput: (String) -> Unit, vm: TaskViewModel, bottom: androidx.compose.ui.unit.Dp, keyboard: Boolean,
-    onSend: () -> Unit, onTalk: () -> Unit, onSettings: () -> Unit, onAdd: () -> Unit,
+    onSend: () -> Unit, onTalk: () -> Unit, onSettings: () -> Unit, onGuide: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
@@ -84,11 +84,10 @@ internal fun ChatBox(
         // The field stays in the same place in both shapes (only what is beside it comes and goes), so it keeps its
         // focus and the keyboard when the box opens.
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (!open) AddButton(onAdd)
             BasicTextField(
                 value = input, onValueChange = onInput,
                 modifier = Modifier.weight(1f).heightIn(min = if (open) 30.dp else 40.dp)
-                    .padding(start = if (open) 0.dp else 6.dp, end = 6.dp)
+                    .padding(start = if (open) 0.dp else 12.dp, end = 6.dp)
                     .onFocusChanged { focused = it.isFocused },
                 textStyle = TextStyle(color = C.text, fontSize = TS.body, fontFamily = AppFont),
                 cursorBrush = SolidColor(C.accent),
@@ -101,11 +100,14 @@ internal fun ChatBox(
                     }
                 },
             )
-            if (!open) SendOrTalk(input, onSend, onTalk)
+            if (!open) {
+                PenButton(onGuide)
+                SendOrTalk(input, onSend, onTalk)
+            }
         }
         if (open) Row(verticalAlignment = Alignment.CenterVertically) {
-            AddButton(onAdd)
-            Box(Modifier.padding(start = 4.dp)) {
+            // The + that was here is gone (owner, 2026-10-27): the + in the middle of the bottom bar adds a task.
+            Box {
                 Row(
                     Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).clickable { menu = true }.padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -117,18 +119,19 @@ internal fun ChatBox(
                 ModeMenu(menu, vm, { menu = false }) { menu = false; onSettings() }
             }
             Spacer(Modifier.weight(1f))
+            PenButton(onGuide)
             SendOrTalk(input, onSend, onTalk)
         }
     }
 }
 
-/** + in the chat box: opens quick add, so a task can be added from the secretary page. */
+/** The pencil beside the mic (owner, 2026-10-27): opens the guide, where the bubbles and the secretary's rules are changed. */
 @Composable
-private fun AddButton(onAdd: () -> Unit) {
+private fun PenButton(onGuide: () -> Unit) {
     Box(
-        Modifier.size(40.dp).clip(CircleShape).background(C.raised).clickable(onClick = onAdd),
+        Modifier.padding(end = 4.dp).size(40.dp).clip(CircleShape).clickable(onClick = onGuide),
         contentAlignment = Alignment.Center,
-    ) { Icon(Ic.plus, tr("เพิ่มงาน", "Add a task"), tint = C.text2, modifier = Modifier.size(18.dp)) }
+    ) { Icon(Ic.pen, tr("แก้บอลลูนและกฎเลขา", "Change the bubbles and rules"), tint = C.accentText, modifier = Modifier.size(18.dp)) }
 }
 
 /** Send when there is text, otherwise the mic (talk to Claude). */

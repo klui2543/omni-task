@@ -82,7 +82,7 @@ import app.omnitask.time.*
  * wants next above the field. A typed question the rules know is answered the same way; anything else, and the
  * Claude button, hands the chat to Claude in its app with the pretext the owner keeps in "เลขา pretext.md".
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSettings: () -> Unit) {
     val context = LocalContext.current
@@ -90,11 +90,13 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     LaunchedEffect(state.tasks.isNotEmpty()) { if (state.tasks.isNotEmpty()) vm.deskOpen() }
     val turns = vm.desk
     val list = rememberLazyListState()
+    // The deck of decisions follows the last turn, so a new answer shows with the deck under it.
     LaunchedEffect(turns.size) { if (turns.isNotEmpty()) list.animateScrollToItem(turns.lastIndex) }
     // Steps ticked in a split answer, by turn; all ticked to begin with.
     val picks = remember { mutableStateMapOf<Int, Set<String>>() }
     var claudeOpen by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
+    var chipsOpen by remember { mutableStateOf(false) }
     // When the chat was started over: "undo" shows for a few seconds after.
     var resetAt by remember { mutableStateOf(0L) }
     LaunchedEffect(resetAt) { if (resetAt > 0) { kotlinx.coroutines.delay(6000); resetAt = 0L } }
@@ -145,6 +147,10 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     var briefMore by remember { mutableStateOf<SecretaryBook.Brief?>(null) }
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
     if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
+    // The review mode (โหมดทบทวนงาน): the first card of the deck opens it over the whole page, always there (owner, 2026-10-28).
+    var reviewing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (reviewing) { ReviewScreen(state, vm) { reviewing = false }; return }
+    val reviewCount = remember(state.tasks, state.today) { reviewDeck(state).size }
 
     // The page ends above the keyboard, so the chat box stays in sight while typing (the window does not resize itself:
     // the app draws edge to edge).
@@ -184,6 +190,8 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                     }
                 }
             }
+            // What waits on Klui to decide, after the chat (owner's pick, 2026-10-28): new answers come above it.
+            item(key = "deck") { DecisionDeck(state, vm, onOpen, reviewCount) { reviewing = true } }
         }
         if (resetAt > 0) Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(14.dp)).background(C.raised).padding(start = 14.dp, end = 4.dp),
@@ -199,43 +207,40 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
         // Talking to Claude is the first button, always there and in the accent; the answer's own buttons follow.
         val chips = turns.lastOrNull { it.reply != null }?.reply?.chips.orEmpty().filter { it.ask != SecretaryDesk.Ask.CLAUDE }
         val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-        LazyRow(
+        // Talk to Claude and the first two buttons; the rest (the answer's other buttons and
+        // the owner's bubbles) fold behind "อีก N" and open in place (owner's pick, 2026-10-27). The pencil is in the chat box.
+        val bubbles = vm.guide.shown.distinctBy { it.label }.filter { b -> chips.none { it.label == b.label } }
+        val buttons: List<Pair<String, @Composable () -> Unit>> = chips.map { c ->
+            ("c:" + c.label) to @Composable { DeskChip(c.label, first = c == chips.first(), onClick = { ask(c) }) }
+        } + bubbles.map { b ->
+            ("g:" + b.label) to @Composable { DeskChip(b.label, onClick = { ask(SecretaryDesk.Chip.of(b.label, b.action)) }, onLongClick = { editingBubble = b }) }
+        }
+        val shownFolded = 2
+        val talk: @Composable () -> Unit = {
+            Row(
+                Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(C.accent).clickable { claudeOpen = true }.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Ic.mic, null, tint = C.onAccent, modifier = Modifier.size(16.dp))
+                Text(tr("คุยกับ Claude", "Talk to Claude"), Modifier.padding(start = 6.dp), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
+        if (chipsOpen) androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            talk()
+            buttons.forEach { it.second() }
+            DeskChip(tr("พับ", "Fold"), more = true, onClick = { chipsOpen = false })
+        } else LazyRow(
             Modifier.fillMaxWidth().padding(top = 6.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                Row(
-                    Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(C.accent).clickable { claudeOpen = true }.padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Ic.mic, null, tint = C.onAccent, modifier = Modifier.size(16.dp))
-                    Text(tr("คุยกับ Claude", "Talk to Claude"), Modifier.padding(start = 6.dp), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                }
-            }
-            items(chips) { c ->
-                val first = c == chips.first()
-                Box(
-                    Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(if (first) C.accentDeep else C.raised)
-                        .border(1.dp, if (first) C.accentLine else C.cardBorder, RoundedCornerShape(20.dp)).clickable { ask(c) }.padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text(c.label, color = if (first) C.text else C.text2, fontSize = TS.body, maxLines = 1) }
-            }
-            // The owner's bubbles, in the guide's order (those the answer already offers are not repeated). A long
-            // press changes one; the pencil at the end opens the guide.
-            items(vm.guide.shown.distinctBy { it.label }.filter { b -> chips.none { it.label == b.label } }, key = { "g:" + it.label }) { b ->
-                Box(
-                    Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(20.dp))
-                        .combinedClickable(onClick = { ask(SecretaryDesk.Chip.of(b.label, b.action)) }, onLongClick = { editingBubble = b }).padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text(b.label, color = C.text2, fontSize = TS.body, maxLines = 1) }
-            }
-            item(key = "guide") {
-                Box(
-                    Modifier.size(width = 48.dp, height = 40.dp).clip(RoundedCornerShape(20.dp)).dashed(C.accentLine).clickable { guideOpen = true },
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Ic.pen, tr("แก้บอลลูน", "Change the bubbles"), tint = C.accentText, modifier = Modifier.size(18.dp)) }
-            }
+            item(key = "talk") { talk() }
+            items(buttons.take(shownFolded), key = { it.first }) { it.second() }
+            val more = buttons.size - shownFolded
+            if (more > 0) item(key = "more") { DeskChip(tr("อีก $more", "$more more"), more = true, onClick = { chipsOpen = true }) }
         }
         // A question cancelled at the cost check comes back into the box.
         LaunchedEffect(vm.deskDraft) { vm.deskDraft?.let { input = it; vm.deskDraftTaken() } }
@@ -247,7 +252,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             onSend = { if (input.isNotBlank()) { vm.deskSend(input.trim()); input = "" } },
             onTalk = { claudeOpen = true },
             onSettings = { aiSettingsOpen = true },
-            onAdd = { vm.requestQuickAdd(QuickAddRequest()) },
+            onGuide = { guideOpen = true },
         )
     }
 }
@@ -749,4 +754,16 @@ fun ClaudeSettingsRows(vm: TaskViewModel) {
     }
     if (pretext) ClaudeSheet(vm, { pretext = false }, null)
     if (knows) KnowsDialog(vm) { knows = false }
+}
+
+/** One button over the chat box: the answer's first button stands out; a long press changes the owner's bubble. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DeskChip(label: String, first: Boolean = false, more: Boolean = false, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
+    Box(
+        Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(if (first) C.accentDeep else C.raised)
+            .border(1.dp, if (first || more) C.accentLine else C.cardBorder, RoundedCornerShape(20.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = if (more) C.accentText else if (first) C.text else C.text2, fontSize = TS.body, maxLines = 1) }
 }

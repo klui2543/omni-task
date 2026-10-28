@@ -67,6 +67,16 @@ class SecretaryDeskTest {
     }
 
     @Test
+    fun theOpeningGreetsInTwoLinesAtMost() {
+        // Tomorrow, the deadlines and the left-over work live on Focus and in the buttons, not in the greeting.
+        for (hour in listOf(8, 14, 19)) {
+            val r = SecretaryDesk.opening(ctx(hour = hour))
+            assertTrue(r.lines.size <= 2, r.lines.toString())
+            assertTrue(r.lines.none { it.startsWith("พรุ่งนี้:") || it.contains("ค้างจากก่อนหน้า") || it.contains("กำหนดจริงใน 3 วัน") }, r.lines.toString())
+        }
+    }
+
+    @Test
     fun theOpeningOffersTomorrowFirstInTheEvening() {
         val r = SecretaryDesk.opening(ctx(hour = 19))
         assertEquals(SecretaryDesk.Ask.TOMORROW, r.chips.first().ask)

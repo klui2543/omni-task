@@ -3,6 +3,7 @@ package app.omnitask.web
 import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import app.omnitask.model.Branches
+import app.omnitask.model.ListFolders
 import app.omnitask.model.OmniList
 import app.omnitask.model.Projects
 import app.omnitask.model.QuickAdd
@@ -166,6 +167,7 @@ object WebProjects {
         // Lists, their categories: tags that are not projects. Set before any project is read.
         val ignored = lists.flatMap { listOf(it.tag) + it.categories }.toSet()
         Projects.ignoredTags = ignored + st.kindTags + st.listTags
+        Projects.listRoots = lists.map { it.tag }.toSet()
         Projects.chosen = st.projectTags?.toSet()
 
         val states = Branches.parse(st.branches.toSet())
@@ -221,7 +223,8 @@ object WebProjects {
 
         val listOut = lists.map { l ->
             val own = noteTasks.filter { it.list == l.name }
-            val tagged = projectTasks.filter { t -> t.tags.any { it.equals(l.tag, ignoreCase = true) } }
+            // Its folders too (`#bucketlist/เที่ยว`, owner's pick 2026-10-28); the web shows them in the list for now.
+            val tagged = projectTasks.filter { t -> t.tags.any { ListFolders.isListTag(l, it) } }
             val items = own + tagged
             val sorted = items.sortedWith(compareBy({ it.status == Status.DONE || it.status == Status.CANCELLED }, { it.title.lowercase() }))
             ListOut(

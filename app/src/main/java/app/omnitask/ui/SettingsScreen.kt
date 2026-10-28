@@ -279,6 +279,7 @@ fun SettingsScreen(
             }
         }
         if (show("look")) item { NewLookSetting(context) }
+        if (show("look")) item { ReviewSetting(context) }
         if (show("look")) item {
             SettingsGroup(tr("ธีม", "Theme")) {
                 Segmented(

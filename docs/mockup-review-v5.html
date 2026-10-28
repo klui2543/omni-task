@@ -1,0 +1,508 @@
+<title>Omni ทบทวนงาน รอบ 3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600&family=Noto+Sans+Thai+Looped:wght@500;600&display=swap">
+<style>
+/* Layout: one phone screen, no page scroll. Column = tabs, header, index card, answer area, answer tray at the bottom (thumb zone). */
+:root{
+ --bg:#E7EBEF; --paper:#FCFDFE; --rule:#DCE6F2; --margin:#E9A9A4; --line:#D3DAE2; --chip:#F1F4F7;
+ --ink:#1F2833; --ink2:#46515E; --muted:#6B7684;
+ --accent:#24497A; --accentSoft:#DDE7F4; --onAccent:#FFFFFF;
+ --warn:#8A5A0A; --warnSoft:#F6EBD3; --bad:#B0413C; --badSoft:#F8E3E1; --good:#3F7A5A; --goodSoft:#DDEEE4;
+ --shade:rgba(18,24,32,.38);
+ --ui:"Anuphan",system-ui,sans-serif; --hand:"Noto Sans Thai Looped","Anuphan",system-ui,sans-serif; --mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+ --bg:#0F1216; --paper:#181C22; --rule:#232A33; --margin:#5C3A39; --line:#2B323C; --chip:#20262E;
+ --ink:#E8ECF1; --ink2:#C2CAD4; --muted:#8E98A5;
+ --accent:#93B4E2; --accentSoft:#1E2A3B; --onAccent:#0D1520;
+ --warn:#D8B36A; --warnSoft:#2C2416; --bad:#E08A84; --badSoft:#33201F; --good:#86BE9E; --goodSoft:#18281F;
+ --shade:rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+ --bg:#0F1216; --paper:#181C22; --rule:#232A33; --margin:#5C3A39; --line:#2B323C; --chip:#20262E;
+ --ink:#E8ECF1; --ink2:#C2CAD4; --muted:#8E98A5;
+ --accent:#93B4E2; --accentSoft:#1E2A3B; --onAccent:#0D1520;
+ --warn:#D8B36A; --warnSoft:#2C2416; --bad:#E08A84; --badSoft:#33201F; --good:#86BE9E; --goodSoft:#18281F;
+ --shade:rgba(0,0,0,.6); color-scheme:dark}
+[hidden]{display:none!important}
+html{height:100%}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);font-size:15px;line-height:1.45;overflow:hidden;
+ display:flex;flex-direction:column;box-sizing:border-box;
+ padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{flex:1;min-height:0;width:100%;max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+
+.tabs{display:flex;gap:4px;background:var(--chip);border:1px solid var(--line);border-radius:12px;padding:3px}
+.tabs button{flex:1;border:0;background:none;border-radius:9px;padding:6px 4px;font-size:13px;color:var(--muted);line-height:1.25}
+.tabs button.on{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+.hd{display:flex;align-items:center;gap:8px}
+.hd .mid{flex:1;min-width:0;text-align:center;line-height:1.2}
+.hd .mid b{display:block;font-size:16px}
+.hd .mid span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pill{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:5px 12px;font-size:13px}
+.pill:disabled{opacity:.4;cursor:default}
+
+/* the index card */
+.card{position:relative;background:var(--paper);border-radius:6px 6px 10px 10px;padding:12px 14px 12px 14px;
+ box-shadow:0 1px 0 var(--line),0 6px 18px -10px rgba(0,0,0,.35);
+ background-image:linear-gradient(var(--paper),var(--paper)),repeating-linear-gradient(to bottom,transparent 0 25px,var(--rule) 25px 26px);
+ background-size:100% 30px,100% 100%;background-repeat:no-repeat,repeat;background-position:0 0,0 4px;
+ display:flex;flex-direction:column;gap:6px;transition:transform .22s,opacity .22s}
+.card::before{content:"";position:absolute;left:0;right:0;top:30px;height:1.5px;background:var(--margin)}
+.card.out{opacity:0;transform:translateX(-24px) rotate(-1.5deg)}
+.card .top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);height:22px;align-items:center}
+.card .top span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .grp{flex:none;font-weight:600;color:var(--accent)}
+.card h2{margin:6px 0 0;font-family:var(--hand);font-size:19px;line-height:26px;font-weight:600;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px;color:var(--ink2);line-height:26px}
+.meta .bad{color:var(--bad);font-weight:600} .meta .warn{color:var(--warn);font-weight:600}
+.said{font-family:var(--hand);font-size:13.5px;color:var(--ink2);line-height:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.area{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+
+/* style จ: talk */
+.done{display:flex;flex-wrap:wrap;gap:6px}
+.done button{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:3px 9px;font-size:12.5px;display:flex;gap:5px;align-items:baseline;max-width:100%}
+.done button small{color:var(--muted);font-size:11px}
+.done button b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ask{align-self:flex-start;max-width:88%;background:var(--accentSoft);color:var(--ink);border-radius:4px 16px 16px 16px;padding:9px 13px;font-size:15.5px;font-weight:500}
+.ask small{display:block;font-size:12px;color:var(--muted);font-weight:400}
+.step{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* style ฉ: sentence */
+.sent{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-family:var(--hand);font-size:15.5px;line-height:2.05;overflow:hidden}
+.blank{border:0;background:none;padding:0 2px;border-bottom:2px dashed var(--muted);font-family:var(--ui);font-weight:600;color:var(--ink);font-size:15px;line-height:1.3;border-radius:2px}
+.blank.set{border-bottom:2px solid var(--accent);color:var(--accent)}
+.blank.on{background:var(--accentSoft);border-bottom-color:var(--accent)}
+.blank.empty{color:var(--muted);font-weight:500}
+.bars{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.bars button{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:3px 9px;font-size:12px;color:var(--ink2)}
+.bars button.on{background:var(--accent);color:var(--onAccent);border-color:var(--accent)}
+.hl{min-width:84px;display:flex}
+.btn.back{flex:0 0 auto!important}
+.btn:disabled{opacity:.45;cursor:default}
+.hold{position:relative;overflow:hidden;flex:0 0 auto!important;touch-action:none;user-select:none;-webkit-user-select:none}
+.hold i{position:absolute;inset:0;width:0;background:var(--badSoft)}
+.hold.go i{width:100%;transition:width .7s linear}
+.hold span{position:relative;font-size:13px}
+.meta{align-items:flex-end;flex-wrap:nowrap}
+.mi{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:0 10px}
+.skipc{flex:none;margin-bottom:2px}
+.skipc{border:1px solid var(--line);background:var(--chip);border-radius:999px;padding:0 10px;font-size:12px;line-height:22px;color:var(--ink2)}
+.skipq{align-self:flex-start;border:0;background:none;padding:2px 0;font-size:12.5px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.swipe{font-size:12px;color:var(--muted);text-align:center;margin-top:2px}
+#card{touch-action:pan-y}
+.panel{flex:1;min-height:0;overflow-y:auto;background:var(--paper);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column}
+.fr{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:0;border-top:1px solid var(--line);background:none;text-align:left;width:100%;font-size:14px;flex:none}
+.fr:first-child{border-top:0}
+.fr .l{width:118px;flex:none;color:var(--muted)}
+.fr .v{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:500}
+.fr .v.none{color:var(--muted);font-weight:400;opacity:.7}
+.fr .ch{color:var(--muted)}
+.fr.on{background:var(--accentSoft)} .fr.on .v{color:var(--accent);font-weight:600;opacity:1}
+.fr.sum .v{color:var(--accent);font-weight:600}
+.flag{padding:6px 12px 8px;font-size:12.5px;color:var(--warn);font-weight:600}
+.tray .q{font-size:15px;color:var(--ink);font-weight:600;display:flex;align-items:baseline;gap:10px}
+.tray .q b{flex:0 1 auto;font-weight:600}
+.tray .q span{flex:1 1 0;min-width:0;text-align:right;font-size:12px;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:2px 0}
+.chat>:first-child{margin-top:auto}
+.bot{align-self:flex-start;max-width:86%;background:var(--paper);border:1px solid var(--line);color:var(--ink2);border-radius:4px 16px 16px 16px;padding:7px 12px;font-size:14px;line-height:1.45}
+.bot.on{background:var(--accentSoft);border-color:transparent;color:var(--ink);font-size:16px;font-weight:500;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.bot small{font-size:12.5px;color:var(--muted);font-weight:400}
+.bot small.warn{color:var(--warn);font-weight:600}
+.me{align-self:flex-end;max-width:80%;border:0;background:var(--accent);color:var(--onAccent);border-radius:16px 4px 16px 16px;padding:7px 12px;font-size:14.5px;font-weight:500;text-align:right;display:flex;flex-direction:column;align-items:flex-end}
+.me small{font-size:10.5px;opacity:.75;font-weight:400}
+.hint{display:block;font-family:var(--ui);font-size:12px;line-height:1.5;color:var(--muted)}
+.res{display:block;font-family:var(--ui);font-size:14px;margin-top:2px}
+.lvl{border:1px solid var(--accent);background:var(--accentSoft);color:var(--accent);border-radius:999px;padding:2px 10px;font-weight:600;font-size:13.5px}
+.why{display:flex;flex-direction:column;gap:2px;font-size:14px}
+.why div{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.why div b{font-variant-numeric:tabular-nums}
+.why .tot{border-bottom:0;font-weight:600}
+.hint.warn{color:var(--warn);font-weight:600}
+.sec{display:flex;flex-direction:column;gap:8px}
+.sec h1{margin:4px 0 2px;font-size:22px}
+.strip{display:flex;align-items:center;gap:10px;min-height:52px;border-radius:14px;padding:0 14px;background:var(--accentSoft);border:1px solid var(--line);text-align:left;width:100%}
+.strip b{flex:1;font-weight:500} .strip span{color:var(--muted);font-size:13px}
+.strip.new{border:2px solid var(--accent)}
+.bub{align-self:flex-start;max-width:80%;background:var(--paper);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:8px 12px;font-size:14px;color:var(--ink2)}
+.cap{font-size:12px;color:var(--muted)}
+
+/* answer tray, shared */
+.tray{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.opts{display:flex;flex-wrap:wrap;gap:6px;max-height:112px;overflow:auto}
+.opt{border:1px solid var(--line);background:var(--chip);border-radius:10px;padding:7px 12px;font-size:14px;line-height:1.2}
+.opt.sel{background:var(--accent);border-color:var(--accent);color:var(--onAccent);font-weight:600}
+.opt.k-done{color:var(--good)} .opt.k-stuck{color:var(--bad)} .opt.k-drop{color:var(--muted)}
+.opt.sel.k-done,.opt.sel.k-stuck,.opt.sel.k-drop{color:var(--onAccent)}
+.type{display:flex;gap:6px}
+.type input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 11px;font-size:14px}
+.type input::placeholder{color:var(--muted)}
+.btn{border:0;border-radius:10px;padding:8px 14px;font-weight:600;background:var(--accent);color:var(--onAccent);white-space:nowrap}
+.btn.soft{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:500}
+.row{display:flex;gap:6px}
+.row .btn{flex:1}
+
+/* note preview sheet */
+.shade{position:fixed;inset:0;background:var(--shade);display:flex;align-items:flex-end;justify-content:center;z-index:5}
+.sheet{width:100%;max-width:452px;background:var(--paper);border-radius:18px 18px 0 0;box-sizing:border-box;
+ padding:14px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+ display:flex;flex-direction:column;gap:10px;max-height:80%}
+.sheet h3{margin:0;font-size:16px}
+.sheet p{margin:0;font-size:13px;color:var(--muted)}
+.code{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;overflow:auto}
+.code .new{background:var(--warnSoft);color:var(--warn);border-radius:3px;padding:0 3px}
+.code .add{color:var(--good)}
+.toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:999px;font-size:13px;z-index:6;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+
+<div class="wrap">
+ <div class="tabs" role="tablist">
+  <button id="tD" data-v="D">ทางเข้า (หน้าเลขา)</button>
+  <button id="tF" class="on" data-v="F">การ์ดทบทวน</button>
+ </div>
+ <div class="bars" id="bars"><span>ปุ่มล่าง:</span><button data-bar="A" class="on">ก ข้ามอยู่บน</button><button data-bar="B">ข กดค้างเพื่อข้าม</button><button data-bar="C">ค ปัดการ์ดเพื่อข้าม</button><button data-bar="D">ง ข้ามอยู่บนการ์ด</button></div>
+ <div class="hd" id="hd">
+  <span id="hl" class="hl"></span>
+  <div class="mid"><b>ทบทวนงาน</b><span id="count"></span></div>
+  <button class="pill" id="note">ดูต้นฉบับ</button>
+ </div>
+ <div class="sec" id="door" hidden></div>
+ <div class="card" id="card"></div>
+ <div class="area" id="area"></div>
+ <div class="tray" id="tray"></div>
+</div>
+<div id="sheet" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+const TODAY="2026-10-27";
+const GROUP={proj:"งานในโปรเจกต์",other:"งานอื่น",stale:"ไม่ขยับนาน"};
+const PRI=[["🔺","ด่วนสุด"],["⏫","สูง"],["🔼","กลาง"],["","ปกติ"],["🔽","ต่ำ"]];
+const FOLDERS=["Siriraj / Peddose","Siriraj / ตารางเวรเภสัช","Siriraj (ทั่วไป)","Omni","อนาคต / หุ้น","อนาคต / ai-r2r","ส่วนตัว","ยังไม่มีบ้าน"];
+const STUCK=["รอคนอื่น","ไม่รู้จะเริ่มยังไง","งานใหญ่เกิน","ไม่มีเวลา","ไม่มีแรง","เป็นงานยาวอยู่แล้ว"];
+const MON=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const addD=n=>{const d=new Date(TODAY);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+const days=d=>Math.round((new Date(TODAY)-new Date(d))/864e5);
+const thai=d=>{const x=new Date(d);return x.getDate()+" "+MON[x.getMonth()]};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const WHEN=[["วันนี้",addD(0)],["พรุ่งนี้",addD(1)],["เสาร์นี้",addD(4)],["สัปดาห์หน้า",addD(6)]];
+
+let id=0;
+const T=o=>Object.assign({id:++id,tags:"",pri:"",said:"",due:"",sched:"",guess:"",waiting:false,next:[],moves:0,blocks:0},o);
+const S={bar:"D",v:"F",count:0,hist:[],a:{},cur:null,
+ deck:[
+  T({g:"proj",t:"Mock UX UI และ จัดการโครงสร้างหลังบ้าน",tags:"#รอ #Siriraj/Peddose",folder:"Siriraj / Peddose",pri:"⏫",add:"2026-10-02",said:"26 ต.ค. งานใหญ่กว่าที่คิด",waiting:true,moves:2,blocks:1,next:["แบ่งเป็นหน้าย่อย","ส่ง mock ให้ดูก่อน"]}),
+  T({g:"proj",t:"เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)",tags:"#Siriraj/ตารางเวรเภสัช/wording #kluido",folder:"Siriraj / ตารางเวรเภสัช",add:"2026-10-20",due:"2026-10-21",next:["เขียนอีก 5 ข้อ"]}),
+  T({g:"proj",t:"How to ดูหุ้นแบบรอบด้านและลึก",tags:"#อนาคต",folder:"อนาคต / หุ้น",pri:"🔼",add:"2026-09-29",sched:"2026-10-11",moves:4,said:"14 ต.ค. ยังติดงานที่มีคนรออยู่ และกลับห้องไปก็เหนื่อย",next:["หาหนังสือ 1 เล่ม","ดูคลิปสั้น 1 คลิป"]}),
+  T({g:"other",t:"ช่วยดูระบบให้พี่ต่าย",folder:"ยังไม่มีบ้าน",add:"2026-10-27",due:"2026-10-29",guess:"พี่ต่าย",next:["ถามพี่ต่ายว่าติดตรงไหน"]}),
+  T({g:"other",t:"นับยา",folder:"ยังไม่มีบ้าน",add:"2026-10-24",next:["นับตู้แรก"]}),
+  T({g:"stale",t:"จัดการ Note",tags:"#Siriraj",folder:"Siriraj (ทั่วไป)",pri:"🔼",add:"2026-09-29",moves:3,next:["เลือกโน้ตที่รกสุด 1 อัน"]}),
+  T({g:"stale",t:"เปลี่ยนแบตโน๊ตบุ๊ค",tags:"#สักวัน",folder:"ส่วนตัว",add:"2026-10-19",next:["เช็กรุ่นแบต"]}),
+ ]};
+
+const card=()=>S.deck[0];
+const STATUS=[["go","เดินอยู่",""],["stuck","ติด","k-stuck"],["done","เสร็จแล้ว","k-done"],["park","พักไว้ก่อน","k-drop"],["drop","ไม่ทำแล้ว","k-drop"]];
+
+/* the questions for this card, given the answers so far */
+function questions(c,a){
+ const q=[{k:"status",t:"ตอนนี้งานนี้เป็นยังไง",opts:STATUS.map(s=>({v:s[0],l:s[1],cls:s[2]})),ph:"เล่าเอง เช่น ทำไปครึ่งนึงแล้ว"}];
+ const st=a.status&&a.status.v;
+ if(!st||["done","park","drop"].includes(st)) return q;
+ if(st==="stuck") q.push({k:"why",t:"ติดเพราะอะไร",opts:STUCK.map(s=>({v:s,l:s})),ph:"พิมพ์เหตุเอง"});
+ q.push({k:"prog",t:"ความคืบหน้า จดถึงตัวเองไว้ดูครั้งหน้า",sub:c.said?"ครั้งก่อน: "+c.said:"ยังไม่เคยจด",opts:[{v:"-",l:"ไม่มีอะไรใหม่"}],ph:"เช่น ทำหน้าแรกเสร็จแล้ว เหลือหน้ารายงาน",type:true});
+ q.push({k:"next",t:"ก้าวถัดไปคืออะไร",sub:"สั้นๆ ที่ลงมือได้เลย",opts:[{v:"?",l:"ไม่แน่ใจ"}],ph:"เช่น ส่ง mock ให้พี่ดูก่อน",type:true});
+ const late=c.due&&days(c.due)>0;
+ if(!c.sched&&!c.due||late) q.push({k:"when",t:late?"เลยวันส่งแล้ว จะทำใหม่เมื่อไร":"จะหยิบมาทำเมื่อไร",sub:late?"เลื่อนได้ ไม่ผิด":"งานนี้ยังไม่มีวัน",opts:[...WHEN.map(w=>({v:w[1],l:w[0]+" "+thai(w[1])})),{v:"?",l:"ไม่แน่ใจ"}],ph:"พิมพ์วัน เช่น 5 พ.ย."});
+ const who=c.guess||"";
+ q.push({k:"wait",t:"มีคนรองานนี้จากเราไหม",sub:c.waiting?"ตอนนี้ติด #รอ อยู่":(who?"ชื่องานมี "+who:""),opts:[{v:"no",l:"ไม่มี"},...(who?[{v:who,l:who+" รอ"}]:[]),...(c.waiting?[{v:"yes",l:"มี"}]:[])],ph:"พิมพ์ชื่อคนที่รอ"});
+ const w=a.wait&&a.wait.v;
+ if(w&&w!=="no"&&!c.due) q.push({k:"wdate",t:"เขาต้องการเมื่อไร",opts:[...WHEN.slice(1).map(x=>({v:x[1],l:x[0]+" "+thai(x[1])})),{v:"?",l:"ไม่แน่ใจ"}],ph:"พิมพ์วัน"});
+ q.push({k:"folder",t:"งานนี้อยู่ถูกโปรเจกต์หรือโฟลเดอร์ไหม",sub:"ตอนนี้อยู่: "+c.folder,opts:[{v:"=",l:"ถูกแล้ว"},...FOLDERS.filter(f=>f!==c.folder).map(f=>({v:f,l:f}))],ph:"พิมพ์ที่ใหม่"});
+ if(!c.due&&!(a.wdate&&!a.wdate.typed&&a.wdate.v!=="?")) q.push({k:"delay",t:"ถ้าเลื่อนไปอีก 1 สัปดาห์ จะเป็นยังไง",sub:"ใช้คิดว่าด่วนแค่ไหน",opts:DELAY.map(x=>({v:x[0],l:x[1]})),ph:"พิมพ์เอง"});
+ const g=guess(c); q.push({k:"pri",t:"ถ้าไม่ทำเลย จะเกิดอะไร",sub:"ระบบเดา: "+impactOf(g.v)[1]+" เพราะ"+g.why,opts:IMPACT.map(x=>({v:x[0],l:x[1]+(x[0]===g.v?" (ระบบเดา)":"")})),ph:"พิมพ์ผลเอง เช่น หัวหน้าตามแน่"});
+ if(a.delay&&a.delay.typed){const k=kw(DELAY_KW,a.delay.l); q.splice(q.findIndex(x=>x.k==="delay")+1,0,{k:"delayMap",t:`ที่ตอบว่า "${a.delay.l}" ใกล้ข้อไหนที่สุด`,sub:k?`ระบบเดาว่า "${DELAY.find(x=>x[0]===k.v)[1]}" จากคำว่า "${k.w}"`:"ระบบเดาจากคำนี้ไม่ได้ ช่วยเลือกข้อที่ใกล้สุด",opts:DELAY.filter(x=>x[0]!=="?").map(x=>({v:x[0],l:x[1]+(k&&k.v===x[0]?" (ระบบเดา)":"")})),ph:"",noType:true});}
+ if(a.pri&&a.pri.typed){const k=kw(IMPACT_KW,a.pri.l); q.push({k:"priMap",t:`ที่ตอบว่า "${a.pri.l}" ใกล้ข้อไหนที่สุด`,sub:k?`ระบบเดาว่า "${impactOf(k.v)[1]}" จากคำว่า "${k.w}"`:"ระบบเดาจากคำนี้ไม่ได้ ช่วยเลือกข้อที่ใกล้สุด",opts:IMPACT.map(x=>({v:x[0],l:x[1]+(k&&k.v===x[0]?" (ระบบเดา)":"")})),ph:"",noType:true});}
+ return q;
+}
+/* typed answers: kept word for word in the note, and matched to the nearest choice by words, then Klui confirms */
+const IMPACT_KW=[["big",/ผู้ป่วย|คนไข้|ยา|เงิน|ค่าปรับ|กฎหมาย/],["others",/หัวหน้า|พี่|น้อง|เพื่อน|ทีม|อาจารย์|คนอื่น|ตาม|รอ/],["self",/ตัวเอง|โอกาส|เรียน|สุขภาพ|เป้า/],["none",/ไม่มี|เฉยๆ|ไม่เป็นไร/]];
+const DELAY_KW=[["miss",/พลาด|ไม่ทัน|หมดเขต|หมดสิทธิ์/],["much",/แย่|โดน|ยุ่ง|ลำบาก/],["bit",/นิด|หน่อย|ช้า/],["same",/ไม่ต่าง|เหมือนเดิม|ไม่เป็นไร/]];
+function kw(list,text){for(const [v,re] of list){const m=text.match(re); if(m) return {v,w:m[0]};} return null;}
+const IMPACT=[["none","ไม่มีอะไร","🔽"],["self","ตัวเองเสียโอกาส","🔼"],["others","คนอื่นเดือดร้อน","⏫"],["big","กระทบผู้ป่วยหรือเงิน","🔺"]];
+const impactOf=v=>IMPACT.find(x=>x[0]===v)||IMPACT[1];
+const RANK={none:0,self:1,others:2,big:3};
+const DELAY=[["same","ไม่ต่าง"],["bit","แย่ลงนิดหน่อย"],["much","แย่ลงมาก"],["miss","พลาดเลย"],["?","ไม่แน่ใจ"]];
+const IMPNAME={"🔺":"🔺 มากที่สุด","⏫":"⏫ มาก","🔼":"🔼 กลาง","":"ปกติ","🔽":"🔽 น้อย"};
+const LEVELS=[[60,"🔺"],[45,"⏫"],[25,"🔼"],[10,""],[-99,"🔽"]];
+/* importance = what happens if never done, who is waiting, what hangs on it, long-term goals; urgency = time only */
+function weigh(c,a){
+ const g=guess(c), iv=a.priMap?a.priMap.v.replace(/^typed:.*/,g.v):a.pri&&!a.pri.typed?a.pri.v:g.v, parts=[], flags=[];
+ parts.push(["ผลถ้าไม่ทำ: "+impactOf(iv)[1]+(a.pri&&a.pri.typed?" (จากที่พิมพ์ว่า \""+a.pri.l+"\")":""),{none:0,self:15,others:30,big:45}[iv]]);
+ const w=a.wait&&a.wait.v; const waiting=w?w!=="no":c.waiting;
+ if(waiting) parts.push(["มีคนรองานนี้",15]);
+ if(c.g==="proj") parts.push(["อยู่ในโปรเจกต์",10]);
+ if(c.blocks) parts.push(["งานอื่นรองานนี้อยู่ "+c.blocks+" งาน",Math.min(20,10*c.blocks)]);
+ if(/#อนาคต/.test(c.tags)) parts.push(["ตรงเป้าระยะยาว (#อนาคต)",10]);
+ const imp=parts.reduce((x,p)=>x+p[1],0), pri=LEVELS.find(l=>imp>=l[0])[1];
+ let urg="ต่ำ",uw="ไม่มีวันส่ง และเลื่อนได้";
+ const d=a.delayMap?a.delayMap.v:a.delay&&!a.delay.typed?a.delay.v:"";
+ const due=a.wdate&&!a.wdate.typed&&a.wdate.v!=="?"?a.wdate.v:c.due;
+ if(due){const left=-days(due); urg=left<=1?"สูงมาก":left<=3?"สูง":left<=7?"กลาง":"ต่ำ"; uw=left<0?"เลยวันส่งมา "+(-left)+" วัน":"ส่งในอีก "+left+" วัน";}
+ else if(d==="miss"){urg="สูง";uw="ถ้าเลื่อนอีกสัปดาห์จะพลาด";}
+ else if(d==="much"){urg="กลาง";uw="ถ้าเลื่อนอีกสัปดาห์จะแย่ลงมาก";}
+ else if(waiting){urg="กลาง";uw="มีคนรอ แต่ไม่มีวันส่ง";}
+ if(RANK[iv]<RANK[g.v]) flags.push("แต่ระบบเห็นว่า"+g.why+" แน่ใจไหม");
+ if(c.moves>=3) flags.push(imp>=45?"บอกว่าสำคัญ แต่เลื่อนมาแล้ว "+c.moves+" ครั้ง ติดอะไรไหม":"เลื่อนมาแล้ว "+c.moves+" ครั้ง ถ้าไม่สำคัญจริง ปล่อยได้ไหม");
+ return {imp,pri,parts,urg,uw,flags};
+}
+/* the system's guess, from signals already in the note: someone waiting, a near deadline, a project, long silence */
+function guess(c){
+ const late=c.due&&days(c.due)>-3;
+ if(c.waiting) return {v:"others",why:" มีคนรออยู่ (#รอ)"};
+ if(c.guess) return {v:"others",why:" ชื่องานบอกว่าทำให้"+c.guess};
+ if(late) return {v:"self",why:" ใกล้หรือเลยวันส่ง"};
+ if(c.g==="proj") return {v:"self",why:" อยู่ในโปรเจกต์"};
+ if(days(c.add)>21) return {v:"none",why:" นิ่งมา "+days(c.add)+" วัน ไม่มีใครรอ"};
+ return {v:"self",why:"ไม่มีสัญญาณชัด"};
+}
+const priName=e=>{const p=PRI.find(x=>x[0]===e);return (e?e+" ":"")+p[1]};
+const firstOpen=(qs,a)=>qs.find(q=>!a[q.k]);
+
+/* ---------- render ---------- */
+function renderCard(){
+ const c=card(), el=document.getElementById("card");
+ const meta=[];
+ meta.push(`<span>อายุ ${days(c.add)} วัน</span>`);
+ if(c.due){const l=days(c.due);meta.push(`<span class="${l>0?"bad":""}">ส่ง ${thai(c.due)}${l>0?" เลยมา "+l+" วัน":""}</span>`);}
+ else if(c.sched) meta.push(`<span>เริ่ม ${thai(c.sched)}</span>`);
+ else meta.push(`<span class="warn">ยังไม่มีวัน</span>`);
+ if(c.pri) meta.push(`<span>${priName(c.pri)}</span>`);
+ if(c.waiting&&!c.due) meta.push(`<span class="warn">มีคนรอ ไม่มีวันส่ง</span>`);
+ el.innerHTML=`<div class="top"><span class="grp">${GROUP[c.g]}</span><span>${esc(c.folder)}</span></div>
+  <h2>${esc(c.t)}</h2><div class="meta"><div class="mi">${meta.join("")}</div>${S.bar==="D"?`<button class="skipc" data-act="skip">ข้ามใบนี้ ›</button>`:""}</div>
+`;
+}
+function label(q,ans){ if(!ans) return ""; if(ans.typed||ans.guess) return ans.l; if(q.k==="folder"&&ans.v==="=") return card().folder; const o=q.opts.find(o=>o.v===ans.v); return o?o.l.replace(" (ระบบเดา)",""):ans.l; }
+
+function renderE(){
+ const c=card(), a=S.a, qs=questions(c,a), open=S.cur?qs.find(q=>q.k===S.cur):firstOpen(qs,a);
+ const answered=qs.filter(q=>a[q.k]&&q!==open);
+ const shortQ={status:"สถานะ",why:"ติดเพราะ",next:"ต่อไป",when:"จะทำ",wait:"คนรอ",wdate:"เขาต้องการ",folder:"ที่",pri:"สำคัญ"};
+ const area=document.getElementById("area");
+ const n=qs.indexOf(open)+1;
+ area.innerHTML=`${answered.length?`<div class="done">${answered.map(q=>`<button data-edit="${q.k}" title="แตะเพื่อแก้"><small>${shortQ[q.k]}</small><b>${esc(label(q,a[q.k]))}</b><small>✎</small></button>`).join("")}</div>`:""}
+  ${open?`<div class="step">ข้อ ${n} จาก ${qs.length}${n===1?"":" (จำนวนข้อเปลี่ยนตามคำตอบ)"}</div><div class="ask">${esc(open.t)}${open.sub?`<small>${esc(open.sub)}</small>`:""}</div>`
+   :`<div class="ask">ครบแล้ว บันทึกเลยไหม<small>แตะคำตอบด้านบนเพื่อแก้ได้</small></div>`}`;
+ tray(open);
+}
+const ROW={status:"สถานะ",why:"ติดเพราะ",prog:"ความคืบหน้า",next:"ก้าวถัดไป",when:"จะหยิบมาทำ",wait:"คนที่รอ",wdate:"เขาต้องการ",folder:"อยู่ที่",delay:"ถ้าเลื่อน 1 สัปดาห์",pri:"ถ้าไม่ทำเลย"};
+function renderPanel(){
+ const c=card(), a=S.a, qs=questions(c,a).filter(q=>ROW[q.k]), open=S.cur?qs.find(q=>q.k===S.cur):firstOpen(qs,a);
+ const rows=qs.map(q=>{const ans=a[q.k]; const v=ans?label(q,ans):(q===open?"กำลังถาม":"ยังไม่ตอบ");
+  return `<button class="fr ${q===open?"on":""}" data-edit="${q.k}"><span class="l">${ROW[q.k]}</span><span class="v ${ans?"":"none"}">${esc(v)}</span><span class="ch">›</span></button>`;});
+ const st=a.status&&a.status.v;
+ if(!open&&st&&!["done","park","drop"].includes(st)){const W=weigh(c,a);
+  rows.push(`<button class="fr sum" data-act="why"><span class="l">สรุป</span><span class="v">สำคัญ ${IMPNAME[W.pri]}  ด่วน${W.urg}</span><span class="ch">›</span></button>`);
+  if(W.flags.length) rows.push(`<div class="flag">${esc(W.flags[0])}</div>`);}
+ document.getElementById("area").innerHTML=`<div class="panel" id="panel">${rows.join("")}</div>`;
+ const on=document.querySelector(".fr.on"); if(on) on.scrollIntoView({block:"nearest"});
+ tray(open);
+}
+function renderChat(){
+ const c=card(), a=S.a, qs=questions(c,a), open=S.cur?qs.find(q=>q.k===S.cur):firstOpen(qs,a);
+ const out=[];
+ for(const q of qs){
+  if(q===open){ out.push(`<div class="bot on"><span>${esc(q.t)}</span>${q.sub?`<small>${esc(q.sub)}</small>`:""}</div>`); continue; }
+  if(!a[q.k]) break;
+  out.push(`<div class="bot">${esc(q.t)}</div><button class="me" data-edit="${q.k}">${esc(label(q,a[q.k]))}<small>แตะเพื่อแก้</small></button>`);
+ }
+ if(!open){
+  const st=a.status&&a.status.v;
+  if(["done","park","drop"].includes(st)) out.push(`<div class="bot on"><span>${st==="done"?"เยี่ยมครับ จะติ๊กเสร็จให้":st==="drop"?"รับทราบ จะจดว่าไม่ทำแล้ว":"รับทราบ จะพักไว้ก่อน"}</span><small>กดบันทึกเพื่อไปใบถัดไป</small></div>`);
+  else {const W=weigh(c,a); out.push(`<div class="bot on"><span>สรุปใบนี้</span><button class="lvl" data-act="why">สำคัญ ${IMPNAME[W.pri]}  ด่วน${W.urg} ›</button>${W.flags.length?`<small class="warn">${esc(W.flags[0])}</small>`:`<small>แตะสรุปเพื่อดูว่าคิดจากอะไร</small>`}</div>`);}
+ }
+ const area=document.getElementById("area");
+ area.innerHTML=`<div class="chat" id="chat">${out.join("")}</div>`;
+ const ch=document.getElementById("chat"); const down=()=>{ch.scrollTop=ch.scrollHeight}; down(); requestAnimationFrame(down); setTimeout(down,120);
+ tray(open);
+}
+function renderF(){
+ const c=card(), a=S.a, qs=questions(c,a), cur=S.cur||(firstOpen(qs,a)||{}).k;
+ const B=(k,empty)=>{const q=qs.find(x=>x.k===k); if(!q) return ""; const ans=a[k]; const txt=ans?label(q,ans):empty;
+  return `<button class="blank ${ans?"set":"empty"} ${cur===k?"on":""}" data-edit="${k}">${esc(txt)}</button>`;};
+ const st=a.status&&a.status.v;
+ let s=`งานนี้ตอนนี้ ${B("status","เป็นยังไง")}`;
+ if(st&&!["done","park","drop"].includes(st)){
+  if(st==="stuck") s+=` เพราะ ${B("why","อะไร")}`;
+  s+=` ก้าวถัดไปคือ ${B("next","อะไร")}`;
+  if(qs.find(q=>q.k==="when")) s+=` จะหยิบมาทำ ${B("when","เมื่อไร")}`;
+  s+=` คนที่รองานนี้ ${B("wait","มีไหม")}`;
+  if(qs.find(q=>q.k==="wdate")) s+=` เขาต้องการ ${B("wdate","เมื่อไร")}`;
+  if(!a.folder) a.folder={v:"=",l:c.folder,guess:true};
+  s+=` อยู่ที่ ${B("folder",c.folder)}`;
+  const g=guess(c); if(!a.pri) a.pri={v:g.v,l:impactOf(g.v)[1],guess:true};
+  if(qs.find(q=>q.k==="delay")) s+=` ถ้าเลื่อนไปอีกสัปดาห์ ${B("delay","เป็นไง")}`;
+  s+=` ถ้าไม่ทำเลย ${B("pri","")}`;
+  const W=weigh(c,a);
+  s+=` <span class="res">สรุป: <button class="lvl" data-act="why">สำคัญ ${IMPNAME[W.pri]}  ด่วน${W.urg} ›</button></span>`;
+  if(W.flags.length) s+=`<span class="hint warn">${esc(W.flags[0])}</span>`;
+ } else if(st) s+=" แล้วออกจากกองนี้";
+ document.getElementById("area").innerHTML=`<div class="sent">${s}</div>`;
+ tray(qs.find(q=>q.k===cur));
+}
+function tray(q){
+ const el=document.getElementById("tray"), a=S.a;
+ if(!q){
+  el.innerHTML=bottomRow(true); return;
+ }
+ const ans=a[q.k];
+ el.innerHTML=`
+<div class="q"><b>${esc(q.t)}</b>${q.sub?`<span title="${esc(q.sub)}">${esc(q.sub)}</span>`:""}</div>
+  <div class="opts">${q.opts.map(o=>`<button class="opt ${o.cls||""} ${ans&&!ans.typed&&ans.v===o.v?"sel":""}" data-pick="${esc(o.v)}">${esc(o.l)}</button>`).join("")}</div>
+  ${!q.type?"":`<form class="type" id="typeF"><input id="typeIn" placeholder="${esc(q.ph)}" value="${ans&&ans.typed?esc(ans.l):""}" autocomplete="off"><button class="btn" type="submit">ตอบ</button></form>`}
+  ${bottomRow(allDone())}`;
+ el.dataset.q=q.k;
+}
+function bottomRow(done){
+ const back=`<button class="btn soft back" data-act="undo" ${S.hist.length?"":"disabled"}>↶ ย้อน</button>`;
+ const save=done?`<button class="btn" data-act="save">บันทึก ใบถัดไป</button>`:`<button class="btn" disabled>ตอบให้ครบก่อนบันทึก</button>`;
+ if(S.bar==="B") return `<div class="row">${back}<button class="btn soft hold" data-hold="skip"><i></i><span>กดค้างเพื่อข้าม</span></button>${save}</div>`;
+ return `<div class="row">${back}${save}</div>`;
+}
+const allDone=()=>!firstOpen(questions(card(),S.a),S.a);
+function render(){
+ document.getElementById("count").textContent=`ทบทวนแล้ว ${S.count} ใบ  เหลือในกอง ${S.deck.length} ใบ`;
+ document.getElementById("hl").innerHTML=S.bar==="A"?`<button class="pill" data-act="skip">ข้ามใบนี้</button>`:"";
+ document.getElementById("bars").hidden=S.v==="D";
+ document.querySelectorAll("[data-bar]").forEach(b=>b.classList.toggle("on",b.dataset.bar===S.bar));
+ document.getElementById("tD").classList.toggle("on",S.v==="D");
+ for(const id of ["card","area","tray"]) document.getElementById(id).hidden=S.v==="D";
+ document.getElementById("door").hidden=S.v!=="D";
+ document.querySelector(".hd").hidden=S.v==="D";
+ document.getElementById("tF").classList.toggle("on",S.v==="F");
+ if(S.v==="D") return renderDoor();
+ renderCard(); renderPanel();
+ if(S.bar==="C") document.getElementById("card").insertAdjacentHTML("beforeend",`<div class="swipe">← ปัดการ์ดไปทางซ้ายเพื่อข้าม</div>`);
+}
+
+function renderDoor(){
+ document.getElementById("door").innerHTML=`<h1>เลขา</h1>
+  <button class="strip new" data-v="F"><b>ทบทวนงาน ${S.deck.length} ใบ</b><span>เริ่ม ›</span></button>
+  <button class="strip" disabled><b>เลขาถาม 2 ข้อ</b><span>ตอบ ›</span></button>
+  <div class="cap">แชตเลขาเดิมอยู่ใต้นี้ ไม่เปลี่ยน</div>
+  <div class="bub">อรุณสวัสดิ์ครับ วันนี้มีงานใกล้ส่ง 1 งาน</div>
+  <div class="cap">กรอบหนาคือของใหม่ ตัวทบทวนเก่าบนหน้าโฟกัสจะถูกลบ</div>`;
+}
+/* hold to skip (ข) and swipe the card to skip (ค) */
+let holdT=null;
+document.addEventListener("pointerdown",e=>{const h=e.target.closest("[data-hold]"); if(!h) return; h.classList.add("go"); holdT=setTimeout(()=>{h.classList.remove("go");next(false);},700);});
+const stopHold=()=>{clearTimeout(holdT);document.querySelectorAll(".hold.go").forEach(h=>h.classList.remove("go"));};
+document.addEventListener("pointerup",stopHold); document.addEventListener("pointercancel",stopHold); document.addEventListener("pointerleave",stopHold);
+let sx=null;
+const cardEl=()=>document.getElementById("card");
+document.addEventListener("pointerdown",e=>{if(S.bar==="C"&&e.target.closest("#card")){sx=e.clientX;}});
+document.addEventListener("pointermove",e=>{if(sx===null) return; const dx=Math.min(0,e.clientX-sx); cardEl().style.transform=`translateX(${dx}px) rotate(${dx/40}deg)`;});
+document.addEventListener("pointerup",e=>{if(sx===null) return; const dx=e.clientX-sx; sx=null; cardEl().style.transform=""; if(dx<-90) next(false);});
+/* ---------- answers ---------- */
+function answer(k,ans){
+ S.a[k]=ans;
+ if(k==="status"){ for(const x of ["why","next","when","wait","wdate","delay","delayMap","folder","pri","priMap"]) if(["done","park","drop"].includes(ans.v)) delete S.a[x]; }
+ if(k==="wait"&&ans.v==="no") delete S.a.wdate;
+ if(k==="pri"&&!ans.typed) delete S.a.priMap;
+ if(k==="delay"&&!ans.typed) delete S.a.delayMap;
+ S.cur=null; render();
+}
+document.addEventListener("click",e=>{
+ const t=e.target.closest("button"); if(!t) return;
+ if(t.dataset.v){S.v=t.dataset.v;S.cur=null;render();return;}
+ if(t.dataset.edit){S.cur=t.dataset.edit;render();return;}
+ if(t.dataset.pick!==undefined){const k=document.getElementById("tray").dataset.q; const q=questions(card(),S.a).find(x=>x.k===k); const o=q.opts.find(o=>o.v===t.dataset.pick); answer(k,{v:o.v,l:o.l.replace(' (ระบบเดา)','')}); return;}
+ if(t.dataset.bar){S.bar=t.dataset.bar;render();return;}
+ if(t.dataset.act==="undo") return undo();
+ if(t.id==="note") return showNote();
+ if(t.dataset.act==="save") return next(true);
+ if(t.dataset.act==="skip") return next(false);
+ if(t.dataset.act==="why") return showWhy();
+ if(t.dataset.act==="close"){document.getElementById("sheet").hidden=true;return;}
+});
+document.addEventListener("submit",e=>{
+ e.preventDefault(); const v=document.getElementById("typeIn").value.trim(); if(!v) return;
+ const k=document.getElementById("tray").dataset.q; answer(k,{v:"typed:"+v,l:v,typed:true});
+});
+function next(save){
+ const c=card();
+ S.hist.push({deck:S.deck.slice(),a:JSON.parse(JSON.stringify(S.a)),count:S.count});
+ const el=document.getElementById("card"); el.classList.add("out");
+ setTimeout(()=>{
+  el.classList.remove("out");
+  S.deck.shift();
+  const st=S.a.status&&S.a.status.v;
+  if(!(save&&(st==="done"||st==="drop"))) S.deck.push(c);
+  if(save) S.count++;
+  S.a={}; S.cur=null; render();
+  toast(save?(st==="done"?"จดว่าเสร็จแล้ว ออกจากกอง":st==="drop"?"จดว่าไม่ทำแล้ว ออกจากกอง":"จดแล้ว ใบนี้ไปท้ายกอง"):"ข้ามไว้ท้ายกอง ไม่จดอะไร");
+ },200);
+}
+function undo(){
+ const h=S.hist.pop(); if(!h) return;
+ S.deck=h.deck; S.a=h.a; S.count=h.count; S.cur=null; render(); toast("กลับมาใบที่แล้ว แก้คำตอบได้เลย");
+}
+let tt; function toast(m){const el=document.getElementById("toast");el.textContent=m;el.hidden=false;clearTimeout(tt);tt=setTimeout(()=>el.hidden=true,1800);}
+
+/* ---------- what would be written to the note (mock only, writes nothing) ---------- */
+function lines(){
+ const c=card(), a=S.a, st=a.status&&a.status.v, L=[], N=x=>`<span class="new">${esc(x)}</span>`;
+ let tags=c.tags, pri=c.pri, box="[ ]", tail="";
+ const dateOf=ans=>ans&&!ans.typed&&ans.v!=="?"?ans.v:"";
+ if(st==="done"){box="[x]";tail=" ✅ "+TODAY;}
+ if(st==="drop"){box="[-]";tail=" ❌ "+TODAY;}
+ if(st==="park"&&!tags.includes("#สักวัน")) tags=(tags+" #สักวัน").trim();
+ const w=a.wait&&a.wait.v;
+ if(w&&w!=="no"){const name=w==="yes"?"":(a.wait.typed?a.wait.l:w).replace(/\s/g,""); if(!/#รอ/.test(tags)) tags=("#รอ"+(name?"/"+name:"")+" "+tags).trim();}
+ if(a.pri) pri=weigh(c,a).pri;
+ let sched=c.sched, due=c.due;
+ if(dateOf(a.when)) sched=dateOf(a.when);
+ if(dateOf(a.wdate)) due=dateOf(a.wdate);
+ const toks=[tags,pri,sched?"⏳ "+sched:"",due?"📅 "+due:""].filter(Boolean).join(" ");
+ L.push(esc(`- ${box} ${c.t} ${toks}${tail}`));
+ if(a.prog&&a.prog.typed) L.push(N(`    - คืบ ${TODAY} ${a.prog.l}`)+"  (รูปแบบใหม่)");
+ if(a.status&&a.status.typed) L.push(N(`    - คืบ ${TODAY} ${a.status.l}`)+"  (รูปแบบใหม่)");
+ if(st==="stuck"){const why=a.why?a.why.l:"";L.push(esc(`    - ค้าง ${TODAY} ${why}`));}
+ if(a.next&&a.next.v!=="?") L.push(N(`    - ต่อไป: ${a.next.l}`)+"  (รูปแบบใหม่)");
+ if(a.when&&a.when.typed) L.push(esc(`    (จะอ่านวัน "${a.when.l}" ให้เป็น ⏳)`));
+ L.push(N(`    - ทบทวน ${TODAY}`)+"  (เคาะแล้ว)");
+ if(a.folder&&a.folder.v!=="=") L.push(esc(`(ย้ายงานไป ${a.folder.l})`));
+ if(w&&w!=="no"&&a.wdate&&a.wdate.v==="?"){const who=w==="yes"?"คนที่รอ":(a.wait.typed?a.wait.l:w);L.push(`<span class="add">${esc(`+ งานใหม่: - [ ] ถาม${who}ว่าต้องการ "${c.t}" เมื่อไร ➕ ${TODAY} ⏳ ${TODAY}`)}</span>`);}
+ return L.join("\n");
+}
+function showWhy(){
+ const c=card(), W=weigh(c,S.a), el=document.getElementById("sheet");
+ el.innerHTML=`<div class="shade"><div class="sheet" onclick="event.stopPropagation()">
+  <h3>ทำไมระบบให้ระดับนี้</h3>
+  <p>สำคัญ กับ ด่วน คิดแยกกัน สำคัญดูจากผลและคนที่เกี่ยว ด่วนดูจากเวลาอย่างเดียว</p>
+  <div class="why">${W.parts.map(p=>`<div><span>${esc(p[0])}</span><b>+${p[1]}</b></div>`).join("")}
+   <div class="tot"><span>รวม ${W.imp} คะแนน = สำคัญ ${esc(IMPNAME[W.pri])}</span><b></b></div></div>
+  <p>เกณฑ์: 60 ขึ้นไป 🔺, 45 ⏫, 25 🔼, 10 ปกติ, ต่ำกว่านั้น 🔽 (ตัวเลขตั้งต้น ปรับได้) จดลงโน้ตเป็นธงความสำคัญเดิม</p>
+  <div class="why"><div class="tot"><span>ด่วน${esc(W.urg)}</span><b></b></div><div><span>${esc(W.uw)}</span><b></b></div></div>
+  ${W.flags.map(f=>`<p style="color:var(--warn);font-weight:600">${esc(f)}</p>`).join("")}
+  <p>เลื่อนมาแล้ว ${c.moves} ครั้ง (นับจากบันทึกการเลื่อนของแอป ตัวเลขในหน้านี้เป็นตัวอย่าง)</p>
+  <button class="btn" data-act="close">ปิด</button></div></div>`;
+ el.hidden=false;
+}
+function showNote(){
+ const el=document.getElementById("sheet");
+ el.innerHTML=`<div class="shade" data-act="close"><div class="sheet" onclick="event.stopPropagation()">
+  <h3>ถ้ากดบันทึก จะจดลงโน้ตแบบนี้</h3>
+  <p>นี่เป็น mock ไม่เขียนลงโน้ตจริง บรรทัดสีเหลืองคือรูปแบบใหม่ ต้องให้ Klui เคาะก่อนทำจริง</p>
+  <div class="code">${lines()}</div>
+  <button class="btn" data-act="close">ปิด</button></div></div>`;
+ el.hidden=false;
+}
+render();
+</script>

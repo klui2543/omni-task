@@ -45,8 +45,9 @@ class ProjectNamesTest {
         val n = ProjectNames.parse(after)
         assertEquals("Claude/Omni/assistant", n.canonical("Omni/assistant"))
         assertEquals("Claude/Omni/voice", n.canonical("omni/voice"))
-        // "claude" is the owner's own project now, not another name for Omni.
-        assertEquals("claude/secretary", n.canonical("claude/secretary"))
+        // "claude" is the owner's own project now, not another name for Omni; it takes the spelling of the row's
+        // place (Claude), since one project is one name whatever its case (owner, 2026-10-28).
+        assertEquals("Claude/secretary", n.canonical("claude/secretary"))
         assertEquals("Claude/Omni", n.canonical("Claude/Omni"))
     }
 

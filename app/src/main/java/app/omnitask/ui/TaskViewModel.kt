@@ -34,6 +34,9 @@ import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Folders
+import app.omnitask.model.GroupMove
+import app.omnitask.model.ListFolders
+import app.omnitask.model.ListToFolders
 import app.omnitask.model.SpokenWhen
 import app.omnitask.model.TimeWords
 import app.omnitask.model.Ygdrasil
@@ -70,6 +73,7 @@ import app.omnitask.model.Quadrant
 import app.omnitask.model.ReminderOn
 import app.omnitask.model.Status
 import app.omnitask.model.StuckLog
+import app.omnitask.model.ReviewWrite
 import app.omnitask.model.SecretaryDesk
 import app.omnitask.model.SecretaryPretext
 import app.omnitask.model.SecretaryBook
@@ -192,6 +196,8 @@ data class UiState(
     val quickAdd: QuickAddRequest? = null,
     /** Set when the weekly notification is opened: ask why each long-open task is still open. */
     val askStuck: Boolean = false,
+    /** The owner said "not yet" to turning the lists into folders, until the app opens again. */
+    val listsLater: Boolean = false,
     /** The month widget asked for the frames and emoji page, at this day. */
     val month: MonthRequest? = null,
     /** The month widget asked for the calendar at this day; the calendar takes it and clears it. */
@@ -204,6 +210,10 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** Tags of new tasks the secretary proposes as projects; the owner takes or drops each in "อื่นๆ" (owner, 2026-10-28). */
+    val proposedProjects: List<String> = emptyList(),
+    /** The folders the owner picked lately in the folder picker, newest first ("used lately"). */
+    val pickedFolders: List<String> = emptyList(),
     /** The tags the owner made projects (see [Projects.chosen]); null until chosen once. */
     val projectTags: Set<String>? = null,
     /** Branch states by (project, path), and the tasks hidden because their branch is parked. */
@@ -259,9 +269,12 @@ data class UiState(
     /** Tasks and list items together, for the task list when a list is chosen in the filter. */
     val allTasks get() = tasks + listItems
 
-    /** A list's items: the lines in its note, and tasks anywhere else tagged with the list's tag. */
+    /** A list's items: the lines in its note, and tasks anywhere else tagged with the list's tag or a folder under it. */
     fun itemsOf(list: OmniList): List<Task> =
-        listItems.filter { it.list == list.name } + (tasks + parked).filter { t -> t.tags.any { it.equals(list.tag, ignoreCase = true) } }
+        listItems.filter { it.list == list.name } + (tasks + parked).filter { t -> t.tags.any { ListFolders.isListTag(list, it) } }
+
+    /** Every folder inside [list], nesting without limit (owner's pick, 2026-10-28, way ก). */
+    fun listFolders(list: OmniList): List<String> = ListFolders.all(list, itemsOf(list))
 
     /** A task's direct subtasks, in file order (which is their 1, 2, 3 order). */
     fun subtasksOf(task: Task): List<Task> = allTasks.filter { it.parent == task.key }.sortedBy { it.lineIndex }
@@ -427,6 +440,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         hiddenCalendars = CalendarReader.hiddenIds(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        pickedFolders = prefs.getString(KEY_PICKED_FOLDERS, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
+        proposedProjects = prefs.getString(KEY_PROPOSED_PROJECTS, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         // The project logic reads the choice too, so it is applied wherever the settings are.
         projectTags = prefs.getStringSet(KEY_PROJECT_TAGS, null)?.toSet().also { Projects.chosen = it },
         countdowns = Countdown.parseAll(prefs.getStringSet(KEY_COUNTDOWNS, null)?.toList() ?: listOfNotNull(prefs.getString(KEY_COUNTDOWN, null))),
@@ -1579,9 +1594,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             if (_state.value.projectTags == null) {
                 result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
             } else {
-                // A task the secretary just wrote with a new project's tag: that project gets its branch.
-                val fresh = result.getOrNull()?.tasks?.let { Projects.newOnes(it, _state.value.projectTags.orEmpty(), prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty(), LocalDate.now()) }.orEmpty()
-                if (fresh.isNotEmpty()) saveProjectTags(_state.value.projectTags.orEmpty() + fresh)
+                // A task the secretary just wrote with a new project's tag: the secretary proposes it, and it becomes a
+                // project only when the owner takes it (owner, 2026-10-28, way ก); before, it was made one at once.
+                result.getOrNull()?.tasks?.let { tasks ->
+                    val made = _state.value.projectTags.orEmpty()
+                    val off = prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty()
+                    val fresh = Projects.newOnes(tasks, made, off, LocalDate.now()).filterNot(Folders::isLabel)
+                    val inUse = tasks.filter { it.list == null && it.status != Status.CANCELLED }
+                        .flatMap { t -> t.tags.map { it.substringBefore('/').lowercase() } }.toSet()
+                    // Kept until answered, while some task still carries the tag and it is not a project or dropped.
+                    val next = (_state.value.proposedProjects + fresh).distinctBy { it.lowercase() }.filter { n ->
+                        n.lowercase() in inUse && made.none { it.equals(n, ignoreCase = true) } && off.none { it.equals(n, ignoreCase = true) }
+                    }
+                    if (next != _state.value.proposedProjects) saveProposals(next)
+                }
             }
             // When the secretary last wrote Claude log, so the today page can say when it stopped.
             val logText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, CLAUDE_LOG) }.getOrNull() }
@@ -2005,6 +2031,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPriority(task: Task, priority: Priority) = edit(task) { TaskLine.setPriority(it, priority) }
 
+    /** Renames a task where it is written (owner, 2026-10-28, mock way ก: tap the title and type). */
+    fun setTitle(task: Task, title: String) {
+        if (title.isBlank() || title.trim() == task.title) return
+        edit(task) { TaskLine.setTitle(it, title) }
+    }
+
     fun setRecurrence(task: Task, rule: String?) = edit(task) { TaskLine.setRecurrence(it, rule) }
 
     fun setReminder(task: Task, time: kotlinx.datetime.LocalTime?, on: ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
@@ -2116,6 +2148,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun ignoreTags(lists: List<OmniList>, kinds: List<CustomKind>) {
         Projects.ignoredTags = (lists.flatMap { l -> listOf(l.tag) + l.categories } + kinds.map { it.tag }).toSet()
+        Projects.listRoots = lists.map { it.tag }.toSet()
     }
 
     /** Restarts the review clock for a task without a deadline. */
@@ -2142,16 +2175,110 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    enum class ReviewAction { THIS_WEEK, FUTURE, SOMEDAY, KEEP, DROP }
+    // ---- Review mode (โหมดทบทวนงาน), on the secretary page ----
 
-    fun review(task: Task, action: ReviewAction) {
-        when (action) {
-            ReviewAction.THIS_WEEK -> { markReviewed(task); setDate(task, DateField.SCHEDULED, Focus.softDate(LocalDate.now())) }
-            ReviewAction.FUTURE -> setKind(task, TaskKind.FUTURE)
-            ReviewAction.SOMEDAY -> setKind(task, TaskKind.SOMEDAY)
-            ReviewAction.KEEP -> markReviewed(task)
-            ReviewAction.DROP -> { markReviewed(task); setStatus(task, Status.CANCELLED) }
+    /** How often the task was moved to a later day lately, for the review card's warning. */
+    fun reviewMoves(task: Task): Int = Learned.movesLater(task.title, behaviorNow(), _state.value.today)
+
+    /** What one saved review card changed, so "ย้อน" can put it back. */
+    class ReviewSaved(val task: Task, val after: String, val before: List<String>, val ask: String?)
+
+    /**
+     * Writes one review card's answers into the task's note ([ReviewWrite]) and, when the owner was not sure when
+     * the one waiting needs it, adds a task to ask them today. [onDone] gets what is needed to undo it, or null
+     * when nothing was written (the message says why).
+     */
+    fun reviewSave(task: Task, answers: ReviewWrite.Answers, priority: Priority?, onDone: (ReviewSaved?) -> Unit) {
+        // Done with work still open under it: the usual tick asks about the subtasks first, so the review does not close it.
+        if (answers.progress == ReviewWrite.Progress.DONE && _state.value.subtasksOf(task).any { it.isOpen }) {
+            _state.update { it.copy(message = tr("งานนี้ยังมีงานย่อยค้างอยู่ ปิดงานย่อยก่อน หรือเลือกสถานะอื่น", "This task still has open subtasks. Close them first, or pick another status.")) }
+            onDone(null)
+            return
         }
+        val vault = _state.value.vault
+        val today = LocalDate.now()
+        viewModelScope.launch {
+            var ask: String? = null
+            var askFailed: Throwable? = null
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val (before, after) = repo.editBlock(task) { lines, index -> ask = ReviewWrite.apply(lines, index, task, answers, priority, today) }
+                        // The task's own lines are written by now: a failure here is told, and the card still moves on with its undo.
+                        val added = ask?.let { line ->
+                            runCatching { repo.appendLine(vault ?: throw java.io.IOException(tr("ยังไม่ได้เลือก vault", "No vault chosen")), VaultRepository.TASK_FILE, line) }
+                                .onFailure { askFailed = it }.getOrNull()?.let { line }
+                        }
+                        ReviewSaved(task, after, before, added)
+                    }
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = saveError(e)) } }
+            askFailed?.let { e -> _state.update { it.copy(message = tr("จดงานนี้แล้ว แต่เพิ่มงานถามไม่ได้: ${e.message}", "Saved, but the task to ask them was not added: ${e.message}")) } }
+            result.getOrNull()?.let { saved ->
+                answers.scheduled?.let { d -> learn(Behavior.moved(task, DateField.SCHEDULED.name, d, LocalDateTime.now(), BehaviorLog.SRC)) }
+                answers.due?.let { d -> learn(Behavior.moved(task, DateField.DUE.name, d, LocalDateTime.now(), BehaviorLog.SRC)) }
+                if (answers.progress == ReviewWrite.Progress.DONE) { logDone(task); offerFinish(task, saved.after) }
+                answers.folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() && !Folders.isLabel(it) }?.let { to -> newProjectRoot(to) }
+                saved.ask?.let(::noteCreated)
+            }
+            onDone(result.getOrNull())
+            reload()
+        }
+    }
+
+    /** Puts back what [saved] changed: the task's block as it was, and the asking task it added. */
+    fun reviewUndo(saved: ReviewSaved, onDone: (Boolean) -> Unit) {
+        val vault = _state.value.vault
+        val now = TaskLine.parse(saved.after)?.copy(
+            filePath = saved.task.filePath, fileUri = saved.task.fileUri, lineIndex = saved.task.lineIndex,
+            parent = saved.task.parent, list = saved.task.list,
+        )
+        viewModelScope.launch {
+            var askLeft = false
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        repo.restoreBlock(now ?: throw VaultRepository.ConflictException(), saved.before)
+                        val ask = saved.ask
+                        if (ask != null) {
+                            var found = false
+                            if (vault != null) repo.editPath(vault, VaultRepository.TASK_FILE) { text ->
+                                text?.let { t ->
+                                    val sep = if ("\r\n" in t) "\r\n" else "\n"
+                                    val lines = t.split(sep).toMutableList()
+                                    val i = lines.lastIndexOf(ask)
+                                    if (i < 0) null else { found = true; lines.removeAt(i); lines.joinToString(sep) }
+                                }
+                            }
+                            askLeft = !found
+                        }
+                    }
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = saveError(e)) } }
+            // Not silent: the task's lines are back, but the added ask task was changed or is gone, so it is left for the owner.
+            if (result.isSuccess && askLeft) _state.update {
+                it.copy(message = tr("ย้อนงานนี้แล้ว แต่หางานถามที่เพิ่มไว้ไม่เจอ (อาจถูกแก้แล้ว) ลบเองได้ในโน้ตงาน", "Undone, but the added ask task was not found (it may have changed). Remove it in the task note if needed."))
+            }
+            onDone(result.isSuccess)
+            reload()
+        }
+    }
+
+    private fun saveError(e: Throwable) = if (e is VaultRepository.ConflictException) {
+        tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
+    } else {
+        tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+    }
+
+    /** A top folder no tag has used yet becomes a project, as [moveToFolder] does. */
+    private fun newProjectRoot(folder: String) {
+        val root = folder.substringBefore('/')
+        val s = _state.value
+        val known = s.projectTags.orEmpty().any { it.equals(root, ignoreCase = true) } ||
+            (s.tasks + s.parked).any { t -> t.tags.any { it.substringBefore('/').equals(root, ignoreCase = true) } }
+        if (!known) s.projectTags?.let { saveProjectTags(it + root) }
     }
 
     /** Links a note on its own line under the task, the same way Obsidian writes `[[links]]`. */
@@ -2259,15 +2386,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         val lists = s.lists.map { it.tag }
         val project = Projects.tagOf(task)
-        val transform = { raw: String -> TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to) }
+        // A list or a folder in it (`bucketlist/เที่ยว`, owner's pick 2026-10-28): the line also loses that list's old
+        // category tags, so it sits in the one folder it was let go on.
+        val target = if (to is TreeMove.To.InList) s.lists.firstOrNull { it.tag.equals(to.tag.substringBefore('/'), ignoreCase = true) } else null
+        val folder = if (to is TreeMove.To.InList && target != null) to.tag.substring(target.tag.length).removePrefix("/") else ""
+        val transform = { raw: String ->
+            TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to).let { if (target != null) ListFolders.place(it, target, folder, inNote = task.list == target.name) else it }
+        }
         val home = task.list?.let { name -> s.lists.firstOrNull { it.name == name } }
-        if (home == null) {
+        // Within its own note (another folder of the same list) the line is only rewritten where it is.
+        if (home == null || target == home) {
             if (transform(task.raw) == task.raw) return
             editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { transform(it) }
             return
         }
-        val target = if (to is TreeMove.To.InList) s.lists.firstOrNull { it.tag.equals(to.tag, ignoreCase = true) } else null
-        if (target == home) return
         val toPath = target?.path ?: VaultRepository.TASK_FILE
         val vault = s.vault ?: return
         viewModelScope.launch {
@@ -2293,6 +2425,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun moveToFolder(task: Task, folder: String?) {
         val from = Folders.of(task)
         val to = folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() }
+        notePickedFolder(to)
         when {
             // A label typed into the picker (#รอ/พี่เอ) is added; the folder stays.
             to != null && Folders.isLabel(to) -> addTag(task, to)
@@ -2308,6 +2441,26 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 if (!known) s.projectTags?.let { saveProjectTags(it + root) }
             }
         }
+    }
+
+    /** The owner takes ([take]) or drops a project the secretary proposed; a dropped one stays a lone tag and is not asked again. */
+    fun answerProposal(tag: String, take: Boolean) {
+        setProject(tag, take)
+        saveProposals(_state.value.proposedProjects.filterNot { it.equals(tag, ignoreCase = true) })
+        showMessage(if (take) tr("#$tag เป็นโปรเจกต์แล้ว", "#$tag is a project now") else tr("#$tag เป็นแท็กเดี่ยว ไม่ถามอีก", "#$tag stays a lone tag; not asked again"))
+    }
+
+    private fun saveProposals(list: List<String>) {
+        prefs.edit().putString(KEY_PROPOSED_PROJECTS, list.joinToString("\n")).apply()
+        _state.update { it.copy(proposedProjects = list) }
+    }
+
+    /** Remembers a folder the owner picked in the folder picker, for its "used lately" row; a label is not a folder. */
+    fun notePickedFolder(folder: String?) {
+        val f = folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() && !Folders.isLabel(it) } ?: return
+        val next = Folders.picked(_state.value.pickedFolders, f)
+        prefs.edit().putString(KEY_PICKED_FOLDERS, next.joinToString("\n")).apply()
+        _state.update { it.copy(pickedFolders = next) }
     }
 
     /**
@@ -2381,7 +2534,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         if (root !in now) saveProjectTags(now + root)
     }
 
-    private fun saveProjectTags(tags: Set<String>) {
+    private fun saveProjectTags(tags0: Set<String>) {
+        // One project per name whatever its case (owner, 2026-10-28): siriraj added beside Siriraj stays Siriraj.
+        val tags = Projects.oneSpelling(tags0)
         prefs.edit().putStringSet(KEY_PROJECT_TAGS, tags).apply()
         Projects.chosen = tags
         _state.update { it.copy(projectTags = tags) }
@@ -2538,7 +2693,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createList(name: String, icon: String, categories: List<String>) {
+    /** A new list note: a new folder in the List folder (no emoji since 2026-10-28, owner). */
+    fun createList(name: String, icon: String = "", categories: List<String> = emptyList()) {
         val vault = _state.value.vault ?: return
         val clean = name.trim().replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").trim()
         if (clean.isEmpty()) return
@@ -2553,7 +2709,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Changes a list's icon or categories by rewriting its header; the items stay as they are. */
-    fun updateList(list: OmniList, icon: String = list.icon, categories: List<String> = list.categories) {
+    fun updateList(list: OmniList, icon: String = list.icon, categories: List<String> = list.categories) = writeListHead(list.copy(icon = icon, categories = categories))
+
+    /** Rewrites a list note's header from [list] (icon, categories, folders); the items stay as they are. */
+    private fun writeListHead(list: OmniList) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -2562,7 +2721,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val end = text.indexOf("\n---", 3)
                     if (!text.startsWith("---") || end < 0) return@runCatching
                     val body = text.substring(end + 4).trimStart('\r', '\n')
-                    val head = list.copy(icon = icon, categories = categories).render().substringBefore("# ")
+                    val head = list.render().substringBefore("# ")
                     repo.writePath(vault, list.path, head + body)
                 }
             }
@@ -2580,7 +2739,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    pulled.forEach { t -> runCatching { repo.rewriteLine(t) { raw -> TaskLine.removeTag(raw, list.tag) } } }
+                    // Its folder tags too (`#bucketlist/เที่ยว`), so none is left to turn into a project.
+                    pulled.forEach { t ->
+                        runCatching { repo.rewriteLine(t) { raw -> t.tags.filter { ListFolders.isListTag(list, it) }.fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) } } }
+                    }
                     repo.deletePath(vault, list.path)
                 }
             }
@@ -2589,11 +2751,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addListItem(list: OmniList, title: String, category: String?, link: String? = null) {
+    /** A new item at the end of [list]'s note, in [folder] ("เที่ยว/ญี่ปุ่น", null or "" for the list itself). */
+    fun addListItem(list: OmniList, title: String, folder: String?, link: String? = null) {
         val vault = _state.value.vault ?: return
         if (title.isBlank()) return
-        var line = TaskLine.addTag("- [ ] ${title.trim()}", list.tag)
-        if (category != null) line = TaskLine.addTag(line, category)
+        var line = TaskLine.addTag("- [ ] ${title.trim()}", ListFolders.tagOf(list, folder.orEmpty()))
         line = TaskLine.setDate(line, DateField.CREATED, LocalDate.now())
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, list.path, line + (link?.let { "\n    - $it" } ?: "")) } }
@@ -2603,12 +2765,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Puts tasks from the vault in a list by tagging them where they are; they stay in their own file. */
-    fun includeInList(list: OmniList, picked: List<Task>, category: String?) {
+    fun includeInList(list: OmniList, picked: List<Task>, folder: String?) {
         if (picked.isEmpty()) return
         viewModelScope.launch {
             val done = withContext(Dispatchers.IO) {
                 picked.count { t ->
-                    runCatching { repo.rewriteLine(t) { raw -> TaskLine.addTag(raw, list.tag).let { if (category != null) TaskLine.addTag(it, category) else it } } }.isSuccess
+                    runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, folder.orEmpty()) } }.isSuccess
                 }
             }
             _state.update {
@@ -2618,6 +2780,295 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             reload()
+        }
+    }
+
+    /** A new empty folder [path] in [list], kept in the note's `categories:` line until something is put in it. */
+    fun addListFolder(list: OmniList, path: String) {
+        val clean = ListFolders.clean(path)
+        if (clean.isEmpty()) return
+        writeListHead(ListFolders.withFolder(list, clean))
+    }
+
+    /**
+     * Takes the folder [path] out of [list]: everything in it, and in the folders under it, moves up to the folder above
+     * (nothing is deleted), and the saved folder lines go.
+     */
+    fun deleteListFolder(list: OmniList, path: String) {
+        val vault = _state.value.vault ?: return
+        val up = ListFolders.parentOf(path)
+        // A today copy is a view of a real line, not a line of its own.
+        val moving = _state.value.itemsOf(list).filter { !it.todayCopy && ListFolders.inside(path, ListFolders.pathOf(list, it)) }
+        viewModelScope.launch {
+            val failed = withContext(Dispatchers.IO) {
+                val bad = moving.count { t -> runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, up, inNote = t.list == list.name) } }.isFailure }
+                bad + if (runCatching {
+                    val text = repo.readPath(vault, list.path) ?: return@runCatching
+                    val end = text.indexOf("\n---", 3)
+                    if (!text.startsWith("---") || end < 0) return@runCatching
+                    // Read again: the lines above may have changed the note.
+                    val now = OmniList.parse(list.path, text) ?: list
+                    val head = ListFolders.withoutFolder(now, path).render().substringBefore("# ")
+                    repo.writePath(vault, list.path, head + text.substring(end + 4).trimStart('\r', '\n'))
+                }.isFailure) 1 else 0
+            }
+            _state.update {
+                it.copy(
+                    message = if (failed == 0) tr("ลบโฟลเดอร์ ${ListFolders.nameOf(path)} แล้ว", "Removed the folder ${ListFolders.nameOf(path)}")
+                    else tr("ย้ายออกไม่ได้ $failed รายการ ไฟล์อาจถูกแก้จากที่อื่น", "$failed items could not move; a file may have changed"),
+                )
+            }
+            reload()
+        }
+    }
+
+    fun listsToFoldersLater() = _state.update { it.copy(listsLater = true) }
+
+    /**
+     * Lists become plain project folders (owner's pick, 2026-10-28, way ก), once the owner taps "เปลี่ยนเลย": every
+     * list note loses its list header and each line gets its folder tag (see [ListToFolders]); lines elsewhere put in a
+     * list get their folder tag too. Each list becomes a project, and its saved empty folders empty branches.
+     */
+    fun listsToFolders() {
+        val s = _state.value
+        val vault = s.vault ?: return
+        val lists = s.lists
+        if (lists.isEmpty() || migratingLists) return
+        migratingLists = true
+        val pulled = lists.flatMap { l -> (s.tasks + s.parked).mapNotNull { t -> ListToFolders.pulledLine(l, t)?.let { t to it } } }.distinctBy { it.first.key }
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        var bad = 0
+                        val folders = mutableListOf<String>()
+                        val done = mutableListOf<OmniList>()
+                        pulled.forEach { (t, line) -> if (runCatching { repo.rewriteLine(t) { line } }.isFailure) bad++ }
+                        // A line elsewhere not yet written keeps the lists as they are, so the change can be tried again.
+                        if (bad == 0) lists.forEach { l ->
+                            val text = repo.readPath(vault, l.path)
+                            val r = text?.let { ListToFolders.migrate(l.path, it, lists.filter { o -> o.path != l.path }.map { o -> o.tag }) }
+                            if (r == null) { if (text == null) bad++; return@forEach }
+                            if (runCatching { repo.writePath(vault, l.path, r.text) }.isFailure) { bad++; return@forEach }
+                            folders += r.folders
+                            done += l
+                        }
+                        Triple(bad, folders.toList(), done.toList())
+                    }
+                }
+            }
+            result.onSuccess { (bad, folders, done) ->
+                _state.value.projectTags?.let { tags -> saveProjectTags(tags + done.map { it.tag }) }
+                val states = folders.fold(_state.value.branchStates) { acc, f ->
+                    val key = f.substringBefore('/') to f.substringAfter('/')
+                    if (key in acc) acc else acc + (key to if ('/' in key.second) Branches.State.TRYING else Branches.State.ACTIVE)
+                }
+                if (states != _state.value.branchStates) saveBranchStates(states)
+                _state.update {
+                    it.copy(
+                        message = if (bad == 0) tr("เปลี่ยน List เป็นโฟลเดอร์แล้ว ${done.size} รายการ", "Turned ${done.size} lists into folders")
+                        else tr("เปลี่ยนแล้ว ${done.size} รายการ แต่มี $bad จุดที่เขียนไม่ได้ ลองใหม่ได้", "Turned ${done.size} lists into folders; $bad places could not be written, try again"),
+                    )
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนไม่ได้: ", "Cannot change: ") + e.message) } }
+            migratingLists = false
+            if (result.getOrNull()?.first?.let { it > 0 } == true) _state.update { it.copy(listsLater = false) }
+            reload()
+        }
+    }
+
+    private var migratingLists = false
+
+    /**
+     * Project Ygdrasil (owner, 2026-10-28: list folders move like a project's branches): the folder [fromPath] of
+     * [from] ("" for the whole list) let go on the folder [toPath] of [to] ("" for the list itself) goes under it with
+     * everything inside; see [moveGroup].
+     */
+    fun moveListFolder(from: OmniList, fromPath: String, to: OmniList, toPath: String) =
+        moveGroup(GroupMove.From.Folder(from, fromPath), GroupMove.To.Folder(to, toPath))
+
+    /**
+     * A list, a folder of a list, or a project's branch let go on the List card becomes a list of its own (owner,
+     * 2026-10-28: "ต้องทำไปหมดทุกคุณสมบัติ", like a branch let go on the trunk becomes a project).
+     */
+    fun moveToNewList(from: GroupMove.From) {
+        val s = _state.value
+        val name = when (from) {
+            is GroupMove.From.Folder -> if (from.path.isEmpty()) return else ListFolders.nameOf(from.path)
+            is GroupMove.From.Branch -> from.tag.substringAfterLast('/')
+        }.replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").trim()
+        if (name.isEmpty()) return
+        val made = OmniList(name, "${OmniList.FOLDER}/$name.md", "", emptyList())
+        // A tag a task outside the group already starts with would pull that project or list into the new one.
+        val pool = s.allTasks + s.parked
+        val inside = GroupMove.members(from, pool).map { it.key }.toSet()
+        val taken = s.lists.any { it.name.equals(name, ignoreCase = true) || it.tag.equals(made.tag, ignoreCase = true) } ||
+            pool.any { t -> t.key !in inside && t.tags.any { it.substringBefore('/').equals(made.tag, ignoreCase = true) } }
+        if (taken) {
+            _state.update { it.copy(message = tr("มี #${made.tag} อยู่แล้ว จึงทำเป็นรายการใหม่ชื่อนี้ไม่ได้", "#${made.tag} is already in use, so no new list can take this name")) }
+            return
+        }
+        moveGroup(from, GroupMove.To.Folder(made, "", made = true))
+    }
+
+    /**
+     * Project Ygdrasil (owner, 2026-10-28: "ต้องทำไปหมดทุกคุณสมบัติ", a list's folders do all that a project's branches
+     * do): a list, a folder of a list, or a project's branch carried with everything inside to a list or a folder of
+     * one, a new list, or a project, a branch or the trunk (see [GroupMove]). The saved empty folders and branches go
+     * along, a list left with nothing in its note goes, and the whole of it is one step of Ygdrasil's undo.
+     */
+    fun moveGroup(from: GroupMove.From, to: GroupMove.To) {
+        val s = _state.value
+        val vault = s.vault ?: return
+        val branches = s.branchStates.keys.map { (p, path) -> if (path.isEmpty()) p else "$p/$path" }
+        val plan = GroupMove.plan(from, to, s.allTasks + s.parked, branches, VaultRepository.TASK_FILE) ?: return
+        val title = GroupMove.nameOf(from)
+        val statesBefore = s.branchStates
+        val tagsBefore = s.projectTags
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val g = GroupUndo()
+                        if (to is GroupMove.To.Folder && to.made) {
+                            if (repo.readPath(vault, to.list.path) != null) error(tr("มีโน้ตชื่อ ${to.list.name} แล้ว", "A note named ${to.list.name} exists"))
+                            val text = to.list.render()
+                            repo.writePath(vault, to.list.path, text)
+                            g.made = to.list.path to (repo.readPath(vault, to.list.path) ?: text)
+                        }
+                        var bad = 0
+                        plan.steps.forEach { st ->
+                            runCatching {
+                                val part: Any = if (st.note != null) repo.moveToNote(vault, st.task, st.note!!, st.line, st.rest) else repo.rewriteLineRecorded(st.task, st.line)
+                                g.parts.add(part)
+                            }.onFailure { bad++ }
+                        }
+                        // The notes' headers and a list left empty change only when every line went: a half move keeps them.
+                        var headOk = true
+                        if (bad == 0) headOk = runCatching {
+                            val heads = linkedMapOf<String, MutableList<(OmniList) -> OmniList>>()
+                            fun head(path: String, change: (OmniList) -> OmniList) { heads.getOrPut(path) { mutableListOf() } += change }
+                            if (from is GroupMove.From.Folder && from.path.isNotEmpty()) head(from.list.path) { ListFolders.withoutFolder(it, from.path) }
+                            // A whole list moved: its saved folders went along, so a note kept for its other text holds none.
+                            if (from is GroupMove.From.Folder && from.path.isEmpty()) head(from.list.path) { it.copy(categories = emptyList(), folders = emptyList()) }
+                            if (to is GroupMove.To.Folder) head(to.list.path) { l -> plan.empty.fold(l) { acc, f -> ListFolders.withFolder(acc, f) } }
+                            heads.forEach { (path, changes) -> headSwap(vault, path) { l -> changes.fold(l) { acc, c -> c(acc) } }?.let { g.heads += it } }
+                            if (from is GroupMove.From.Folder && from.path.isEmpty()) {
+                                val text = repo.readPath(vault, from.list.path)
+                                if (text != null && listIsBare(text)) {
+                                    repo.deletePath(vault, from.list.path)
+                                    g.gone = from.list.path to text
+                                }
+                            }
+                        }.isSuccess
+                        Triple(g, bad, headOk)
+                    }
+                }
+            }
+            result.onSuccess { (g, bad, headOk) ->
+                if (bad == 0) {
+                    // Branches and projects: the group's own go, its empty ones stand where it landed.
+                    var states = statesBefore
+                    var tags = tagsBefore
+                    if (from is GroupMove.From.Branch) {
+                        states = states.filterKeys { (p, path) -> (if (path.isEmpty()) p else "$p/$path").let { it != from.tag && !it.startsWith(from.tag + "/") } }
+                        if ('/' !in from.tag) tags = tags?.minus(from.tag)
+                    }
+                    if (to is GroupMove.To.Branch) {
+                        plan.empty.filter { '/' in it }.forEach { e ->
+                            val path = e.substringAfter('/')
+                            states = states + ((e.substringBefore('/') to path) to if ('/' in path) Branches.State.TRYING else Branches.State.ACTIVE)
+                        }
+                        if (to.tag.isEmpty()) tags = tags?.plus(plan.at)
+                    }
+                    g.states = statesBefore to states
+                    g.tags = tagsBefore to tags
+                    if (states != statesBefore) saveBranchStates(states)
+                    if (tags != null && tags != tagsBefore) saveProjectTags(tags)
+                }
+                if (!g.isEmpty()) remember(UndoStep(UndoStep.Kind.MOVED, title, group = g), inTree = true)
+                val where = when (to) {
+                    is GroupMove.To.Folder -> if (to.made) null else if (to.path.isEmpty()) to.list.name else ListFolders.nameOf(to.path)
+                    is GroupMove.To.Branch -> to.tag.ifEmpty { null }?.let { "#$it" }
+                }
+                _state.update {
+                    it.copy(
+                        message = when {
+                            bad > 0 -> tr("ย้ายไม่ได้ $bad รายการ ไฟล์อาจถูกแก้จากที่อื่น ที่ย้ายไปแล้วกดย้อนได้", "$bad items could not move; a file may have changed. What moved can be undone")
+                            !headOk -> tr("ย้าย $title แล้ว แต่จดโฟลเดอร์ว่างที่หัวโน้ตไม่ได้", "Moved $title, but the empty folders could not be noted in the list's header")
+                            to is GroupMove.To.Folder && to.made -> tr("$title เป็นรายการใหม่แล้ว", "$title is a list of its own now")
+                            where == null -> tr("$title เป็นโปรเจกต์ของตัวเองแล้ว", "$title is a project of its own now")
+                            else -> tr("ย้าย $title ไปไว้ใต้ $where แล้ว", "Moved $title under $where")
+                        },
+                    )
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายไม่ได้: ", "Cannot move: ") + e.message) } }
+            reload()
+        }
+    }
+
+    /** Whether a list note holds nothing but its header and its title, so it can go once its items moved away. */
+    private fun listIsBare(text: String): Boolean {
+        val end = text.indexOf("\n---", 3)
+        if (!text.startsWith("---") || end < 0) return false
+        val body = text.substring(end + 4).lines().map { it.trim() }.filter { it.isNotEmpty() }
+        return body.size <= 1 && body.all { it.startsWith("# ") }
+    }
+
+    /**
+     * One move of a whole group on Ygdrasil, undone and done again as one step: a list note it made, every line it
+     * changed or moved in order, the headers it rewrote, and a list note it took away; with the branch states and
+     * projects as they were before and after.
+     */
+    class GroupUndo {
+        var made: Pair<String, String>? = null
+        val parts = mutableListOf<Any>()
+        val heads = mutableListOf<Triple<String, String, String>>()
+        var gone: Pair<String, String>? = null
+        var states: Pair<Map<Pair<String, String>, Branches.State>, Map<Pair<String, String>, Branches.State>>? = null
+        var tags: Pair<Set<String>?, Set<String>?>? = null
+        fun isEmpty() = made == null && parts.isEmpty() && heads.isEmpty() && gone == null &&
+            states?.let { it.first == it.second } != false && tags?.let { it.first == it.second } != false
+    }
+
+    /** Rewrites the header of the list note at [path] by [change]; what it was and is now, null when nothing changed. */
+    private fun headSwap(vault: android.net.Uri, path: String, change: (OmniList) -> OmniList): Triple<String, String, String>? {
+        val text = repo.readPath(vault, path) ?: return null
+        val end = text.indexOf("\n---", 3)
+        if (!text.startsWith("---") || end < 0) throw java.io.IOException(tr("หัวโน้ต $path อ่านไม่ได้", "Cannot read the header of $path"))
+        val now = OmniList.parse(path, text) ?: throw java.io.IOException(tr("หัวโน้ต $path อ่านไม่ได้", "Cannot read the header of $path"))
+        val next = change(now)
+        if (next == now) return null
+        repo.writePath(vault, path, next.render().substringBefore("# ") + text.substring(end + 4).trimStart('\r', '\n'))
+        return Triple(path, text, repo.readPath(vault, path) ?: "")
+    }
+
+    /** Undoes ([undo] true) or does again a [GroupUndo]; a note changed since is never written over. */
+    private fun swapGroup(vault: android.net.Uri, g: GroupUndo, undo: Boolean) {
+        fun conflict(): Nothing = throw VaultRepository.ConflictException()
+        if (undo) {
+            g.gone?.let { (path, text) -> if (repo.readPath(vault, path) == null) repo.writePath(vault, path, text) else conflict() }
+            g.heads.asReversed().forEach { (path, before, after) -> if (repo.readPath(vault, path) == after) repo.writePath(vault, path, before) else conflict() }
+            g.parts.asReversed().forEach { p ->
+                when (p) {
+                    is VaultRepository.BlockChange -> repo.swapBlock(p, true)
+                    is VaultRepository.Moved -> repo.swapMoved(vault, p, true)
+                }
+            }
+            // The note it made goes once it holds nothing but its header and title again (the write may differ in blank lines).
+            g.made?.let { (path, _) -> if (repo.readPath(vault, path)?.let(::listIsBare) == true) repo.deletePath(vault, path) else conflict() }
+        } else {
+            g.made?.let { (path, text) -> if (repo.readPath(vault, path) == null) repo.writePath(vault, path, text) else conflict() }
+            g.parts.forEach { p ->
+                when (p) {
+                    is VaultRepository.BlockChange -> repo.swapBlock(p, false)
+                    is VaultRepository.Moved -> repo.swapMoved(vault, p, false)
+                }
+            }
+            g.heads.forEach { (path, before, after) -> if (repo.readPath(vault, path) == before) repo.writePath(vault, path, after) else conflict() }
+            g.gone?.let { (path, _) -> if (repo.readPath(vault, path)?.let(::listIsBare) == true) repo.deletePath(vault, path) else conflict() }
         }
     }
 
@@ -3342,9 +3793,35 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, ProjectNames.PATH) }.getOrNull() }
         ProjectNames.current = ProjectNames.parse(text)
         _state.value.projectTags?.let { tags ->
-            val now = tags.map { ProjectNames.canonical(it).substringBefore('/') }.toSet()
+            // A name the tag reader can no longer give (`79)` from "(PR #79)") can hold no task, so it is not kept.
+            val now = Projects.oneSpelling(tags.map { ProjectNames.canonical(it).substringBefore('/') }.filter(TaskLine::canBeTag).toSet())
             if (now != tags) saveProjectTags(now)
         }
+        respellProjectSettings()
+    }
+
+    /**
+     * The star, order, task order, strict mark and branch states saved under a project's other spelling (`siriraj`)
+     * move to the name it is read as now (`Siriraj`), so merging the two loses none of them.
+     */
+    private fun respellProjectSettings() {
+        val s = _state.value
+        // Only a change of case: a project the names table puts under another (peddose in Siriraj) keeps its own star.
+        fun root(p: String) = ProjectNames.canonical(p).substringBefore('/').takeIf { it.equals(p, ignoreCase = true) } ?: p
+        val order = s.projectOrder.map(::root).distinct()
+        val starred = s.starred.map { if (it == NO_PIN) it else root(it) }.toSet()
+        val taskOrder = s.projectTaskOrder.entries.groupBy({ root(it.key) }, { it.value }).mapValues { (_, v) -> v.flatten().distinct() }
+        val strict = s.strictProjects.map(::root).toSet()
+        val branches = Branches.respell(s.branchStates)
+        if (order == s.projectOrder && starred == s.starred && taskOrder == s.projectTaskOrder && strict == s.strictProjects && branches == s.branchStates) return
+        prefs.edit()
+            .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
+            .putStringSet(KEY_STARRED, starred)
+            .putStringSet(KEY_PROJECT_TASKS, taskOrder.map { (k, v) -> k + "\t" + v.joinToString("\u001F") }.toSet())
+            .putStringSet(KEY_STRICT, strict)
+            .putStringSet(KEY_BRANCHES, Branches.encode(branches))
+            .apply()
+        _state.update { it.copy(projectOrder = order, starred = starred, projectTaskOrder = taskOrder, strictProjects = strict, branchStates = branches) }
     }
 
     // ---- Undo and redo of ticks and Ygdrasil moves (owner, 2026-10-27) ----
@@ -3361,6 +3838,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val recurred: List<Pair<String, LocalDate>> = emptyList(),
         val retag: Pair<String, String>? = null,
         val moved: VaultRepository.Moved? = null,
+        val group: GroupUndo? = null,
     ) {
         enum class Kind { DONE, OPENED, MOVED }
     }
@@ -3429,6 +3907,35 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyStep(step: UndoStep, undo: Boolean, done: (Boolean) -> Unit) {
         step.retag?.let { (from, to) ->
             if (undo) retagAll(to, from, done) else retagAll(from, to, done)
+            return
+        }
+        step.group?.let { g ->
+            val vault = _state.value.vault ?: return done(false)
+            viewModelScope.launch {
+                val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { swapGroup(vault, g, undo) } } }
+                result.onSuccess {
+                    // Branch states and projects: only what the move itself changed is turned back or done again.
+                    g.states?.let { (before, after) ->
+                        val (was, now) = if (undo) after to before else before to after
+                        val next = _state.value.branchStates.filterKeys { it !in was || it in now } + now.filterKeys { it !in was || was[it] != now[it] }
+                        if (next != _state.value.branchStates) saveBranchStates(next)
+                    }
+                    g.tags?.let { (before, after) ->
+                        val (was, now) = if (undo) after.orEmpty() to before.orEmpty() else before.orEmpty() to after.orEmpty()
+                        _state.value.projectTags?.let { cur -> (cur - (was - now) + (now - was)).let { if (it != cur) saveProjectTags(it) } }
+                    }
+                }
+                result.exceptionOrNull()?.let { e ->
+                    val text = if (e is VaultRepository.ConflictException) {
+                        tr("\"${step.title}\" ถูกแก้จากที่อื่นแล้ว จึงไม่ได้เขียนทับ", "\"${step.title}\" was changed elsewhere, so it was not written over")
+                    } else {
+                        tr("บันทึกไม่ได้: ${e.message}", "Cannot save: ${e.message}")
+                    }
+                    _state.update { it.copy(message = text) }
+                }
+                done(result.isSuccess)
+                reload()
+            }
             return
         }
         step.moved?.let { m ->
@@ -3522,8 +4029,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) { runCatching { repo.renameProject(files, old, new) } }
             result.onSuccess { n ->
                 saveBranchStates(Branches.moveTag(_state.value.branchStates, old, new))
-                _state.value.projectTags?.let { tags -> saveProjectTags(tags + new.substringBefore('/')) }
-                recordMove(old, new, n, undoable = false)
+                // A list's folder moved back stays a list's folder, never a project.
+                val root = new.substringBefore('/')
+                if (Projects.listRoots.none { it.equals(root, ignoreCase = true) }) {
+                    _state.value.projectTags?.let { tags -> saveProjectTags(tags + root) }
+                    recordMove(old, new, n, undoable = false)
+                } else {
+                    // A list folder is not a project: its moves stay out of ชื่อโปรเจกต์.md.
+                    _state.update { it.copy(message = tr("ย้ายแล้ว ($n งาน)", "Moved ($n tasks)")) }
+                }
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
             done(result.isSuccess)
@@ -3808,6 +4322,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+        const val KEY_PICKED_FOLDERS = "pickedFolders"
+        const val KEY_PROPOSED_PROJECTS = "proposedProjects"
         const val KEY_PROJECT_TAGS = "projectTags"
         /** Kept among the stars when the owner has unpinned every project; no tag can hold a tab. */
         const val NO_PIN = "\t"

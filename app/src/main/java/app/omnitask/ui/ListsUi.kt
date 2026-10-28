@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,74 +44,70 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.omnitask.model.ListFolders
 import app.omnitask.model.OmniList
 import app.omnitask.model.Status
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 
-/** A list's emoji on a quiet tile. */
-@Composable
-fun ListIconTile(list: OmniList, size: Int = 44, onClick: (() -> Unit)? = null) {
-    Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size / 3.6).dp)).background(C.raised)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) { Text(ListEmoji.of(list.icon), fontSize = (size * 0.5).sp, lineHeight = (size * 0.6).sp) }
-}
 
-/** The "รายการ" section under the projects: one card per list note, and a way to make a new one. */
-fun LazyListScope.listCards(state: UiState, onOpen: (OmniList) -> Unit, onCreate: () -> Unit) {
-    item(key = "lists-head") {
-        Text(tr("รายการ", "Lists"), Modifier.padding(start = 4.dp, top = 8.dp), color = C.muted, fontSize = TS.caption)
-    }
-    items(state.lists, key = { "list:" + it.path }) { l ->
-        val items = state.itemsOf(l)
-        val done = items.count { it.status == Status.DONE }
-        Card(Modifier.clickable { onOpen(l) }) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                ListIconTile(l)
-                Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                    Text(l.name, style = MaterialTheme.typography.titleMedium, color = C.text)
-                    Text(tr("ทำแล้ว $done จาก ${items.size}", "$done of ${items.size} done"), color = C.muted, fontSize = TS.caption)
-                }
-                Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
-            }
+/**
+ * The List folder on the Projects desktop (owner's pick, 2026-10-28): each list is a folder like a project's, with no
+ * emoji, and a new folder here is a new list note.
+ */
+fun LazyListScope.listShelf(state: UiState, onOpen: (OmniList) -> Unit, onCreate: () -> Unit) {
+    item(key = "lists-grid") {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DeskHead(tr("โฟลเดอร์ย่อย", "Folders inside"))
+            TileGrid(
+                state.lists.map { l ->
+                    val items = state.itemsOf(l)
+                    Tile("list:" + l.path, l.name, "${items.count { it.status == Status.DONE }}/${items.size}", folderTint(l.tag), { onOpen(l) })
+                } + Tile("list-new", tr("โฟลเดอร์ใหม่", "New folder"), "", C.faint, onCreate, dashed = true, mark = "+"),
+            )
         }
     }
-    item(key = "lists-new") {
-        Text(
-            tr("+ สร้างรายการใหม่", "+ New list"),
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, C.accentLine, RoundedCornerShape(14.dp))
-                .clickable(onClick = onCreate).padding(vertical = 12.dp),
-            color = C.accentText, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-    }
 }
 
-/** Inside a list: category chips, a quick add line, and the items (open first, done after). */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
-fun LazyListScope.listDetail(
-    list: OmniList, state: UiState, vm: TaskViewModel, category: String?, onCategory: (String?) -> Unit,
-    onOpen: (Task) -> Unit, onIcon: () -> Unit,
+/**
+ * Inside a list, or a folder in it ([folder], "" for the list itself), nesting without limit (owner's pick,
+ * 2026-10-28, way ก): how much is done, the folders inside, a quick add line, and the items in this folder.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+fun LazyListScope.listFolderPage(
+    list: OmniList, folder: String, state: UiState, vm: TaskViewModel,
+    onFolder: (String) -> Unit, onNewFolder: () -> Unit, onOpen: (Task) -> Unit,
 ) {
-    item(key = "list-top") {
+    val items = state.itemsOf(list)
+    val folders = ListFolders.all(list, items)
+    fun under(path: String) = items.filter { ListFolders.inside(path, ListFolders.pathOf(list, it)) }
+    val here = under(folder)
+    val name = if (folder.isEmpty()) list.name else ListFolders.nameOf(folder)
+    item(key = "list-progress") {
+        val done = here.count { it.status == Status.DONE }
         Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ListIconTile(list, 40, onIcon)
-                Text(
-                    tr("แตะไอคอนเพื่อเปลี่ยน", "Tap the icon to change it"),
-                    Modifier.padding(start = 12.dp), color = C.faint, fontSize = TS.caption,
-                )
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.divider)) {
+                val r = if (here.isEmpty()) 0f else done.toFloat() / here.size
+                Box(Modifier.fillMaxWidth(r.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(folderTint(ListFolders.tagOf(list, folder))))
             }
-            if (list.categories.isNotEmpty()) {
-                FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(tr("ทั้งหมด", "All"), category == null, { onCategory(null) })
-                    list.categories.forEach { c -> Chip(c, category == c, { onCategory(if (category == c) null else c) }) }
-                }
-            }
-            AddLine(
-                if (category != null) tr("เพิ่มใน $category", "Add to $category") else tr("เพิ่มใน ${list.name}", "Add to ${list.name}"),
-            ) { vm.addListItem(list, it, category) }
+            Text(tr("ทำแล้ว $done จาก ${here.size}", "$done of ${here.size} done"), Modifier.padding(top = 6.dp), color = C.muted, fontSize = TS.caption)
+        }
+    }
+    item(key = "list-kids") {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DeskHead(tr("โฟลเดอร์ย่อย", "Folders inside"))
+            TileGrid(
+                ListFolders.children(folders, folder).map { p ->
+                    val n = under(p)
+                    Tile("list-folder:$p", ListFolders.nameOf(p), "${n.count { it.status == Status.DONE }}/${n.size}", folderTint(ListFolders.tagOf(list, p)), { onFolder(p) })
+                } + Tile("list-folder-new", tr("โฟลเดอร์ใหม่", "New folder"), "", C.faint, onNewFolder, dashed = true, mark = "+"),
+                small = true,
+            )
+        }
+    }
+    item(key = "list-add") {
+        Column {
+            AddLine(tr("เพิ่มใน $name", "Add to $name")) { vm.addListItem(list, it, folder) }
             var including by remember { mutableStateOf(false) }
             Text(
                 tr("ดึงงานที่มีอยู่แล้วเข้ามา", "Add existing tasks"),
@@ -118,15 +115,22 @@ fun LazyListScope.listDetail(
                     .clickable { including = true }.padding(vertical = 11.dp),
                 color = C.accentText, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            if (including) IncludeSheet(list, state, category, { picked, cat -> vm.includeInList(list, picked, cat); including = false }) { including = false }
+            if (including) IncludeSheet(list, folder, state, { picked -> vm.includeInList(list, picked, folder); including = false }) { including = false }
         }
     }
-    val items = state.itemsOf(list).filter { category == null || it.tags.any { t -> t == category } }
+    val own = items.filter { ListFolders.pathOf(list, it).equals(folder, ignoreCase = true) }
         .sortedWith(compareBy({ it.status == Status.DONE || it.status == Status.CANCELLED }, { it.title.lowercase() }))
-    if (items.isEmpty()) {
-        item(key = "list-empty") { Text(tr("ยังว่างอยู่ เพิ่มสิ่งแรกได้เลย", "Empty for now. Add the first one."), Modifier.padding(8.dp), color = C.muted, fontSize = TS.body) }
+    item(key = "list-own-head") { DeskHead(tr("ในโฟลเดอร์นี้ ${own.size}", "In this folder ${own.size}")) }
+    if (own.isEmpty()) {
+        item(key = "list-empty") {
+            Text(
+                if (here.isEmpty()) tr("ยังว่างอยู่ เพิ่มสิ่งแรกได้เลย", "Empty for now. Add the first one.")
+                else tr("ไม่มีของตรงนี้ เปิดโฟลเดอร์ย่อยเพื่อดูข้างใน", "Nothing here. Open a folder inside to see what it holds"),
+                Modifier.padding(8.dp), color = C.muted, fontSize = TS.body,
+            )
+        }
     }
-    items(items, key = { "item:" + it.key }) { t ->
+    items(own, key = { "item:" + it.key }) { t ->
         val done = t.status == Status.DONE
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.card)
@@ -148,43 +152,39 @@ fun LazyListScope.listDetail(
                     textDecoration = if (done) TextDecoration.LineThrough else null,
                 )
                 // Tasks pulled in from elsewhere say where they live.
-                val cats = t.tags.filter { it in list.categories } + listOfNotNull(t.filePath.takeIf { t.list == null }?.substringAfterLast('/')?.removeSuffix(".md"))
-                if (cats.isNotEmpty()) Text(cats.joinToString(", "), color = C.faint, fontSize = TS.caption)
+                t.filePath.takeIf { t.list == null }?.substringAfterLast('/')?.removeSuffix(".md")
+                    ?.let { Text(it, color = C.faint, fontSize = TS.caption) }
             }
         }
     }
     item(key = "list-file") {
         Text(
-            tr("เก็บใน ${list.path} และงานที่ติด #${list.tag} แตะวงกลมเพื่อติ๊ก แตะชื่อเพื่อเปิดดูและแก้", "Saved in ${list.path}, plus tasks tagged #${list.tag}. Tap the ring to tick, the name to open"),
+            tr(
+                "เก็บใน ${list.path} และงานที่ติด #${ListFolders.tagOf(list, folder)} แตะวงกลมเพื่อติ๊ก แตะชื่อเพื่อเปิดดูและแก้",
+                "Saved in ${list.path}, plus tasks tagged #${ListFolders.tagOf(list, folder)}. Tap the ring to tick, the name to open",
+            ),
             Modifier.padding(start = 4.dp, top = 4.dp), color = C.faint, fontSize = TS.caption,
         )
     }
 }
 
-/** Pick any number of open tasks from the vault to tag into the list; they stay where they are. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Pick any number of open tasks from the vault to put in the open folder of the list; they stay where they are. */
 @Composable
-private fun IncludeSheet(list: OmniList, state: UiState, startCategory: String?, onAdd: (List<Task>, String?) -> Unit, onDismiss: () -> Unit) {
+private fun IncludeSheet(list: OmniList, folder: String, state: UiState, onAdd: (List<Task>) -> Unit, onDismiss: () -> Unit) {
     var search by remember { mutableStateOf("") }
     var picked by remember { mutableStateOf(setOf<String>()) }
-    var category by remember { mutableStateOf(startCategory) }
     val already = state.itemsOf(list).map { it.key }.toSet()
     val pool = state.tasks.filter { it.isOpen && it.key !in already }
     val shown = pool.filter { search.isBlank() || it.title.contains(search.trim(), ignoreCase = true) || it.tags.any { t -> t.contains(search.trim().removePrefix("#"), ignoreCase = true) } }
         .sortedBy { it.title.lowercase() }
+    val name = if (folder.isEmpty()) list.name else ListFolders.nameOf(folder)
     SheetFrame(onDismiss) {
-        Text(tr("ดึงงานเข้า ${list.name}", "Add tasks to ${list.name}"), style = MaterialTheme.typography.titleMedium, color = C.text)
+        Text(tr("ดึงงานเข้า $name", "Add tasks to $name"), style = MaterialTheme.typography.titleMedium, color = C.text)
         Text(
-            tr("งานยังอยู่ที่เดิม แค่ติด #${list.tag} เพิ่ม", "Tasks stay where they are and get #${list.tag}"),
+            tr("งานยังอยู่ที่เดิม แค่ติด #${ListFolders.tagOf(list, folder)} เพิ่ม", "Tasks stay where they are and get #${ListFolders.tagOf(list, folder)}"),
             Modifier.padding(top = 2.dp, bottom = 10.dp), color = C.faint, fontSize = TS.caption,
         )
         Field(search, tr("ค้นชื่องานหรือ #แท็ก", "Search a title or #tag")) { search = it }
-        if (list.categories.isNotEmpty()) {
-            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(tr("ไม่ใส่หมวด", "No category"), category == null, { category = null })
-                list.categories.forEach { c -> Chip(c, category == c, { category = if (category == c) null else c }) }
-            }
-        }
         Column(Modifier.padding(top = 10.dp)) {
             if (shown.isEmpty()) Text(tr("ไม่พบงาน", "No tasks found"), Modifier.padding(8.dp), color = C.muted, fontSize = TS.body)
             shown.take(150).forEach { t ->
@@ -211,7 +211,7 @@ private fun IncludeSheet(list: OmniList, state: UiState, startCategory: String?,
         Text(
             if (n == 0) tr("เลือกงานที่จะเพิ่ม", "Pick tasks to add") else tr("เพิ่ม $n งาน", "Add $n tasks"),
             Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (n > 0) C.accent else C.raised)
-                .clickable(enabled = n > 0) { onAdd(pool.filter { it.key in picked }, category) }.padding(vertical = 13.dp),
+                .clickable(enabled = n > 0) { onAdd(pool.filter { it.key in picked }) }.padding(vertical = 13.dp),
             color = if (n > 0) C.onAccent else C.faint, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
@@ -253,34 +253,6 @@ private fun AddLine(hint: String, onAdd: (String) -> Unit) {
     }
 }
 
-/** The emoji to choose from, by theme, and a box to type any other; the chosen one is outlined. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun IconGrid(selected: String, onPick: (String) -> Unit) {
-    val current = ListEmoji.of(selected)
-    Column {
-        ListEmoji.groups.forEach { (label, emoji) ->
-            Text(tr(label.first, label.second), Modifier.padding(top = 10.dp, bottom = 6.dp), color = C.faint, fontSize = TS.caption)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                emoji.forEach { e ->
-                    val on = e == current
-                    Box(
-                        Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.accentSoft else C.sunken)
-                            .border(1.dp, if (on) C.accent else Color.Transparent, RoundedCornerShape(12.dp)).clickable { onPick(e) },
-                        contentAlignment = Alignment.Center,
-                    ) { Text(e, fontSize = 21.sp, lineHeight = 26.sp) }
-                }
-            }
-        }
-        var typed by remember { mutableStateOf("") }
-        Text(tr("หรือพิมพ์ emoji เอง", "Or type any emoji"), Modifier.padding(top = 12.dp, bottom = 6.dp), color = C.faint, fontSize = TS.caption)
-        Field(typed, tr("แตะแล้วเลือกจากแป้นพิมพ์", "Tap and pick from the keyboard")) { text ->
-            val first = firstGlyph(text)
-            typed = first
-            if (first.isNotEmpty() && first.any { it.code > 0x7F }) onPick(first)
-        }
-    }
-}
 
 /** The first character as people see it, so a flag or a family emoji stays whole. */
 internal fun firstGlyph(text: String): String {
@@ -292,16 +264,6 @@ internal fun firstGlyph(text: String): String {
     return if (end > 0) t.substring(0, end) else t
 }
 
-@Composable
-fun IconPickerDialog(selected: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = C.raised,
-        title = { Text(tr("เลือกไอคอน", "Pick an icon")) },
-        text = { Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) { IconGrid(selected) { onPick(it) } } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("ปิด", "Close"), color = C.text2) } },
-    )
-}
 
 /** Asks before a list note goes; [own] items go with it, [pulled] tasks from other notes stay and lose the tag. */
 @Composable
@@ -313,7 +275,7 @@ fun DeleteListDialog(list: OmniList, own: Int, pulled: Int, onDelete: () -> Unit
         text = {
             Text(
                 tr("ลบไฟล์ ${list.path.substringAfterLast('/')} พร้อม $own รายการในนั้น", "Deletes ${list.path.substringAfterLast('/')} with its $own items") +
-                    (if (pulled > 0) tr("\nงานที่ดึงมาจากโน้ตอื่น $pulled งานจะอยู่ที่เดิม แค่เอา #${list.tag} ออก", "\nThe $pulled tasks pulled in from other notes stay there and only lose #${list.tag}") else ""),
+                    (if (pulled > 0) tr("\nงานที่ดึงมาจากโน้ตอื่น $pulled งานจะอยู่ที่เดิม แค่เอา #${list.tag} (และโฟลเดอร์ย่อย) ออก", "\nThe $pulled tasks pulled in from other notes stay there and only lose #${list.tag}") else ""),
                 color = C.text2,
             )
         },
@@ -322,30 +284,39 @@ fun DeleteListDialog(list: OmniList, own: Int, pulled: Int, onDelete: () -> Unit
     )
 }
 
-/** Name, icon and categories for a new list note. */
+
+/** Asks before a folder inside a list goes: what is in it (and in the folders under it) moves up a level; nothing is deleted. */
 @Composable
-fun CreateListDialog(onCreate: (name: String, icon: String, categories: List<String>) -> Unit, onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var icon by remember { mutableStateOf(ListEmoji.DEFAULT) }
-    var cats by remember { mutableStateOf("") }
+fun DeleteListFolderDialog(path: String, upName: String, count: Int, onDelete: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = C.raised,
-        title = { Text(tr("สร้างรายการใหม่", "New list")) },
+        title = { Text(tr("ลบโฟลเดอร์ ${ListFolders.nameOf(path)}?", "Remove the folder ${ListFolders.nameOf(path)}?")) },
         text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
-                Field(name, tr("ชื่อ เช่น หนังสือที่อยากอ่าน", "Name, e.g. Books to read")) { name = it }
-                Text(tr("ไอคอน", "Icon"), Modifier.padding(top = 14.dp), color = C.muted, fontSize = TS.caption)
-                IconGrid(icon) { icon = it }
-                Text(tr("หมวดย่อย คั่นด้วยจุลภาค (ไม่ใส่ก็ได้)", "Categories, comma separated (optional)"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.muted, fontSize = TS.caption)
-                Field(cats, tr("เช่น นิยาย, ธุรกิจ, สุขภาพ", "e.g. Fiction, Business, Health")) { cats = it }
-            }
+            Text(
+                if (count == 0) tr("โฟลเดอร์นี้ว่าง", "This folder is empty")
+                else tr("ของข้างใน $count รายการ (รวมในโฟลเดอร์ย่อย) จะย้ายไปอยู่ใน $upName ไม่มีรายการไหนถูกลบ", "Its $count items (folders inside too) move to $upName; nothing is deleted"),
+                color = C.text2,
+            )
         },
+        confirmButton = { TextButton(onClick = onDelete) { Text(tr("ลบโฟลเดอร์", "Remove"), color = C.red) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
+    )
+}
+
+/** A name for a new folder: a new list in the List folder, or a folder inside a list. */
+@Composable
+fun NewListFolderDialog(where: String, onCreate: (name: String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.raised,
+        title = { Text(tr("โฟลเดอร์ใหม่ใน $where", "New folder in $where")) },
+        text = { Field(name, tr("ชื่อ เช่น ญี่ปุ่น", "Name, e.g. Japan")) { name = it } },
         confirmButton = {
-            TextButton(
-                onClick = { onCreate(name, icon, cats.split(',').map { it.trim() }.filter { it.isNotEmpty() }) },
-                enabled = name.isNotBlank(),
-            ) { Text(tr("สร้าง", "Create"), color = if (name.isNotBlank()) C.accent else C.faint) }
+            TextButton(onClick = { onCreate(name) }, enabled = name.isNotBlank()) {
+                Text(tr("สร้าง", "Create"), color = if (name.isNotBlank()) C.accent else C.faint)
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr("ยกเลิก", "Cancel"), color = C.text2) } },
     )

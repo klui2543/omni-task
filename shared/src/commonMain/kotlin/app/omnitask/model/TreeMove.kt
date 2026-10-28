@@ -13,7 +13,7 @@ object TreeMove {
         /** A project or branch, by its tag (`omni/แอป`). */
         data class Branch(val tag: String) : To
 
-        /** A list, by the list's tag (`bucketlist`). */
+        /** A list, by the list's tag (`bucketlist`), or a folder in it (`bucketlist/เที่ยว`). */
         data class InList(val tag: String) : To
 
         /** "No project yet"; [group] is the tag of the group it was let go on, null for the whole or the no-tag group. */
@@ -43,12 +43,15 @@ object TreeMove {
         }
     }
 
-    /** The list tags on [t], from the [lists] the vault has; compared in any case, as the list pages do. */
+    /**
+     * The list tags on [t], from the [lists] the vault has, with the folder tags under them (`#bucketlist/เที่ยว`,
+     * owner's pick 2026-10-28); compared in any case, as the list pages do.
+     */
     fun listTagsOn(t: Task, lists: Collection<String>): List<String> =
-        t.tags.filter { tag -> lists.any { it.equals(tag, ignoreCase = true) } }
+        t.tags.filter { tag -> lists.any { it.equals(tag, ignoreCase = true) || tag.startsWith("$it/", ignoreCase = true) } }
 
     private fun removeAnyCase(raw: String, tag: String): String {
-        val exact = Regex("""(?<!\S)#([^\s#]+)""").findAll(raw).firstOrNull { it.groupValues[1].equals(tag, ignoreCase = true) } ?: return raw
+        val exact = Regex(TaskLine.TAG_PATTERN).findAll(raw).firstOrNull { it.groupValues[1].equals(tag, ignoreCase = true) } ?: return raw
         return TaskLine.removeTag(raw, exact.groupValues[1])
     }
 }

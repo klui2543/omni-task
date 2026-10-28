@@ -118,8 +118,8 @@ fun NewLookSetting(context: Context) {
                 Text(tr("หน้าวันนี้ แท็บเลขา และหน้าตาที่สงบขึ้น", "Today, a Secretary tab and a calmer look"), color = C.text, fontSize = TS.body)
                 Text(
                     tr(
-                        "แท็บ วันนี้ งาน + โปรเจกต์ เลขา (ตั้งค่าอยู่ที่เฟืองบนหน้าวันนี้) การ์ด ทำต่อไป, แดงเฉพาะกำหนดจริง (📅), งานค้างพับเป็นบรรทัดเดียว, เลขาเปิดที่แชต, มุมมองงานรวมเป็นปุ่มเดียว ปฏิทินเหมือนเดิม ปิดเมื่อไหร่ก็กลับเป็นแบบเดิม",
-                        "Tabs Today, Tasks, +, Projects, Secretary (Settings is the gear on Today). A do next card, red only for real deadlines (📅), overdue folded to one line, the secretary opens on its chat, one button for the task views. The calendar is unchanged. Switch off to go back.",
+                        "แท็บ วันนี้ งาน + โปรเจกต์ เลขา (ตั้งค่าอยู่ที่เฟืองบนหน้าวันนี้) หน้าวันนี้มีกองการ์ด ทำต่อไป, ค้าง และเรื่องให้ตัดสิน ปัดดูทีละใบ, แดงเฉพาะกำหนดจริง (📅), เรื่องที่รอตัดสินอยู่ในกองบนหน้าเลขา, เลขาเปิดที่แชต, มุมมองงานรวมเป็นปุ่มเดียว ปฏิทินเหมือนเดิม ปิดเมื่อไหร่ก็กลับเป็นแบบเดิม",
+                        "Tabs Today, Tasks, +, Projects, Secretary (Settings is the gear on Today). Today has a deck of do next, left over and decisions to swipe through, red only for real deadlines (📅), decisions wait in a deck on the secretary page, the secretary opens on its chat, one button for the task views. The calendar is unchanged. Switch off to go back.",
                     ),
                     color = C.muted, fontSize = TS.caption,
                 )
