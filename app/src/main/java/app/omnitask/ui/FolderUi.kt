@@ -115,7 +115,6 @@ fun FolderPicker(
     labels: List<String>?,
     onLabel: ((String) -> Unit)?,
     onPick: (String?) -> Unit,
-    onDismiss: () -> Unit,
     // With [onPickList], "List" is the first folder and the lists (and their categories) sit inside it, as the
     // owner asked on 2026-10-28 (mock way ก). [currentList] is the list chosen now, with its category.
     lists: List<app.omnitask.model.OmniList> = emptyList(),
@@ -123,6 +122,7 @@ fun FolderPicker(
     onPickList: ((app.omnitask.model.OmniList, String?) -> Unit)? = null,
     onCreateList: ((String, String, List<String>) -> Unit)? = null,
     listSize: (app.omnitask.model.OmniList) -> Int = { 0 },
+    onDismiss: () -> Unit,
 ) {
     val withLists = onPickList != null
     val all = remember(state.tasks, state.branchStates) {
