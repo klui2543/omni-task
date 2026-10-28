@@ -36,6 +36,7 @@ import app.omnitask.model.Focus
 import app.omnitask.model.Folders
 import app.omnitask.model.GroupMove
 import app.omnitask.model.ListFolders
+import app.omnitask.model.ListToFolders
 import app.omnitask.model.SpokenWhen
 import app.omnitask.model.TimeWords
 import app.omnitask.model.Ygdrasil
@@ -195,6 +196,8 @@ data class UiState(
     val quickAdd: QuickAddRequest? = null,
     /** Set when the weekly notification is opened: ask why each long-open task is still open. */
     val askStuck: Boolean = false,
+    /** The owner said "not yet" to turning the lists into folders, until the app opens again. */
+    val listsLater: Boolean = false,
     /** The month widget asked for the frames and emoji page, at this day. */
     val month: MonthRequest? = null,
     /** The month widget asked for the calendar at this day; the calendar takes it and clears it. */
@@ -2028,6 +2031,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPriority(task: Task, priority: Priority) = edit(task) { TaskLine.setPriority(it, priority) }
 
+    /** Renames a task where it is written (owner, 2026-10-28, mock way ก: tap the title and type). */
+    fun setTitle(task: Task, title: String) {
+        if (title.isBlank() || title.trim() == task.title) return
+        edit(task) { TaskLine.setTitle(it, title) }
+    }
+
     fun setRecurrence(task: Task, rule: String?) = edit(task) { TaskLine.setRecurrence(it, rule) }
 
     fun setReminder(task: Task, time: kotlinx.datetime.LocalTime?, on: ReminderOn) = edit(task) { TaskLine.setReminder(it, time, on) }
@@ -2809,6 +2818,58 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     else tr("ย้ายออกไม่ได้ $failed รายการ ไฟล์อาจถูกแก้จากที่อื่น", "$failed items could not move; a file may have changed"),
                 )
             }
+            reload()
+        }
+    }
+
+    fun listsToFoldersLater() = _state.update { it.copy(listsLater = true) }
+
+    /**
+     * Lists become plain project folders (owner's pick, 2026-10-28, way ก), once the owner taps "เปลี่ยนเลย": every
+     * list note loses its list header and each line gets its folder tag (see [ListToFolders]); lines elsewhere put in a
+     * list get their folder tag too. Each list becomes a project, and its saved empty folders empty branches.
+     */
+    fun listsToFolders() {
+        val s = _state.value
+        val vault = s.vault ?: return
+        val lists = s.lists
+        if (lists.isEmpty()) return
+        val pulled = lists.flatMap { l -> (s.tasks + s.parked).mapNotNull { t -> ListToFolders.pulledLine(l, t)?.let { t to it } } }.distinctBy { it.first.key }
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        var bad = 0
+                        val folders = mutableListOf<String>()
+                        val done = mutableListOf<OmniList>()
+                        pulled.forEach { (t, line) -> if (runCatching { repo.rewriteLine(t) { line } }.isFailure) bad++ }
+                        lists.forEach { l ->
+                            val text = repo.readPath(vault, l.path)
+                            val r = text?.let { ListToFolders.migrate(l.path, it, lists.filter { o -> o.path != l.path }.map { o -> o.tag }) }
+                            if (r == null) { if (text == null) bad++; return@forEach }
+                            if (runCatching { repo.writePath(vault, l.path, r.text) }.isFailure) { bad++; return@forEach }
+                            folders += r.folders
+                            done += l
+                        }
+                        Triple(bad, folders.toList(), done.toList())
+                    }
+                }
+            }
+            result.onSuccess { (bad, folders, done) ->
+                _state.value.projectTags?.let { tags -> saveProjectTags(tags + done.map { it.tag }) }
+                val states = folders.fold(_state.value.branchStates) { acc, f ->
+                    val key = f.substringBefore('/') to f.substringAfter('/')
+                    if (key in acc) acc else acc + (key to if ('/' in key.second) Branches.State.TRYING else Branches.State.ACTIVE)
+                }
+                if (states != _state.value.branchStates) saveBranchStates(states)
+                _state.update {
+                    it.copy(
+                        message = if (bad == 0) tr("เปลี่ยน List เป็นโฟลเดอร์แล้ว ${done.size} รายการ", "Turned ${done.size} lists into folders")
+                        else tr("เปลี่ยนแล้ว ${done.size} รายการ แต่มี $bad จุดที่เขียนไม่ได้ ลองใหม่ได้", "Turned ${done.size} lists into folders; $bad places could not be written, try again"),
+                    )
+                }
+            }
+            result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เปลี่ยนไม่ได้: ", "Cannot change: ") + e.message) } }
             reload()
         }
     }

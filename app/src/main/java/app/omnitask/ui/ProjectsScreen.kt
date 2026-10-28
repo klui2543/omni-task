@@ -166,7 +166,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             onOpenProject = { name -> world = false; fromWorld = true; openName = name; projectView = null; mapping = true },
             onBack = { world = false },
             onOpenList = { l, f -> world = false; fromWorld = true; openListPath = l.path; listFolder = f },
-            onCreateList = { world = false; shelf = "list"; creatingList = true },
+            onCreateList = null,
         )
         return
     }
@@ -337,14 +337,15 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         DeskHead(tr("โฟลเดอร์", "Folders"))
                         TileGrid(
-                            listOf(
+                            listOfNotNull(
                                 Tile(
                                     "other", tr("อื่นๆ", "Other"),
                                     tr("$unpinnedCount โฟลเดอร์", "$unpinnedCount folders") + if (hasLabels) tr(" + ป้าย", " + labels") else "",
                                     C.muted, { shelf = "other" }, mark = "⋯",
                                     badge = state.proposedProjects.size.takeIf { it > 0 }?.let { tr("ใหม่ $it", "$it new") },
                                 ),
-                                Tile("list", "List", tr("${state.lists.size} รายการ", "${state.lists.size} lists"), C.accent, { shelf = "list" }, mark = "☰"),
+                                // Lists are plain folders now (owner, 2026-10-28); the shelf stays only until the notes are changed.
+                                Tile("list", "List", tr("${state.lists.size} รายการ", "${state.lists.size} lists"), C.accent, { shelf = "list" }, mark = "☰").takeIf { state.lists.isNotEmpty() },
                             ),
                         )
                     }

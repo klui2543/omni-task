@@ -57,6 +57,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -154,7 +156,32 @@ fun EditSheet(task: Task, state: UiState, vm: TaskViewModel, onDismiss: () -> Un
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.padding(top = 0.dp)) { TaskCheck(task, { vm.toggleDone(task) }, size = 22.dp) }
             Column(Modifier.weight(1f).padding(top = 8.dp)) {
-                Text(task.title, style = MaterialTheme.typography.titleMedium, color = C.text)
+                // Tap the title to type a new one (owner's pick, 2026-10-28, mock way ก); บันทึก or leaving the box writes it.
+                var renaming by remember(task.key) { mutableStateOf(false) }
+                var newTitle by remember(task.key, task.title) { mutableStateOf(task.title) }
+                if (!renaming) Text(task.title, Modifier.clickable { newTitle = task.title; renaming = true }, style = MaterialTheme.typography.titleMedium, color = C.text)
+                else Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.5.dp, C.accent, RoundedCornerShape(10.dp)).padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                    var had by remember { mutableStateOf(false) }
+                    fun save() { vm.setTitle(task, newTitle); renaming = false }
+                    androidx.compose.foundation.text.BasicTextField(
+                        newTitle, { newTitle = it.replace("\n", " ") },
+                        Modifier.weight(1f).focusRequester(focus).onFocusChanged { f -> if (f.isFocused) had = true else if (had && renaming) save() },
+                        textStyle = MaterialTheme.typography.titleMedium.copy(color = C.text),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(C.accent),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
+                    )
+                    LaunchedEffect(Unit) { focus.requestFocus() }
+                    Text(
+                        tr("บันทึก", "Save"),
+                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(C.accent).clickable { save() }.padding(horizontal = 10.dp, vertical = 3.dp),
+                        color = C.onAccent, fontSize = TS.caption,
+                    )
+                }
                 Text(
                     tr("${task.filePath.substringAfterLast('/')} บรรทัด ${task.lineIndex + 1}", "${task.filePath.substringAfterLast('/')} line ${task.lineIndex + 1}"),
                     color = C.faint, fontSize = TS.caption,

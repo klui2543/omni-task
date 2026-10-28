@@ -174,8 +174,9 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         onDismiss = { choosingFolder = false },
         lists = state.lists,
         currentList = target?.let { it.list to it.category },
-        onPickList = { l, c -> target = QuickAdd.HashPick.ToList(l, c); choosingFolder = false },
-        onCreateList = { name, icon, categories -> vm.createList(name, icon, categories) },
+        // Lists are plain folders now (owner, 2026-10-28): they show here only until their notes are changed.
+        onPickList = if (state.lists.isEmpty()) null else { l, c -> target = QuickAdd.HashPick.ToList(l, c); choosingFolder = false },
+        onCreateList = null,
         listSize = { state.itemsOf(it).size },
         listFolders = { state.listFolders(it) },
     )
