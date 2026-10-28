@@ -59,13 +59,13 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     Text(
                         tr("${first.task.title} เสร็จหรือยัง", "Is ${first.task.title} done?"),
                         Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(first.task) },
-                        color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                     if (asks.size > 1) Text(tr("และอีก ${asks.size - 1} คำถาม", "and ${asks.size - 1} more"), color = C.muted, fontSize = TS.caption)
                     DeckButtons {
-                        DeckButton(tr("เสร็จแล้ว", "Done"), true) { vm.toggleDone(first.task) }
                         // Not done: the sheet, where the reason is picked or written, as before.
                         DeckButton(tr("ยัง เพราะ...", "Not yet, because..."), false) { asking = true }
+                        DeckButton(tr("เสร็จแล้ว", "Done"), true) { vm.toggleDone(first.task) }
                     }
                 },
             )
@@ -75,22 +75,22 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                 DeckCard("suggest", tr("ข้อเสนอ ${suggestions.size}", "Suggestions ${suggestions.size}")) {
                     Text(
                         s.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(s.task) },
-                        color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(s.text, color = C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     DeckButtons {
-                        DeckButton(tr("ตกลง", "Accept"), true) { vm.acceptSuggestion(s) }
                         DeckButton(tr("ไม่เอา", "Dismiss"), false) { vm.dismissSuggestion(s) }
+                        DeckButton(tr("ตกลง", "Accept"), true) { vm.acceptSuggestion(s) }
                     }
                 },
             )
         }
         if (warnings.isNotEmpty()) add(
             DeckCard("warn", tr("เตือน ${warnings.size}", "Warnings ${warnings.size}"), C.amber) {
-                warnings.take(3).forEach { w -> Text(w, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                warnings.take(3).forEach { w -> Text(w, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 DeckButtons {
-                    if (waiting.isNotEmpty()) DeckButton(tr("ดูงานที่มีคนรอ", "See who waits"), true) { waitingOpen = true }
                     DeckButton(tr("ซ่อน", "Hide"), waiting.isEmpty()) { Decisions.hideWarnings(warnings) }
+                    if (waiting.isNotEmpty()) DeckButton(tr("ดูงานที่มีคนรอ", "See who waits"), true) { waitingOpen = true }
                 }
             },
         )
@@ -109,13 +109,13 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     }
                 }
                 DeckButtons {
-                    DeckButton(tr("ดูทั้งหมด", "See all"), true) { waitingOpen = true }
                     DeckButton(tr("+ เลือกงานอนาคต", "+ Pick future work"), false) { picking = true }
+                    DeckButton(tr("ดูทั้งหมด", "See all"), true) { waitingOpen = true }
                 }
             },
         )
     }
-    CardDeck(cards, 168.dp)
+    CardDeck(cards, 128.dp)
 }
 
 /**

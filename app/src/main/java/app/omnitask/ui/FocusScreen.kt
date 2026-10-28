@@ -146,6 +146,8 @@ fun FocusScreen(
         contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
         verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
+        // The new look's card of what to do next, left over and to decide: built with the rest of the top, shown last.
+        var deckCards = emptyList<DeckCard>()
         if (nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -209,7 +211,7 @@ fun FocusScreen(
                         val red = next.why == NextUp.Why.DUE_LATE || next.why == NextUp.Why.DUE_TODAY
                         Text(
                             next.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(next.task) },
-                            color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             next.reason + if (free > 0) tr(", ว่างเหลือ ${hours(free)}", ", ${hours(free)} free") else "",
@@ -224,10 +226,10 @@ fun FocusScreen(
                         ).joinToString(", ")
                         if (then.isNotEmpty()) Text(then, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         DeckButtons {
+                            DeckButton(tr("ไม่ใช่ตอนนี้", "Not now"), false) { NewLook.skip(context, next.task.key, today) }
                             DeckButton(if (doing) tr("เสร็จแล้ว", "Done") else tr("เริ่ม", "Start"), true) {
                                 if (doing) vm.toggleDone(next.task) else vm.setStatus(next.task, Status.IN_PROGRESS)
                             }
-                            DeckButton(tr("ไม่ใช่ตอนนี้", "Not now"), false) { NewLook.skip(context, next.task.key, today) }
                         }
                     },
                 ) else if (skippedToday.isNotEmpty() && NextUp.ranked(state.tasks, today).isNotEmpty()) add(
@@ -248,22 +250,22 @@ fun FocusScreen(
                         }
                         if (lateTasks.size > 3) Text(tr("และอีก ${lateTasks.size - 3} งาน", "and ${lateTasks.size - 3} more"), color = C.muted, fontSize = TS.caption)
                         DeckButtons {
+                            DeckButton(tr("ดูทั้ง ${lateTasks.size}", "See all ${lateTasks.size}"), false) { lateOpen = true }
                             DeckButton(tr("ให้เลขาจัดวันใหม่", "Ask for new dates"), true) {
                                 val n = lateTasks.size
                                 onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
                             }
-                            DeckButton(tr("ดูทั้ง ${lateTasks.size}", "See all ${lateTasks.size}"), false) { lateOpen = true }
                         }
                     },
                 )
                 if (decide.isNotEmpty()) add(
-                    DeckCard("decide", tr("เลขามีเรื่องให้ตัดสิน ${decide.sumOf { it.second }}", "${decide.sumOf { it.second }} for you to decide")) {
+                    DeckCard("decide", tr("เลขามีเรื่องให้ตัดสิน ${decide.sumOf { it.second }}", "${decide.sumOf { it.second }} for you to decide"), C.amber) {
                         DeckCounts(decide)
                         DeckButtons { DeckButton(tr("ไปหน้าเลขา", "Open the secretary"), true, onSecretary) }
                     },
                 )
             }
-            if (cards.isNotEmpty()) item(key = "deck") { CardDeck(cards, 186.dp) }
+            deckCards = cards
         }
 
         // The secretary's questions: one line however many, the answers in a sheet (owner's pick, 2026-10-26).
@@ -419,12 +421,13 @@ fun FocusScreen(
             }
         }
 
-        // The new look: one card of what is ahead, the pinned countdowns and the real deadlines (📅) of the next week.
+        // The new look: the next week (owner's pick, 2026-10-28), the pinned countdowns and then the open tasks due (📅)
+        // or scheduled (⏳) in the 7 days from tomorrow, by day. Then, last on the page, the card of what to do next.
         if (nl) {
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
-            val soon = state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned && it.due.let { d -> d != null && d > today && d <= today.plusDays(7) } }
-                .sortedBy { it.due }.take(3)
-            item(key = "ahead") { AheadCard(countdowns, soon, today, onOpen) { pickingCountdown = true } }
+            val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
+            item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
+            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards, 124.dp) }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
@@ -943,28 +946,68 @@ private fun LateSheet(section: DayPlan.Section, state: UiState, vm: TaskViewMode
     }
 }
 
+/** The open tasks of the next week, each on the day it is due (📅) or else scheduled (⏳). */
+internal object Week {
+    class Item(val task: Task, val day: LocalDate, val due: Boolean)
+
+    /** Tasks with a date from tomorrow to 7 days ahead, earliest first; a due date wins over a scheduled one. */
+    fun ahead(tasks: List<Task>, today: LocalDate): List<Item> {
+        val first = today.plusDays(1)
+        val last = today.plusDays(7)
+        fun inWeek(d: LocalDate?) = d != null && d >= first && d <= last
+        return tasks.mapNotNull { t ->
+            when {
+                inWeek(t.due) -> Item(t, t.due!!, true)
+                inWeek(t.scheduled) -> Item(t, t.scheduled!!, false)
+                else -> null
+            }
+        }.sortedBy { it.day }
+    }
+}
+
+private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d MMM", TH)
+
 /**
- * The new look's card of what is ahead (owner's pick, 2026-10-27): the pinned countdowns, then the real deadlines
- * (📅) of the next week that are not pinned. A countdown opens the picker; a deadline opens its task.
+ * The new look's next week (owner's pick ก, 2026-10-28; it was "ข้างหน้า"): the pinned countdowns, then the week's
+ * tasks under a line for each day. Six show; "ดูอีก N งาน" opens the rest in place. A countdown opens the picker;
+ * a task opens its task.
  */
 @Composable
-private fun AheadCard(countdowns: List<Countdown.Shown>, soon: List<Task>, today: LocalDate, onOpen: (Task) -> Unit, onPick: () -> Unit) {
+private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, onPick: () -> Unit) {
+    var all by rememberSaveable { mutableStateOf(false) }
+    val shown = if (all) week else week.take(6)
     Column {
-        if (countdowns.isNotEmpty() || soon.isNotEmpty()) {
-            Text(tr("ข้างหน้า", "Ahead"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
-        }
+        Text(tr("สัปดาห์หน้า", "Next week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
         Card {
             countdowns.forEachIndexed { i, c ->
                 if (i > 0) Divider(start = 14.dp)
                 AheadRow(c.isEvent, c.title, tr("ปักหมุด", "Pinned"), c.text, if (c.late) C.red else C.accentText, onPick)
             }
-            soon.forEachIndexed { i, t ->
-                if (i > 0 || countdowns.isNotEmpty()) Divider(start = 14.dp)
-                val due = t.due ?: return@forEachIndexed
-                val days = ChronoUnit.DAYS.between(today, due)
-                AheadRow(false, t.title, tr("กำหนดจริง ", "Due ") + due.format(SHORT_DATE), tr("อีก $days วัน", "in $days days"), C.amber) { onOpen(t) }
+            if (week.isEmpty()) {
+                Text(
+                    tr("ยังไม่มีงานใน 7 วันข้างหน้า", "Nothing due in the next 7 days"),
+                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp), color = C.muted, fontSize = TS.body,
+                )
             }
-            if (countdowns.isNotEmpty() || soon.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+            shown.groupBy { it.day }.forEach { (day, items) ->
+                PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
+                items.forEach { w ->
+                    val days = ChronoUnit.DAYS.between(today, day)
+                    AheadRow(
+                        false, w.task.title,
+                        if (w.due) tr("📅 กำหนดจริง", "📅 Due") else tr("⏳ นัดทำ", "⏳ Scheduled"),
+                        tr("อีก $days วัน", "in $days days"),
+                        C.amber,
+                    ) { onOpen(w.task) }
+                }
+            }
+            if (week.size > 6) FooterRow(onClick = { all = !all }) {
+                Text(
+                    if (all) tr("ย่อ", "Show less") else tr("ดูอีก ${week.size - 6} งาน", "${week.size - 6} more"),
+                    color = C.accentText, fontSize = TS.caption,
+                )
+            }
+            Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
             FooterRow(onClick = onPick) {
                 Text(
                     if (countdowns.isEmpty()) tr("ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ", "Count down to an important task or event") else tr("ปักหมุดนับถอยหลังเพิ่ม", "Pin another countdown"),

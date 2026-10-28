@@ -90,8 +90,8 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     LaunchedEffect(state.tasks.isNotEmpty()) { if (state.tasks.isNotEmpty()) vm.deskOpen() }
     val turns = vm.desk
     val list = rememberLazyListState()
-    // The deck of decisions is the list's first item, so the last turn is one further down.
-    LaunchedEffect(turns.size) { if (turns.isNotEmpty()) list.animateScrollToItem(turns.lastIndex + 1) }
+    // The deck of decisions follows the last turn, so a new answer shows with the deck under it.
+    LaunchedEffect(turns.size) { if (turns.isNotEmpty()) list.animateScrollToItem(turns.lastIndex) }
     // Steps ticked in a split answer, by turn; all ticked to begin with.
     val picks = remember { mutableStateMapOf<Int, Set<String>>() }
     var claudeOpen by remember { mutableStateOf(false) }
@@ -172,8 +172,6 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // What waits on Klui to decide, in one deck at the top (owner's pick ก, 2026-10-27).
-            item(key = "deck") { DecisionDeck(state, vm, onOpen) }
             itemsIndexed(turns) { i, t ->
                 t.mine?.let { Mine(it, t.via) }
                 t.ai?.let { AiAnswer(it, vm) }
@@ -193,6 +191,8 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                     }
                 }
             }
+            // What waits on Klui to decide, after the chat (owner's pick, 2026-10-28): new answers come above it.
+            item(key = "deck") { DecisionDeck(state, vm, onOpen) }
         }
         if (resetAt > 0) Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(14.dp)).background(C.raised).padding(start = 14.dp, end = 4.dp),
