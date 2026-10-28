@@ -389,7 +389,7 @@ fun AddDetailPage(
             current = app.omnitask.model.Folders.ofTags(tags),
             labels = app.omnitask.model.Folders.ofTags(tags).let { f -> tags.filter { it != f } },
             onLabel = { l -> if (l in tags) tags.remove(l) else tags.add(l) },
-            onPick = { f -> val next = app.omnitask.model.Folders.withFolder(tags.toList(), f); tags.clear(); tags.addAll(next); picking = null },
+            onPick = { f -> vm.notePickedFolder(f); val next = app.omnitask.model.Folders.withFolder(tags.toList(), f); tags.clear(); tags.addAll(next); picking = null },
         ) { picking = null }
         "repeat" -> RepeatDialog(rep, event, date, { rep = it }) { picking = null }
     }

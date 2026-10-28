@@ -102,7 +102,7 @@ object Branches {
     /** A branch name as it goes into a tag: no spaces, # or slashes. */
     fun clean(name: String): String = name.trim().replace(Regex("""[\s#/]+"""), "-").trim('-')
 
-    private val TAG = Regex("""(?<!\S)#([^\s#]+)""")
+    private val TAG = Regex(app.omnitask.data.TaskLine.TAG_PATTERN)
 
     /**
      * Renames a project inside one task line: `#old` and `#old/branch` become `#new` and `#new/branch`.

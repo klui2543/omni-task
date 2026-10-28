@@ -34,6 +34,18 @@ object Projects {
     private fun plain(tag: String) =
         !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags
 
+    /**
+     * [tag] with its first part in the spelling of the chosen project it names in another case (`siriraj/flow` is
+     * `Siriraj/flow` when Siriraj is a project), so one project never splits by case. Other tags stay as written.
+     */
+    fun spell(tag: String): String {
+        val made = chosen ?: return tag
+        val root = tag.substringBefore('/')
+        if (root.isEmpty() || root in made) return tag
+        val hit = made.firstOrNull { it.equals(root, ignoreCase = true) } ?: return tag
+        return hit + tag.substring(root.length)
+    }
+
     /** Whether [tag] could name a project at all (see [plain]); the folder rules build on it. */
     fun isPlain(tag: String) = plain(tag)
 
@@ -61,7 +73,7 @@ object Projects {
     fun newOnes(tasks: List<Task>, made: Set<String>, declined: Set<String>, today: LocalDate, days: Int = 3): Set<String> =
         tasks.filter { it.isOpen && it.list == null && it.created?.let { c -> c >= today.plusDays(-days.toLong()) } == true }
             .mapNotNull { t -> t.tags.firstOrNull(::plain)?.substringBefore('/')?.takeIf { it.isNotEmpty() } }
-            .filter { it !in made && it !in declined }.toSet()
+            .filter { n -> made.none { it.equals(n, ignoreCase = true) } && declined.none { it.equals(n, ignoreCase = true) } }.toSet()
 
     /** Tags on [tasks] that are not projects and could be made one, with how many tasks carry each; most used first. */
     fun others(tasks: List<Task>): List<Pair<String, Int>> {

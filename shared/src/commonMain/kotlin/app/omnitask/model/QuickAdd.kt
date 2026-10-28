@@ -70,7 +70,7 @@ object QuickAdd {
         }.joinToString("\n")
     }
 
-    private val TAG = Regex("""(?<!\S)#[^\s#]+""")
+    private val TAG = Regex(app.omnitask.data.TaskLine.TAG_PATTERN)
     // "9:00-11:00", "9:00 ถึง 11:00", "9:00 to 11:00".
     private val TIME_RANGE = Regex("""(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)\s*(?:-|–|ถึง|to)\s*([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])(?:\s*น\.)?""", RegexOption.IGNORE_CASE)
     private val TIME = Regex("""(?<![\d:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d:])(?:\s*น\.)?""")

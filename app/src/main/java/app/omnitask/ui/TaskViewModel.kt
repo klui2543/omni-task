@@ -204,6 +204,8 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** The folders the owner picked lately in the folder picker, newest first ("used lately"). */
+    val pickedFolders: List<String> = emptyList(),
     /** The tags the owner made projects (see [Projects.chosen]); null until chosen once. */
     val projectTags: Set<String>? = null,
     /** Branch states by (project, path), and the tasks hidden because their branch is parked. */
@@ -427,6 +429,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         hiddenCalendars = CalendarReader.hiddenIds(getApplication()),
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
+        pickedFolders = prefs.getString(KEY_PICKED_FOLDERS, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         // The project logic reads the choice too, so it is applied wherever the settings are.
         projectTags = prefs.getStringSet(KEY_PROJECT_TAGS, null)?.toSet().also { Projects.chosen = it },
         countdowns = Countdown.parseAll(prefs.getStringSet(KEY_COUNTDOWNS, null)?.toList() ?: listOfNotNull(prefs.getString(KEY_COUNTDOWN, null))),
@@ -2293,6 +2296,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun moveToFolder(task: Task, folder: String?) {
         val from = Folders.of(task)
         val to = folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() }
+        notePickedFolder(to)
         when {
             // A label typed into the picker (#รอ/พี่เอ) is added; the folder stays.
             to != null && Folders.isLabel(to) -> addTag(task, to)
@@ -2308,6 +2312,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 if (!known) s.projectTags?.let { saveProjectTags(it + root) }
             }
         }
+    }
+
+    /** Remembers a folder the owner picked in the folder picker, for its "used lately" row; a label is not a folder. */
+    fun notePickedFolder(folder: String?) {
+        val f = folder?.let(Folders::clean)?.takeIf { it.isNotEmpty() && !Folders.isLabel(it) } ?: return
+        val next = Folders.picked(_state.value.pickedFolders, f)
+        prefs.edit().putString(KEY_PICKED_FOLDERS, next.joinToString("\n")).apply()
+        _state.update { it.copy(pickedFolders = next) }
     }
 
     /**
@@ -3808,6 +3820,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_REVIEWED = "reviewedTasks"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
+        const val KEY_PICKED_FOLDERS = "pickedFolders"
         const val KEY_PROJECT_TAGS = "projectTags"
         /** Kept among the stars when the owner has unpinned every project; no tag can hold a tab. */
         const val NO_PIN = "\t"
