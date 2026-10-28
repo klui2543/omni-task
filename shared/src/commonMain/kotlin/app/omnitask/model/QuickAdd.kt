@@ -134,12 +134,28 @@ object QuickAdd {
         return out
     }
 
-    fun parse(text: String, today: LocalDate): Draft {
+    fun parse(text: String, today: LocalDate): Draft = read(text, today).first
+
+    /**
+     * Where the day and the time were read in the trimmed [text] (null when none was typed), so the chips under
+     * the box can take a typed day or time out, or put another in its place.
+     */
+    data class Spans(val due: IntRange?, val time: IntRange?)
+
+    fun spans(text: String, today: LocalDate): Spans = read(text, today).second
+
+    private fun read(text: String, today: LocalDate): Pair<Draft, Spans> {
         var rest = " ${text.trim()} "
-        fun cut(range: IntRange) { rest = rest.substring(0, range.first) + " " + rest.substring(range.last + 1) }
+        // Cut words are blanked with as many spaces, so every place in [rest] is still its place in the text.
+        var cutRange: IntRange? = null
+        fun cut(range: IntRange) {
+            rest = rest.substring(0, range.first) + " ".repeat(range.last - range.first + 1) + rest.substring(range.last + 1)
+            cutRange = range
+        }
+        fun place(r: IntRange?) = r?.let { (it.first - 1)..(it.last - 1) }
 
         val tags = TAG.findAll(rest).map { it.value.removePrefix("#") }.toList()
-        rest = TAG.replace(rest, " ")
+        rest = TAG.replace(rest) { " ".repeat(it.value.length) }
 
         var priority = Priority.NONE
         BANG.find(rest)?.let { m ->
@@ -159,6 +175,9 @@ object QuickAdd {
             time = LocalTime.of(m.groupValues[1].toInt(), m.groupValues[2].toInt())
             cut(m.range)
         }
+
+        val timeSpan = if (time != null) place(cutRange) else null
+        cutRange = null
 
         var due: LocalDate? = null
         var endDue: LocalDate? = null
@@ -215,13 +234,14 @@ object QuickAdd {
                 break
             }
         }
+        val dueSpan = if (due != null) place(cutRange) else null
         // A time on its own means today.
         if (due == null && time != null) due = today
 
         val title = rest.replace(Regex("""\s+"""), " ").trim()
         // A range on one day is no range.
         if (endDue == due) endDue = null
-        return Draft(title, due, time, tags, priority, endTime, endDue)
+        return Draft(title, due, time, tags, priority, endTime, endDue) to Spans(dueSpan, timeSpan)
     }
 
     /** A typed year: Buddhist years (2569, or 69) and short years (26) as the Western year. */

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -57,6 +59,8 @@ import app.omnitask.model.fetchTitle
 import app.omnitask.model.Priority
 import app.omnitask.model.Status
 import app.omnitask.model.QuickAdd
+import app.omnitask.model.QuickAddChips
+import app.omnitask.model.Folders
 import app.omnitask.model.tr
 import kotlinx.coroutines.delay
 import app.omnitask.time.*
@@ -70,6 +74,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     val text = field.text
     fun setText(value: String) { field = TextFieldValue(value, TextRange(value.length)) }
     val draft = QuickAdd.parse(text, state.today)
+    fun hm(t: kotlinx.datetime.LocalTime) = "%02d:%02d".format(t.hour, t.minute)
     val context = LocalContext.current
     // "ลงปฏิทิน" beside "เพิ่มงาน": the same sentence goes to a calendar as an event. Both sit where the thumb
     // already is after typing; the length and the calendar keep their last choice and only open when asked.
@@ -158,6 +163,22 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         }
     }
 
+    // The folder chip's picker: a folder goes into the sentence as its tag, a list sends the item there.
+    var choosingFolder by remember { mutableStateOf(false) }
+    if (choosingFolder) FolderPicker(
+        state,
+        current = if (target == null) Folders.ofTags(draft.tags) else null,
+        labels = null,
+        onLabel = null,
+        onPick = { f -> target = null; setText(QuickAddChips.withFolder(text, f, state.today)); choosingFolder = false },
+        onDismiss = { choosingFolder = false },
+        lists = state.lists,
+        currentList = target?.let { it.list to it.category },
+        onPickList = { l, c -> target = QuickAdd.HashPick.ToList(l, c); choosingFolder = false },
+        onCreateList = { name, icon, categories -> vm.createList(name, icon, categories) },
+        listSize = { state.itemsOf(it).size },
+    )
+
     // The full-screen page for what one sentence can't say; it starts from what was typed so far.
     var full by remember { mutableStateOf(false) }
     if (full) AddDetailPage(state, vm, text, status, link, startAsEvent = asEvent, onClose = { full = false }, onSaved = { full = false; onDismiss() })
@@ -184,7 +205,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 tr("เลือกนัดให้ เพราะพิมพ์ช่วงเวลา แตะ งาน ถ้าไม่ใช่", "Event picked because a time range was typed. Tap Task if not"),
                 Modifier.padding(top = 8.dp), color = C.accentText, fontSize = TS.caption,
             )
-        } else Text(tr("เพิ่มงาน", "New task"), style = MaterialTheme.typography.titleMedium, color = C.text)
+        } else Text(tr("เพิ่มลง List", "Add to a list"), style = MaterialTheme.typography.titleMedium, color = C.text)
         BasicTextField(
             value = field,
             onValueChange = { field = it },
@@ -201,6 +222,37 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 }
             },
         )
+
+        // Day, time and folder chips under the box (owner's pick, 2026-10-28, mock way ก): a tap opens the phone's
+        // own calendar or clock, or the folder picker; what is picked is written into the sentence as if typed.
+        if (!asEvent) {
+            val list = target
+            val folder = if (list == null) Folders.ofTags(draft.tags) else null
+            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                fun day(d: LocalDate) = when (d) { state.today -> tr("วันนี้", "Today"); state.today.plusDays(1) -> tr("พรุ่งนี้", "Tomorrow"); else -> d.format(SHORT_DATE) }
+                AddChip(
+                    { Icon(Ic.calendar, null, tint = it, modifier = Modifier.size(15.dp)) },
+                    draft.due?.takeIf { list == null }?.let { d -> day(d) + (draft.endDue?.let { tr(" ถึง ", " to ") + day(it) } ?: "") }, tr("วันที่", "Date"), enabled = list == null,
+                    // A reminder needs its day, so taking the day out takes the time with it.
+                    onClear = { setText(QuickAddChips.withoutTime(QuickAddChips.withoutDue(text, state.today), state.today)) },
+                ) { pickSystemDate(context, draft.due ?: state.today) { setText(QuickAddChips.withDue(text, it, state.today, Lang.english)) } }
+                AddChip(
+                    { Icon(Ic.clock, null, tint = it, modifier = Modifier.size(15.dp)) },
+                    draft.time?.takeIf { list == null }?.let { t -> draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เตือน ", "Remind ") + hm(t)) }, tr("เวลา", "Time"), enabled = list == null,
+                    onClear = { setText(QuickAddChips.withoutTime(text, state.today)) },
+                ) { pickSystemTime(context, draft.time ?: kotlinx.datetime.LocalTime(9, 0)) { setText(QuickAddChips.withTime(text, it, state.today)) } }
+                AddChip(
+                    { FolderGlyph(if (list != null) C.accent else if (folder != null) folderTint(folder) else it, 16.dp) },
+                    list?.let { it.list.name + (it.category?.let { c -> " / $c" } ?: "") } ?: folder?.substringAfterLast('/'),
+                    tr("โฟลเดอร์", "Folder"),
+                    onClear = { if (list != null) target = null else setText(QuickAddChips.withFolder(text, null, state.today)) },
+                ) { choosingFolder = true }
+            }
+            if (list != null) Text(
+                tr("ของในลิสต์ไม่มีวันที่และเวลา แตะ ✕ ที่ชิปลิสต์ ถ้าอยากให้เป็นงานปกติ", "List items have no date or time. Tap ✕ on the list chip for a normal task"),
+                Modifier.padding(top = 8.dp), color = C.accentText, fontSize = TS.caption,
+            )
+        }
 
         // Lists, their categories and known tags for the "#word" being typed.
         if (picks.isNotEmpty()) {
@@ -220,18 +272,6 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             }
         }
         target?.let { t ->
-            Row(
-                Modifier.padding(top = 10.dp).clip(RoundedCornerShape(16.dp)).background(C.accentSoft).padding(start = 12.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    tr("เพิ่มลงใน ", "Add to ") + ListEmoji.of(t.list.icon) + " " + t.list.name + (t.category?.let { " / $it" } ?: ""),
-                    color = C.accentText, fontSize = TS.body,
-                )
-                Box(Modifier.size(32.dp).clip(CircleShape).clickable { target = null }, contentAlignment = Alignment.Center) {
-                    Icon(Ic.close, tr("ไม่ใส่ลง List", "Not to a list"), tint = C.accentText, modifier = Modifier.size(12.dp))
-                }
-            }
             // A list item has no date; a category is picked from the chips.
             if (t.category == null && t.list.categories.isNotEmpty()) {
                 Row(Modifier.padding(top = 8.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -249,12 +289,15 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         link?.let { Text(tr("ลิงก์ในรายละเอียด: ", "Link in details: ") + it, Modifier.padding(top = 10.dp), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
 
         // What the sentence was read as, so a wrong guess is visible before saving.
-        fun hm(t: kotlinx.datetime.LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+        // A task shows its day, time and folder on the chips above; the rest (labels, priority) is read out here.
         val chips = if (target != null) emptyList() else buildList {
             fun day(d: LocalDate) = if (d == state.today) tr("วันนี้", "Today") else d.format(SHORT_DATE)
-            draft.due?.let { d -> add(day(d) + (draft.endDue?.let { tr(" ถึง ", " to ") + day(it) } ?: "")) }
-            draft.time?.let { t -> add(draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เตือน ", "Remind ") + hm(t))) }
-            draft.tags.forEach { add("#$it") }
+            if (asEvent) {
+                draft.due?.let { d -> add(day(d) + (draft.endDue?.let { tr(" ถึง ", " to ") + day(it) } ?: "")) }
+                draft.time?.let { t -> add(draft.endTime?.let { hm(t) + tr(" ถึง ", " to ") + hm(it) } ?: (tr("เตือน ", "Remind ") + hm(t))) }
+            }
+            val folder = if (asEvent) null else Folders.ofTags(draft.tags)
+            draft.tags.filter { it != folder }.forEach { add("#$it") }
             if (draft.priority != Priority.NONE) add(draft.priority.label)
         }
         if (chips.isNotEmpty()) {
@@ -303,6 +346,38 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                     color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold,
                 )
             }
+        }
+    }
+}
+
+/**
+ * A chip under the new-task box: grey with its [name] until something is picked, then tinted with the [value]
+ * and a ✕ to take it out. A disabled chip (a list item has no day) is faded and does nothing.
+ */
+@Composable
+private fun AddChip(
+    icon: @Composable (Color) -> Unit,
+    value: String?,
+    name: String,
+    enabled: Boolean = true,
+    onClear: () -> Unit,
+    onClick: () -> Unit,
+) {
+    val set = value != null
+    val fg = if (set) C.accentText else C.text2
+    Row(
+        Modifier.alpha(if (enabled) 1f else 0.45f).heightIn(min = 36.dp).clip(RoundedCornerShape(18.dp))
+            .background(if (set) C.accentSoft else Color.Transparent)
+            .border(1.dp, if (set) C.accentLine else C.control, RoundedCornerShape(18.dp))
+            .clickable(enabled = enabled, onClick = onClick).padding(start = 12.dp, end = if (set) 4.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        icon(fg)
+        Text(value ?: name, color = fg, fontSize = TS.body, fontWeight = if (set) FontWeight.Medium else FontWeight.Normal, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp))
+        if (set) Box(Modifier.size(28.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClear), contentAlignment = Alignment.Center) {
+            Icon(Ic.close, tr("เอา$name ออก", "Clear ${name.lowercase()}"), tint = fg, modifier = Modifier.size(11.dp))
         }
     }
 }
