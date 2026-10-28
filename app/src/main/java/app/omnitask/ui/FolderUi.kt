@@ -116,13 +116,15 @@ fun FolderPicker(
     labels: List<String>?,
     onLabel: ((String) -> Unit)?,
     onPick: (String?) -> Unit,
-    // With [onPickList], "List" is the first folder and the lists (and their categories) sit inside it, as the
-    // owner asked on 2026-10-28 (mock way ก). [currentList] is the list chosen now, with its category.
+    // With [onPickList], "List" is the first folder and the lists sit inside it, as the owner asked on 2026-10-28
+    // (mock way ก), each with its folders nesting without limit ([listFolders]). [currentList] is the list chosen now,
+    // with its folder (null for the list itself).
     lists: List<app.omnitask.model.OmniList> = emptyList(),
     currentList: Pair<app.omnitask.model.OmniList, String?>? = null,
     onPickList: ((app.omnitask.model.OmniList, String?) -> Unit)? = null,
     onCreateList: ((String, String, List<String>) -> Unit)? = null,
     listSize: (app.omnitask.model.OmniList) -> Int = { 0 },
+    listFolders: (app.omnitask.model.OmniList) -> List<String> = { it.categories },
     onDismiss: () -> Unit,
 ) {
     val withLists = onPickList != null
@@ -147,8 +149,10 @@ fun FolderPicker(
     var naming by remember { mutableStateOf(false) }
     // Inside the List folder: null is outside it, "" is the List folder itself, else the path of the open list.
     var listAt by remember { mutableStateOf<String?>(null) }
+    // The folder open inside that list, "" for the list itself.
+    var listIn by remember { mutableStateOf("") }
     var creatingList by remember { mutableStateOf(false) }
-    if (creatingList && onCreateList != null) CreateListDialog(onCreate = { n, i, c -> onCreateList(n, i, c); creatingList = false }) { creatingList = false }
+    if (creatingList && onCreateList != null) NewListFolderDialog("List", { n -> onCreateList(n, "", emptyList()); creatingList = false }) { creatingList = false }
     var newName by remember { mutableStateOf("") }
     // A new top folder typed in another case than one already there ("omni/ใหม่" beside "Omni") takes its spelling,
     // so the task stays in that project; a name that exists as typed is left alone.
@@ -163,7 +167,7 @@ fun FolderPicker(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.raised) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             Text(tr("เก็บในโฟลเดอร์", "Keep in a folder"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
-            (current?.let(::folderTrail) ?: currentList?.let { (l, c) -> "List › " + l.name + (c?.let { " › $it" } ?: "") })
+            (current?.let(::folderTrail) ?: currentList?.let { (l, c) -> "List › " + l.name + (c?.let { " › " + folderTrail(it) } ?: "") })
                 ?.let { Text(tr("ตอนนี้อยู่ใน ", "Now in ") + it, Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption) }
             PickerField(
                 query,
@@ -188,50 +192,70 @@ fun FolderPicker(
                     ) { onPick(typed) }
                 }
             } else if (withLists && listAt != null) {
-                // Inside the List folder: the lists, then a list's categories.
+                // Inside the List folder: the lists, then a list's folders, one level at a time (owner's pick, 2026-10-28).
                 Hint(tr("ไล่เปิดทีละชั้น", "Step through"))
                 val open = lists.firstOrNull { it.path == listAt }
                 FlowRow(Modifier.padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(tr("ทั้งหมด", "All"), Modifier.clip(RoundedCornerShape(8.dp)).clickable { listAt = null; at = "" }.padding(horizontal = 4.dp, vertical = 2.dp), color = C.accentText, fontSize = TS.caption)
+                    Text(tr("ทั้งหมด", "All"), Modifier.clip(RoundedCornerShape(8.dp)).clickable { listAt = null; listIn = ""; at = "" }.padding(horizontal = 4.dp, vertical = 2.dp), color = C.accentText, fontSize = TS.caption)
                     Text(" › ", color = C.faint, fontSize = TS.caption)
-                    Text("List", Modifier.clip(RoundedCornerShape(8.dp)).clickable { listAt = "" }.padding(horizontal = 4.dp, vertical = 2.dp), color = if (open == null) C.text else C.accentText, fontSize = TS.caption)
+                    Text("List", Modifier.clip(RoundedCornerShape(8.dp)).clickable { listAt = ""; listIn = "" }.padding(horizontal = 4.dp, vertical = 2.dp), color = if (open == null) C.text else C.accentText, fontSize = TS.caption)
                     if (open != null) {
                         Text(" › ", color = C.faint, fontSize = TS.caption)
-                        Text(open.name, Modifier.padding(horizontal = 4.dp, vertical = 2.dp), color = C.text, fontSize = TS.caption)
+                        Text(open.name, Modifier.clip(RoundedCornerShape(8.dp)).clickable { listIn = "" }.padding(horizontal = 4.dp, vertical = 2.dp), color = if (listIn.isEmpty()) C.text else C.accentText, fontSize = TS.caption)
+                        if (listIn.isNotEmpty()) listIn.split('/').forEachIndexed { i, name ->
+                            Text(" › ", color = C.faint, fontSize = TS.caption)
+                            val to = listIn.split('/').take(i + 1).joinToString("/")
+                            Text(name, Modifier.clip(RoundedCornerShape(8.dp)).clickable { listIn = to; naming = false }.padding(horizontal = 4.dp, vertical = 2.dp), color = if (to == listIn) C.text else C.accentText, fontSize = TS.caption)
+                        }
                     }
                 }
                 if (open == null) {
                     lists.forEach { l ->
-                        ListRow(l, listOfNotNull(if (l.categories.isNotEmpty()) tr("${l.categories.size} หมวด", "${l.categories.size} categories") else null, tr("${listSize(l)} รายการ", "${listSize(l)} items")).joinToString(", "),
-                            currentList?.first?.path == l.path, step = l.categories.isNotEmpty()) {
-                            if (l.categories.isEmpty()) onPickList!!(l, null) else listAt = l.path
-                        }
+                        val inside = app.omnitask.model.ListFolders.children(listFolders(l), "").size
+                        ListRow(l, listOfNotNull(if (inside > 0) tr("$inside โฟลเดอร์ย่อย", "$inside folders") else null, tr("${listSize(l)} รายการ", "${listSize(l)} items")).joinToString(", "),
+                            currentList?.first?.path == l.path, step = true) { listAt = l.path; listIn = "" }
                     }
                     if (lists.isEmpty()) Text(tr("ยังไม่มีลิสต์", "No lists yet"), Modifier.padding(vertical = 10.dp, horizontal = 4.dp), color = C.faint, fontSize = TS.body)
-                    if (onCreateList != null) NewRow(tr("ลิสต์ใหม่", "New list")) { creatingList = true }
+                    if (onCreateList != null) NewRow(tr("โฟลเดอร์ใหม่ใน List", "New folder in List")) { creatingList = true }
                 } else {
+                    val folders = listFolders(open)
+                    val hereNow = currentList?.first?.path == open.path && (currentList?.second ?: "") == listIn
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp)).background(C.accentSoft).border(1.dp, C.accentLine, RoundedCornerShape(12.dp))
-                            .clickable { onPickList!!(open, null) }.padding(horizontal = 12.dp, vertical = 11.dp),
+                            .clickable { onPickList!!(open, listIn.takeIf { it.isNotEmpty() }) }.padding(horizontal = 12.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(ListEmoji.of(open.icon), fontSize = TS.body)
-                        Text(tr("เก็บที่ ${open.name} (ไม่ใส่หมวด)", "Keep in ${open.name} (no category)"), Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(tr("เลือก", "Choose"), color = C.accentText, fontSize = TS.body)
+                        FolderGlyph(folderTint(app.omnitask.model.ListFolders.tagOf(open, listIn)), 24.dp)
+                        Text(
+                            tr("เก็บที่ ", "Keep in ") + (if (listIn.isEmpty()) open.name else app.omnitask.model.ListFolders.nameOf(listIn)),
+                            Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(if (hereNow) tr("อยู่ที่นี่", "Here now") else tr("เลือก", "Choose"), color = C.accentText, fontSize = TS.body)
                     }
-                    open.categories.forEach { c ->
-                        val here = currentList?.first?.path == open.path && currentList?.second == c
+                    val kids = app.omnitask.model.ListFolders.children(folders, listIn)
+                    kids.forEach { f ->
+                        val sub = app.omnitask.model.ListFolders.children(folders, f).size
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onPickList!!(open, c) }.padding(horizontal = 6.dp, vertical = 10.dp),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { listIn = f; naming = false }.padding(horizontal = 6.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("#", Modifier.width(26.dp), color = C.muted, fontSize = TS.body, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            FolderGlyph(folderTint(app.omnitask.model.ListFolders.tagOf(open, f)), 26.dp)
                             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                                Text(c, color = C.text, fontSize = TS.body, fontWeight = if (here) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(tr("หมวดใน ${open.name}", "Category in ${open.name}"), color = C.muted, fontSize = TS.caption)
+                                Text(app.omnitask.model.ListFolders.nameOf(f), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (sub > 0) Text(tr("$sub โฟลเดอร์ย่อย", "$sub folders"), color = C.muted, fontSize = TS.caption)
                             }
-                            Text(if (here) tr("อยู่ที่นี่", "Here now") else tr("เลือก", "Choose"), color = C.accentText, fontSize = TS.caption)
+                            Icon(Ic.next, null, tint = C.faint, modifier = Modifier.size(14.dp))
                         }
+                    }
+                    if (kids.isEmpty()) Text(tr("ไม่มีโฟลเดอร์ย่อย", "No folders inside"), Modifier.padding(vertical = 10.dp, horizontal = 4.dp), color = C.faint, fontSize = TS.body)
+                    // A new folder is picked at once; it is made when the item is written into it.
+                    if (naming) {
+                        PickerField(newName, tr("ชื่อโฟลเดอร์ใหม่", "New folder name"), Modifier.padding(top = 8.dp), onDone = {
+                            val name = app.omnitask.model.ListFolders.clean(newName)
+                            if (name.isNotEmpty()) onPickList!!(open, if (listIn.isEmpty()) name else "$listIn/$name")
+                        }) { newName = it }
+                    } else {
+                        NewRow(tr("โฟลเดอร์ใหม่ใน ", "New folder in ") + (if (listIn.isEmpty()) open.name else app.omnitask.model.ListFolders.nameOf(listIn))) { naming = true; newName = "" }
                     }
                 }
             } else {
@@ -265,7 +289,7 @@ fun FolderPicker(
                 val kids = under(at)
                 if (withLists && at.isEmpty()) {
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { listAt = ""; naming = false }.padding(horizontal = 6.dp, vertical = 10.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { listAt = ""; listIn = ""; naming = false }.padding(horizontal = 6.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         FolderGlyph(C.accent, 26.dp)
@@ -316,14 +340,14 @@ fun FolderPicker(
     }
 }
 
-/** A list in the picker: its emoji, its name and what is in it. */
+/** A list in the picker: a folder, its name and what is in it (no emoji since 2026-10-28, owner). */
 @Composable
 private fun ListRow(list: app.omnitask.model.OmniList, sub: String, here: Boolean, step: Boolean = false, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(ListEmoji.of(list.icon), Modifier.width(26.dp), fontSize = TS.title, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        FolderGlyph(folderTint(list.tag), 26.dp)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(list.name, color = C.text, fontSize = TS.body, fontWeight = if (here) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(sub, color = C.muted, fontSize = TS.caption, maxLines = 1)

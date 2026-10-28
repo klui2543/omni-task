@@ -24,6 +24,9 @@ object Projects {
     /** Tags that never name a project: lists, their categories, and the owner's own kinds. Set on each load. */
     @kotlin.concurrent.Volatile var ignoredTags: Set<String> = emptySet()
 
+    /** The lists' own tags: a folder under one (`bucketlist/เที่ยว`, owner's pick 2026-10-28) never names a project either. Set on each load. */
+    @kotlin.concurrent.Volatile var listRoots: Set<String> = emptySet()
+
     /**
      * The projects the owner made on the Projects page; any other tag is a plain tag. Null until the owner's settings
      * hold a choice, when every task's first tag still names a project (see [seed]). Set on each load.
@@ -32,7 +35,8 @@ object Projects {
 
     /** A tag that can name a project at all: not a reminder, a wait or a list, kind or category. */
     private fun plain(tag: String) =
-        !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags
+        !tag.startsWith("remind-at-") && tag != Focus.WAITING_TAG && !tag.startsWith("${Focus.WAITING_TAG}/") && tag !in ignoredTags &&
+            listRoots.none { tag.startsWith("$it/", ignoreCase = true) }
 
     /**
      * [tag] with its first part in the spelling of the chosen project it names in another case (`siriraj/flow` is

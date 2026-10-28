@@ -14,14 +14,16 @@ package app.omnitask.model
  * ```
  *
  * Every item carries the list's own [tag], and any task elsewhere in the vault with that tag shows in the
- * list too, so a task can be added to a list without moving it out of TaskForge.
+ * list too, so a task can be added to a list without moving it out of TaskForge. Since 2026-10-28 the categories are
+ * folders that nest without limit (`เที่ยว/ญี่ปุ่น`): see [ListFolders].
  */
 data class OmniList(val name: String, val path: String, val icon: String, val categories: List<String>, val tag: String = tagFor(name)) {
 
     fun render(): String = buildString {
         appendLine("---")
         appendLine("omni-list: true")
-        appendLine("icon: $icon")
+        // A list made after the owner took the emoji off the folders (2026-10-28) has none; an old one keeps its line.
+        if (icon.isNotBlank()) appendLine("icon: $icon")
         appendLine("categories: ${categories.joinToString(", ")}")
         appendLine("tag: $tag")
         appendLine("---")
@@ -42,7 +44,7 @@ data class OmniList(val name: String, val path: String, val icon: String, val ca
             return OmniList(
                 name = path.substringAfterLast('/').removeSuffix(".md"),
                 path = path,
-                icon = value("icon") ?: "📋",
+                icon = value("icon") ?: "",
                 categories = value("categories")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
                 tag = value("tag")?.removePrefix("#")?.takeIf { it.isNotBlank() } ?: tagFor(path.substringAfterLast('/').removeSuffix(".md")),
             )

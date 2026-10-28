@@ -105,6 +105,7 @@ object WebYgdrasil {
         val notes = json.decodeFromString<List<WebProjects.NoteIn>>(notesJson)
         val lists = notes.mapNotNull { OmniList.parse(it.path, it.text) }
         Projects.ignoredTags = lists.flatMap { listOf(it.tag) + it.categories }.toSet() + st.kindTags + st.listTags
+        Projects.listRoots = lists.map { it.tag }.toSet()
         Projects.chosen = st.projectTags?.toSet()
 
         val filter = json.decodeFromString<FilterIn>(filterJson).toFilter()

@@ -34,6 +34,7 @@ import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
 import app.omnitask.model.Folders
+import app.omnitask.model.ListFolders
 import app.omnitask.model.SpokenWhen
 import app.omnitask.model.TimeWords
 import app.omnitask.model.Ygdrasil
@@ -264,9 +265,12 @@ data class UiState(
     /** Tasks and list items together, for the task list when a list is chosen in the filter. */
     val allTasks get() = tasks + listItems
 
-    /** A list's items: the lines in its note, and tasks anywhere else tagged with the list's tag. */
+    /** A list's items: the lines in its note, and tasks anywhere else tagged with the list's tag or a folder under it. */
     fun itemsOf(list: OmniList): List<Task> =
-        listItems.filter { it.list == list.name } + (tasks + parked).filter { t -> t.tags.any { it.equals(list.tag, ignoreCase = true) } }
+        listItems.filter { it.list == list.name } + (tasks + parked).filter { t -> t.tags.any { ListFolders.isListTag(list, it) } }
+
+    /** Every folder inside [list], nesting without limit (owner's pick, 2026-10-28, way ก). */
+    fun listFolders(list: OmniList): List<String> = ListFolders.all(list, itemsOf(list))
 
     /** A task's direct subtasks, in file order (which is their 1, 2, 3 order). */
     fun subtasksOf(task: Task): List<Task> = allTasks.filter { it.parent == task.key }.sortedBy { it.lineIndex }
@@ -2134,6 +2138,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun ignoreTags(lists: List<OmniList>, kinds: List<CustomKind>) {
         Projects.ignoredTags = (lists.flatMap { l -> listOf(l.tag) + l.categories } + kinds.map { it.tag }).toSet()
+        Projects.listRoots = lists.map { it.tag }.toSet()
     }
 
     /** Restarts the review clock for a task without a deadline. */
@@ -2371,15 +2376,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         val lists = s.lists.map { it.tag }
         val project = Projects.tagOf(task)
-        val transform = { raw: String -> TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to) }
+        // A list or a folder in it (`bucketlist/เที่ยว`, owner's pick 2026-10-28): the line also loses that list's old
+        // category tags, so it sits in the one folder it was let go on.
+        val target = if (to is TreeMove.To.InList) s.lists.firstOrNull { it.tag.equals(to.tag.substringBefore('/'), ignoreCase = true) } else null
+        val folder = if (to is TreeMove.To.InList && target != null) to.tag.substring(target.tag.length).removePrefix("/") else ""
+        val transform = { raw: String ->
+            TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to).let { if (target != null) ListFolders.place(it, target, folder) else it }
+        }
         val home = task.list?.let { name -> s.lists.firstOrNull { it.name == name } }
-        if (home == null) {
+        // Within its own note (another folder of the same list) the line is only rewritten where it is.
+        if (home == null || target == home) {
             if (transform(task.raw) == task.raw) return
             editRecorded(task, UndoStep.Kind.MOVED, inTree = true) { transform(it) }
             return
         }
-        val target = if (to is TreeMove.To.InList) s.lists.firstOrNull { it.tag.equals(to.tag, ignoreCase = true) } else null
-        if (target == home) return
         val toPath = target?.path ?: VaultRepository.TASK_FILE
         val vault = s.vault ?: return
         viewModelScope.launch {
@@ -2673,7 +2683,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createList(name: String, icon: String, categories: List<String>) {
+    /** A new list note: a new folder in the List folder (no emoji since 2026-10-28, owner). */
+    fun createList(name: String, icon: String = "", categories: List<String> = emptyList()) {
         val vault = _state.value.vault ?: return
         val clean = name.trim().replace(Regex("""[\\/:*?"<>|#^\[\]]"""), " ").trim()
         if (clean.isEmpty()) return
@@ -2724,11 +2735,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addListItem(list: OmniList, title: String, category: String?, link: String? = null) {
+    /** A new item at the end of [list]'s note, in [folder] ("เที่ยว/ญี่ปุ่น", null or "" for the list itself). */
+    fun addListItem(list: OmniList, title: String, folder: String?, link: String? = null) {
         val vault = _state.value.vault ?: return
         if (title.isBlank()) return
-        var line = TaskLine.addTag("- [ ] ${title.trim()}", list.tag)
-        if (category != null) line = TaskLine.addTag(line, category)
+        var line = TaskLine.addTag("- [ ] ${title.trim()}", ListFolders.tagOf(list, folder.orEmpty()))
         line = TaskLine.setDate(line, DateField.CREATED, LocalDate.now())
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.appendLine(vault, list.path, line + (link?.let { "\n    - $it" } ?: "")) } }
@@ -2738,18 +2749,56 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Puts tasks from the vault in a list by tagging them where they are; they stay in their own file. */
-    fun includeInList(list: OmniList, picked: List<Task>, category: String?) {
+    fun includeInList(list: OmniList, picked: List<Task>, folder: String?) {
         if (picked.isEmpty()) return
         viewModelScope.launch {
             val done = withContext(Dispatchers.IO) {
                 picked.count { t ->
-                    runCatching { repo.rewriteLine(t) { raw -> TaskLine.addTag(raw, list.tag).let { if (category != null) TaskLine.addTag(it, category) else it } } }.isSuccess
+                    runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, folder.orEmpty()) } }.isSuccess
                 }
             }
             _state.update {
                 it.copy(
                     message = if (done == picked.size) tr("เพิ่ม $done งานเข้า ${list.name} แล้ว", "Added $done tasks to ${list.name}")
                     else tr("เพิ่มได้ $done จาก ${picked.size} งาน ไฟล์อาจถูกแก้จากที่อื่น", "Added $done of ${picked.size}; a file may have changed"),
+                )
+            }
+            reload()
+        }
+    }
+
+    /** A new empty folder [path] in [list], kept in the note's `categories:` line until something is put in it. */
+    fun addListFolder(list: OmniList, path: String) {
+        val clean = ListFolders.clean(path)
+        if (clean.isEmpty()) return
+        updateList(list, categories = ListFolders.withFolder(list, clean))
+    }
+
+    /**
+     * Takes the folder [path] out of [list]: everything in it, and in the folders under it, moves up to the folder above
+     * (nothing is deleted), and the saved folder lines go.
+     */
+    fun deleteListFolder(list: OmniList, path: String) {
+        val vault = _state.value.vault ?: return
+        val up = ListFolders.parentOf(path)
+        val moving = _state.value.itemsOf(list).filter { ListFolders.inside(path, ListFolders.pathOf(list, it)) }
+        viewModelScope.launch {
+            val failed = withContext(Dispatchers.IO) {
+                val bad = moving.count { t -> runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, up) } }.isFailure }
+                bad + if (runCatching {
+                    val text = repo.readPath(vault, list.path) ?: return@runCatching
+                    val end = text.indexOf("\n---", 3)
+                    if (!text.startsWith("---") || end < 0) return@runCatching
+                    // Read again: the lines above may have changed the note.
+                    val now = OmniList.parse(list.path, text) ?: list
+                    val head = now.copy(categories = ListFolders.withoutFolder(now, path)).render().substringBefore("# ")
+                    repo.writePath(vault, list.path, head + text.substring(end + 4).trimStart('\r', '\n'))
+                }.isFailure) 1 else 0
+            }
+            _state.update {
+                it.copy(
+                    message = if (failed == 0) tr("ลบโฟลเดอร์ ${ListFolders.nameOf(path)} แล้ว", "Removed the folder ${ListFolders.nameOf(path)}")
+                    else tr("ย้ายออกไม่ได้ $failed รายการ ไฟล์อาจถูกแก้จากที่อื่น", "$failed items could not move; a file may have changed"),
                 )
             }
             reload()

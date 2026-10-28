@@ -177,6 +177,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         onPickList = { l, c -> target = QuickAdd.HashPick.ToList(l, c); choosingFolder = false },
         onCreateList = { name, icon, categories -> vm.createList(name, icon, categories) },
         listSize = { state.itemsOf(it).size },
+        listFolders = { state.listFolders(it) },
     )
 
     // The full-screen page for what one sentence can't say; it starts from what was typed so far.
@@ -243,7 +244,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 ) { pickSystemTime(context, draft.time ?: kotlinx.datetime.LocalTime(9, 0)) { setText(QuickAddChips.withTime(text, it, state.today)) } }
                 AddChip(
                     { FolderGlyph(if (list != null) C.accent else if (folder != null) folderTint(folder) else it, 16.dp) },
-                    list?.let { it.list.name + (it.category?.let { c -> " / $c" } ?: "") } ?: folder?.substringAfterLast('/'),
+                    list?.let { it.category?.substringAfterLast('/') ?: it.list.name } ?: folder?.substringAfterLast('/'),
                     tr("โฟลเดอร์", "Folder"),
                     onClear = { if (list != null) target = null else setText(QuickAddChips.withFolder(text, null, state.today)) },
                 ) { choosingFolder = true }
@@ -259,7 +260,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             Row(Modifier.padding(top = 10.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 picks.forEach { p ->
                     val label = when (p) {
-                        is QuickAdd.HashPick.ToList -> ListEmoji.of(p.list.icon) + " " + p.list.name + (p.category?.let { " / $it" } ?: "")
+                        is QuickAdd.HashPick.ToList -> p.list.name + (p.category?.let { " › " + folderTrail(it) } ?: "")
                         is QuickAdd.HashPick.ToTag -> "#" + p.tag
                     }
                     Text(
@@ -272,12 +273,13 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             }
         }
         target?.let { t ->
-            // A list item has no date; a category is picked from the chips.
-            if (t.category == null && t.list.categories.isNotEmpty()) {
+            // A list item has no date; a folder of the list is picked from the chips, one level at a time.
+            val inside = app.omnitask.model.ListFolders.children(state.listFolders(t.list), t.category ?: "")
+            if (inside.isNotEmpty()) {
                 Row(Modifier.padding(top = 8.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    t.list.categories.forEach { c ->
+                    inside.forEach { c ->
                         Text(
-                            c, Modifier.clip(RoundedCornerShape(16.dp)).background(C.raised).clickable { target = t.copy(category = c) }.padding(horizontal = 12.dp, vertical = 7.dp),
+                            app.omnitask.model.ListFolders.nameOf(c), Modifier.clip(RoundedCornerShape(16.dp)).background(C.raised).clickable { target = t.copy(category = c) }.padding(horizontal = 12.dp, vertical = 7.dp),
                             color = C.text2, fontSize = TS.body,
                         )
                     }
