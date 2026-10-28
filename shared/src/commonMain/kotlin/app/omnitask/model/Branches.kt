@@ -95,6 +95,17 @@ object Branches {
             }
         }
 
+    /**
+     * States under the spelling their projects are read with now ([ProjectNames.canonical]), so `siriraj` keeps its
+     * branches as `Siriraj`. Only the case changes; a branch the names table moves elsewhere stays where it was.
+     */
+    fun respell(states: Map<Pair<String, String>, State>): Map<Pair<String, String>, State> =
+        states.mapKeys { (k, _) ->
+            val full = if (k.second.isEmpty()) k.first else "${k.first}/${k.second}"
+            val t = ProjectNames.canonical(full).takeIf { it.equals(full, ignoreCase = true) } ?: return@mapKeys k
+            t.substringBefore('/') to t.substringAfter('/', "")
+        }
+
     /** States without a branch and everything under it. */
     fun dropPaths(states: Map<Pair<String, String>, State>, project: String, path: String): Map<Pair<String, String>, State> =
         states.filterKeys { k -> !(k.first == project && (k.second == path || k.second.startsWith("$path/"))) }
@@ -102,7 +113,7 @@ object Branches {
     /** A branch name as it goes into a tag: no spaces, # or slashes. */
     fun clean(name: String): String = name.trim().replace(Regex("""[\s#/]+"""), "-").trim('-')
 
-    private val TAG = Regex("""(?<!\S)#([^\s#]+)""")
+    private val TAG = Regex(app.omnitask.data.TaskLine.TAG_PATTERN)
 
     /**
      * Renames a project inside one task line: `#old` and `#old/branch` become `#new` and `#new/branch`.

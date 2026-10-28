@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.omnitask.data.TaskLine
 import app.omnitask.model.Folders
+import app.omnitask.model.ProjectNames
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 
@@ -125,7 +126,10 @@ fun FolderPicker(
         val open = state.tasks.filter { it.isOpen && it.list == null }.mapNotNull { Folders.of(it) }
         all.associateWith { p -> open.count { it == p || it.startsWith("$p/") } }
     }
-    val recent = remember(state.tasks) { Folders.recent(state.tasks.filter { it.list == null }, 3) }
+    // The folders the owner picked here lately (not where the secretary wrote tasks), while they still exist.
+    val recent = remember(state.pickedFolders, all) {
+        state.pickedFolders.mapNotNull { p -> all.firstOrNull { it.equals(ProjectNames.canonical(p), ignoreCase = true) } }.distinct()
+    }
     val usedLabels = remember(state.tasks) {
         state.tasks.flatMap { it.tags }.filter { Folders.isLabel(it) && !it.startsWith("remind-at-") }
             .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }.take(12)

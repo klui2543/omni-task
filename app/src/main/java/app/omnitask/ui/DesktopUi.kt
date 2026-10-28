@@ -45,6 +45,8 @@ data class Tile(
     val dashed: Boolean = false,
     val dim: Boolean = false,
     val mark: String? = null,
+    /** A short note on the folder's corner, such as "ใหม่ 2" for the secretary's proposals inside. */
+    val badge: String? = null,
 )
 
 /** Folder icons three to a row, like a phone's home screen. */
@@ -80,6 +82,13 @@ private fun FolderTile(t: Tile, small: Boolean) {
                     .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Text("${t.late}", color = C.bg, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            t.badge?.let { b ->
+                Box(
+                    Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-4).dp).height(18.dp).clip(RoundedCornerShape(9.dp)).background(C.amber)
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(b, color = C.bg, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+            }
         }
         Text(t.name, Modifier.padding(top = 4.dp), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         Text(t.sub, color = if (t.late > 0) C.red else C.faint, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)

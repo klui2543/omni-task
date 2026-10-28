@@ -87,17 +87,6 @@ class FoldersTest {
     }
 
     @Test
-    fun recentFoldersComeFromTheNewestTasks() = chosen(setOf("Siriraj", "Omni")) {
-        val tasks = listOf(
-            task("- [ ] a #Siriraj/perf ➕ 2026-10-20"),
-            task("- [ ] b #Omni/เลขา ➕ 2026-10-26"),
-            task("- [ ] c #Siriraj/perf ➕ 2026-10-25"),
-            task("- [ ] d #kluido ➕ 2026-10-26"),
-        )
-        assertEquals(listOf("Omni/เลขา", "Siriraj/perf"), Folders.recent(tasks, 3))
-    }
-
-    @Test
     fun searchFindsAFolderByAnyPartOfItsPath() {
         val paths = listOf("Omni", "Omni/เลขา", "Siriraj/ตารางเวรเภสัช/wording", "ระบบ")
         assertEquals(listOf("Siriraj/ตารางเวรเภสัช/wording"), Folders.search(paths, "word"))

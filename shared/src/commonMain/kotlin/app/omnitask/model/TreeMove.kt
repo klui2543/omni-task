@@ -48,7 +48,7 @@ object TreeMove {
         t.tags.filter { tag -> lists.any { it.equals(tag, ignoreCase = true) } }
 
     private fun removeAnyCase(raw: String, tag: String): String {
-        val exact = Regex("""(?<!\S)#([^\s#]+)""").findAll(raw).firstOrNull { it.groupValues[1].equals(tag, ignoreCase = true) } ?: return raw
+        val exact = Regex(TaskLine.TAG_PATTERN).findAll(raw).firstOrNull { it.groupValues[1].equals(tag, ignoreCase = true) } ?: return raw
         return TaskLine.removeTag(raw, exact.groupValues[1])
     }
 }

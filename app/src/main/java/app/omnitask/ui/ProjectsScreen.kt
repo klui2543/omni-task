@@ -245,10 +245,15 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
             listCards(state, { openListPath = it.path }) { creatingList = true }
         } else if (open == null && shelf == "other") {
             val unpinned = projects.filter { it.name !in pinned }
-            val loose = others.filter { !Folders.isLabel(it.first) }
+            val proposed = state.proposedProjects
+            val loose = others.filter { o -> !Folders.isLabel(o.first) && proposed.none { it.equals(o.first, ignoreCase = true) } }
             // #รอ is a label too, though it never names a project.
             val waits = (state.tasks + state.parked).count { t -> t.status != app.omnitask.model.Status.CANCELLED && t.tags.any { it == app.omnitask.model.Focus.WAITING_TAG || it.startsWith(app.omnitask.model.Focus.WAITING_TAG + "/") } }
             val labels = others.filter { Folders.isLabel(it.first) } + listOfNotNull(if (waits > 0) app.omnitask.model.Focus.WAITING_TAG to waits else null)
+            // The secretary's proposals on top (owner's pick, 2026-10-28, mock way 1): take one as a project, or drop it.
+            if (proposed.isNotEmpty()) item(key = "other proposals") {
+                ProposalBox(state, proposed, { vm.answerProposal(it, true) }, { vm.answerProposal(it, false) })
+            }
             if (unpinned.isNotEmpty()) item(key = "other projects") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     DeskHead(tr("โปรเจกต์ที่ไม่ได้ปักหมุด", "Projects not pinned"))
@@ -309,6 +314,7 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                                     "other", tr("อื่นๆ", "Other"),
                                     tr("$unpinnedCount โฟลเดอร์", "$unpinnedCount folders") + if (hasLabels) tr(" + ป้าย", " + labels") else "",
                                     C.muted, { shelf = "other" }, mark = "⋯",
+                                    badge = state.proposedProjects.size.takeIf { it > 0 }?.let { tr("ใหม่ $it", "$it new") },
                                 ),
                                 Tile("list", "List", tr("${state.lists.size} รายการ", "${state.lists.size} lists"), C.accent, { shelf = "list" }, mark = "☰"),
                             ),
@@ -576,6 +582,36 @@ fun ProjectsScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
                     ),
                     Modifier.padding(horizontal = 6.dp), color = C.faint, fontSize = TS.caption,
                 )
+            }
+        }
+    }
+}
+
+/** The secretary's proposed projects: each tag, how many tasks carry it and one of them, and the two answers. */
+@Composable
+private fun ProposalBox(state: UiState, tags: List<String>, onTake: (String) -> Unit, onDrop: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.amberSoft).border(1.dp, C.amber.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(C.amber))
+            Text(tr("เลขาเสนอเป็นโปรเจกต์", "The secretary proposes these as projects"), Modifier.padding(start = 8.dp), color = C.amber, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+        }
+        tags.forEachIndexed { i, tag ->
+            val mine = (state.tasks + state.parked).filter { t -> t.isOpen && t.tags.any { it.equals(tag, ignoreCase = true) || it.startsWith("$tag/", ignoreCase = true) } }
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.amber.copy(alpha = 0.2f)))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("#$tag", color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(tr("  ${mine.size} งาน", "  ${mine.size} tasks"), color = C.muted, fontSize = TS.caption)
+                }
+                mine.firstOrNull()?.let { Text(it.title, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    MapButton(tr("ไม่ใช่โปรเจกต์", "Not a project")) { onDrop(tag) }
+                    MapButton(tr("รับเป็นโปรเจกต์", "Make it a project"), filled = true) { onTake(tag) }
+                }
             }
         }
     }

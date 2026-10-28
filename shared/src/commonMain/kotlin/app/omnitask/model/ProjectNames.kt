@@ -43,15 +43,22 @@ object ProjectNames {
     /** What task lines are read with; set on each load (empty: tags as written). */
     @kotlin.concurrent.Volatile var current: Names = Names()
 
-    fun canonical(tag: String): String = current.canonical(tag)
+    /** [tag] as the project it names now: its old names and moves ([current]), then a project's own spelling ([Projects.spell]). */
+    fun canonical(tag: String): String = Projects.spell(current.canonical(tag))
 
     /** The names in the note: each row's name and its other names that can be a tag (no spaces), and the moves. */
     fun parse(text: String?): Names {
         if (text.isNullOrBlank()) return Names()
         val aliases = mutableMapOf<String, String>()
-        rows(text.lines()).forEach { (name, others) ->
+        val rows = rows(text.lines())
+        rows.forEach { (name, others) ->
             aliases.getOrPut(name.lowercase()) { name }
             others.filter { tagLike(it) }.forEach { aliases.getOrPut(it.lowercase()) { name } }
+        }
+        // The places a row sits in are names too, in the row's spelling: Siriraj/ตารางเวรเภสัช makes #siriraj Siriraj.
+        rows.forEach { (name, _) ->
+            val parts = name.split('/')
+            (1 until parts.size).map { parts.take(it).joinToString("/") }.forEach { aliases.getOrPut(it.lowercase()) { it } }
         }
         val moves = section(text.lines()).mapNotNull { MOVE.find(it) }.map { Move(it.groupValues[1], it.groupValues[2]) }
             .reversed() // written newest first, applied oldest first

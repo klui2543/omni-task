@@ -47,13 +47,13 @@ object Folders {
 
     /** Every folder, with every folder on the way to it (`a`, `a/b`, `a/b/c`), from the tasks and the [branches] made by hand. */
     fun paths(tasks: List<Task>, branches: Set<String>): List<String> =
-        (tasks.filter { it.status != Status.CANCELLED }.mapNotNull(::of) + branches)
+        (tasks.filter { it.status != Status.CANCELLED }.mapNotNull(::of) + branches.map(ProjectNames::canonical))
             .flatMap { p -> p.split('/').indices.map { i -> p.split('/').take(i + 1).joinToString("/") } }
             .filter { it.isNotEmpty() }.toSet().sortedBy { it.lowercase() }
 
-    /** The folders of the newest tasks, newest first: where the owner is putting things these days. */
-    fun recent(tasks: List<Task>, n: Int): List<String> =
-        tasks.filter { it.created != null }.sortedByDescending { it.created }.mapNotNull(::of).distinct().take(n)
+    /** The folders the owner picked lately, newest first, after picking [path]: what "used lately" offers. */
+    fun picked(list: List<String>, path: String, n: Int = 3): List<String> =
+        (listOf(path) + list.filterNot { it.equals(path, ignoreCase = true) }).take(n)
 
     /** Folders whose path holds [query]: those whose own name holds it first, then those matching higher up. */
     fun search(paths: List<String>, query: String): List<String> {
