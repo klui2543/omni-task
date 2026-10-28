@@ -44,6 +44,9 @@ object TaskLine {
     const val TAG_PATTERN = """(?<!\S)#(?!\d+(?!$TAG_CHAR))($TAG_CHAR+)"""
 
     private val TAG = Regex(TAG_PATTERN)
+
+    /** Whether `#name` is read as the whole tag [name] (no `79)`, no digits only). */
+    fun canBeTag(name: String): Boolean = TAG.matchEntire("#$name")?.groupValues?.get(1) == name
     private val ANY_DATE = Regex("""(?:➕|🛫|⏳|📅|✅|❌)$VS\s*$DATE""")
     private val ID = Regex("""🆔$VS\s*([A-Za-z0-9_-]+)""")
     private val LINK_ALIAS = Regex("""(?<!!)\[\[([^\]|]+)\|([^\]]+)\]\]""")

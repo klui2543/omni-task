@@ -77,8 +77,8 @@ object Projects {
 
     /**
      * Project names a task added in the last [days] days brings that are not projects yet (and were not taken off
-     * by the owner, [declined]): the secretary writes a task with its project's tag, and the project then grows
-     * its own branch in Ygdrasil without the owner making it by hand.
+     * by the owner, [declined]): the secretary writes a task with a new project's tag, and proposes it; it becomes a
+     * project only when the owner takes it (owner, 2026-10-28; before, it was made one at once).
      */
     fun newOnes(tasks: List<Task>, made: Set<String>, declined: Set<String>, today: LocalDate, days: Int = 3): Set<String> =
         tasks.filter { it.isOpen && it.list == null && it.created?.let { c -> c >= today.plusDays(-days.toLong()) } == true }

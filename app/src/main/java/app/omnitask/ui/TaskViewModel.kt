@@ -204,6 +204,8 @@ data class UiState(
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
     val starred: Set<String> = emptySet(),
+    /** Tags of new tasks the secretary proposes as projects; the owner takes or drops each in "อื่นๆ" (owner, 2026-10-28). */
+    val proposedProjects: List<String> = emptyList(),
     /** The folders the owner picked lately in the folder picker, newest first ("used lately"). */
     val pickedFolders: List<String> = emptyList(),
     /** The tags the owner made projects (see [Projects.chosen]); null until chosen once. */
@@ -430,6 +432,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         projectOrder = prefs.getString(KEY_PROJECT_ORDER, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         starred = prefs.getStringSet(KEY_STARRED, emptySet()).orEmpty().toSet(),
         pickedFolders = prefs.getString(KEY_PICKED_FOLDERS, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
+        proposedProjects = prefs.getString(KEY_PROPOSED_PROJECTS, null)?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
         // The project logic reads the choice too, so it is applied wherever the settings are.
         projectTags = prefs.getStringSet(KEY_PROJECT_TAGS, null)?.toSet().also { Projects.chosen = it },
         countdowns = Countdown.parseAll(prefs.getStringSet(KEY_COUNTDOWNS, null)?.toList() ?: listOfNotNull(prefs.getString(KEY_COUNTDOWN, null))),
@@ -1582,9 +1585,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             if (_state.value.projectTags == null) {
                 result.getOrNull()?.tasks?.filter { it.list == null }?.let { saveProjectTags(Projects.seed(it)) }
             } else {
-                // A task the secretary just wrote with a new project's tag: that project gets its branch.
-                val fresh = result.getOrNull()?.tasks?.let { Projects.newOnes(it, _state.value.projectTags.orEmpty(), prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty(), LocalDate.now()) }.orEmpty()
-                if (fresh.isNotEmpty()) saveProjectTags(_state.value.projectTags.orEmpty() + fresh)
+                // A task the secretary just wrote with a new project's tag: the secretary proposes it, and it becomes a
+                // project only when the owner takes it (owner, 2026-10-28, way ก); before, it was made one at once.
+                result.getOrNull()?.tasks?.let { tasks ->
+                    val made = _state.value.projectTags.orEmpty()
+                    val off = prefs.getStringSet(KEY_OFF_PROJECTS, null).orEmpty()
+                    val fresh = Projects.newOnes(tasks, made, off, LocalDate.now()).filterNot(Folders::isLabel)
+                    val inUse = tasks.filter { it.list == null && it.status != app.omnitask.model.Status.CANCELLED }
+                        .flatMap { t -> t.tags.map { it.substringBefore('/').lowercase() } }.toSet()
+                    // Kept until answered, while some task still carries the tag and it is not a project or dropped.
+                    val next = (_state.value.proposedProjects + fresh).distinctBy { it.lowercase() }.filter { n ->
+                        n.lowercase() in inUse && made.none { it.equals(n, ignoreCase = true) } && off.none { it.equals(n, ignoreCase = true) }
+                    }
+                    if (next != _state.value.proposedProjects) saveProposals(next)
+                }
             }
             // When the secretary last wrote Claude log, so the today page can say when it stopped.
             val logText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, CLAUDE_LOG) }.getOrNull() }
@@ -2312,6 +2326,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 if (!known) s.projectTags?.let { saveProjectTags(it + root) }
             }
         }
+    }
+
+    /** The owner takes ([take]) or drops a project the secretary proposed; a dropped one stays a lone tag and is not asked again. */
+    fun answerProposal(tag: String, take: Boolean) {
+        setProject(tag, take)
+        saveProposals(_state.value.proposedProjects.filterNot { it.equals(tag, ignoreCase = true) })
+        showMessage(if (take) tr("#$tag เป็นโปรเจกต์แล้ว", "#$tag is a project now") else tr("#$tag เป็นแท็กเดี่ยว ไม่ถามอีก", "#$tag stays a lone tag; not asked again"))
+    }
+
+    private fun saveProposals(list: List<String>) {
+        prefs.edit().putString(KEY_PROPOSED_PROJECTS, list.joinToString("\n")).apply()
+        _state.update { it.copy(proposedProjects = list) }
     }
 
     /** Remembers a folder the owner picked in the folder picker, for its "used lately" row; a label is not a folder. */
@@ -3356,7 +3382,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, ProjectNames.PATH) }.getOrNull() }
         ProjectNames.current = ProjectNames.parse(text)
         _state.value.projectTags?.let { tags ->
-            val now = Projects.oneSpelling(tags.map { ProjectNames.canonical(it).substringBefore('/') }.toSet())
+            // A name the tag reader can no longer give (`79)` from "(PR #79)") can hold no task, so it is not kept.
+            val now = Projects.oneSpelling(tags.map { ProjectNames.canonical(it).substringBefore('/') }.filter(TaskLine::canBeTag).toSet())
             if (now != tags) saveProjectTags(now)
         }
         respellProjectSettings()
@@ -3847,6 +3874,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
         const val KEY_PICKED_FOLDERS = "pickedFolders"
+        const val KEY_PROPOSED_PROJECTS = "proposedProjects"
         const val KEY_PROJECT_TAGS = "projectTags"
         /** Kept among the stars when the owner has unpinned every project; no tag can hold a tab. */
         const val NO_PIN = "\t"

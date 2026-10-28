@@ -80,6 +80,13 @@ class FolderMixupTest {
     }
 
     @Test
+    fun aNameTheOldReaderMadeCanNoLongerBeATag() {
+        assertTrue(TaskLine.canBeTag("Siriraj"))
+        assertTrue(TaskLine.canBeTag("2026ปี"))
+        listOf("79)", "79", "79.").forEach { assertTrue(!TaskLine.canBeTag(it), it) }
+    }
+
+    @Test
     fun usedLatelyIsWhatTheOwnerPicked() {
         var picked = emptyList<String>()
         listOf("Omni", "Siriraj/flow", "Omni", "อนาคต", "Siriraj/x").forEach { picked = Folders.picked(picked, it, 3) }
