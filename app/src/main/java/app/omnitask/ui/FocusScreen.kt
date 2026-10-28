@@ -250,7 +250,7 @@ fun FocusScreen(
                         }
                         if (lateTasks.size > 3) Text(tr("และอีก ${lateTasks.size - 3} งาน", "and ${lateTasks.size - 3} more"), color = C.muted, fontSize = TS.caption)
                         DeckButtons {
-                            DeckButton(tr("ดูทั้ง ${lateTasks.size}", "See all ${lateTasks.size}"), false) { lateOpen = true }
+                            DeckButton(tr("ดูทั้งหมด", "See all"), false) { lateOpen = true }
                             DeckButton(tr("ให้เลขาจัดวันใหม่", "Ask for new dates"), true) {
                                 val n = lateTasks.size
                                 onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
@@ -260,7 +260,7 @@ fun FocusScreen(
                 )
                 if (decide.isNotEmpty()) add(
                     DeckCard("decide", tr("เลขามีเรื่องให้ตัดสิน ${decide.sumOf { it.second }}", "${decide.sumOf { it.second }} for you to decide"), C.amber) {
-                        DeckCounts(decide)
+                        DeckSentence(decide)
                         DeckButtons { DeckButton(tr("ไปหน้าเลขา", "Open the secretary"), true, onSecretary) }
                     },
                 )
@@ -427,7 +427,7 @@ fun FocusScreen(
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
             item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
-            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards, 140.dp) }
+            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards) }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds

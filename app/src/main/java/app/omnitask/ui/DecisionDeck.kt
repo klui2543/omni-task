@@ -79,9 +79,9 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, revi
                         color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                     DeckButtons {
-                        // Not done: the sheet, where the reason is picked or written, as before.
-                        DeckButton(tr("ยัง เพราะ...", "Not yet, because..."), false) { asking = true }
+                        // Owner, 2026-10-28: done first, then "see all"; the sheet still takes the reason a task is not done.
                         DeckButton(tr("เสร็จแล้ว", "Done"), true) { vm.toggleDone(first.task) }
+                        DeckButton(tr("ดูทั้งหมด", "See all"), false) { asking = true }
                     }
                 },
             )
@@ -138,7 +138,7 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, revi
             },
         )
     }
-    CardDeck(cards, 128.dp)
+    CardDeck(cards)
 }
 
 /**
