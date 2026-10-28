@@ -45,7 +45,7 @@ class SmokeTest {
         // The sentence is read as it is typed: the time shows as a chip.
         rule.onAllNodes(hasSetTextAction()).onLast().performTextInput("ส่งรายงาน พรุ่งนี้ 9:00 #งาน !!")
         rule.waitForIdle()
-        check(rule.onAllNodesWithText("เตือน 09:00").fetchSemanticsNodes().isNotEmpty()) { "the time was not read" }
+        check(rule.onAllNodesWithText("เวลา 09:00").fetchSemanticsNodes().isNotEmpty()) { "the time was not read" }
     }
 
     @Test
