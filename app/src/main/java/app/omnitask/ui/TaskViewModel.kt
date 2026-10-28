@@ -3817,7 +3817,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     recordMove(old, new, n, undoable = false)
                 } else {
                     // A list folder is not a project: its moves stay out of ชื่อโปรเจกต์.md.
-                    _state.update { it.copy(message = tr("ย้ายกลับแล้ว ($n งาน)", "Moved back ($n tasks)")) }
+                    _state.update { it.copy(message = tr("ย้ายแล้ว ($n งาน)", "Moved ($n tasks)")) }
                 }
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
