@@ -95,6 +95,13 @@ object Branches {
             }
         }
 
+    /** States under the names their projects have now ([ProjectNames.canonical]), so `siriraj` keeps its branches as `Siriraj`. */
+    fun respell(states: Map<Pair<String, String>, State>): Map<Pair<String, String>, State> =
+        states.mapKeys { (k, _) ->
+            val t = ProjectNames.canonical(if (k.second.isEmpty()) k.first else "${k.first}/${k.second}")
+            t.substringBefore('/') to t.substringAfter('/', "")
+        }
+
     /** States without a branch and everything under it. */
     fun dropPaths(states: Map<Pair<String, String>, State>, project: String, path: String): Map<Pair<String, String>, State> =
         states.filterKeys { k -> !(k.first == project && (k.second == path || k.second.startsWith("$path/"))) }

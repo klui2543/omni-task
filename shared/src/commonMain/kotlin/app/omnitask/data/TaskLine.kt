@@ -38,7 +38,7 @@ object TaskLine {
      * What a tag may hold, the way Obsidian reads one: it stops at a space, another #, a bracket or a punctuation
      * mark, so "(PR #79)" in a sentence gives no tag "79)".
      */
-    const val TAG_CHAR = """[^\s#()\[\]{}<>,;:!?"'`]"""
+    const val TAG_CHAR = """[^\s#()\[\]{}<>,.;:!?"'`]"""
 
     /** A tag (`#Siriraj/flow`) after a space or at the start; one of digits only (`#79`) is text, as in Obsidian. */
     const val TAG_PATTERN = """(?<!\S)#(?!\d+(?!$TAG_CHAR))($TAG_CHAR+)"""
@@ -132,7 +132,7 @@ object TaskLine {
 
     /** Spaces (and marks a tag cannot hold, see [TAG_CHAR]) become dashes and a leading # is dropped, so `ร้าน ยา` is written as `#ร้าน-ยา`. */
     fun normalizeTag(input: String): String =
-        input.trim().removePrefix("#").trim().replace(Regex("""(?:\s|[#()\[\]{}<>,;:!?"'`])+"""), "-")
+        input.trim().removePrefix("#").trim().replace(Regex("""(?:\s|[#()\[\]{}<>,.;:!?"'`])+"""), "-")
 
     /**
      * Adds `#tag` among the line's tags, keeping TaskForge's order: plain tags, then any

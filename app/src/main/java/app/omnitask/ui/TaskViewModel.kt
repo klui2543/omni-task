@@ -2393,7 +2393,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         if (root !in now) saveProjectTags(now + root)
     }
 
-    private fun saveProjectTags(tags: Set<String>) {
+    private fun saveProjectTags(tags0: Set<String>) {
+        // One project per name whatever its case (owner, 2026-10-28): siriraj added beside Siriraj stays Siriraj.
+        val tags = Projects.oneSpelling(tags0)
         prefs.edit().putStringSet(KEY_PROJECT_TAGS, tags).apply()
         Projects.chosen = tags
         _state.update { it.copy(projectTags = tags) }
@@ -3354,9 +3356,33 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val text = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, ProjectNames.PATH) }.getOrNull() }
         ProjectNames.current = ProjectNames.parse(text)
         _state.value.projectTags?.let { tags ->
-            val now = tags.map { ProjectNames.canonical(it).substringBefore('/') }.toSet()
+            val now = Projects.oneSpelling(tags.map { ProjectNames.canonical(it).substringBefore('/') }.toSet())
             if (now != tags) saveProjectTags(now)
         }
+        respellProjectSettings()
+    }
+
+    /**
+     * The star, order, task order, strict mark and branch states saved under a project's other spelling (`siriraj`)
+     * move to the name it is read as now (`Siriraj`), so merging the two loses none of them.
+     */
+    private fun respellProjectSettings() {
+        val s = _state.value
+        fun root(p: String) = ProjectNames.canonical(p).substringBefore('/')
+        val order = s.projectOrder.map(::root).distinct()
+        val starred = s.starred.map { if (it == NO_PIN) it else root(it) }.toSet()
+        val taskOrder = s.projectTaskOrder.entries.groupBy({ root(it.key) }, { it.value }).mapValues { (_, v) -> v.flatten().distinct() }
+        val strict = s.strictProjects.map(::root).toSet()
+        val branches = Branches.respell(s.branchStates)
+        if (order == s.projectOrder && starred == s.starred && taskOrder == s.projectTaskOrder && strict == s.strictProjects && branches == s.branchStates) return
+        prefs.edit()
+            .putString(KEY_PROJECT_ORDER, order.joinToString("\n"))
+            .putStringSet(KEY_STARRED, starred)
+            .putStringSet(KEY_PROJECT_TASKS, taskOrder.map { (k, v) -> k + "\t" + v.joinToString("\u001F") }.toSet())
+            .putStringSet(KEY_STRICT, strict)
+            .putStringSet(KEY_BRANCHES, Branches.encode(branches))
+            .apply()
+        _state.update { it.copy(projectOrder = order, starred = starred, projectTaskOrder = taskOrder, strictProjects = strict, branchStates = branches) }
     }
 
     // ---- Undo and redo of ticks and Ygdrasil moves (owner, 2026-10-27) ----

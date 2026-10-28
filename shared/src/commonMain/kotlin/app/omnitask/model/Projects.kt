@@ -46,6 +46,16 @@ object Projects {
         return hit + tag.substring(root.length)
     }
 
+    /**
+     * The chosen projects with one spelling each: names that differ only by case are one project, kept in the
+     * names table's spelling ([ProjectNames]) when it has one, else the one with capitals.
+     */
+    fun oneSpelling(tags: Set<String>): Set<String> =
+        tags.groupBy { it.lowercase() }.values.map { same ->
+            same.firstOrNull { ProjectNames.current.canonical(it) == it && it != it.lowercase() }
+                ?: same.firstOrNull { it != it.lowercase() } ?: same.first()
+        }.toSet()
+
     /** Whether [tag] could name a project at all (see [plain]); the folder rules build on it. */
     fun isPlain(tag: String) = plain(tag)
 

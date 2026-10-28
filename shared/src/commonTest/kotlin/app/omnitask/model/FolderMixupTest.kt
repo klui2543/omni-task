@@ -35,6 +35,7 @@ class FolderMixupTest {
         // Obsidian's own rule: a tag stops at a bracket or comma, and a tag of digits only is no tag.
         assertEquals(listOf("Omni"), task("- [ ] ดู #123 และ #Omni)").tags)
         assertEquals(listOf("v2", "2026ปี"), task("- [ ] งาน #v2, #2026ปี").tags)
+        assertEquals(emptyList(), task("- [ ] รวมแล้วใน PR #79.").tags)
     }
 
     @Test
@@ -62,6 +63,20 @@ class FolderMixupTest {
         val tasks = listOf(task("- [ ] a #Siriraj/x"), task("- [ ] b #siriraj/y"))
         assertEquals(listOf("Siriraj", "Siriraj/x", "Siriraj/y"), Folders.paths(tasks, setOf("siriraj/z")).filter { it != "Siriraj/z" })
         assertTrue("Siriraj/z" in Folders.paths(tasks, setOf("siriraj/z")))
+    }
+
+    @Test
+    fun aProjectChosenInTwoSpellingsIsOne() {
+        assertEquals(setOf("Siriraj", "omni"), Projects.oneSpelling(setOf("siriraj", "Siriraj", "omni")))
+        ProjectNames.current = ProjectNames.parse(table)
+        assertEquals(setOf("Omni"), Projects.oneSpelling(setOf("omni", "OMNI", "Omni")))
+    }
+
+    @Test
+    fun branchesKeepTheirStateUnderTheNewSpelling() {
+        Projects.chosen = setOf("Siriraj")
+        val states = mapOf(("siriraj" to "z") to Branches.State.PARKED, ("Omni" to "") to Branches.State.ACTIVE)
+        assertEquals(mapOf(("Siriraj" to "z") to Branches.State.PARKED, ("Omni" to "") to Branches.State.ACTIVE), Branches.respell(states))
     }
 
     @Test
