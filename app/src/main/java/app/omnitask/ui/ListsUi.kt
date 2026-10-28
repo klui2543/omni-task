@@ -118,7 +118,7 @@ fun LazyListScope.listFolderPage(
             if (including) IncludeSheet(list, folder, state, { picked -> vm.includeInList(list, picked, folder); including = false }) { including = false }
         }
     }
-    val own = items.filter { ListFolders.pathOf(list, it) == folder }
+    val own = items.filter { ListFolders.pathOf(list, it).equals(folder, ignoreCase = true) }
         .sortedWith(compareBy({ it.status == Status.DONE || it.status == Status.CANCELLED }, { it.title.lowercase() }))
     item(key = "list-own-head") { DeskHead(tr("ในโฟลเดอร์นี้ ${own.size}", "In this folder ${own.size}")) }
     if (own.isEmpty()) {
@@ -275,7 +275,7 @@ fun DeleteListDialog(list: OmniList, own: Int, pulled: Int, onDelete: () -> Unit
         text = {
             Text(
                 tr("ลบไฟล์ ${list.path.substringAfterLast('/')} พร้อม $own รายการในนั้น", "Deletes ${list.path.substringAfterLast('/')} with its $own items") +
-                    (if (pulled > 0) tr("\nงานที่ดึงมาจากโน้ตอื่น $pulled งานจะอยู่ที่เดิม แค่เอา #${list.tag} ออก", "\nThe $pulled tasks pulled in from other notes stay there and only lose #${list.tag}") else ""),
+                    (if (pulled > 0) tr("\nงานที่ดึงมาจากโน้ตอื่น $pulled งานจะอยู่ที่เดิม แค่เอา #${list.tag} (และโฟลเดอร์ย่อย) ออก", "\nThe $pulled tasks pulled in from other notes stay there and only lose #${list.tag}") else ""),
                 color = C.text2,
             )
         },

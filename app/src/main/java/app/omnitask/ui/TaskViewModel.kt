@@ -2381,7 +2381,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val target = if (to is TreeMove.To.InList) s.lists.firstOrNull { it.tag.equals(to.tag.substringBefore('/'), ignoreCase = true) } else null
         val folder = if (to is TreeMove.To.InList && target != null) to.tag.substring(target.tag.length).removePrefix("/") else ""
         val transform = { raw: String ->
-            TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to).let { if (target != null) ListFolders.place(it, target, folder) else it }
+            TreeMove.line(raw, project, TreeMove.listTagsOn(task, lists), to).let { if (target != null) ListFolders.place(it, target, folder, inNote = task.list == target.name) else it }
         }
         val home = task.list?.let { name -> s.lists.firstOrNull { it.name == name } }
         // Within its own note (another folder of the same list) the line is only rewritten where it is.
@@ -2699,7 +2699,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Changes a list's icon or categories by rewriting its header; the items stay as they are. */
-    fun updateList(list: OmniList, icon: String = list.icon, categories: List<String> = list.categories) {
+    fun updateList(list: OmniList, icon: String = list.icon, categories: List<String> = list.categories) = writeListHead(list.copy(icon = icon, categories = categories))
+
+    /** Rewrites a list note's header from [list] (icon, categories, folders); the items stay as they are. */
+    private fun writeListHead(list: OmniList) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -2708,7 +2711,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     val end = text.indexOf("\n---", 3)
                     if (!text.startsWith("---") || end < 0) return@runCatching
                     val body = text.substring(end + 4).trimStart('\r', '\n')
-                    val head = list.copy(icon = icon, categories = categories).render().substringBefore("# ")
+                    val head = list.render().substringBefore("# ")
                     repo.writePath(vault, list.path, head + body)
                 }
             }
@@ -2726,7 +2729,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    pulled.forEach { t -> runCatching { repo.rewriteLine(t) { raw -> TaskLine.removeTag(raw, list.tag) } } }
+                    // Its folder tags too (`#bucketlist/เที่ยว`), so none is left to turn into a project.
+                    pulled.forEach { t ->
+                        runCatching { repo.rewriteLine(t) { raw -> t.tags.filter { ListFolders.isListTag(list, it) }.fold(raw) { acc, tag -> TaskLine.removeTag(acc, tag) } } }
+                    }
                     repo.deletePath(vault, list.path)
                 }
             }
@@ -2771,7 +2777,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun addListFolder(list: OmniList, path: String) {
         val clean = ListFolders.clean(path)
         if (clean.isEmpty()) return
-        updateList(list, categories = ListFolders.withFolder(list, clean))
+        writeListHead(ListFolders.withFolder(list, clean))
     }
 
     /**
@@ -2784,14 +2790,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val moving = _state.value.itemsOf(list).filter { ListFolders.inside(path, ListFolders.pathOf(list, it)) }
         viewModelScope.launch {
             val failed = withContext(Dispatchers.IO) {
-                val bad = moving.count { t -> runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, up) } }.isFailure }
+                val bad = moving.count { t -> runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, up, inNote = t.list == list.name) } }.isFailure }
                 bad + if (runCatching {
                     val text = repo.readPath(vault, list.path) ?: return@runCatching
                     val end = text.indexOf("\n---", 3)
                     if (!text.startsWith("---") || end < 0) return@runCatching
                     // Read again: the lines above may have changed the note.
                     val now = OmniList.parse(list.path, text) ?: list
-                    val head = now.copy(categories = ListFolders.withoutFolder(now, path)).render().substringBefore("# ")
+                    val head = ListFolders.withoutFolder(now, path).render().substringBefore("# ")
                     repo.writePath(vault, list.path, head + text.substring(end + 4).trimStart('\r', '\n'))
                 }.isFailure) 1 else 0
             }

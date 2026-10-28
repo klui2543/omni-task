@@ -74,10 +74,40 @@ class ListFoldersTest {
     }
 
     @Test
-    fun savedFoldersGainAndLosePaths() {
-        val more = bucket.copy(categories = ListFolders.withFolder(bucket, "เที่ยว/ญี่ปุ่น"))
-        assertEquals(listOf("เที่ยว", "ประสบการณ์", "เรียนรู้", "เที่ยว/ญี่ปุ่น"), more.categories)
-        assertEquals(listOf("ประสบการณ์", "เรียนรู้"), ListFolders.withoutFolder(more, "เที่ยว"))
+    fun savedFoldersGoOneLevelInCategoriesAndDeeperInFolders() {
+        val more = ListFolders.withFolder(ListFolders.withFolder(bucket, "เที่ยว/ญี่ปุ่น"), "ดนตรี")
+        assertEquals(listOf("เที่ยว", "ประสบการณ์", "เรียนรู้", "ดนตรี"), more.categories)
+        assertEquals(listOf("เที่ยว/ญี่ปุ่น"), more.folders)
+        // Written and read back from the note's header.
+        assertEquals(more, OmniList.parse(more.path, more.render()))
+        val less = ListFolders.withoutFolder(more, "เที่ยว")
+        assertEquals(listOf("ประสบการณ์", "เรียนรู้", "ดนตรี"), less.categories)
+        assertEquals(emptyList(), less.folders)
+    }
+
+    @Test
+    fun aPulledInTaskKeepsATagThatOnlySharesACategoryName() {
+        // Not in the list yet: #เที่ยว is the owner's own tag and stays.
+        assertEquals(
+            "- [ ] ทริปบริษัท #งาน #เที่ยว #bucketlist/ประสบการณ์",
+            ListFolders.place("- [ ] ทริปบริษัท #งาน #เที่ยว", bucket, "ประสบการณ์"),
+        )
+    }
+
+    @Test
+    fun onlyTheCategoryThatPlacedTheLineComesOff() {
+        assertEquals(
+            "- [ ] คอร์สถ่ายรูป #เรียนรู้ #bucketlist/ประสบการณ์",
+            ListFolders.place("- [ ] คอร์สถ่ายรูป #bucketlist #เที่ยว #เรียนรู้", bucket, "ประสบการณ์"),
+        )
+    }
+
+    @Test
+    fun foldersDifferingOnlyByCaseAreOne() {
+        val watch = OmniList("Watch list", "Omni/Watch list.md", "", listOf("Movies"))
+        val items = listOf(task("- [ ] Dune #watchlist/movies", list = "Watch list"))
+        assertEquals(listOf("Movies"), ListFolders.all(watch, items))
+        assertTrue(ListFolders.inside("Movies", ListFolders.pathOf(watch, items[0])))
     }
 
     @Test

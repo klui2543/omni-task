@@ -883,7 +883,7 @@ private fun withListLimb(tree: Ygdrasil.Tree, lists: List<OmniList>, items: (Omn
         val mine = items(l)
         val folders = ListFolders.all(l, mine).filter { f -> mine.any { ListFolders.inside(f, ListFolders.pathOf(l, it)) } }
         fun build(path: String): Ygdrasil.Limb {
-            val own = mine.filter { ListFolders.pathOf(l, it) == path }
+            val own = mine.filter { ListFolders.pathOf(l, it).equals(path, ignoreCase = true) }
             val all = mine.filter { ListFolders.inside(path, ListFolders.pathOf(l, it)) }
             val under = ListFolders.children(folders, path).map { build(it) }
             val nodePath = l.name.replace('/', ' ') + if (path.isEmpty()) "" else "/$path"

@@ -17,7 +17,14 @@ package app.omnitask.model
  * list too, so a task can be added to a list without moving it out of TaskForge. Since 2026-10-28 the categories are
  * folders that nest without limit (`เที่ยว/ญี่ปุ่น`): see [ListFolders].
  */
-data class OmniList(val name: String, val path: String, val icon: String, val categories: List<String>, val tag: String = tagFor(name)) {
+data class OmniList(
+    val name: String, val path: String, val icon: String, val categories: List<String>, val tag: String = tagFor(name),
+    /**
+     * Folders deeper than one level made in the app while still empty (`เที่ยว/ญี่ปุ่น`, owner's pick 2026-10-28). They
+     * live on a line of their own, so the web and the plugin, which read `categories:` as one level, never see them.
+     */
+    val folders: List<String> = emptyList(),
+) {
 
     fun render(): String = buildString {
         appendLine("---")
@@ -26,6 +33,7 @@ data class OmniList(val name: String, val path: String, val icon: String, val ca
         if (icon.isNotBlank()) appendLine("icon: $icon")
         appendLine("categories: ${categories.joinToString(", ")}")
         appendLine("tag: $tag")
+        if (folders.isNotEmpty()) appendLine("folders: ${folders.joinToString(", ")}")
         appendLine("---")
         appendLine("# $name")
         appendLine()
@@ -46,6 +54,7 @@ data class OmniList(val name: String, val path: String, val icon: String, val ca
                 path = path,
                 icon = value("icon") ?: "",
                 categories = value("categories")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+                folders = value("folders")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
                 tag = value("tag")?.removePrefix("#")?.takeIf { it.isNotBlank() } ?: tagFor(path.substringAfterLast('/').removeSuffix(".md")),
             )
         }
