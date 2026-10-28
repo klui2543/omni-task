@@ -243,6 +243,10 @@ fun YgdrasilScreen(
     fun listRootAt(p: Offset): String? = spots.firstOrNull { s ->
         s.kind == Ygdrasil.Kind.LIMB && s.limb!!.node.tag == LIST_LIMB && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
     }?.let { LIST_LIMB }
+    /** The list or folder card right under [p]. */
+    fun listHitAt(p: Offset): Pair<OmniList, String>? = spots.firstOrNull { s ->
+        s.kind == Ygdrasil.Kind.LIMB && s.limb!!.node.tag.startsWith("$LIST_LIMB/") && p.x in s.x..(s.x + s.w) && p.y in (s.y - s.h / 2)..(s.y + s.h / 2)
+    }?.let { listPlace(state.lists, it.limb!!.node.tag) }
     /** The group a carried card stands for: a list or a folder of one, or a project or a branch. */
     fun groupOf(c: Carry): GroupMove.From? = when {
         c.task != null || c.from.isEmpty() || Ygdrasil.isInbox(c.from) -> null
@@ -263,7 +267,8 @@ fun YgdrasilScreen(
             return GroupMove.To.Branch(hit).let { to -> GroupMove.placeOf(from, to)?.let { GroupDrop(to, hit.ifEmpty { null }?.let { "#$it" }) } }
         }
         if (listRootAt(p) != null) return if (from is GroupMove.From.Folder && from.path.isEmpty()) null else GroupDrop(null, null)
-        val at = listAt(p) ?: return null
+        // A project or branch goes into a list only let go right on it, so one let go near a list is not swept in.
+        val at = (if (from is GroupMove.From.Branch) listHitAt(p) else listAt(p)) ?: return null
         val to = GroupMove.To.Folder(at.first, at.second)
         GroupMove.placeOf(from, to) ?: return null
         return GroupDrop(to, if (at.second.isEmpty()) at.first.name else ListFolders.nameOf(at.second), limbTagOf(at))

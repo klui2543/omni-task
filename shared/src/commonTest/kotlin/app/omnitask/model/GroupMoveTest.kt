@@ -145,6 +145,22 @@ class GroupMoveTest {
     }
 
     @Test
+    fun aLineInAnotherListsNoteIsChangedWhereItIs() {
+        // Written in Watch list's note but put in Bucket list's เที่ยว: it stays in Watch list's note.
+        val t = task("- [ ] สารคดีญี่ปุ่น #watchlist #bucketlist/เที่ยว", "Watch list")
+        val plan = GroupMove.plan(GroupMove.From.Folder(bucket, "เที่ยว"), GroupMove.To.Branch("omni"), listOf(t), emptyList(), taskFile)!!
+        assertNull(plan.steps.single().note)
+        assertEquals("- [ ] สารคดีญี่ปุ่น #omni/เที่ยว #watchlist", plan.lines()["สารคดีญี่ปุ่น"])
+    }
+
+    @Test
+    fun aLineMovedIntoAListKeepsATagThatOnlySharesAFolderName() {
+        val t = task("- [ ] ดูสารคดี #watchlist/หนัง #เที่ยว", "Watch list")
+        val plan = GroupMove.plan(GroupMove.From.Folder(watch, "หนัง"), GroupMove.To.Folder(bucket, ""), listOf(t), emptyList(), taskFile)!!
+        assertEquals("- [ ] ดูสารคดี #เที่ยว #bucketlist/หนัง", plan.lines()["ดูสารคดี"])
+    }
+
+    @Test
     fun otherTagsStay() {
         val t = task("- [ ] ดูหนัง #watchlist/หนัง #กับแฟน ⏫", "Watch list")
         val plan = GroupMove.plan(GroupMove.From.Folder(watch, "หนัง"), GroupMove.To.Folder(bucket, ""), listOf(t), emptyList(), taskFile)!!

@@ -2873,8 +2873,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                         var bad = 0
                         plan.steps.forEach { st ->
                             runCatching {
-                                if (st.note != null) g.parts += repo.moveToNote(vault, st.task, st.note!!, st.line, st.rest)
-                                else g.parts += repo.rewriteLineRecorded(st.task, st.line)
+                                val part: Any = if (st.note != null) repo.moveToNote(vault, st.task, st.note!!, st.line, st.rest) else repo.rewriteLineRecorded(st.task, st.line)
+                                g.parts.add(part)
                             }.onFailure { bad++ }
                         }
                         // The notes' headers and a list left empty change only when every line went: a half move keeps them.
@@ -2883,6 +2883,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                             val heads = linkedMapOf<String, MutableList<(OmniList) -> OmniList>>()
                             fun head(path: String, change: (OmniList) -> OmniList) { heads.getOrPut(path) { mutableListOf() } += change }
                             if (from is GroupMove.From.Folder && from.path.isNotEmpty()) head(from.list.path) { ListFolders.withoutFolder(it, from.path) }
+                            // A whole list moved: its saved folders went along, so a note kept for its other text holds none.
+                            if (from is GroupMove.From.Folder && from.path.isEmpty()) head(from.list.path) { it.copy(categories = emptyList(), folders = emptyList()) }
                             if (to is GroupMove.To.Folder) head(to.list.path) { l -> plan.empty.fold(l) { acc, f -> ListFolders.withFolder(acc, f) } }
                             heads.forEach { (path, changes) -> headSwap(vault, path) { l -> changes.fold(l) { acc, c -> c(acc) } }?.let { g.heads += it } }
                             if (from is GroupMove.From.Folder && from.path.isEmpty()) {
@@ -2988,7 +2990,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     is VaultRepository.Moved -> repo.swapMoved(vault, p, true)
                 }
             }
-            g.made?.let { (path, text) -> if (repo.readPath(vault, path) == text) repo.deletePath(vault, path) else conflict() }
+            // The note it made goes once it holds nothing but its header and title again (the write may differ in blank lines).
+            g.made?.let { (path, _) -> if (repo.readPath(vault, path)?.let(::listIsBare) == true) repo.deletePath(vault, path) else conflict() }
         } else {
             g.made?.let { (path, text) -> if (repo.readPath(vault, path) == null) repo.writePath(vault, path, text) else conflict() }
             g.parts.forEach { p ->
@@ -2998,7 +3001,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             g.heads.forEach { (path, before, after) -> if (repo.readPath(vault, path) == before) repo.writePath(vault, path, after) else conflict() }
-            g.gone?.let { (path, text) -> if (repo.readPath(vault, path) == text) repo.deletePath(vault, path) else conflict() }
+            g.gone?.let { (path, _) -> if (repo.readPath(vault, path)?.let(::listIsBare) == true) repo.deletePath(vault, path) else conflict() }
         }
     }
 

@@ -76,11 +76,12 @@ object GroupMove {
         val moving = members(from, pool)
         val keys = moving.map { it.key }.toSet()
         val steps = moving.mapNotNull { t ->
-            val note = noteOf(t, to, taskFile)
+            val note = noteOf(t, from, to, taskFile)
             // A subtask goes along inside its parent's block when the parent moves to another note.
-            val parentMoves = t.parent != null && t.parent in keys && moving.first { it.key == t.parent }.let { noteOf(it, to, taskFile) != null }
+            val parentMoves = t.parent != null && t.parent in keys && moving.first { it.key == t.parent }.let { noteOf(it, from, to, taskFile) != null }
             if (parentMoves) return@mapNotNull null
-            val inNote = note != null || (to is To.Folder && t.list == to.list.name)
+            // Only a line already in the list's note loses the list's old category tags; one moved in keeps a tag like #เที่ยว.
+            val inNote = to is To.Folder && t.list == to.list.name
             Step(
                 t,
                 line = { raw -> move(raw, from, to, at, relOf(from, t, main = true).orEmpty(), t.list, inNote) },
@@ -119,10 +120,16 @@ object GroupMove {
         is From.Branch -> t.tags.firstOrNull { it == from.tag || it.startsWith(from.tag + "/") }?.substring(from.tag.length)?.removePrefix("/")
     }
 
-    /** The note a task's block moves to: a list item leaves its list's note for the new list's, or for the task note. */
-    private fun noteOf(t: Task, to: To, taskFile: String): String? = when (to) {
-        is To.Folder -> if (t.list != null && t.list != to.list.name) to.list.path else null
-        is To.Branch -> if (t.list != null) taskFile else null
+    /**
+     * The note a task's block moves to: an item written in the moving list's own note leaves it for the new list's
+     * note, or for the task note. A line anywhere else (another list's note too) is changed where it is.
+     */
+    private fun noteOf(t: Task, from: From, to: To, taskFile: String): String? {
+        if (from !is From.Folder || t.list != from.list.name) return null
+        return when (to) {
+            is To.Folder -> if (t.list != to.list.name) to.list.path else null
+            is To.Branch -> taskFile
+        }
     }
 
     private fun move(raw: String, from: From, to: To, at: String, rel: String, list: String?, inNote: Boolean): String {
