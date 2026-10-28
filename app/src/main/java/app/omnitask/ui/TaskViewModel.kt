@@ -2787,7 +2787,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteListFolder(list: OmniList, path: String) {
         val vault = _state.value.vault ?: return
         val up = ListFolders.parentOf(path)
-        val moving = _state.value.itemsOf(list).filter { ListFolders.inside(path, ListFolders.pathOf(list, it)) }
+        // A today copy is a view of a real line, not a line of its own.
+        val moving = _state.value.itemsOf(list).filter { !it.todayCopy && ListFolders.inside(path, ListFolders.pathOf(list, it)) }
         viewModelScope.launch {
             val failed = withContext(Dispatchers.IO) {
                 val bad = moving.count { t -> runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, list, up, inNote = t.list == list.name) } }.isFailure }
@@ -2821,19 +2822,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val vault = _state.value.vault ?: return
         val same = from.path == to.path
         val base = ListFolders.movedTo(fromPath, toPath, same) ?: return
-        val moving = _state.value.itemsOf(from).filter { ListFolders.inside(fromPath, ListFolders.pathOf(from, it)) }
+        val moving = _state.value.itemsOf(from).filter { !it.todayCopy && ListFolders.inside(fromPath, ListFolders.pathOf(from, it)) }
         val saved = ListFolders.savedInside(from, fromPath).map { ListFolders.rebase(it, fromPath, base) }
         viewModelScope.launch {
             val result = writeLock.withLock {
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        if (same) {
-                            // Lines still placed by an old category tag get the nested tag first, so one retag moves all.
-                            val bad = moving.filter { t -> t.tags.none { it.startsWith(from.tag + "/", ignoreCase = true) } }.count { t ->
-                                runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, from, ListFolders.pathOf(from, t), inNote = t.list == from.name) } }.isFailure
+                        val bad = if (same) {
+                            // Each line gets the tag of its new place, spelled as the move writes it, so the undo's retag finds them all.
+                            moving.count { t ->
+                                val at = ListFolders.rebase(ListFolders.pathOf(from, t), fromPath, base)
+                                runCatching { repo.rewriteLine(t) { raw -> ListFolders.place(raw, from, at, inNote = t.list == from.name) } }.isFailure
                             }
-                            repo.renameProject(moving.map { it.fileUri }, ListFolders.tagOf(from, fromPath), ListFolders.tagOf(from, base))
-                            bad
                         } else {
                             // A subtask travels in its parent's block, so only the top of each block is moved.
                             val keys = moving.map { it.key }.toSet()
@@ -2843,25 +2843,26 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                                 runCatching { if (t.list == from.name) repo.moveToNote(vault, t, to.path, transform) else repo.rewriteLine(t, transform) }.isFailure
                             }
                         }
-                    }.also {
-                        // The empty folders saved in the notes' headers go along.
-                        runCatching {
+                        // The empty folders saved in the notes' headers go along, only when every line went: a half move keeps them where they were.
+                        val headOk = bad > 0 || runCatching {
                             if (same) {
                                 writeHeadNow(vault, from) { now -> saved.fold(ListFolders.withoutFolder(now, fromPath)) { l, f -> ListFolders.withFolder(l, f) } }
                             } else {
                                 writeHeadNow(vault, from) { now -> ListFolders.withoutFolder(now, fromPath) }
                                 writeHeadNow(vault, to) { now -> saved.fold(now) { l, f -> ListFolders.withFolder(l, f) } }
                             }
-                        }
+                        }.isSuccess
+                        bad to headOk
                     }
                 }
             }
-            result.onSuccess { bad ->
+            result.onSuccess { (bad, headOk) ->
                 if (same && bad == 0) remember(UndoStep(UndoStep.Kind.MOVED, "#" + ListFolders.tagOf(from, fromPath), retag = ListFolders.tagOf(from, fromPath) to ListFolders.tagOf(from, base)), inTree = true)
                 val where = if (toPath.isEmpty()) to.name else ListFolders.nameOf(toPath)
                 _state.update {
                     it.copy(
-                        message = if (bad == 0) tr("ย้าย ${ListFolders.nameOf(fromPath)} ไปไว้ใต้ $where แล้ว", "Moved ${ListFolders.nameOf(fromPath)} under $where")
+                        message = if (bad == 0 && headOk) tr("ย้าย ${ListFolders.nameOf(fromPath)} ไปไว้ใต้ $where แล้ว", "Moved ${ListFolders.nameOf(fromPath)} under $where")
+                        else if (bad == 0) tr("ย้าย ${ListFolders.nameOf(fromPath)} แล้ว แต่จดโฟลเดอร์ว่างที่หัวโน้ตไม่ได้", "Moved ${ListFolders.nameOf(fromPath)}, but the empty folders could not be noted in the list's header")
                         else tr("ย้ายไม่ได้ $bad รายการ ไฟล์อาจถูกแก้จากที่อื่น", "$bad items could not move; a file may have changed"),
                     )
                 }
@@ -3811,8 +3812,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 saveBranchStates(Branches.moveTag(_state.value.branchStates, old, new))
                 // A list's folder moved back stays a list's folder, never a project.
                 val root = new.substringBefore('/')
-                if (Projects.listRoots.none { it.equals(root, ignoreCase = true) }) _state.value.projectTags?.let { tags -> saveProjectTags(tags + root) }
-                recordMove(old, new, n, undoable = false)
+                if (Projects.listRoots.none { it.equals(root, ignoreCase = true) }) {
+                    _state.value.projectTags?.let { tags -> saveProjectTags(tags + root) }
+                    recordMove(old, new, n, undoable = false)
+                } else {
+                    // A list folder is not a project: its moves stay out of ชื่อโปรเจกต์.md.
+                    _state.update { it.copy(message = tr("ย้ายกลับแล้ว ($n งาน)", "Moved back ($n tasks)")) }
+                }
             }
             result.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("ย้ายกลับไม่ได้: ", "Cannot move back: ") + e.message) } }
             done(result.isSuccess)
