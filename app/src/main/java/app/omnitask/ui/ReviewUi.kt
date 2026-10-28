@@ -99,11 +99,7 @@ object ReviewMode {
 fun ReviewSetting(context: Context) {
     LaunchedEffect(Unit) { ReviewMode.load(context) }
     SettingsGroup(tr("โหมดทบทวนงาน", "Review mode")) {
-        SettingSwitch(
-            tr("แสดงทบทวนงานบนหน้าเลขา", "Show the review on the secretary page"),
-            tr("ทีละใบ ตอบเป็นปุ่ม อยู่ในหน้าตาใหม่ แท็บเลขา", "One card at a time, answered with buttons. In the new look, Secretary tab"),
-            ReviewMode.on,
-        ) { ReviewMode.setOn(context, it) }
+        // No switch for showing it: the review is always the first card on the secretary page (owner, 2026-10-28).
         SettingSwitch(
             tr("จดคำตอบลงโน้ตจริง", "Write answers into the notes"),
             tr("ปิดไว้: ตอบได้ ดูต้นฉบับได้ แต่ยังไม่จดอะไรลงโน้ต", "Off: you can answer and see the note, nothing is written"),

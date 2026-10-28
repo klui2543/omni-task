@@ -13,15 +13,24 @@ class WeekTest {
         Task("- [ ] $title", title, Status.TODO, due = due, scheduled = scheduled)
 
     @Test
-    fun keepsTomorrowToSevenDaysAheadInDayOrder() {
+    fun keepsTomorrowToTheEndOfNextWeekInDayOrder() {
+        // Wednesday 28 Oct: this week ends Sunday 1 Nov, next week is Monday 2 to Sunday 8 Nov.
         val tasks = listOf(
             task("today", due = today),
-            task("in 7", due = LocalDate(2026, 11, 4)),
-            task("in 8", due = LocalDate(2026, 11, 5)),
+            task("next sunday", due = LocalDate(2026, 11, 8)),
+            task("next-next monday", due = LocalDate(2026, 11, 9)),
+            task("this sunday", due = LocalDate(2026, 11, 1)),
             task("tomorrow", scheduled = LocalDate(2026, 10, 29)),
             task("no date"),
         )
-        assertEquals(listOf("tomorrow", "in 7"), Week.ahead(tasks, today).map { it.task.title })
+        assertEquals(listOf("tomorrow", "this sunday", "next sunday"), Week.ahead(tasks, today).map { it.task.title })
+    }
+
+    @Test
+    fun weeksEndOnSunday() {
+        assertEquals(LocalDate(2026, 11, 1), Week.sunday(today))
+        assertEquals(LocalDate(2026, 11, 1), Week.sunday(LocalDate(2026, 11, 1)))
+        assertEquals(LocalDate(2026, 11, 1), Week.sunday(LocalDate(2026, 10, 26)))
     }
 
     @Test

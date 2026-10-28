@@ -946,46 +946,67 @@ private fun LateSheet(section: DayPlan.Section, state: UiState, vm: TaskViewMode
     }
 }
 
-/** The open tasks of the next week, each on the day it is due (📅) or else scheduled (⏳). */
+/** The open tasks of this week and the next, each on the day it is due (📅) or else scheduled (⏳). */
 internal object Week {
     class Item(val task: Task, val day: LocalDate, val due: Boolean)
 
-    /** Tasks with a date from tomorrow to 7 days ahead, earliest first; a due date wins over a scheduled one. */
+    /** The last day of the week [day] is in; weeks start on Monday. */
+    fun sunday(day: LocalDate): LocalDate = day.plusDays((6 - day.dayOfWeek.ordinal).toLong())
+
+    /**
+     * Tasks with a date from tomorrow to the end of next week (Monday to Sunday), earliest first; a due date in
+     * that span wins over a scheduled one.
+     */
     fun ahead(tasks: List<Task>, today: LocalDate): List<Item> {
         val first = today.plusDays(1)
-        val last = today.plusDays(7)
-        fun inWeek(d: LocalDate?) = d != null && d >= first && d <= last
+        val last = sunday(today).plusDays(7)
+        fun inSpan(d: LocalDate?) = d != null && d >= first && d <= last
         return tasks.mapNotNull { t ->
             when {
-                inWeek(t.due) -> Item(t, t.due!!, true)
-                inWeek(t.scheduled) -> Item(t, t.scheduled!!, false)
+                inSpan(t.due) -> Item(t, t.due!!, true)
+                inSpan(t.scheduled) -> Item(t, t.scheduled!!, false)
                 else -> null
             }
         }.sortedBy { it.day }
     }
 }
 
-private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d MMM", TH)
+private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d MMM", TH)
+private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d", TH)
 
 /**
- * The new look's next week (owner's pick ก, 2026-10-28; it was "ข้างหน้า"): the pinned countdowns, then the week's
- * tasks under a line for each day. Six show; "ดูอีก N งาน" opens the rest in place. A countdown opens the picker;
- * a task opens its task.
+ * The new look's two weeks (owner's picks, 2026-10-28): the pinned countdowns, then "สัปดาห์นี้" (tomorrow to Sunday)
+ * and "สัปดาห์หน้า" (Monday to Sunday after), each with its tasks under a line for each day. Six tasks show;
+ * "ดูอีก N งาน" opens the rest in place. On a Sunday this week has no days left and only next week shows.
  */
 @Composable
 private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, onPick: () -> Unit) {
     var all by rememberSaveable { mutableStateOf(false) }
     val shown = if (all) week else week.take(6)
-    Column {
-        if (countdowns.isNotEmpty() || week.isNotEmpty()) {
-            Text(tr("สัปดาห์หน้า", "Next week"), Modifier.padding(start = 4.dp, bottom = 6.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+    val sunday = Week.sunday(today)
+    val spans = buildList {
+        if (sunday > today) add(Triple(tr("สัปดาห์นี้", "This week"), today.plusDays(1), sunday))
+        add(Triple(tr("สัปดาห์หน้า", "Next week"), sunday.plusDays(1), sunday.plusDays(7)))
+    }
+    Card {
+        countdowns.forEachIndexed { i, c ->
+            if (i > 0) Divider(start = 14.dp)
+            AheadRow(c.isEvent, c.title, tr("ปักหมุด", "Pinned"), c.text, if (c.late) C.red else C.accentText, onPick)
         }
-        Card {
-            countdowns.forEachIndexed { i, c ->
-                if (i > 0) Divider(start = 14.dp)
-                AheadRow(c.isEvent, c.title, tr("ปักหมุด", "Pinned"), c.text, if (c.late) C.red else C.accentText, onPick)
+        spans.forEachIndexed { n, (name, from, to) ->
+            if (n > 0 || countdowns.isNotEmpty()) Box(Modifier.padding(top = 4.dp).fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                Text(
+                    from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' '),
+                    Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption,
+                )
             }
-            shown.groupBy { it.day }.forEach { (day, items) ->
+            val inSpan = week.filter { it.day >= from && it.day <= to }
+            if (inSpan.isEmpty()) {
+                Text(tr("ยังไม่มีงาน", "Nothing yet"), Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = C.faint, fontSize = TS.caption)
+            }
+            shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }.forEach { (day, items) ->
                 PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
                 items.forEach { w ->
                     val days = ChronoUnit.DAYS.between(today, day)
@@ -997,19 +1018,19 @@ private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, t
                     ) { onOpen(w.task) }
                 }
             }
-            if (week.size > 6) FooterRow(onClick = { all = !all }) {
-                Text(
-                    if (all) tr("ย่อ", "Show less") else tr("ดูอีก ${week.size - 6} งาน", "${week.size - 6} more"),
-                    color = C.accentText, fontSize = TS.caption,
-                )
-            }
-            if (countdowns.isNotEmpty() || week.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
-            FooterRow(onClick = onPick) {
-                Text(
-                    if (countdowns.isEmpty()) tr("ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ", "Count down to an important task or event") else tr("ปักหมุดนับถอยหลังเพิ่ม", "Pin another countdown"),
-                    color = C.faint, fontSize = TS.caption,
-                )
-            }
+        }
+        if (week.size > 6) FooterRow(onClick = { all = !all }) {
+            Text(
+                if (all) tr("ย่อ", "Show less") else tr("ดูอีก ${week.size - 6} งาน", "${week.size - 6} more"),
+                color = C.accentText, fontSize = TS.caption,
+            )
+        }
+        Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+        FooterRow(onClick = onPick) {
+            Text(
+                if (countdowns.isEmpty()) tr("ตั้งนับถอยหลังถึงงานหรือนัดสำคัญ", "Count down to an important task or event") else tr("ปักหมุดนับถอยหลังเพิ่ม", "Pin another countdown"),
+                color = C.faint, fontSize = TS.caption,
+            )
         }
     }
 }

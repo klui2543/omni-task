@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.Focus
+import app.omnitask.model.ReviewLog
 import app.omnitask.model.SecretaryAsk
 import app.omnitask.model.Task
 import app.omnitask.model.tr
@@ -39,7 +42,7 @@ import app.omnitask.model.tr
  * nothing left the deck is gone.
  */
 @Composable
-fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
+fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, reviewCount: Int = 0, onReview: () -> Unit = {}) {
     val asks = SecretaryAsk.open(state.secretaryAsks, state.tasks, state.today)
     var asking by remember { mutableStateOf(false) }
     if (asking) SecretaryAskSheet(asks, vm, onOpen) { asking = false }
@@ -53,15 +56,28 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val waiting = Decisions.waiting(state)
     val future = Decisions.future(state)
     val cards = buildList {
+        // The review mode, first and always there while anything is open (owner, 2026-10-28: on, no switch).
+        if (reviewCount > 0) add(
+            DeckCard("review", tr("ทบทวนงาน", "Review")) {
+                // How many were reviewed today shows only when answers are written into the notes; without that it is unknown.
+                val reviewedToday = if (ReviewMode.writes) state.tasks.count { it.isOpen && ReviewLog.last(it) == state.today } else null
+                Text(
+                    tr("งานเปิดอยู่ $reviewCount งาน", "$reviewCount open tasks") +
+                        (reviewedToday?.let { tr(" ทบทวนวันนี้แล้ว $it", ", $it reviewed today") } ?: ""),
+                    color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                Text(tr("ทีละงาน ตอบเป็นปุ่ม ทำกี่งานก็ได้ หยุดเมื่อไรก็ได้", "One at a time, answered with buttons, as many as you like"), color = C.muted, fontSize = TS.caption)
+                DeckButtons { DeckButton(tr("เริ่มทบทวน", "Start"), true, onReview) }
+            },
+        )
         asks.firstOrNull()?.let { first ->
             add(
                 DeckCard("asks", tr("เลขาถาม ${asks.size}", "Questions ${asks.size}")) {
+                    Text(tr("เสร็จหรือยัง", "Done yet?"), color = C.muted, fontSize = TS.caption)
                     Text(
-                        tr("${first.task.title} เสร็จหรือยัง", "Is ${first.task.title} done?"),
-                        Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(first.task) },
+                        first.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(first.task) },
                         color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
-                    if (asks.size > 1) Text(tr("และอีก ${asks.size - 1} คำถาม", "and ${asks.size - 1} more"), color = C.muted, fontSize = TS.caption)
                     DeckButtons {
                         // Not done: the sheet, where the reason is picked or written, as before.
                         DeckButton(tr("ยัง เพราะ...", "Not yet, because..."), false) { asking = true }
@@ -87,7 +103,14 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
         }
         if (warnings.isNotEmpty()) add(
             DeckCard("warn", tr("เตือน ${warnings.size}", "Warnings ${warnings.size}"), C.amber) {
-                warnings.take(3).forEach { w -> Text(w, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                // One row each, an amber dot before it and a line between (owner, 2026-10-28: the block of text looked odd).
+                warnings.forEachIndexed { i, w ->
+                    if (i > 0) Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(Modifier.padding(top = 8.dp, end = 10.dp).size(7.dp).clip(CircleShape).background(C.amber))
+                        Text(w, color = C.text, fontSize = TS.body)
+                    }
+                }
                 DeckButtons {
                     DeckButton(tr("ซ่อน", "Hide"), waiting.isEmpty()) { Decisions.hideWarnings(warnings) }
                     if (waiting.isNotEmpty()) DeckButton(tr("ดูงานที่มีคนรอ", "See who waits"), true) { waitingOpen = true }

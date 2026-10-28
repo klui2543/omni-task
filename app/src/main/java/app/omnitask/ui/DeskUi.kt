@@ -147,10 +147,10 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     var briefMore by remember { mutableStateOf<SecretaryBook.Brief?>(null) }
     briefMore?.let { b -> BriefMoreSheet(b, state.tasks, vm::toggleDone) { briefMore = null } }
     if (guideOpen) { GuideScreen(state, vm) { guideOpen = false }; return }
-    // The review mode (โหมดทบทวนงาน): a strip under the head opens it over the whole page.
+    // The review mode (โหมดทบทวนงาน): the first card of the deck opens it over the whole page, always there (owner, 2026-10-28).
     var reviewing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (reviewing) { ReviewScreen(state, vm) { reviewing = false }; return }
-    val reviewCount = remember(state.tasks, state.today, ReviewMode.on) { if (ReviewMode.on) reviewDeck(state).size else 0 }
+    val reviewCount = remember(state.tasks, state.today) { reviewDeck(state).size }
 
     // The page ends above the keyboard, so the chat box stays in sight while typing (the window does not resize itself:
     // the app draws edge to edge).
@@ -166,7 +166,6 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
             SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
         }
         KeyWarning(vm) { aiSettingsOpen = true }
-        if (reviewCount > 0) ReviewStrip(reviewCount) { reviewing = true }
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(), state = list,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
@@ -192,7 +191,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 }
             }
             // What waits on Klui to decide, after the chat (owner's pick, 2026-10-28): new answers come above it.
-            item(key = "deck") { DecisionDeck(state, vm, onOpen) }
+            item(key = "deck") { DecisionDeck(state, vm, onOpen, reviewCount) { reviewing = true } }
         }
         if (resetAt > 0) Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(14.dp)).background(C.raised).padding(start = 14.dp, end = 4.dp),
