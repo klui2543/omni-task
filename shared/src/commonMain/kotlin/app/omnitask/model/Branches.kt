@@ -95,10 +95,14 @@ object Branches {
             }
         }
 
-    /** States under the names their projects have now ([ProjectNames.canonical]), so `siriraj` keeps its branches as `Siriraj`. */
+    /**
+     * States under the spelling their projects are read with now ([ProjectNames.canonical]), so `siriraj` keeps its
+     * branches as `Siriraj`. Only the case changes; a branch the names table moves elsewhere stays where it was.
+     */
     fun respell(states: Map<Pair<String, String>, State>): Map<Pair<String, String>, State> =
         states.mapKeys { (k, _) ->
-            val t = ProjectNames.canonical(if (k.second.isEmpty()) k.first else "${k.first}/${k.second}")
+            val full = if (k.second.isEmpty()) k.first else "${k.first}/${k.second}"
+            val t = ProjectNames.canonical(full).takeIf { it.equals(full, ignoreCase = true) } ?: return@mapKeys k
             t.substringBefore('/') to t.substringAfter('/', "")
         }
 

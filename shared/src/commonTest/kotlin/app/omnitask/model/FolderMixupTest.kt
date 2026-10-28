@@ -36,6 +36,8 @@ class FolderMixupTest {
         assertEquals(listOf("Omni"), task("- [ ] ดู #123 และ #Omni)").tags)
         assertEquals(listOf("v2", "2026ปี"), task("- [ ] งาน #v2, #2026ปี").tags)
         assertEquals(emptyList(), task("- [ ] รวมแล้วใน PR #79.").tags)
+        // A full stop inside a tag stays part of it; at the end it is the sentence's.
+        assertEquals(listOf("ป.โท", "v1.2", "Omni"), task("- [ ] สมัคร #ป.โท #v1.2 ดู #Omni.").tags)
     }
 
     @Test
@@ -77,12 +79,16 @@ class FolderMixupTest {
         Projects.chosen = setOf("Siriraj")
         val states = mapOf(("siriraj" to "z") to Branches.State.PARKED, ("Omni" to "") to Branches.State.ACTIVE)
         assertEquals(mapOf(("Siriraj" to "z") to Branches.State.PARKED, ("Omni" to "") to Branches.State.ACTIVE), Branches.respell(states))
+        // A branch the names table moves to another place is not moved here.
+        ProjectNames.current = ProjectNames.parse(table)
+        assertEquals(mapOf(("peddose" to "app") to Branches.State.PARKED), Branches.respell(mapOf(("peddose" to "app") to Branches.State.PARKED)))
     }
 
     @Test
     fun aNameTheOldReaderMadeCanNoLongerBeATag() {
         assertTrue(TaskLine.canBeTag("Siriraj"))
         assertTrue(TaskLine.canBeTag("2026ปี"))
+        assertTrue(TaskLine.canBeTag("ป.โท"))
         listOf("79)", "79", "79.").forEach { assertTrue(!TaskLine.canBeTag(it), it) }
     }
 

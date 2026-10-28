@@ -3395,7 +3395,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun respellProjectSettings() {
         val s = _state.value
-        fun root(p: String) = ProjectNames.canonical(p).substringBefore('/')
+        // Only a change of case: a project the names table puts under another (peddose in Siriraj) keeps its own star.
+        fun root(p: String) = ProjectNames.canonical(p).substringBefore('/').takeIf { it.equals(p, ignoreCase = true) } ?: p
         val order = s.projectOrder.map(::root).distinct()
         val starred = s.starred.map { if (it == NO_PIN) it else root(it) }.toSet()
         val taskOrder = s.projectTaskOrder.entries.groupBy({ root(it.key) }, { it.value }).mapValues { (_, v) -> v.flatten().distinct() }
