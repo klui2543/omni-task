@@ -74,6 +74,9 @@ fun FocusScreen(
     state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
     onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {}, onSecretary: () -> Unit = {},
 ) {
+    // A day plan card's "ทบทวน" opens the review card on that one task.
+    var reviewingTask by remember { mutableStateOf<Task?>(null) }
+    reviewingTask?.let { t -> ReviewScreen(state, vm, only = t) { reviewingTask = null }; return }
     // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
     val nl = NewLook.on
     var lateOpen by rememberSaveable { mutableStateOf(false) }
@@ -340,7 +343,12 @@ fun FocusScreen(
         // The new look leaves out the nudges ("3 days without touching..."): the secretary brings them up in its chat.
         if (!nl) brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
-        if (daySections.isNotEmpty() || overdueSection == null) item {
+        // The secretary's plan for the rest of today (Settings switch, off at first) takes the timeline's place.
+        if (DayFillMode.on) item(key = "dayfill") {
+            LaunchedEffect(Unit) { vm.fillLoad() }
+            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now) { vm.fillPlan(state, now) }
+            DayFillCard(state, vm, plan, now, { vm.fillInput(state, now) }, asks.size, { asking = true }, onOpen) { reviewingTask = it }
+        } else if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
                 Box(Modifier.height(6.dp))
                 if (daySections.isEmpty()) {

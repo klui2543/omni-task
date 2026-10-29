@@ -1,0 +1,789 @@
+package app.omnitask.model
+
+import app.omnitask.notify.CalendarEvent
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import app.omnitask.time.*
+
+/**
+ * The secretary's plan for the rest of today (step 2, the owner's picks of 2026-10-29, mock v12): the real free time
+ * left after the day job, the calendars and the shifts, filled with what matters, and a third of it kept clear as a
+ * buffer. It is made again from scratch at every change (an errand, a new event, a new urgent task, a late start), so
+ * nothing in it is rigid: work moves to the next free time, the owner's own time shrinks to its shortest only when work
+ * that must be done would not fit, and what does not fit today says so.
+ *
+ * Rules the owner set: at most two things that must be done a day, none the day after a night shift (a recovery day,
+ * where nothing put off counts); myspace (tags under #My-space) starts on time; work never reviewed passes the review
+ * card first; a weekly sprint of at most two projects gets one slot a day each; a task moved three times brings a
+ * question (split it, keep it for later, let it go). Night shifts are the owner's main income: before one the plan is
+ * light and stops early, after one it rests; it never treats a shift as a problem.
+ *
+ * Times are minutes from the start of [Plan.day]; after midnight they run past 1440.
+ */
+object DayFill {
+
+    // ---- What the owner did, kept on the phone ----
+
+    enum class Pick { TAKE, TIRED, LATER, DROP, SPLIT, SKIP }
+
+    @Serializable
+    data class Errand(val from: Int, val to: Int? = null)
+
+    /**
+     * A slot the owner took: the day and time the plan wrote as ⏳ (and as 🎯 when [timed]; a task with a reminder of
+     * its own keeps it, so only ⏳ is written).
+     */
+    @Serializable
+    data class Accepted(val day: String, val at: Int, val timed: Boolean = true)
+
+    @Serializable
+    data class Line(val before: String, val after: String)
+
+    @Serializable
+    data class SprintPick(val week: String, val projects: List<String>, val taken: Boolean = false, val swap: Int = 0)
+
+    /**
+     * Everything the plan remembers on this phone: today's taps ([day] and the maps after it, cleared on a new day) and
+     * what lasts longer: taken slots, the days a task was put off with "ช่วงนี้ไม่ว่าง" (a move; once a day each), the
+     * last day it got "วันนี้หมดแรง" (not a move: it only comes back first the next day), answered questions, tasks
+     * already kept for later once, and the week's sprint.
+     */
+    @Serializable
+    data class Memory(
+        val day: String = "",
+        val picks: Map<String, Pick> = emptyMap(),
+        val swaps: Map<String, Int> = emptyMap(),
+        val notBefore: Map<String, Int> = emptyMap(),
+        val errand: Errand? = null,
+        val accepted: Map<String, Accepted> = emptyMap(),
+        val pushed: Map<String, List<String>> = emptyMap(),
+        val asked: Map<String, String> = emptyMap(),
+        val keptOnce: List<String> = emptyList(),
+        val sprint: SprintPick? = null,
+        val tired: Map<String, String> = emptyMap(),
+        /** Slots taken today ("net", "mine", "sprint:<project>"): a slot taken once is not offered again with another task. */
+        val slots: Map<String, String> = emptyMap(),
+        /** Lines the plan wrote today, by card: what each was before, to put back when the owner taps the card again. */
+        val lines: Map<String, Line> = emptyMap(),
+    ) {
+        /** The same memory on [today]: yesterday's taps go, what lasts stays (put-off days for 30 days). */
+        fun on(today: LocalDate): Memory {
+            if (day == today.toString()) return this
+            val cut = today.minusDays(30).toString()
+            return Memory(
+                day = today.toString(),
+                accepted = accepted.filterValues { it.day >= today.minusDays(1).toString() },
+                pushed = pushed.mapValues { (_, d) -> d.filter { it >= cut } }.filterValues { it.isNotEmpty() },
+                asked = asked.filterValues { it >= cut },
+                keptOnce = keptOnce,
+                sprint = sprint,
+                tired = tired.filterValues { it >= today.minusDays(1).toString() },
+            )
+        }
+
+        fun pushedOn(ident: String, day: LocalDate) = pushed[ident].orEmpty().contains(day.toString())
+
+        fun withPush(ident: String, day: LocalDate): Memory {
+            val days = pushed[ident].orEmpty()
+            return if (day.toString() in days) this else copy(pushed = pushed + (ident to days + day.toString()))
+        }
+    }
+
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+
+    fun encode(m: Memory): String = json.encodeToString(Memory.serializer(), m)
+
+    /** The memory kept on the phone: empty when nothing is stored, null when what is stored cannot be read. */
+    fun decode(text: String?): Memory? = if (text.isNullOrBlank()) Memory() else runCatching { json.decodeFromString(Memory.serializer(), text) }.getOrNull()
+
+    /** How a task is known across reloads (its line number moves when lines are added above it). */
+    fun ident(t: Task): String = t.noteName + "\u0001" + t.title.trim()
+
+    // ---- The plan ----
+
+    enum class Kind(private val th: String, private val en: String) {
+        LIFE("ชีวิต", "Life"),
+        MINE("myspace", "myspace"),
+        URGENT("งานด่วนที่เพิ่งเข้ามา", "New and urgent"),
+        DUE("ส่งใกล้แล้ว", "Due soon"),
+        AGAIN("ต่อจากเมื่อวาน", "From yesterday"),
+        ASK("เลขาขอถาม", "A question"),
+        NET("งาน", "Work"),
+        WORK("งาน", "Work"),
+        PROJECT("ทำต่อโปรเจกต์", "Project"),
+        REVIEW("ยังไม่ได้ทบทวน", "Not reviewed"),
+        ;
+
+        val label get() = tr(th, en)
+    }
+
+    enum class Mode { NORMAL, BEFORE_NIGHT, AFTER_NIGHT }
+
+    /** One thing the plan places. [must] work is placed whatever the buffer; other work only while a third stays clear. */
+    data class Item(
+        val id: String,
+        val kind: Kind,
+        val prio: Double,
+        val len: Int,
+        val title: String,
+        val why: String,
+        val task: Task? = null,
+        val min: Int? = null,
+        val from: Int? = null,
+        val to: Int? = null,
+        val must: Boolean = false,
+        val tag: String? = null,
+        val lateText: String? = null,
+        /** Taken from this plan earlier: it keeps this time while it still can. */
+        val fixedAt: Int? = null,
+        /** The owner's own reminder time today: it never moves. */
+        val own: Boolean = false,
+        /** Other things the owner can swap to ("ไม่ใช่ เปลี่ยนให้"); zero when there is none. */
+        val more: Int = 0,
+        /** Only "แบ่ง" and "ปล่อยไป" on a question: the task was kept for later once already. */
+        val keptOnce: Boolean = false,
+        /** The slot this card fills ("net", "mine", "sprint:<project>"): what "ไม่ใช่ เปลี่ยนให้" swaps, and what a take uses up. */
+        val slot: String? = null,
+    ) {
+        val movable get() = !own && kind != Kind.LIFE && kind != Kind.REVIEW && kind != Kind.ASK
+    }
+
+    data class Placed(val item: Item, val at: Int, val len: Int, val short: Boolean, val running: Boolean)
+
+    data class Later(val item: Item, val why: String, val risk: Boolean, val picked: Pick?)
+
+    sealed class Row {
+        abstract val at: Int?
+
+        /** A block the plan works around: the day job, an event, a shift, sleep, an errand. */
+        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false) : Row()
+
+        /** Free time left clear on purpose. */
+        data class Gap(override val at: Int, val len: Int) : Row()
+
+        data class Card(override val at: Int, val placed: Placed, val picked: Pick?) : Row()
+
+        /** A task already ticked today. */
+        data class Done(override val at: Int?, val task: Task) : Row()
+    }
+
+    data class Move(val task: Task, val at: Int?, val day: LocalDate)
+
+    data class SprintLine(val names: String, val note: String, val late: Boolean, val lines: List<String>, val projects: List<String>)
+
+    data class Plan(
+        val day: LocalDate,
+        val start: Int,
+        val end: Int,
+        val mode: Mode,
+        val rows: List<Row>,
+        val later: List<Later>,
+        val free: Int,
+        val planned: Int,
+        val buffer: Int,
+        val banner: String?,
+        val sprint: SprintLine?,
+        /** Taken slots whose time the plan changed: their 🎯 (or ⏳, when today has no room) is written again. */
+        val moves: List<Move>,
+        /** The first work card, shown open. */
+        val next: String?,
+    ) {
+        val placed: List<Placed> get() = rows.filterIsInstance<Row.Card>().map { it.placed }
+    }
+
+    class Input(
+        val tasks: List<Task>,
+        val events: List<CalendarEvent>,
+        val profile: Profile,
+        val facts: RealDay.Facts,
+        val now: LocalDateTime,
+        val memory: Memory = Memory(),
+        /** Times a task was moved to a later day ([Learned.movesLater] over the behaviour log). */
+        val moves: (Task) -> Int = { 0 },
+    )
+
+    /** Lengths and windows the owner saw in the mock. */
+    private const val CLEAR = 15
+    private const val STEP = 5
+    const val NET_DAYS = 14L
+    private const val MUST_PER_DAY = 2
+    private const val REVIEWS_PER_DAY = 2
+
+    fun hm(m: Int): String = hhmm((m / 60) % 24, m % 60)
+
+    fun minutesOf(t: LocalDateTime, day: LocalDate): Int =
+        (t.date.toEpochDays() - day.toEpochDays()).toInt() * 1440 + t.hour * 60 + t.minute
+
+    private fun minutes(t: LocalTime) = t.hour * 60 + t.minute
+
+    fun isMine(t: Task) = t.tags.any { tag -> tag.substringBefore('/').lowercase().filter { it.isLetterOrDigit() } == "myspace" }
+
+    // ---- The day's frame: when the plan may run, what is busy, and the kind of day ----
+
+    class Frame(
+        val day: LocalDate,
+        val start: Int,
+        val end: Int,
+        val bed: Int,
+        val mode: Mode,
+        val nightAt: CalendarEvent?,
+        val job: Boolean,
+        /** Timed events of the owner's (and the day job) that touch the day, in order. */
+        val timed: List<CalendarEvent>,
+        val allDay: List<CalendarEvent>,
+        val busy: List<Pair<Int, Int>>,
+    )
+
+    fun frame(day: LocalDate, inp: Input, from: LocalDateTime? = null): Frame {
+        val p = inp.profile
+        val f = inp.facts
+        val own = inp.events.filterNot { f.isOthers(it) }.filter { it.allDay || it.end > it.begin }
+        fun on(d: LocalDate) = own.filter { it.begin < d.plusDays(1).atStartOfDay() && it.end > d.atStartOfDay() }
+        val jobBlocks = RealDay.jobBlocks(listOf(day), own, f)
+        val todays = on(day) + jobBlocks
+        // A shift that starts after midnight tonight ("O11 รอบ 3" at 02:30), or a night shift that starts this evening.
+        val nightNext = RealDay.nightStart(day.plusDays(1), own, p, f)
+        val nightEvening = todays.filter { !it.allDay && it.begin.date == day && it.begin.hour >= 12 && RealDay.isNight(it, p, f) }.minByOrNull { it.begin }
+        val nightAt = nightEvening ?: nightNext
+        // A night shift that ran into this morning.
+        val afterNight = own.any { !it.allDay && RealDay.isNight(it, p, f) && it.begin < day.atTime(RealDay.NIGHT_END) && it.end > day.minusDays(1).atTime(18, 0) } ||
+            on(day.minusDays(1)).any { it.allDay && RealDay.isNight(it, p, f) }
+        val mode = when {
+            afterNight -> Mode.AFTER_NIGHT
+            nightAt != null -> Mode.BEFORE_NIGHT
+            else -> Mode.NORMAL
+        }
+        var bed = minutes(p.sleep).let { if (it < 12 * 60) it + 1440 else it }
+        if (nightNext != null) bed = minOf(bed, minutes(RealDay.BED_BEFORE_NIGHT))
+        if (afterNight) bed -= 60
+        var end = bed - 60
+        nightEvening?.let { end = minOf(end, minutesOf(it.begin, day) - 30) }
+        val wake = minutes(p.wake) + 30
+        val start = maxOf(wake, from?.let { roundUp(minutesOf(it, day)) } ?: wake)
+        val timed = todays.filter { !it.allDay }.sortedBy { it.begin }
+        val busy = timed.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
+        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy)
+    }
+
+    private fun roundUp(m: Int) = if (m % STEP == 0) m else m + STEP - m % STEP
+
+    /** Free minutes between [Frame.start] and [Frame.end] that no event takes. */
+    fun freeIn(fr: Frame): Int {
+        if (fr.end <= fr.start) return 0
+        val occ = BooleanArray(fr.end - fr.start)
+        fr.busy.forEach { (a, b) -> for (t in maxOf(a, fr.start) until minOf(b, fr.end)) occ[t - fr.start] = true }
+        return occ.count { !it }
+    }
+
+    // ---- Building the day ----
+
+    fun plan(inp: Input): Plan {
+        val today = inp.now.date
+        val mem = inp.memory.on(today)
+        val fr = frame(today, inp, inp.now)
+        val items = items(inp, fr, mem)
+        val first = place(fr, items, mem, shrink = false)
+        val placed = if (first.later.any { it.item.must && it.picked == null && it.item.kind != Kind.LIFE && it.item.kind != Kind.MINE }) {
+            place(fr, items, mem, shrink = true)
+        } else first
+        return assemble(inp, fr, mem, items, placed)
+    }
+
+    private class Placing(val placed: List<Placed>, val later: List<Later>, val free: Int)
+
+    private fun place(fr: Frame, items: List<Item>, mem: Memory, shrink: Boolean): Placing {
+        val start = fr.start
+        val end = fr.end
+        val span = maxOf(0, end - start)
+        val occ = BooleanArray(span)
+        val busy = fr.busy.toMutableList()
+        mem.errand?.let { e -> busy += e.from to (e.to ?: end) }
+        busy.forEach { (a, b) -> for (t in maxOf(a, start) until minOf(b, end)) occ[t - start] = true }
+        val free = occ.count { !it }
+        val target = maxOf(30, free / 3)
+        fun fits(t: Int, len: Int): Boolean {
+            if (t < start || t + len > end) return false
+            for (i in t until t + len) if (occ[i - start]) return false
+            return true
+        }
+        fun take(t: Int, len: Int) { for (i in maxOf(t, start) until minOf(t + len, end)) occ[i - start] = true }
+        fun firstFit(from: Int, to: Int, len: Int): Int {
+            var x = roundUp(from)
+            while (x + len <= minOf(to, end)) {
+                if (fits(x, len)) return x
+                x += STEP
+            }
+            return -1
+        }
+        val placed = ArrayList<Placed>()
+        val later = ArrayList<Later>()
+        // Taken slots and the owner's own times hold their place first; the rest follow by priority.
+        val ordered = items.sortedWith(compareBy<Item>({ if (it.fixedAt != null) 0 else 1 }, { it.prio }))
+        ordered.forEach { it0 ->
+            val pick = mem.picks[it0.id]
+            if (pick != null && pick != Pick.TAKE) {
+                later += Later(it0, pickText(pick, it0), risk = false, picked = pick)
+                return@forEach
+            }
+            // "ช่วงนี้ไม่ว่าง" on a taken slot moves it on like any card; its reminder then follows.
+            val fixed = it0.fixedAt?.takeIf { f -> it0.own || (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= f }
+            if (fixed != null) {
+                val running = fixed < start && fixed + it0.len > start
+                when {
+                    // Already under way: it stays where it is.
+                    running -> { take(fixed, it0.len); placed += Placed(it0, fixed, it0.len, short = false, running = true); return@forEach }
+                    // Its time is still free: it keeps it (the owner's own time keeps it even when something overlaps).
+                    fixed >= start && (it0.own || fits(fixed, it0.len)) -> { take(fixed, it0.len); placed += Placed(it0, fixed, it0.len, short = false, running = false); return@forEach }
+                    // The owner's own time already went by: it is shown where it was, nothing moves it.
+                    it0.own -> { placed += Placed(it0, fixed, it0.len, short = false, running = false); return@forEach }
+                }
+            }
+            val from = maxOf(start, it0.from ?: start, mem.notBefore[it0.id] ?: start)
+            val to = it0.to ?: end
+            var len = if (shrink && it0.min != null) it0.min else it0.len
+            var t = firstFit(from, to, len)
+            if (t < 0 && it0.min != null && len != it0.min) { len = it0.min; t = firstFit(from, to, len) }
+            val leftNow = occ.count { !it }
+            var capped = false
+            if (t >= 0 && !it0.must && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
+            if (t < 0) {
+                if (it0.kind == Kind.LIFE) return@forEach
+                val why = when {
+                    it0.lateText != null -> it0.lateText
+                    it0.kind == Kind.MINE -> tr("วันนี้ไม่มีช่องว่างพอ ไว้พรุ่งนี้", "No room today, tomorrow then")
+                    capped -> tr("ย้ายไปพรุ่งนี้ เพื่อเหลือช่องกันชนไว้", "Moved to tomorrow to keep a buffer")
+                    else -> tr("วันนี้ไม่มีเวลาพอ ย้ายไปพรุ่งนี้", "Not enough time today, moved to tomorrow")
+                }
+                later += Later(it0, why, risk = it0.must && (it0.kind == Kind.URGENT || it0.kind == Kind.DUE), picked = null)
+                return@forEach
+            }
+            take(t, len)
+            placed += Placed(it0, t, len, short = len < it0.len, running = false)
+        }
+        return Placing(placed.sortedBy { it.at }, later, free)
+    }
+
+    private fun pickText(pick: Pick, item: Item): String = when (pick) {
+        Pick.TIRED -> tr("วันนี้หมดแรง ไม่นับว่าข้าม เลขาหาช่องใหม่ให้", "Out of energy today, not counted as skipped")
+        Pick.LATER -> item.task?.scheduled?.let { tr("เก็บไว้ก่อน ย้ายไป ${shortDay(it)} แล้ว", "Kept for later, moved to ${shortDay(it)}") }
+            ?: tr("เก็บไว้ก่อน เลขาเลือกวันใหม่ให้", "Kept for later")
+        Pick.DROP -> tr("ปล่อยไปแล้ว งานย้ายไปที่เก็บงาน ไม่ได้ลบ", "Let go, moved to the archive, not deleted")
+        Pick.SPLIT -> tr("ขอให้เลขาแบ่งงานแล้ว จะเสนองานย่อยในเลขาถาม", "The secretary will propose smaller steps")
+        Pick.SKIP -> tr("ไว้ก่อน ยังไม่ลงตาราง", "Later, not in the plan")
+        Pick.TAKE -> ""
+    }
+
+    fun shortDay(d: LocalDate): String = Planner.SHORT_DAYS[d.dayOfWeek.ordinal] + " " + d.dayOfMonth
+
+    /** What the plan may place today, from the tasks, the owner's habits and the sprint. */
+    private fun items(inp: Input, fr: Frame, mem: Memory): List<Item> {
+        val today = fr.day
+        val tomorrow = today.plusDays(1)
+        val yesterday = today.minusDays(1)
+        val after = fr.mode == Mode.AFTER_NIGHT
+        val light = fr.mode != Mode.NORMAL
+        val blocked = Projects.blocked(inp.tasks)
+        val open = inp.tasks.filter { it.isOpen && it.list == null && it !in blocked }
+        val subtasks = inp.tasks.filter { it.isSubtask }
+        val out = ArrayList<Item>()
+        val used = HashSet<String>()
+        val sprint = mem.sprint?.takeIf { it.taken && it.week == weekOf(today).toString() }?.projects.orEmpty()
+        fun tagOf(t: Task) = if (Projects.projectOf(t)?.let { p -> sprint.any { it.equals(p, ignoreCase = true) } } == true) tr("สปรินต์", "Sprint") else null
+
+        // Work: what each open task is for today, if anything.
+        val musts = ArrayList<Item>()
+        val work = ArrayList<Item>()
+        open.filter { !isMine(it) }.forEach { t ->
+            val id = ident(t)
+            val acc = mem.accepted[id]?.takeIf { it.day == today.toString() }
+            val ownTime = t.reminderAt?.takeIf { acc == null && it.date == today }
+            val len0 = Planner.minutesOf(t.title, Planner.kindOf(t.title)).coerceIn(15, 90)
+            val due = t.due
+            val item: Item? = when {
+                t.created == today && due != null && due <= tomorrow -> Item(
+                    id, Kind.URGENT, 0.8, minOf(len0, 60), t.title,
+                    tr("งานเข้ามาวันนี้และส่ง${if (due <= today) "วันนี้" else "พรุ่งนี้"} เลขาให้ขึ้นก่อนงานอื่น แต่ไม่เบียดเวลากินข้าวกับเวลาของตัวเอง", "New today and due soon, so it goes first"),
+                    t, must = true, lateText = tr("ไม่ทันวันนี้", "No room today"),
+                )
+                due != null && due <= tomorrow -> {
+                    val when_ = when {
+                        due < today -> tr("เลยกำหนดมา ${(today.toEpochDays() - due.toEpochDays())} วัน", "${(today.toEpochDays() - due.toEpochDays())} days late")
+                        due == today -> tr("ครบกำหนดวันนี้", "Due today")
+                        else -> tr("ส่งพรุ่งนี้", "Due tomorrow")
+                    }
+                    Item(
+                        id, Kind.DUE, if (due <= today) 1.0 else 1.5, 15, t.title, when_ + tr(" เริ่มแค่ 15 นาทีก่อน", ", start with 15 minutes"), t, must = true,
+                        lateText = when_ + tr(" แต่วันนี้ไม่มีเวลาพอ", ", but there is no time today"),
+                    )
+                }
+                mem.pushedOn(id, yesterday) || mem.tired[id] == yesterday.toString() -> Item(id, Kind.AGAIN, 1.2, 15, t.title, tr("เมื่อวานเลื่อนไว้ วันนี้เริ่มแค่ 15 นาทีก่อน", "Put off yesterday: 15 minutes today"), t, must = true)
+                t.scheduled == today -> Item(id, Kind.WORK, 2.5, minOf(len0, 60), t.title, tr("ตั้งใจทำวันนี้", "Planned for today"), t, must = true)
+                t.status == Status.IN_PROGRESS -> Item(id, Kind.WORK, 3.2, if (light) 30 else 45, t.title, progressWhy(t, subtasks) ?: tr("ทำค้างไว้", "Already started"), t)
+                t.scheduled != null && t.scheduled < today -> Item(
+                    id, Kind.WORK, 3.5, 30, t.title,
+                    tr("เป้าที่ตั้งเองเลยมา ${(today.toEpochDays() - t.scheduled.toEpochDays())} วัน", "Own target slipped"), t,
+                )
+                else -> null
+            }
+            if (item == null && ownTime == null && acc == null) return@forEach
+            val base = item ?: Item(id, Kind.WORK, 2.5, minOf(len0, 60), t.title, tr("ตั้งใจทำวันนี้", "Planned for today"), t, must = true)
+            val tagged = base.copy(tag = tagOf(t))
+            val fixedItem = when {
+                acc != null -> tagged.copy(fixedAt = acc.at)
+                ownTime != null -> tagged.copy(fixedAt = ownTime.hour * 60 + ownTime.minute, own = true, why = tr("เวลาเตือนที่ตั้งไว้เอง", "Your own reminder time"))
+                else -> tagged
+            }
+            if (fixedItem.must && fixedItem.kind in setOf(Kind.URGENT, Kind.DUE, Kind.AGAIN)) musts += fixedItem else work += fixedItem
+        }
+        // At most two things that must be done today, none after a night shift; the rest become offers.
+        musts.sortedBy { it.prio }.forEachIndexed { i, it ->
+            out += when {
+                after -> tr("วันพักฟื้น ไม่ต้องเริ่มวันนี้ ถ้าไหวค่อยทำ", "A recovery day: only if you feel like it").let { w -> it.copy(must = false, prio = 3.0, why = w, lateText = w) }
+                i >= MUST_PER_DAY && it.fixedAt == null -> (it.why + tr(" (วันนี้มีงานต้องทำครบ 2 อย่างแล้ว ถ้ายังมีแรงค่อยทำ)", " (two must-dos already today)"))
+                    .let { w -> it.copy(must = false, prio = 3.05, why = w, lateText = w) }
+                else -> it
+            }
+            used += it.id
+        }
+        // Slipped targets and work under way: the two that matter most of each, the rest stay in the task lists.
+        val doing = work.filter { it.kind == Kind.WORK && it.prio == 3.2 }.sortedByDescending { it.task?.priority?.ordinal?.let { o -> -o } ?: 0 }.take(2)
+        val slipped = work.filter { it.prio == 3.5 }.take(2)
+        val rest = work.filter { it.prio != 3.2 && it.prio != 3.5 }
+        (rest + doing + slipped).forEach { out += if (after && it.must && it.fixedAt == null) it.copy(must = false, prio = 3.0) else it; used += it.id }
+
+        // The sprint's projects: one slot a day each, its next task (not after a night shift).
+        if (!after) sprint.forEach { proj ->
+            val slot = "sprint:$proj"
+            if (mem.slots[slot] == today.toString()) return@forEach
+            val cands = open.filter { !isMine(it) && Projects.projectOf(it)?.equals(proj, ignoreCase = true) == true && ident(it) !in used && it.parent == null && !Focus.isSomeday(it) }
+                .sortedWith(compareBy<Task>({ if (it.status == Status.IN_PROGRESS) 0 else 1 }, { it.due ?: LocalDate(9999, 12, 31) }, { it.created ?: LocalDate(9999, 12, 31) }))
+            val n = mem.swaps[slot] ?: 0
+            val next = cands.getOrNull(n) ?: return@forEach
+            used += ident(next)
+            out += Item(
+                ident(next), Kind.PROJECT, 3.0, if (light) 30 else 45, next.title,
+                progressWhy(next, subtasks) ?: next.nextStep?.let { tr("ก้าวถัดไป: $it", "Next step: $it") } ?: tr("ทำต่อโปรเจกต์ในสปรินต์", "Sprint project"),
+                next, tag = tr("สปรินต์", "Sprint"), more = cands.size - n - 1, slot = slot,
+            )
+        }
+
+        // The 14-day net: work with no date that has not moved for two weeks gets 15 minutes, so it does not sink.
+        if (!after && mem.slots["net"] != today.toString()) {
+            val sunk = open.filter {
+                it.parent == null && it.due == null && it.scheduled == null && it.recurrence == null && !Focus.isSomeday(it) &&
+                    !isMine(it) && ident(it) !in used && (quiet(it, subtasks, today) ?: 0) >= NET_DAYS
+            }.sortedByDescending { quiet(it, subtasks, today) ?: 0 }
+            if (sunk.isNotEmpty()) {
+                val n = (mem.swaps["net"] ?: 0)
+                sunk.getOrNull(n)?.let { t ->
+                    used += ident(t)
+                    out += Item(
+                        ident(t), Kind.NET, 2.0, 15, t.title,
+                        tr("ยังไม่มีวันกำหนด ค้างมา ${quiet(t, subtasks, today)} วัน ขยับสัก 15 นาที ไม่ให้จมหาย", "No date, quiet for ${quiet(t, subtasks, today)} days: 15 minutes so it does not sink"),
+                        t, must = true, more = sunk.size - n - 1, tag = tagOf(t), slot = "net",
+                    )
+                }
+            }
+        }
+
+        // A task moved three times: ask what would help (one a day, not again for 14 days once answered).
+        val cut = today.minusDays(14).toString()
+        // Work due by tomorrow keeps its slot instead: the question waits until it is not urgent.
+        open.filter { it.parent == null && !isMine(it) && (it.due == null || it.due > tomorrow) }
+            .map { it to inp.moves(it) + (mem.pushed[ident(it)]?.size ?: 0) }
+            .filter { (t, n) -> n >= Learned.SLIP_MOVES && (mem.asked[ident(t)]?.let { it < cut } ?: true || mem.picks["ask:" + ident(t)] != null) }
+            .maxByOrNull { it.second }?.let { (t, n) ->
+                out.removeAll { it.task?.let(::ident) == ident(t) }
+                out += Item(
+                    "ask:" + ident(t), Kind.ASK, 2.0, 5, t.title,
+                    tr("เลื่อนมา $n ครั้งแล้ว ไม่เป็นไร อาจใหญ่เกินไป อยากให้เลขาช่วยแบบไหน (ตอบวันไหนก็ได้)", "Moved $n times. No problem, it may be too big. How can the secretary help?"),
+                    t, keptOnce = ident(t) in mem.keptOnce,
+                )
+            }
+
+        // Every task passes the review card before it is planned (owner, 2026-10-29), except what is due soon, what the
+        // owner set for today and what is under way. Two a day; the rest wait in the list below.
+        var reviews = 0
+        val gated = out.map { it0 ->
+            val t = it0.task
+            // Only what the review card can take (repeating tasks and subtasks never come up there).
+            val gate = t != null && it0.fixedAt == null && t in Review.candidates(listOf(t)) &&
+                (it0.kind == Kind.NET || it0.kind == Kind.PROJECT || (it0.kind == Kind.WORK && it0.prio == 3.5))
+            if (!gate || ReviewLog.last(t!!) != null) return@map it0
+            reviews++
+            if (reviews > REVIEWS_PER_DAY) {
+                tr("ยังไม่ได้ทบทวน ทบทวนแล้วเลขาลงตารางให้", "Not reviewed yet").let { w ->
+                    it0.copy(id = "review:" + ident(t), kind = Kind.REVIEW, prio = 9.0, len = 5, must = false, more = 0, tag = null, why = w, lateText = w, from = fr.end, to = fr.end)
+                }
+            } else {
+                it0.copy(
+                    id = "review:" + ident(t), kind = Kind.REVIEW, prio = 4.0, len = 5, must = false, more = 0, tag = null,
+                    why = tr("ยังไม่ได้ทบทวน เลขาเลยยังไม่รู้ว่าด่วนหรือสำคัญแค่ไหน ทบทวนแล้วจะลงตารางให้", "Not reviewed, so the secretary cannot tell how urgent it is. Review it and it gets a slot"),
+                )
+            }
+        }
+        out.clear()
+        out += gated
+
+        // The owner's own time: myspace starts on time, and meals move within their window.
+        val mine = open.filter { isMine(it) }.sortedWith(compareBy<Task>({ if (it.scheduled == today) 0 else 1 }, { it.created ?: LocalDate(9999, 12, 31) }))
+        if (mine.isNotEmpty()) {
+            val n = mem.swaps["mine"] ?: 0
+            mine.getOrNull(n)?.let { t ->
+                val (wFrom, len, min) = when (fr.mode) {
+                    Mode.NORMAL -> Triple(19 * 60, 60, 30)
+                    Mode.BEFORE_NIGHT -> Triple(18 * 60, 45, 20)
+                    Mode.AFTER_NIGHT -> Triple(17 * 60, 30, 20)
+                }
+                val acc = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() }
+                out += Item(
+                    ident(t), Kind.MINE, 0.5, len, t.title,
+                    when (fr.mode) {
+                        Mode.AFTER_NIGHT -> tr("วันนี้เสนอแต่เรื่องเบา กดเปลี่ยนได้โดยไม่นับ", "Something light today")
+                        Mode.BEFORE_NIGHT -> tr("เวลาของตัวเอง เรื่องเบา ๆ ก่อนนอน", "Your own time, something light before bed")
+                        Mode.NORMAL -> tr("เวลาของตัวเอง งานไม่เบียด ขยับหรือย่อได้เมื่อมีธุระหรือนัดเท่านั้น", "Your own time: work never pushes it, only errands or events do")
+                    },
+                    t, min = min, from = minOf(wFrom, maxOf(fr.start, fr.end - len)), to = fr.end, more = mine.size - n - 1, fixedAt = acc?.at, slot = "mine",
+                )
+            }
+        }
+        val (dFrom, dTo) = if (fr.mode == Mode.NORMAL) 18 * 60 to 19 * 60 + 45 else 17 * 60 + 30 to 19 * 60 + 30
+        if (minOf(dTo, fr.end) - maxOf(dFrom, fr.start) >= 30) out += Item(
+            "dinner", Kind.LIFE, 0.0, 45, tr("กินข้าว พัก", "Dinner and a break"),
+            tr("ขยับได้ระหว่าง ${hm(dFrom)} ถึง ${hm(dTo)}", "Can move between ${hm(dFrom)} and ${hm(dTo)}"), min = 30, from = dFrom, to = dTo,
+        )
+        if (!fr.job && minOf(13 * 60 + 30, fr.end) - maxOf(11 * 60 + 30, fr.start) >= 30) out += Item(
+            "lunch", Kind.LIFE, 0.0, 45, tr("กินข้าวเที่ยง พัก", "Lunch and a break"),
+            tr("ขยับได้ระหว่าง 11:30 ถึง 13:30", "Can move between 11:30 and 13:30"), min = 30, from = 11 * 60 + 30, to = 13 * 60 + 30,
+        )
+        // Things to swap to: the swap index picks the next one, and a swap past the last leaves the slot free.
+        return out
+    }
+
+    private fun progressWhy(t: Task, subtasks: List<Task>): String? {
+        val last = StuckLog.entries(t).lastOrNull() ?: return null
+        return tr("ต่อจากที่จดไว้ ", "Where you left it ") + Countdown.day(last.day) + ": " + last.reason
+    }
+
+    /** Days since anything happened to the task: made, a progress line, a subtask ticked, or a review. */
+    fun quiet(t: Task, subtasks: List<Task>, today: LocalDate): Long? {
+        val mine = subtasks.filter { it.parent == t.key }
+        val last = listOfNotNull(t.created, StuckLog.lastMove(t, mine), ReviewLog.last(t)).maxOrNull() ?: return null
+        return (today.toEpochDays() - last.toEpochDays()).toLong()
+    }
+
+    fun weekOf(d: LocalDate): LocalDate = d.minusDays((d.dayOfWeek.ordinal).toLong())
+
+    private fun assemble(inp: Input, fr: Frame, mem: Memory, items: List<Item>, pl: Placing): Plan {
+        val today = fr.day
+        val rows = ArrayList<Row>()
+        // Before the plan: the day so far (all-day events, what already happened, what is done).
+        fr.allDay.forEach { rows += Row.Locked(null, it.title, tr("ทั้งวัน", "All day"), it) }
+        fr.timed.filter { minutesOf(it.end, today) <= fr.start }.forEach { e ->
+            rows += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today), lockedWhy(e, inp, today), e, past = true)
+        }
+        inp.tasks.filter { it.done == today && it.list == null && (it.due ?: it.scheduled)?.let { d -> d <= today } != false }
+            .forEach { t -> rows += Row.Done(t.reminderAt?.takeIf { it.date == today }?.let { minutesOf(it, today) }, t) }
+        // The plan itself: cards, the blocks it works around and the free time between them.
+        val blocks = ArrayList<Row.Locked>()
+        mem.errand?.let { e -> blocks += Row.Locked(e.from, tr("ธุระ ถึง ${hm(e.to ?: fr.end)}", "Errand until ${hm(e.to ?: fr.end)}"), tr("คุณกดมีธุระไว้ งานช่วงนี้ย้ายออกหมด", "You said you have an errand: work moved out of it")) }
+        fr.timed.filter { minutesOf(it.end, today) > fr.start && minutesOf(it.begin, today) < fr.end }.forEach { e ->
+            blocks += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today), lockedWhy(e, inp, today), e)
+        }
+        val timeline = (pl.placed.map { it.at to (it as Any) } + blocks.map { it.at!! to (it as Any) }).sortedBy { it.first }
+        var cursor = fr.start
+        fun gap(a: Int, b: Int) { if (b - a >= 15) rows += Row.Gap(a, b - a) }
+        timeline.forEach { (at, x) ->
+            when (x) {
+                is Row.Locked -> {
+                    gap(cursor, at)
+                    rows += x
+                    val e = x.event
+                    val stop = when {
+                        e != null -> minutesOf(e.end, today) + CLEAR
+                        else -> mem.errand?.let { it.to ?: fr.end } ?: at
+                    }
+                    cursor = maxOf(cursor, stop)
+                }
+                is Placed -> {
+                    gap(cursor, x.at)
+                    rows += Row.Card(x.at, x, mem.picks[x.item.id])
+                    cursor = maxOf(cursor, x.at + x.len)
+                }
+            }
+        }
+        gap(cursor, fr.end)
+        // After the plan: events later tonight, the shift after midnight, sleep.
+        val afterRows = ArrayList<Row.Locked>()
+        fr.timed.filter { minutesOf(it.begin, today) >= fr.end }.forEach { e ->
+            afterRows += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today), lockedWhy(e, inp, today), e)
+        }
+        afterRows += Row.Locked(
+            fr.bed, tr("นอน", "Sleep"),
+            when (fr.mode) {
+                Mode.BEFORE_NIGHT -> tr("นอนเร็ว ให้พร้อมเข้าเวร", "Early night, ready for the shift")
+                Mode.AFTER_NIGHT -> tr("นอนเร็วขึ้น เพราะเพิ่งลงเวรดึก", "Earlier, after the night shift")
+                Mode.NORMAL -> tr("${hm(fr.end)} ถึง ${hm(fr.bed)} ไม่จัดอะไร ไว้ผ่อนก่อนนอน", "Nothing planned from ${hm(fr.end)}: wind down")
+            },
+        )
+        inp.events.filter { !it.allDay && !inp.facts.isOthers(it) && it.begin.date == today.plusDays(1) && it.begin.time < RealDay.NIGHT_END && RealDay.isShift(it, inp.profile, inp.facts) }
+            .forEach { e -> afterRows += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today), lockedWhy(e, inp, today), e) }
+        rows += afterRows.sortedBy { it.at }
+
+        val planned = pl.placed.filter { it.item.kind != Kind.LIFE }.sumOf { it.len }
+        val lifeLen = pl.placed.filter { it.item.kind == Kind.LIFE }.sumOf { it.len }
+        val buffer = maxOf(0, pl.free - planned - lifeLen)
+        val banner = when (fr.mode) {
+            Mode.AFTER_NIGHT -> tr("เพิ่งลงเวรดึก วันนี้วันพักฟื้น ไม่มีงานที่ต้องเริ่ม สปรินต์พัก ข้ามได้โดยไม่นับ", "Just off a night shift: a recovery day, nothing must start, skips do not count")
+            Mode.BEFORE_NIGHT -> fr.nightAt?.let { tr("คืนนี้มีเวร ${hm(minutesOf(it.begin, today))} เลขาจัดงานเบาให้ และหยุดจัดงานตั้งแต่ ${hm(fr.end)} จะได้นอนพอก่อนเข้าเวร", "Shift at ${hm(minutesOf(it.begin, today))} tonight: a light plan that stops at ${hm(fr.end)}") }
+            Mode.NORMAL -> null
+        }
+        // Taken slots the plan moved: their reminder follows; with no room today they go to tomorrow, same time.
+        val moves = ArrayList<Move>()
+        pl.placed.forEach { p ->
+            val t = p.item.task ?: return@forEach
+            val acc = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() } ?: return@forEach
+            if (!p.item.own && acc.at != p.at && !p.running) moves += Move(t, p.at, today)
+        }
+        pl.later.forEach { l ->
+            val t = l.item.task ?: return@forEach
+            val acc = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() } ?: return@forEach
+            if (l.picked == null) moves += Move(t, acc.at, today.plusDays(1))
+        }
+        val later = pl.later.filter { it.item.kind != Kind.LIFE && it.item.prio < 9.0 || it.picked != null } +
+            pl.later.filter { it.item.prio >= 9.0 && it.picked == null }
+        val next = pl.placed.firstOrNull { it.item.kind != Kind.LIFE && !it.item.own && mem.picks[it.item.id] == null && !it.running && it.at + it.len > fr.start }?.item?.id
+        return Plan(
+            today, fr.start, fr.end, fr.mode, rows, later.distinctBy { it.item.id }, pl.free, planned, buffer, banner,
+            Sprint.line(inp, fr, mem), moves, next,
+        )
+    }
+
+    private fun lockedTitle(e: CalendarEvent, today: LocalDate): String {
+        val end = minutesOf(e.end, today)
+        return e.title + tr(" ถึง ${hm(end)}", " until ${hm(end)}")
+    }
+
+    private fun lockedWhy(e: CalendarEvent, inp: Input, today: LocalDate): String = when {
+        e.title == RealDay.jobTitle -> tr("จันทร์ถึงศุกร์ วันนี้ไม่ใช่วันหยุด", "Monday to Friday, not a holiday today")
+        RealDay.isShift(e, inp.profile, inp.facts) && e.end.date == today && e.begin.date == today && e.begin.hour < 6 -> tr("เวรเมื่อคืน", "Last night's shift")
+        RealDay.isShift(e, inp.profile, inp.facts) -> tr("จากปฏิทินเวร", "From the shift calendar")
+        else -> tr("จากปฏิทิน", "From the calendar")
+    }
+
+    // ---- What changed, told after a reflow ----
+
+    /** "เลขาจัดใหม่ให้แล้ว: ..." after [what] changed the plan from [before] to [after]. */
+    fun news(what: String, before: Plan, after: Plan): String {
+        val was = before.placed.associateBy { it.item.id }
+        val shifted = after.placed.count { p -> was[p.item.id]?.let { it.at != p.at } == true }
+        val shortened = after.placed.count { p -> p.short && was[p.item.id]?.short != true }
+        val moved = after.later.count { it.picked == null } - before.later.count { it.picked == null }
+        val bits = buildList {
+            if (shifted > 0) add(tr("ขยับเวลา $shifted อย่าง เวลาเตือนขยับตาม", "$shifted moved, their reminders too"))
+            if (shortened > 0) add(tr("ย่อเวลาของตัวเองให้สั้นลง ไม่ตัดทิ้ง", "Your own time shortened, not dropped"))
+            if (moved > 0) add(tr("ย้ายไปพรุ่งนี้ $moved อย่าง", "$moved moved to tomorrow"))
+            if (moved < 0) add(tr("ดึงกลับมาวันนี้ ${-moved} อย่าง", "${-moved} back today"))
+        }
+        return what + if (bits.isNotEmpty()) tr(" เลขาจัดใหม่ให้แล้ว: ", ". Replanned: ") + bits.joinToString(", ")
+        else tr(" แผนเดิมยังพอดี ใช้ช่องกันชนแทน", ". The plan still fits, the buffer takes it")
+    }
+
+    /**
+     * The next day from tomorrow, within [NET_DAYS] days, with free time for [len] minutes after a third kept clear:
+     * where "เก็บไว้ก่อน" puts a task. Night-shift days come last.
+     */
+    fun laterDay(inp: Input, len: Int): LocalDate {
+        val today = inp.now.date
+        val days = (1L..NET_DAYS).map { today.plusDays(it) }
+        val ok = days.filter { d ->
+            val fr = frame(d, inp)
+            freeIn(fr) * 2 / 3 - 90 >= len
+        }
+        return ok.firstOrNull { frame(it, inp).mode == Mode.NORMAL } ?: ok.firstOrNull() ?: today.plusDays(1)
+    }
+}
+
+/**
+ * The week's sprint (owner's picks, 2026-10-29): at most two projects, fitted to the real free hours outside the job and
+ * the shifts. The order: a real deadline that will be missed unless work starts this week, then a deadline within two
+ * weeks or someone waiting, then work under way with a recent progress note, then what has been quiet the longest.
+ * The owner takes it or swaps the second project; one line shows until it is taken, then a small tag on the cards.
+ */
+object Sprint {
+
+    data class Ranked(val project: String, val rank: Int, val need: Int, val freeBefore: Int?, val due: LocalDate?, val quiet: Long)
+
+    /** Usable minutes on [day]: the free time, less meals and own time, with a third kept clear. */
+    fun usable(day: LocalDate, inp: DayFill.Input): Int {
+        val fr = DayFill.frame(day, inp, if (day == inp.now.date) inp.now else null)
+        val life = (if (fr.job) 45 else 90) + 60
+        return maxOf(0, (DayFill.freeIn(fr) - life) * 2 / 3)
+    }
+
+    fun rank(inp: DayFill.Input): List<Ranked> {
+        val today = inp.now.date
+        val open = inp.tasks.filter { it.isOpen && it.list == null && !DayFill.isMine(it) && !Focus.isSomeday(it) }
+        val subtasks = inp.tasks.filter { it.isSubtask }
+        val byProject = open.groupBy { Projects.projectOf(it) }.filterKeys { it != null }.mapKeys { it.key!! }
+        val usableBy = HashMap<LocalDate, Int>()
+        fun use(d: LocalDate) = usableBy.getOrPut(d) { usable(d, inp) }
+        return byProject.map { (proj, tasks) ->
+            val soon = tasks.filter { it.due != null && it.due >= today && it.due <= today.plusDays(DayFill.NET_DAYS) }.sortedBy { it.due }
+            val due = soon.firstOrNull()?.due
+            val need = soon.filter { it.due!! <= (due ?: today) }.sumOf { Planner.minutesOf(it.title, Planner.kindOf(it.title)) } * 2
+            val free = due?.let { d -> (0L..(d.toEpochDays() - today.toEpochDays()).toLong()).sumOf { use(today.plusDays(it)) } }
+            val waiting = tasks.any { Focus.isWaiting(it) }
+            val recent = tasks.any { t -> t.status == Status.IN_PROGRESS && StuckLog.last(t)?.let { it >= today.minusDays(DayFill.NET_DAYS) } == true }
+            val quiet = tasks.maxOf { DayFill.quiet(it, subtasks, today) ?: 0 }
+            val rank = when {
+                due != null && free != null && need > free -> 0
+                due != null || waiting -> 1
+                recent -> 2
+                else -> 3
+            }
+            Ranked(proj, rank, need, free, due, quiet)
+        }.sortedWith(compareBy<Ranked>({ it.rank }, { it.due ?: LocalDate(9999, 12, 31) }, { -it.quiet }))
+    }
+
+    /** The proposal with the second project swapped [swap] times; one project in a tight week. */
+    fun propose(inp: DayFill.Input, swap: Int): List<Ranked> {
+        val ranked = rank(inp)
+        if (ranked.isEmpty()) return emptyList()
+        val today = inp.now.date
+        val week = (0L..6L).map { DayFill.weekOf(today).plusDays(it) }.filter { it >= today }.sumOf { usable(it, inp) }
+        val count = if (week < 6 * 60) 1 else 2
+        if (count == 1 || ranked.size == 1) return listOf(ranked[swap % ranked.size])
+        val second = ranked.drop(1)
+        return listOf(ranked[0], second[swap % second.size])
+    }
+
+    fun line(inp: DayFill.Input, fr: DayFill.Frame, mem: DayFill.Memory): DayFill.SprintLine? {
+        val today = inp.now.date
+        val week = DayFill.weekOf(today).toString()
+        val pick = mem.sprint?.takeIf { it.week == week }
+        if (pick?.taken == true) return null
+        if (fr.mode == DayFill.Mode.AFTER_NIGHT) return null
+        val chosen = propose(inp, pick?.swap ?: 0)
+        if (chosen.isEmpty()) return null
+        val hours = (0L..6L).map { DayFill.weekOf(today).plusDays(it) }.filter { it >= today }.sumOf { usable(it, inp) } / 60
+        val late = chosen.firstOrNull { it.rank == 0 }
+        val note = late?.let { r ->
+            val short = maxOf(1, (r.need - (r.freeBefore ?: 0) + 59) / 60)
+            tr("${r.project} อาจไม่ทันวันส่ง ${DayFill.shortDay(r.due!!)} ขาดราว $short ชม.", "${r.project} may miss ${r.due}, about $short h short")
+        } ?: tr("เวลาว่างนอกเวรสัปดาห์นี้ราว $hours ชม.", "About $hours h free outside shifts this week")
+        val lines = buildList {
+            add(tr("เวลาว่างนอกเวรสัปดาห์นี้ราว $hours ชม. (หักเวลากินข้าว เวลาของตัวเอง และช่องกันชนแล้ว)", "About $hours h free this week after meals, own time and buffer"))
+            chosen.forEach { r ->
+                add(
+                    if (r.due != null) tr("${r.project}: ต้องใช้ราว ${(r.need + 59) / 60} ชม. ก่อนวันส่ง ${DayFill.shortDay(r.due)} ว่างก่อนวันนั้นราว ${(r.freeBefore ?: 0) / 60} ชม.", "${r.project}: about ${(r.need + 59) / 60} h before ${r.due}")
+                    else tr("${r.project}: ไม่มีวันส่ง ได้ช่องทำต่อวันละช่อง", "${r.project}: no deadline, one slot a day"),
+                )
+            }
+        }
+        return DayFill.SprintLine(chosen.joinToString(", ") { it.project }, note, late != null, lines, chosen.map { it.project })
+    }
+}

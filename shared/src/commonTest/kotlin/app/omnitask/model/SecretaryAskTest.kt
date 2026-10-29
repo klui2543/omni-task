@@ -49,6 +49,25 @@ class SecretaryAskTest {
     ).joinToString("\n")
 
     @Test
+    fun readsTheDueDateTheSecretaryProposes() {
+        val text = listOf(
+            "# เลขาถาม",
+            "- Flow น้ำเกลือ #Siriraj #รอ ⏫ ➕ 2026-10-02",
+            "    - ไฟล์: 📁 Folder/หลังบ้าน/Omni/Omni note.md",
+            "    - เหตุ: ในบันทึกงานมีนัดคุยกับทีมวันพฤหัส 5 พ.ย. งานนี้น่าจะต้องพร้อมก่อนวันนั้น",
+            "    - วันส่ง: 2026-11-04",
+            "- จองตั๋ว",
+            "    - วันส่ง: ยังไม่รู้",
+        ).joinToString("\n")
+        val asks = SecretaryAsk.parse(text)
+        assertEquals(LocalDate.parse("2026-11-04"), asks[0].due)
+        assertEquals("ในบันทึกงานมีนัดคุยกับทีมวันพฤหัส 5 พ.ย. งานนี้น่าจะต้องพร้อมก่อนวันนั้น", asks[0].why)
+        assertEquals(null, asks[1].due, "a line with no date proposes nothing")
+        // Questions without the line read as before.
+        assertEquals(null, SecretaryAsk.parse(file)[0].due)
+    }
+
+    @Test
     fun readsEachQuestionWithItsFileAndReason() {
         val asks = SecretaryAsk.parse(file)
         assertEquals(5, asks.size)

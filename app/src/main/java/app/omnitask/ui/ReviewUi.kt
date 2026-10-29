@@ -131,7 +131,7 @@ fun ReviewSetting(context: Context) {
 }
 
 @Composable
-private fun SettingSwitch(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SettingSwitch(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, color = C.text, fontSize = TS.body)
@@ -331,12 +331,17 @@ private data class Step(val deck: List<Entry>, val answers: Map<String, Ans>, va
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
+fun ReviewScreen(state: UiState, vm: TaskViewModel, only: Task? = null, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { ReviewMode.load(context) }
     val today = state.today
-    val deck = remember { mutableStateListOf<Entry>().apply { addAll(Review.deck(state.tasks, today).map { Entry(it.task, it.group) }) } }
+    // A card of the day plan opens one task ([only]): the same review card, closed once it is answered or skipped.
+    val deck = remember {
+        mutableStateListOf<Entry>().apply {
+            if (only != null) add(Entry(only, Review.groupOf(only, today))) else addAll(Review.deck(state.tasks, today).map { Entry(it.task, it.group) })
+        }
+    }
     var answers by remember { mutableStateOf(mapOf<String, Ans>()) }
     var cur by remember { mutableStateOf<String?>(null) }
     var count by remember { mutableStateOf(0) }
@@ -408,6 +413,7 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
             val leaving = save && answers["status"]?.v.let { it == ReviewWrite.Progress.DONE.name || it == ReviewWrite.Progress.DROP.name }
             val before = Step(deck.toList(), answers, count, null)
             fun advance(saved: TaskViewModel.ReviewSaved?, written: Entry?) {
+                if (only != null) return onClose()
                 history.add(before.copy(saved = saved))
                 deck.removeAt(0)
                 if (!leaving) deck.add(written ?: entry)
