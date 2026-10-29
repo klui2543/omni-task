@@ -63,15 +63,17 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
 
 /**
- * The review mode's two switches, kept on this phone (Klui, 2026-10-27: off until tried). [on] shows the review on
- * the secretary page; [writes] lets "บันทึก" write into the notes. With [writes] off a card is answered and moved on,
- * and "ดูต้นฉบับ" shows what would be written, but nothing is.
+ * The review mode's two switches, kept on this phone. [on] shows the review on the secretary page; [writes] lets
+ * "บันทึก" write into the notes. With [writes] off a card is answered and moved on, and "ดูต้นฉบับ" shows what would
+ * be written, but nothing is. [writes] starts on (Klui, 2026-10-29, after the check that every app keeps the review
+ * lines when a description is edited); it is kept under a new key so an earlier "off" from the trial does not stick.
  */
 object ReviewMode {
     private const val PREFS = "omni-review"
     var on by mutableStateOf(false)
         private set
-    var writes by mutableStateOf(false)
+    private const val WRITES = "writes-v2"
+    var writes by mutableStateOf(true)
         private set
     private var loaded = false
 
@@ -80,7 +82,7 @@ object ReviewMode {
         loaded = true
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         on = p.getBoolean("on", false)
-        writes = p.getBoolean("writes", false)
+        writes = p.getBoolean(WRITES, true)
     }
 
     fun setOn(context: Context, value: Boolean) {
@@ -90,7 +92,7 @@ object ReviewMode {
 
     fun setWrites(context: Context, value: Boolean) {
         writes = value
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("writes", value).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(WRITES, value).apply()
     }
 }
 
