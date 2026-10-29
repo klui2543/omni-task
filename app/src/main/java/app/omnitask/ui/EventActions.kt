@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
+import app.omnitask.time.atZone
 
 /** What a calendar event does wherever it shows: a tap opens it in the calendar app, a long press shows [EventInfoDialog]. */
 class EventActions(val open: (CalendarEvent) -> Unit, val inspect: (CalendarEvent) -> Unit)
@@ -35,7 +36,11 @@ fun rememberEventActions(vm: TaskViewModel): EventActions {
     val actions = remember(context) {
         EventActions(
             open = { e ->
-                val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id)
+                // An event the phone has not synced yet has no row to open, so the calendar app opens at its time.
+                val uri = if (e.id < 0) {
+                    val ms = e.begin.atZone(if (e.allDay) java.time.ZoneOffset.UTC else java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    CalendarContract.CONTENT_URI.buildUpon().appendPath("time").also { ContentUris.appendId(it, ms) }.build()
+                } else ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id)
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
             },
             inspect = { e -> inspecting = e to CalendarReader.inspect(context, e.id) },
