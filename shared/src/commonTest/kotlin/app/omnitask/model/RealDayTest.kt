@@ -19,6 +19,8 @@ class RealDayTest {
 
     private val shiftCal = 7L
     private val ownCal = 3L
+    private val holidayCal = 9L
+    private val partnerCal = 5L
     private val profile = Profile(exists = true)
     private val facts = RealDay.Facts(
         job = RealDay.Job.WEEKDAYS,
@@ -27,6 +29,8 @@ class RealDayTest {
             LocalDate.parse("2026-10-23") to "วันปิยมหาราช",
         ),
         shiftCalendars = setOf(shiftCal),
+        holidayCalendars = setOf(holidayCal),
+        othersCalendars = setOf(partnerCal),
     )
 
     private fun timed(id: Long, cal: Long, title: String, from: String, to: String) =
@@ -52,6 +56,9 @@ class RealDayTest {
         timed(16, ownCal, "เบบี้รักยิ้มรับปริญญา", "2026-11-11T00:00", "2026-11-11T00:00"),
         allDay(17, ownCal, "วันหยุดประชุม World bank", "2026-10-16"),
         allDay(18, ownCal, "ตารางเวรออก", "2026-10-14"),
+        // Someone else's calendar ("Job"), which the owner labelled in Omni: none of it is the owner's time.
+        timed(20, partnerCal, "คลังยาดี ท่าพระ", "2026-10-29T17:00", "2026-10-29T22:00"),
+        allDay(21, partnerCal, "ไปเที่ยวเชียงใหม่", "2026-11-05"),
     )
 
     private fun day(s: String) = LocalDate.parse(s)
@@ -79,6 +86,21 @@ class RealDayTest {
     }
 
     @Test
+    fun aTripIsADayAwayButAnErrandIsNot() {
+        fun away(title: String, cal: Long = ownCal, last: String = "2026-11-18") = RealDay.isDayAway(allDay(99, cal, title, "2026-11-18", last), facts)
+        assertTrue(away("ไปนครปฐม"))
+        assertTrue(away("พักร้อน"))
+        assertTrue(away("ไปตลาดน้ำ", last = "2026-11-19"), "a trip over two days")
+        assertFalse(away("ไปธนาคาร"), "an errand the quick add wrote as an all-day event")
+        assertFalse(away("ไปรษณีย์"))
+        assertFalse(away("ไปวิ่ง"))
+        assertFalse(away("ล้าง CPAP"))
+        assertFalse(away("วันหยุดธนาคาร", cal = holidayCal), "the holiday calendar speaks through days off only")
+        assertFalse(away("ไปเที่ยวเชียงใหม่", cal = partnerCal), "someone else's trip")
+        assertTrue(RealDay.jobOn(day("2026-11-05"), events, facts))
+    }
+
+    @Test
     fun everyEventOfTheShiftCalendarIsAShiftAndItsHoursTellNight() {
         fun e(id: Long) = events.first { it.id == id }
         assertTrue(RealDay.isShiftCalendar("SiRxShift", profile))
@@ -93,6 +115,12 @@ class RealDayTest {
 
     // Thursday 29 Oct, 07:00.
     private val now = LocalDateTime.parse("2026-10-29T07:00")
+
+    @Test
+    fun someoneElsesEventsTakeNoneOfTheOwnersTime() {
+        val plan = Planner.plan("อยากไปวิ่งวันนี้", emptyList(), events, profile, now, facts = facts)
+        assertTrue(plan.slots.any { it.day == day("2026-10-29") && it.start == LocalTime.of(17, 30) }, plan.slots.joinToString { "${it.day} ${it.start}" })
+    }
 
     @Test
     fun noWorkIsPlacedInTheDayJob() {
@@ -118,18 +146,29 @@ class RealDayTest {
             assertTrue(s.end <= LocalTime.of(20, 0), "${s.start} to ${s.end} on the evening before the 02:30 shift")
         }
         // Three and a half hours after work on Monday no longer fits: bed is at 21:00 before the 02:30 shift.
-        val late = Planner.plan("อ่าน paper 3.5 ชม. วันนี้", emptyList(), events, profile, LocalDateTime.parse("2026-11-02T16:40"), facts = facts)
-        late.slots.forEach { s -> assertTrue(s.end <= LocalTime.of(20, 0), "${s.start} to ${s.end} runs into the early night") }
+        val evening = LocalDateTime.parse("2026-11-02T16:40")
+        val late = Planner.plan("อ่าน paper 3.5 ชม. วันนี้", emptyList(), events, profile, evening, facts = facts)
+        assertTrue(late.slots.isEmpty(), late.slots.joinToString { "${it.start} to ${it.end} runs into the early night" })
+        val short = Planner.plan("อ่าน paper 2 ชม. วันนี้", emptyList(), events, profile, evening, facts = facts)
+        assertTrue(short.slots.isNotEmpty() && short.slots.all { it.end <= LocalTime.of(20, 0) }, short.slots.joinToString { "${it.start} to ${it.end}" })
+        assertTrue(short.slots.all { "คืนนี้มีเวร 02:30 ควรนอนเร็ว" in it.why }, short.slots.joinToString { it.why })
         assertTrue(plan.slots.first().day != day("2026-11-03"), "the night-shift day is never the top pick")
         val tue = plan.slots.filter { it.day == day("2026-11-03") }
         assertTrue(tue.isNotEmpty() && tue.all { "เวรดึก" in it.why || "night shift" in it.why }, tue.joinToString { it.why })
     }
 
     @Test
-    fun withoutFactsThePlannerIsUnchanged() {
-        // CONTROL: the web passes no facts, so it plans exactly as before.
-        val before = Planner.plan("อยากเขียน proposal", emptyList(), events, profile, now)
-        val same = Planner.plan("อยากเขียน proposal", emptyList(), events, profile, now, facts = RealDay.Facts())
-        assertEquals(before, same)
+    fun withoutFactsTheWebPlansAsBefore() {
+        // The web passes no facts. An all-day "เวรดึก" did not make that day "just off a night shift", and a timed
+        // "เวร ER" from midnight was no night shift without the word ดึก; both must stay so.
+        val wed = LocalDateTime.parse("2026-10-07T07:10")
+        val titled = listOf(
+            CalendarEvent(1, "เวรดึก", LocalDate.parse("2026-10-08").atStartOfDay(), LocalDate.parse("2026-10-09").atStartOfDay(), allDay = true),
+            CalendarEvent(2, "เวร ER", LocalDateTime.parse("2026-10-10T00:00"), LocalDateTime.parse("2026-10-10T08:00")),
+        )
+        val plan = Planner.plan("อยากไปวิ่งสัปดาห์นี้", emptyList(), titled, profile, wed)
+        plan.slots.filter { it.day == LocalDate.parse("2026-10-08") }.forEach { assertFalse("เพิ่งลงเวรดึก" in it.why, it.why) }
+        plan.slots.filter { it.day == LocalDate.parse("2026-10-10") }.forEach { assertFalse("เวรดึก" in it.why, it.why) }
+        plan.slots.filter { it.day == LocalDate.parse("2026-10-09") }.forEach { assertFalse("คืนนี้มีเวร" in it.why, it.why) }
     }
 }

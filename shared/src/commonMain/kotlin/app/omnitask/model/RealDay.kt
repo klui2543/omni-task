@@ -28,8 +28,8 @@ object RealDay {
     }
 
     /**
-     * What the planner knows on top of the events. The default knows nothing and changes nothing, so a caller that
-     * passes none (the web) plans as before.
+     * What the planner knows on top of the events. Only Android passes it; without it (the web) the planner runs
+     * exactly as before.
      */
     data class Facts(
         val job: Job? = null,
@@ -37,12 +37,21 @@ object RealDay {
         val daysOff: Map<LocalDate, String> = emptyMap(),
         /** Phone calendars whose every event is a shift. */
         val shiftCalendars: Set<Long> = emptySet(),
-    )
+        /** Holiday calendars: their days off come through [daysOff] only, so their events are never a day away. */
+        val holidayCalendars: Set<Long> = emptySet(),
+        /** Calendars the owner labelled as someone else's: their events take none of the owner's time. */
+        val othersCalendars: Set<Long> = emptySet(),
+    ) {
+        fun isOthers(e: CalendarEvent) = e.calendarId != 0L && e.calendarId in othersCalendars
+    }
 
     /** Night hours: a shift running through any of them is a night shift. */
     val NIGHT_END: LocalTime = LocalTime.of(6, 0)
 
-    /** Bedtime the evening before a shift that starts after midnight (interview, 2026-10-22: asleep 21:00 to 22:00, up about 01:45). */
+    /**
+     * Bedtime the evening before a shift that starts after midnight: before a night shift the owner sleeps at 21:00 to
+     * 22:00 and gets up about 01:45 (the owner's interview of 2026-10-22, kept in the project's notes, not in this repository).
+     */
     val BED_BEFORE_NIGHT: LocalTime = LocalTime.of(21, 0)
 
     val jobTitle: String get() = tr("งานประจำ", "Day job")
@@ -72,18 +81,24 @@ object RealDay {
         events.filter { !it.allDay && it.begin.date == day && it.begin.time < NIGHT_END && isShift(it, profile, facts) }.minByOrNull { it.begin }
 
     private val AWAY_WORDS = listOf(
-        "ลางาน", "ลาพัก", "ลาป่วย", "ลากิจ", "วันลา", "วันหยุด", "หยุดงาน", "เที่ยว",
+        "ลางาน", "ลาพัก", "ลาป่วย", "ลากิจ", "วันลา", "วันหยุด", "หยุดงาน", "หยุดชดเชย", "พักร้อน", "เที่ยว",
         "leave", "vacation", "day off", "holiday", "trip",
     )
 
     /**
-     * An all-day event that takes the whole day away from the job: a day off the owner wrote in (the cabinet's special
-     * holidays are missing from Google's holiday calendar, so the owner adds them, such as "วันหยุดประชุม World bank"),
-     * leave, or a trip ("ไปนครปฐม", owner, 2026-10-29). Reminders such as "ล้าง CPAP" are not.
+     * An all-day event of the owner's that takes the whole day away from the job: a day off the owner wrote in (the
+     * cabinet's special holidays are missing from Google's holiday calendar, so the owner adds them, such as "วันหยุด
+     * ประชุม World bank"), leave, or a trip ("ไปนครปฐม", owner, 2026-10-29). A trip starts with "ไป" and is no errand
+     * or exercise ("ไปธนาคาร", "ไปรษณีย์", "ไปวิ่ง" are not), unless it spans days. Reminders such as "ล้าง CPAP" are not.
      */
-    fun isDayAway(e: CalendarEvent, facts: Facts): Boolean =
-        e.allDay && e.calendarId !in facts.shiftCalendars &&
-            (e.title.trim().startsWith("ไป") || AWAY_WORDS.any { e.title.contains(it, ignoreCase = true) })
+    fun isDayAway(e: CalendarEvent, facts: Facts): Boolean {
+        if (!e.allDay || e.calendarId in facts.shiftCalendars || e.calendarId in facts.holidayCalendars || facts.isOthers(e)) return false
+        val title = e.title.trim()
+        if (AWAY_WORDS.any { title.contains(it, ignoreCase = true) }) return true
+        if (!title.startsWith("ไป")) return false
+        val days = e.end.date.toEpochDays() - e.begin.date.toEpochDays()
+        return days >= 2 || Planner.kindOf(title) == Planner.Kind.GENERAL
+    }
 
     private fun covers(e: CalendarEvent, day: LocalDate): Boolean {
         val last = if (e.allDay) maxOf(e.begin.date, e.end.minusNanos(1).date) else e.end.date
@@ -107,9 +122,6 @@ object RealDay {
             CalendarEvent(JOB_ID - d.toEpochDays(), jobTitle, d.atTime(job.from), d.atTime(job.to))
         }
     }
-
-    /** True when [e] is one of [jobBlocks]. */
-    fun isJob(e: CalendarEvent): Boolean = e.id <= JOB_ID && e.id > JOB_ID - 10_000_000L
 
     /**
      * Observances in a holiday calendar (Christmas Eve, Valentine's Day) are not days off. Google marks them in the

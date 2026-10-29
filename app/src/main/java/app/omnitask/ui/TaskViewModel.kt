@@ -1441,19 +1441,28 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val today = LocalDate.now()
         CalendarReader.daysOff(app, today.minusDays(1), today.plusDays(100))
     }.getOrElse { e ->
-        // Without the holidays the planner would keep the day job on them; say so in the log rather than hide it.
+        // Without the holidays the planner keeps the day job on them, so the owner is told instead of left guessing.
         android.util.Log.w("Omni", "days off not read", e)
-        emptyMap()
+        _state.update {
+            it.copy(message = tr(
+                "อ่านวันหยุดจากปฏิทินไม่ได้ ตัวจัดตารางจะนับงานประจำทุกวันจันทร์ถึงศุกร์",
+                "Could not read the holidays from the calendar, so the planner counts the day job every weekday.",
+            ))
+        }
+        _state.value.daysOff
     }
 
     /**
      * What the planner knows beyond the events (owner, 2026-10-29): the day job Monday to Friday 08:30 to 16:30, the
-     * days it is off, and the calendars whose every event is a shift ("SiRxShift").
+     * days it is off, the calendars whose every event is a shift ("SiRxShift"), and the calendars labelled as someone
+     * else's, whose events take none of the owner's time (as in the secretary's free days).
      */
     private fun planFacts(s: UiState = _state.value) = RealDay.Facts(
         job = RealDay.Job.WEEKDAYS,
         daysOff = s.daysOff,
         shiftCalendars = s.calendars.filter { RealDay.isShiftCalendar(it.name, s.profile) }.map { it.id }.toSet(),
+        holidayCalendars = s.calendars.filter { it.holiday }.map { it.id }.toSet(),
+        othersCalendars = s.calendars.filter { CalendarStyles.label(it.id) != null }.map { it.id }.toSet(),
     )
 
     /** The pinned countdown events over the year ahead, by their ids on this phone. */
@@ -3361,7 +3370,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val today = now.toLocalDate()
         viewModelScope.launch {
             val events = withContext(Dispatchers.IO) {
-                runCatching { CalendarReader.events(getApplication(), from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+                // One day past the range, so a shift after midnight just after it still shortens the last evening.
+                runCatching { CalendarReader.events(getApplication(), from.atStartOfDay(), to.plusDays(2).atStartOfDay()) }.getOrDefault(emptyList())
             }
             val s = _state.value
             val candidates = Focus.rank(s.tasks, today).map { it.first }.filter { t ->

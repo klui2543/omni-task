@@ -171,7 +171,7 @@ object Planner {
 
     fun plan(
         text: String, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, minutesOverride: Int? = null,
-        facts: RealDay.Facts = RealDay.Facts(),
+        facts: RealDay.Facts? = null,
     ): Plan {
         val kind = kindOf(text)
         val minutes = minutesOverride ?: minutesOf(text, kind)
@@ -195,7 +195,7 @@ object Planner {
     /** Ranked slots for work of this kind and length over the given days. */
     fun slotsFor(
         kind: Kind, minutes: Int, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime,
-        facts: RealDay.Facts = RealDay.Facts(),
+        facts: RealDay.Facts? = null,
     ): List<Slot> =
         days.flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, minutes + kind.buffer, tasks, events, profile, now, facts) }
             .sortedByDescending { it.score }
@@ -209,7 +209,7 @@ object Planner {
      */
     fun planRange(
         candidates: List<Task>, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime,
-        facts: RealDay.Facts = RealDay.Facts(),
+        facts: RealDay.Facts? = null,
     ): List<Proposal> {
         val busy = events.toMutableList()
         val out = ArrayList<Proposal>()
@@ -227,22 +227,33 @@ object Planner {
 
     private fun slotsOn(
         day: LocalDate, index: Int, kind: Kind, minutes: Int, need: Int,
-        tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, facts: RealDay.Facts,
+        tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, facts: RealDay.Facts?,
     ): List<Slot> {
-        // A shift is named so or sits in a shift calendar; a night shift is named so or runs through midnight to 06:00 (RealDay).
-        fun isShift(e: CalendarEvent) = RealDay.isShift(e, profile, facts)
-        fun isNight(e: CalendarEvent) = RealDay.isNight(e, profile, facts)
-        fun on(d: LocalDate) = events.filter { it.begin < d.plusDays(1).atStartOfDay() && it.end > d.atStartOfDay() }
+        // With [facts] (Android, owner 2026-10-29): a shift is also any event of a shift calendar, a night shift also any
+        // shift through midnight to 06:00, someone else's events take no time, and the day job is busy (RealDay).
+        // Without them (the web), everything below runs as it always did.
+        fun isShift(e: CalendarEvent) =
+            if (facts == null) profile.shiftWords.any { e.title.contains(it, ignoreCase = true) } else RealDay.isShift(e, profile, facts)
+        fun isNight(e: CalendarEvent) =
+            if (facts == null) isShift(e) && profile.nightWords.any { e.title.contains(it, ignoreCase = true) } else RealDay.isNight(e, profile, facts)
+        val own = if (facts == null) events else events.filterNot { facts.isOthers(it) }
+        fun on(d: LocalDate) = own.filter { it.begin < d.plusDays(1).atStartOfDay() && it.end > d.atStartOfDay() }
 
         // The day job is in no calendar, so it joins the day's events as one more busy block.
-        val todays = on(day) + RealDay.jobBlocks(listOf(day), events, facts)
+        val todays = on(day) + (facts?.let { RealDay.jobBlocks(listOf(day), own, it) } ?: emptyList())
         val shifts = todays.filter(::isShift)
         val nights = todays.filter(::isNight)
         val nightToday = nights.isNotEmpty()
-        // The night just before this day: a night shift between 18:00 yesterday and 06:00 today.
-        val nightBefore = events.any { isNight(it) && it.begin < day.atTime(RealDay.NIGHT_END) && it.end > day.minusDays(1).atTime(18, 0) }
-        // A shift tomorrow after midnight ("O11 รอบ 3" at 02:30) means an early night today.
-        val nightNext = RealDay.nightStart(day.plusDays(1), events, profile, facts)
+        // The night before this day: a night shift on the day before, or (with facts) a timed one between 18:00
+        // yesterday and 06:00 today, so a shift from 21:30 to 02:30 counts and one that ended yesterday morning does not.
+        val nightBefore = if (facts == null) {
+            on(day.minusDays(1)).any(::isNight)
+        } else {
+            on(day.minusDays(1)).any { it.allDay && isNight(it) } ||
+                own.any { !it.allDay && isNight(it) && it.begin < day.atTime(RealDay.NIGHT_END) && it.end > day.minusDays(1).atTime(18, 0) }
+        }
+        // A shift tonight after midnight ("O11 รอบ 3" at 02:30) means an early night today.
+        val nightNext = facts?.let { RealDay.nightStart(day.plusDays(1), own, profile, it) }
         val earlyTomorrow = nightNext == null && on(day.plusDays(1)).any { isShift(it) && !it.allDay && it.begin.toLocalTime() < LocalTime.of(9, 0) }
         val dueThatDay = tasks.count { it.isOpen && it.due == day }
 
@@ -312,11 +323,11 @@ object Planner {
                 if (earlyTomorrow && t >= LocalTime.of(19, 30)) { score -= 20; reasons += tr("พรุ่งนี้มีเวรเช้า ไม่ควรดึก", "Early shift next day, so not too late.") }
                 nightNext?.let { n ->
                     val at = Profile.hm(n.begin.toLocalTime())
-                    reasons += tr("พรุ่งนี้มีเวรตี $at ควรนอนเร็ว", "Shift at $at tomorrow, so an early night.")
+                    reasons += tr("คืนนี้มีเวร $at ควรนอนเร็ว", "Shift at $at tonight, so an early night.")
                 }
                 if (dueThatDay >= 3 && kind != Kind.QUICK) { score -= 10; reasons += tr("วันนั้นมีงานครบกำหนด $dueThatDay งาน", "$dueThatDay tasks due that day.") }
                 reasons += tr("ว่างถึง ${Profile.hm(gapEnd.toLocalTime())}", "Free until ${Profile.hm(gapEnd.toLocalTime())}.")
-                Slot(day, t, t.plusMinutes(minutes.toLong()), titleFor(t, shifts, start, nightToday, nights.all { it.end <= start }), reasons.joinToString(" "), score)
+                Slot(day, t, t.plusMinutes(minutes.toLong()), titleFor(t, shifts, start, nightToday, facts != null && nights.all { it.end <= start }), reasons.joinToString(" "), score)
             }
         }.distinctBy { it.start }
     }

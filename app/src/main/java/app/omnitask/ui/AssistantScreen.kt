@@ -686,10 +686,10 @@ private fun Interview(current: Profile, first: Boolean, onSave: (Profile) -> Uni
                 tr(
                     "เวรอ่านจากนัดใน Google Calendar ที่มีคำว่า \"${p.shiftWords.joinToString("\", \"")}\" และทุกนัดในปฏิทินที่ชื่อมีคำนี้หรือคำว่า shift " +
                         "เวรดึกดูจากคำว่า \"${p.nightWords.joinToString("\", \"")}\" หรือเวรที่อยู่ในช่วงเที่ยงคืนถึง 06:00 " +
-                        "งานประจำ จันทร์ถึงศุกร์ 08:30 ถึง 16:30 นับให้เอง เว้นวันหยุดราชการและวันที่มีนัดทั้งวันแบบไปไหนหรือลา",
+                        "งานประจำ จันทร์ถึงศุกร์ 08:30 ถึง 16:30 นับให้เอง เว้นวันหยุดในปฏิทินวันหยุด (ไม่นับวันสำคัญ) และวันที่มีนัดทั้งวันแบบไปไหนหรือลา",
                     "Shifts are Google Calendar events containing \"${p.shiftWords.joinToString("\", \"")}\" and every event of a calendar whose name has it or \"shift\". " +
                         "Night shifts contain \"${p.nightWords.joinToString("\", \"")}\" or fall between midnight and 06:00. " +
-                        "The day job, Monday to Friday 08:30 to 16:30, is counted for you, except on public holidays and all-day trips or leave.",
+                        "The day job, Monday to Friday 08:30 to 16:30, is counted for you, except on holiday-calendar days off (not observances) and all-day trips or leave.",
                 ),
                 Modifier.padding(top = 12.dp), color = C.muted, fontSize = TS.caption, lineHeight = 1.4.em,
             )

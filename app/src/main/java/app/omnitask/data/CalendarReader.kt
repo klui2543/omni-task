@@ -334,11 +334,18 @@ object CalendarReader {
             CalendarContract.Instances.END,
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.DESCRIPTION,
+            CalendarContract.Instances.EVENT_ID,
         )
-        val where = CalendarContract.Instances.CALENDAR_ID + " IN (" + ids.joinToString(",") + ")"
+        // Like [events]: calendars hidden in the calendar app stay out, and so do deleted events and ones Google no longer has.
+        val where = CalendarContract.Instances.VISIBLE + " = 1 AND " + CalendarContract.Instances.CALENDAR_ID + " IN (" + ids.joinToString(",") + ")"
+        val gone = GoogleCalendarCheck.gone(context)
         val out = HashMap<LocalDate, String>()
-        context.contentResolver.query(uri, cols, where, null, CalendarContract.Instances.BEGIN)?.use { c ->
+        val cursor = runCatching {
+            context.contentResolver.query(uri, cols, where + " AND " + CalendarContract.Events.DELETED + " = 0", null, CalendarContract.Instances.BEGIN)
+        }.getOrNull() ?: context.contentResolver.query(uri, cols, where, null, CalendarContract.Instances.BEGIN)
+        cursor?.use { c ->
             while (c.moveToNext()) {
+                if (c.getLong(5) in gone) continue
                 if (!RealDay.isDayOff(c.getString(4))) continue
                 val allDay = c.getInt(3) == 1
                 val zone = if (allDay) ZoneOffset.UTC else ZoneId.systemDefault()
