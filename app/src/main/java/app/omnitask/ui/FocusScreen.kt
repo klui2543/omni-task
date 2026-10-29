@@ -74,8 +74,10 @@ fun FocusScreen(
     state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
     onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {}, onSecretary: () -> Unit = {},
 ) {
-    // A day plan card's "ทบทวน" opens the review card on that one task.
+    // A day plan card's "ทบทวน" opens the review card on that one task. The list's place is kept above it, so closing
+    // the review comes back to where the owner was.
     var reviewingTask by remember { mutableStateOf<Task?>(null) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     reviewingTask?.let { t -> ReviewScreen(state, vm, only = t) { reviewingTask = null }; return }
     // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
     val nl = NewLook.on
@@ -146,6 +148,7 @@ fun FocusScreen(
 
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
         verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
@@ -272,7 +275,8 @@ fun FocusScreen(
         }
 
         // The secretary's questions: one line however many, the answers in a sheet (owner's pick, 2026-10-26).
-        if (!nl && asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
+        // With the day plan on, its own "เลขาถาม N ข้อ" button opens the same sheet, so the line is not shown twice.
+        if (!nl && !DayFillMode.on && asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
 
         // Recordings not written down yet (no network, or the check was closed): try again or throw away.
         if (!nl && voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {

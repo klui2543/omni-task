@@ -125,8 +125,9 @@ fun DayFillCard(
     var open by remember { mutableStateOf<String?>(null) }
     var chips by remember { mutableStateOf(false) }
     var sprintDetail by remember { mutableStateOf(false) }
-    // Taken slots the plan moved: their reminder follows (written once, see TaskViewModel.fillApplyMoves).
-    LaunchedEffect(plan.moves) { vm.fillApplyMoves(plan.moves) }
+    // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
+    // owner changed (written once, see TaskViewModel.fillFollow).
+    LaunchedEffect(plan.moves, plan.letGo) { vm.fillFollow(plan.moves, plan.letGo) }
     // A new event or a new urgent task changed the plan without a tap: say what moved.
     var seen by remember { mutableStateOf<DayFill.Plan?>(null) }
     LaunchedEffect(plan) {
@@ -153,7 +154,7 @@ fun DayFillCard(
                 color = C.text2, fontSize = TS.caption,
             )
             plan.banner?.let { Notice(it, warmText, warmSoft, bold = true) }
-            state.fillNews?.let { Notice(it, newsText, newsSoft) }
+            state.fillNews?.takeIf { it.first == plan.day.toString() }?.let { Notice(it.second, newsText, newsSoft) }
             plan.sprint?.let { sp ->
                 val rule = C.divider
                 Column(
@@ -173,8 +174,17 @@ fun DayFillCard(
                             },
                             Modifier.weight(1f), color = C.text, fontSize = TS.caption,
                         )
-                        SmallAction(tr("รับ", "Take"), true) { vm.fillSprint(sp.projects, take = true, swap = false) }
-                        SmallAction(tr("เปลี่ยน", "Swap"), false) { vm.fillSprint(sp.projects, take = false, swap = true) }
+                        if (sp.taken) {
+                            // Taken today: a tap opens it again, as in the mock.
+                            Text(
+                                tr("รับแล้ว", "Taken"),
+                                Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.fillSprint(sp.projects, take = null, swap = false) }.padding(horizontal = 4.dp, vertical = 6.dp),
+                                color = okText, fontSize = TS.caption,
+                            )
+                        } else {
+                            SmallAction(tr("รับ", "Take"), true) { vm.fillSprint(sp.projects, take = true, swap = false) }
+                            SmallAction(tr("เปลี่ยน", "Swap"), false) { vm.fillSprint(sp.projects, take = false, swap = true) }
+                        }
                     }
                     Text(
                         sp.note + if (sprintDetail) tr(" (แตะเพื่อย่อ)", " (tap to fold)") else tr(" (แตะดู)", " (tap to see)"),
@@ -344,7 +354,7 @@ private fun RowScope.BigCard(
                 val inp = input
                 BigButton(tr("แบ่งให้เล็กลง", "Make it smaller"), true, Modifier.fillMaxWidth()) { vm.fillAsk(item, DayFill.Pick.SPLIT, inp()); setOpen(null) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!item.keptOnce) BigButton(tr("เก็บไว้ก่อน", "Keep for later"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.LATER, inp()); setOpen(null) }
+                    BigButton(tr("เก็บไว้ก่อน", "Keep for later"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.LATER, inp()); setOpen(null) }
                     BigButton(tr("ปล่อยไป", "Let it go"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.DROP, inp()); setOpen(null) }
                 }
             }

@@ -413,7 +413,7 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, only: Task? = null, onClose:
             val leaving = save && answers["status"]?.v.let { it == ReviewWrite.Progress.DONE.name || it == ReviewWrite.Progress.DROP.name }
             val before = Step(deck.toList(), answers, count, null)
             fun advance(saved: TaskViewModel.ReviewSaved?, written: Entry?) {
-                if (only != null) return onClose()
+                if (only != null) { saved?.let(vm::reviewFromPlan); return onClose() }
                 history.add(before.copy(saved = saved))
                 deck.removeAt(0)
                 if (!leaving) deck.add(written ?: entry)

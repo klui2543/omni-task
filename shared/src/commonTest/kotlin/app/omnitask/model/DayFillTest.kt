@@ -1,5 +1,6 @@
 package app.omnitask.model
 
+import app.omnitask.data.TaskLine
 import app.omnitask.data.VaultText
 import app.omnitask.notify.CalendarEvent
 import kotlin.test.AfterTest
@@ -77,6 +78,21 @@ class DayFillTest {
     private fun DayFill.Plan.work() = placed.filter { it.item.kind != DayFill.Kind.LIFE && it.item.kind != DayFill.Kind.MINE }
 
     private fun id(lines: List<String>, title: String) = DayFill.ident(tasks(lines).first { it.title.startsWith(title) })
+
+    /**
+     * A slot taken the way the app takes it: the task's line gets ⏳ [day] and 🎯 at [at], and the memory keeps what the
+     * line was and what was written ([extra] is the rest of the memory).
+     */
+    private fun taken(
+        title: String, at: Int, day: String = "2026-10-29", lines: List<String> = note, extra: DayFill.Memory = DayFill.Memory(day = day),
+    ): Pair<List<String>, DayFill.Memory> {
+        val i = lines.indexOfFirst { it.startsWith("- [") && TaskLine.parse(it)?.title?.startsWith(title) == true }
+        val before = lines[i]
+        val after = TaskLine.setReminder(TaskLine.setDate(before, TaskLine.DateField.SCHEDULED, LocalDate.parse(day)), DayFill.clock(at), ReminderOn.SCHEDULED)
+        val out = lines.toMutableList().also { it[i] = after }
+        val ident = id(out, title)
+        return out to extra.copy(accepted = extra.accepted + (ident to DayFill.Accepted(day, at)), lines = extra.lines + (ident to DayFill.Line(before, after)))
+    }
 
     private var chosenBefore: Set<String>? = null
 
@@ -209,7 +225,7 @@ class DayFillTest {
         val after = plan.rows.filterIsInstance<DayFill.Row.Locked>().filter { (it.at ?: 0) >= plan.end }
         assertEquals(listOf(m(21), 1440 + m(2, 30)), after.map { it.at }, "sleep at 21:00, then the shift at 02:30")
         assertEquals("02:30", DayFill.hm(after.last().at!!))
-        assertTrue(after.last().title.startsWith("O11 รอบ 3"))
+        assertTrue(after.last().title.startsWith("เวร O11 รอบ 3"), after.last().title)
         val mine = assertNotNull(plan.placed.firstOrNull { it.item.kind == DayFill.Kind.MINE })
         assertEquals(45, mine.len)
         assertTrue(mine.at >= m(18) && mine.at + mine.len <= m(20))
@@ -234,7 +250,7 @@ class DayFillTest {
         assertTrue(omni.why.startsWith("วันพักฟื้น"), omni.why)
         assertTrue(items.none { it.kind == DayFill.Kind.PROJECT || it.kind == DayFill.Kind.NET }, "no sprint or net after a night shift")
         assertNull(plan.sprint)
-        val before = plan.rows.filterIsInstance<DayFill.Row.Locked>().first { it.title.startsWith("O11") }
+        val before = plan.rows.filterIsInstance<DayFill.Row.Locked>().first { it.title.startsWith("เวร O11") }
         assertEquals(m(2, 30), before.at)
         assertTrue(before.past)
         val mine = assertNotNull(plan.placed.firstOrNull { it.item.kind == DayFill.Kind.MINE })
@@ -284,14 +300,13 @@ class DayFillTest {
 
     @Test
     fun aTakenSlotKeepsItsTimeAndFollowsANewEvent() {
-        val flow = id(note, "Flow น้ำเกลือ")
-        val memory = DayFill.Memory(day = "2026-10-29", accepted = mapOf(flow to DayFill.Accepted("2026-10-29", m(17, 15))))
-        val plan = DayFill.plan(input("2026-10-29T16:45", memory = memory))
+        val (lines, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
         assertEquals(m(17, 15), plan.card("Flow น้ำเกลือ")!!.at)
-        assertTrue(plan.moves.isEmpty())
+        assertTrue(plan.moves.isEmpty() && plan.letGo.isEmpty())
         // A new event lands on it: it moves, and its reminder is to follow.
         val call = timed(31, ownCal, "โทรคุยกับร้าน", "2026-10-29T17:00", "2026-10-29T18:00")
-        val moved = DayFill.plan(input("2026-10-29T16:45", extra = listOf(call), memory = memory))
+        val moved = DayFill.plan(input("2026-10-29T16:45", lines, extra = listOf(call), memory = memory))
         val at = moved.card("Flow น้ำเกลือ")!!.at
         assertTrue(at >= m(18, 15), DayFill.hm(at))
         assertEquals(listOf(at), moved.moves.filter { it.task.title.startsWith("Flow") }.map { it.at })
@@ -300,12 +315,8 @@ class DayFillTest {
     @Test
     fun busyOnATakenSlotMovesItAndItsReminderFollows() {
         val flow = id(note, "Flow น้ำเกลือ")
-        val memory = DayFill.Memory(
-            day = "2026-10-29",
-            accepted = mapOf(flow to DayFill.Accepted("2026-10-29", m(17, 15))),
-            notBefore = mapOf(flow to m(18, 30)),
-        )
-        val plan = DayFill.plan(input("2026-10-29T16:45", memory = memory))
+        val (lines, memory) = taken("Flow น้ำเกลือ", m(17, 15), extra = DayFill.Memory(day = "2026-10-29", notBefore = mapOf(flow to m(18, 30))))
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
         val at = plan.card("Flow น้ำเกลือ")!!.at
         assertTrue(at >= m(18, 30), DayFill.hm(at))
         assertEquals(listOf(at), plan.moves.map { it.at })
@@ -321,14 +332,114 @@ class DayFillTest {
             day = "2026-10-29",
             picks = mapOf(note2 to DayFill.Pick.TAKE),
             accepted = mapOf(note2 to DayFill.Accepted("2026-10-29", m(17, 30), timed = false)),
-            slots = mapOf("net" to "2026-10-29"),
+            slots = mapOf("net" to note2),
         )
         val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
         val items = plan.placed.map { it.item } + plan.later.map { it.item }
-        assertTrue(items.none { it.kind == DayFill.Kind.NET }, "Super-app is not brought up in its place")
+        assertTrue(items.none { it.kind == DayFill.Kind.NET && !it.title.startsWith("จัดการ Note") }, "Super-app is not brought up in its place")
         val taken = assertNotNull(plan.card("จัดการ Note"))
         assertEquals(m(17, 30), taken.at)
+        // It stays the net's card, as it was offered, so "แตะการ์ดเพื่อเปลี่ยนใจ" frees the slot again.
+        assertEquals(DayFill.Kind.NET, taken.item.kind)
+        assertEquals("net", taken.item.slot)
         assertEquals(DayFill.Pick.TAKE, plan.rows.filterIsInstance<DayFill.Row.Card>().single { it.placed.item.title.startsWith("จัดการ Note") }.picked)
+    }
+
+    @Test
+    fun anUndoBringsTheReminderBackToTheCard() {
+        // Taken at 17:15; an errand moved it to 18:30 and the plan wrote 🎯 18:30. The errand is undone: the memory
+        // says 17:15 again, the note still says 18:30, so the reminder is to follow back.
+        val (taken, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val i = taken.indexOfFirst { it.startsWith("- [/] Flow") }
+        val wrote = TaskLine.setReminder(taken[i], DayFill.clock(m(18, 30)), ReminderOn.SCHEDULED)
+        val lines = taken.toMutableList().also { it[i] = wrote }
+        val flow = id(lines, "Flow น้ำเกลือ")
+        val undone = memory.copy(lines = memory.lines + (flow to memory.lines.getValue(flow).copy(after = wrote)))
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = undone))
+        assertEquals(m(17, 15), plan.card("Flow น้ำเกลือ")!!.at)
+        assertEquals(listOf(m(17, 15)), plan.moves.map { it.at })
+        assertEquals(LocalDate.parse("2026-10-29"), plan.moves.single().day)
+        assertTrue(plan.letGo.isEmpty())
+    }
+
+    @Test
+    fun aLineTheOwnerChangedIsLeftAloneAndLetGo() {
+        // Taken at 17:15, then the owner set 🎯 19:00 in Obsidian: the plan does not write over it.
+        val (taken, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val lines = taken.map { if (it.startsWith("- [/] Flow")) TaskLine.setReminder(it, LocalTime.of(19, 0), ReminderOn.SCHEDULED) else it }
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
+        assertTrue(plan.moves.isEmpty(), plan.moves.joinToString())
+        assertEquals(listOf(id(lines, "Flow น้ำเกลือ")), plan.letGo)
+    }
+
+    @Test
+    fun aTakenSlotThatWentByIsNotChasedAlongTheClock() {
+        val (lines, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val plan = DayFill.plan(input("2026-10-29T18:40", lines, memory = memory))
+        assertTrue(plan.moves.isEmpty() && plan.letGo.isEmpty(), plan.moves.joinToString())
+        assertEquals(m(17, 15), plan.card("Flow น้ำเกลือ")!!.at, "shown where it was")
+    }
+
+    @Test
+    fun aTakenSlotWithNoRoomLeftMovesToTomorrowButNeverPastItsDueDate() {
+        // Flow (no 📅) and Project Omni (📅 today) were taken; then an errand for the whole evening.
+        val (once, first) = taken("Flow น้ำเกลือ", m(17, 15))
+        val (lines, memory) = taken("ปรับ Project Omni", m(17, 0), lines = once, extra = first.copy(errand = DayFill.Errand(m(16, 45), null)))
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
+        assertNull(plan.card("Flow น้ำเกลือ"))
+        val flow = plan.moves.single { it.task.title.startsWith("Flow") }
+        assertEquals(LocalDate.parse("2026-10-30"), flow.day)
+        assertEquals(m(17, 15), flow.at)
+        assertTrue(plan.moves.none { it.task.title.startsWith("ปรับ Project Omni") }, "⏳ never goes past the 📅")
+        assertTrue(plan.later.single { it.item.title.startsWith("ปรับ Project Omni") }.risk)
+    }
+
+    @Test
+    fun aSwappedThenTakenOwnTimeKeepsTheTaskThatWasTaken() {
+        val book = "หนังสือที่ควรอ่าน"
+        val swapped = DayFill.Memory(day = "2026-10-29", swaps = mapOf("mine" to 1))
+        val offered = DayFill.plan(input("2026-10-29T16:45", memory = swapped)).placed.single { it.item.kind == DayFill.Kind.MINE }
+        assertTrue(offered.item.title.startsWith(book), offered.item.title)
+        // Taken: it gets ⏳ today, so it now sorts first among the owner's own tasks.
+        val (lines, taken) = taken(book, offered.at, extra = swapped.copy(picks = mapOf(offered.item.id to DayFill.Pick.TAKE)))
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = taken.copy(slots = mapOf("mine" to id(lines, book)))))
+        val mine = plan.placed.single { it.item.kind == DayFill.Kind.MINE }
+        assertTrue(mine.item.title.startsWith(book), mine.item.title)
+        assertEquals(offered.at, mine.at)
+        assertEquals("mine", mine.item.slot)
+        assertTrue(plan.moves.isEmpty() && plan.letGo.isEmpty())
+    }
+
+    @Test
+    fun quietWorkReviewedTodayKeepsItsPlaceInTheNet() {
+        // The review card said "ทบทวนแล้วจะลงตารางให้": a review from the plan today does not make the task fresh.
+        val lines = note.flatMap { if (it.startsWith("- [ ] จัดการ Note")) listOf(it, "    - ทบทวน 2026-10-29") else listOf(it) }
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines))
+        val net = (plan.placed.map { it.item } + plan.later.map { it.item }).single { it.kind == DayFill.Kind.NET }
+        assertTrue(net.title.startsWith("จัดการ Note"), net.title)
+        assertEquals(15, net.len)
+    }
+
+    @Test
+    fun oneQuestionADayEvenAfterOneIsAnswered() {
+        val mock = "Mock UX UI"
+        val superApp = "Super-app"
+        val moves = { t: Task -> if (t.title.startsWith(mock)) 4 else if (t.title.startsWith(superApp)) 3 else 0 }
+        val first = DayFill.plan(input("2026-10-29T16:45", moves = moves))
+        assertTrue((first.placed.map { it.item } + first.later.map { it.item }).single { it.kind == DayFill.Kind.ASK }.title.startsWith(mock))
+        val ask = "ask:" + id(note, mock)
+        val answered = DayFill.Memory(day = "2026-10-29", picks = mapOf(ask to DayFill.Pick.SPLIT), asked = mapOf(id(note, mock) to "2026-10-29"))
+        val plan = DayFill.plan(input("2026-10-29T16:45", memory = answered, moves = moves))
+        val asks = (plan.placed.map { it.item } + plan.later.map { it.item }).filter { it.kind == DayFill.Kind.ASK }
+        assertEquals(listOf(ask), asks.map { it.id }, "the answered one stays (to be taken back), no new one today")
+        assertEquals(DayFill.Pick.SPLIT, plan.later.single { it.item.id == ask }.picked)
+    }
+
+    @Test
+    fun clockTimesWrapRoundMidnight() {
+        assertEquals("22:00", DayFill.hm(-120))
+        assertEquals("02:30", DayFill.hm(1440 + m(2, 30)))
+        assertEquals(LocalTime.of(23, 59), DayFill.clock(-1))
     }
 
     @Test
@@ -402,7 +513,6 @@ class DayFillTest {
         val ask = (plan.placed.map { it.item } + plan.later.map { it.item }).single { it.kind == DayFill.Kind.ASK }
         assertTrue(ask.title.startsWith(mock))
         assertTrue(ask.why.startsWith("เลื่อนมา 3 ครั้งแล้ว"), ask.why)
-        assertTrue(!ask.keptOnce)
         // Two moves in the behaviour log and one "ช่วงนี้ไม่ว่าง" on the phone count the same.
         val ident = id(note, mock)
         val pushed = DayFill.Memory(pushed = mapOf(ident to listOf("2026-11-01")))
@@ -451,7 +561,8 @@ class DayFillTest {
             accepted = mapOf("a" to DayFill.Accepted("2026-10-28", 1000), "b" to DayFill.Accepted("2026-10-20", 900)),
             pushed = mapOf("a" to listOf("2026-09-01", "2026-10-28")),
             asked = mapOf("c" to "2026-09-01", "d" to "2026-10-20"),
-            keptOnce = listOf("e"),
+            slots = mapOf("net" to "a"),
+            lines = mapOf("a" to DayFill.Line("x", "y"), "b" to DayFill.Line("x", "z")),
         )
         val now = old.on(LocalDate.parse("2026-10-29"))
         assertEquals("2026-10-29", now.day)
@@ -460,7 +571,8 @@ class DayFillTest {
         assertEquals(setOf("a"), now.accepted.keys, "yesterday's slot stays one day, to be taken back")
         assertEquals(mapOf("a" to listOf("2026-10-28")), now.pushed)
         assertEquals(mapOf("d" to "2026-10-20"), now.asked)
-        assertEquals(listOf("e"), now.keptOnce)
+        assertTrue(now.slots.isEmpty(), "a slot is taken for one day")
+        assertEquals(setOf("a"), now.lines.keys, "the line of a slot still followed stays known")
         assertTrue(now.withPush("a", LocalDate.parse("2026-10-29")).pushedOn("a", LocalDate.parse("2026-10-29")))
     }
 

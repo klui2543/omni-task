@@ -41,6 +41,8 @@ object RealDay {
         val holidayCalendars: Set<Long> = emptySet(),
         /** Calendars the owner labelled as someone else's: their events take none of the owner's time. */
         val othersCalendars: Set<Long> = emptySet(),
+        /** Phone calendars' names, to say where a block comes from ("จากปฏิทินเวร SiRxShift"). */
+        val calendarNames: Map<Long, String> = emptyMap(),
     ) {
         fun isOthers(e: CalendarEvent) = e.calendarId != 0L && e.calendarId in othersCalendars
     }

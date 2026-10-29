@@ -177,6 +177,9 @@ object Countdown {
         return tr("${TH_DAYS[w]} ${d.dayOfMonth} ${TH_MONTHS[m]}", "${EN_DAYS[w]} ${d.dayOfMonth} ${EN_MONTHS[m]}")
     }
 
+    /** The month's short name ("พ.ย."). */
+    fun monthShort(d: LocalDate): String = tr(TH_MONTHS[d.monthNumber - 1], EN_MONTHS[d.monthNumber - 1])
+
     /** The month heading in the calendar tab, with the year when it is not this one. */
     fun month(d: LocalDate, today: LocalDate): String {
         val name = tr(TH_MONTHS_LONG[d.monthNumber - 1], EN_MONTHS_LONG[d.monthNumber - 1])

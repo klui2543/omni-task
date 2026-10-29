@@ -119,6 +119,9 @@ const val DEFAULT_ARCHIVE_DAYS = 7
 /** The secretary chat's taps, a line each, for the secretary to learn habits from. */
 private const val DESK_STATS = "${app.omnitask.data.VaultText.OMNI_DIR}/สถิติเลขา.md"
 
+/** The day plan's answers the secretary keeps reading (secretary.md steps 5f and 5h): never cut from สถิติเลขา.md. */
+private val DESK_ANSWERS = listOf("ไม่มีวันส่ง:", "ยกเลิกไม่มีวันส่ง:", "ขอให้เลขาแบ่งงาน:", "ยกเลิกขอแบ่งงาน:")
+
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
     val bucket: DateBucket? = null,
@@ -194,7 +197,8 @@ data class UiState(
     /** What the day plan keeps on this phone (step 2): today's taps, taken slots, the sprint; see [DayFill.Memory]. */
     val dayFill: DayFill.Memory = DayFill.Memory(),
     /** The line under the day plan's numbers after a tap changed the plan. */
-    val fillNews: String? = null,
+    /** The day plan's news line and its day. */
+    val fillNews: Pair<String, String>? = null,
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
     val chat: List<Chat> = emptyList(),
@@ -1218,20 +1222,33 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript(), loadGuide().forClaude)
     }
 
-    /** What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md). */
-    private fun deskNote(what: String) {
-        val vault = _state.value.vault ?: return
+    /**
+     * What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md).
+     * The day plan's answers to the secretary ([DESK_ANSWERS]) go here too and stay; [tell]: a failed write is told.
+     */
+    private fun deskNote(what: String, tell: Boolean = false) {
+        val vault = _state.value.vault
+        if (vault == null) {
+            if (tell) _state.update { it.copy(message = tr("บันทึกให้เลขาไม่ได้ ยังไม่ได้เลือกที่เก็บโน้ต", "Cannot tell the secretary: no vault chosen")) }
+            return
+        }
         val line = "- ${LocalDate.now()} ${nowHm()} $what"
         viewModelScope.launch(Dispatchers.IO) {
-            deskLock.withLock {
+            val result = deskLock.withLock {
                 runCatching {
                     val old = repo.readPath(vault, DESK_STATS) ?: "# สถิติเลขา\n\nสิ่งที่กดในแชตเลขาของ Omni บรรทัดละครั้ง ใหม่สุดอยู่ล่าง เลขาอ่านเพื่อเรียนรู้นิสัย แล้วเขียนสิ่งที่พบลง Claude รู้จักคุณ.md\n"
-                    // Keep the last 400 taps; older ones have been read by then.
+                    // Keep the last 400 taps; older ones have been read by then. Answers to the secretary always stay.
                     val lines = (old.trimEnd() + "\n" + line).lines()
                     val head = lines.takeWhile { !it.startsWith("- ") }
-                    val taps = lines.filter { it.startsWith("- ") }.takeLast(400)
+                    val all = lines.filter { it.startsWith("- ") }
+                    fun answer(l: String) = DESK_ANSWERS.any { l.substringAfter(' ').substringAfter(' ').substringAfter(' ').startsWith(it) }
+                    val recent = all.filterNot(::answer).takeLast(400).toHashSet()
+                    val taps = all.filter { answer(it) || it in recent }
                     repo.writePath(vault, DESK_STATS, (head + taps).joinToString("\n") + "\n")
                 }
+            }
+            result.exceptionOrNull()?.let { e ->
+                if (tell) _state.update { it.copy(message = tr("บันทึกให้เลขาไม่ได้: ${e.message}", "Cannot tell the secretary: ${e.message}")) }
             }
         }
     }
@@ -1468,6 +1485,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         shiftCalendars = s.calendars.filter { RealDay.isShiftCalendar(it.name, s.profile) }.map { it.id }.toSet(),
         holidayCalendars = s.calendars.filter { it.holiday }.map { it.id }.toSet(),
         othersCalendars = s.calendars.filter { CalendarStyles.label(it.id) != null }.map { it.id }.toSet(),
+        calendarNames = s.calendars.associate { it.id to it.name },
     )
 
     /** The pinned countdown events over the year ahead, by their ids on this phone. */
@@ -2234,11 +2252,37 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(dayFill = m) }
     }
 
-    /** Changes only the plan's memory; the bar's "เลิกทำ" puts back what it was. */
-    private fun changeFill(label: String, title: String, change: (DayFill.Memory) -> DayFill.Memory) {
+    /**
+     * Changes only the plan's memory; the bar's "เลิกทำ" puts back what it was, and the news line too. What the plan
+     * knows of the lines it wrote stays as it is now, so a reminder that followed the change follows the undo back.
+     */
+    private fun changeFill(label: String, title: String, news: String? = null, change: (DayFill.Memory) -> DayFill.Memory) {
         val before = _state.value.dayFill
+        val newsBefore = _state.value.fillNews
         saveFill(change(before.on(LocalDate.now())))
-        remember(UndoStep(UndoStep.Kind.PLAN, title, label = label, local = { saveFill(before) }), inTree = false)
+        if (news != null) fillNews(news)
+        remember(
+            UndoStep(UndoStep.Kind.PLAN, title, label = label, local = {
+                saveFill(before.copy(lines = _state.value.dayFill.lines))
+                if (news != null) _state.update { it.copy(fillNews = newsBefore) }
+            }),
+            inTree = false,
+        )
+    }
+
+    /**
+     * Takes back a taken slot: the memory goes back to [before] (keeping what it knows of other lines), and the line
+     * the plan wrote for [card] goes back as it was, unless the owner changed it since (then it stays, and they are told).
+     */
+    private fun fillPutBack(before: DayFill.Memory, card: String, ident: String) {
+        val cur = _state.value.dayFill
+        val line = cur.lines[card]
+        saveFill(before.copy(lines = cur.lines - card))
+        if (line == null) return
+        val task = _state.value.tasks.firstOrNull { DayFill.ident(it) == ident && it.raw == line.after }
+            ?: return _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
+        // Not written back: the plan keeps the slot as taken, as the note still says (the message says why).
+        edit(task, onFailed = { saveFill(cur) }) { line.before }
     }
 
     fun fillInput(s: UiState, now: LocalDateTime): DayFill.Input {
@@ -2248,15 +2292,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))
 
-    /** The line under the plan's numbers after a tap changed it ("มีธุระ 2 ชม. เลขาจัดใหม่ให้แล้ว: ..."). */
-    fun fillNews(text: String?) = _state.update { it.copy(fillNews = text) }
+    /** The line under the plan's numbers after a change ("มีธุระ 2 ชม. เลขาจัดใหม่ให้แล้ว: ..."), for today only. */
+    fun fillNews(text: String?) = _state.update { it.copy(fillNews = text?.let { t -> LocalDate.now().toString() to t }) }
 
-    private fun reflowNews(what: String, change: (DayFill.Memory) -> DayFill.Memory) {
+    /** What [change] would move, told as the news line. */
+    private fun reflowNews(what: String, change: (DayFill.Memory) -> DayFill.Memory): String {
         val s = _state.value
         val now = LocalDateTime.now()
         val before = DayFill.plan(fillInput(s, now))
         val after = DayFill.plan(fillInput(s.copy(dayFill = change(s.dayFill.on(now.date))), now))
-        _state.update { it.copy(fillNews = DayFill.news(what, before, after)) }
+        return DayFill.news(what, before, after)
     }
 
     /**
@@ -2269,7 +2314,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val timed = task.reminderTime == null
         val at = p.at
         val after = TaskLine.setDate(task.raw, DateField.SCHEDULED, today).let {
-            if (timed) TaskLine.setReminder(it, kotlinx.datetime.LocalTime((at / 60) % 24, at % 60), ReminderOn.SCHEDULED) else it
+            if (timed) TaskLine.setReminder(it, DayFill.clock(at), ReminderOn.SCHEDULED) else it
         }
         val before = _state.value.dayFill
         val id = DayFill.ident(task)
@@ -2279,13 +2324,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
                     accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed)),
                     lines = m.lines + (p.item.id to DayFill.Line(task.raw, after)),
-                    slots = p.item.slot?.let { m.slots + (it to today.toString()) } ?: m.slots,
+                    slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
                 )
             },
         )
-        editRecorded(
-            task, UndoStep.Kind.PLAN, inTree = false, label = tr("ลงเป็นงานแล้ว", "Planned"),
-            local = { saveFill(before) }, onFailed = { saveFill(before) },
+        // Its reminder may follow the plan later, so the undo puts back the line from what the plan wrote last.
+        edit(
+            task,
+            onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ลงเป็นงานแล้ว", "Planned"), local = { fillPutBack(before, p.item.id, id) }), inTree = false) },
+            onFailed = { saveFill(before) },
         ) { after }
     }
 
@@ -2311,8 +2358,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val pushed = p.item.task?.takeIf { mode != DayFill.Mode.AFTER_NIGHT }?.let { m.withPush(DayFill.ident(it), today) } ?: m
             pushed.copy(notBefore = pushed.notBefore + (p.item.id to p.at + p.len + 30))
         }
-        reflowNews(tr("ช่วงนี้ไม่ว่าง: ", "Busy now: ") + p.item.title, change)
-        changeFill(tr("ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่นแล้ว", "Busy now, moved later"), p.item.title, change)
+        changeFill(tr("ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่นแล้ว", "Busy now, moved later"), p.item.title, reflowNews(tr("ช่วงนี้ไม่ว่าง: ", "Busy now: ") + p.item.title, change), change)
     }
 
     /** "ไม่ใช่ เปลี่ยนให้": the next task for this slot; with none left the card is put aside for today. */
@@ -2338,12 +2384,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         fun answered(m: DayFill.Memory) = m.copy(picks = m.picks + (item.id to pick), asked = m.asked + (id to today.toString()))
         when (pick) {
             DayFill.Pick.SPLIT -> {
-                deskNote("ขอให้เลขาแบ่งงาน: " + task.title)
+                deskNote("ขอให้เลขาแบ่งงาน: " + task.title, tell = true)
                 saveFill(answered(before.on(today)))
                 remember(
                     UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ขอให้เลขาแบ่งงานแล้ว", "Asked to split"), local = {
                         saveFill(before)
-                        deskNote("ยกเลิกขอแบ่งงาน: " + task.title)
+                        deskNote("ยกเลิกขอแบ่งงาน: " + task.title, tell = true)
                     }),
                     inTree = false,
                 )
@@ -2351,7 +2397,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             DayFill.Pick.LATER -> {
                 val day = DayFill.laterDay(inp, 30)
                 val after = TaskLine.setDate(task.raw, DateField.SCHEDULED, day)
-                saveFill(answered(before.on(today)).let { m -> m.copy(keptOnce = (m.keptOnce + id).distinct(), lines = m.lines + (item.id to DayFill.Line(task.raw, after))) })
+                saveFill(answered(before.on(today)).let { m -> m.copy(lines = m.lines + (item.id to DayFill.Line(task.raw, after))) })
                 editRecorded(
                     task, UndoStep.Kind.PLAN, inTree = false, label = tr("เก็บไว้ก่อน ย้ายไป ", "Kept for later: ") + DayFill.shortDay(day),
                     local = { saveFill(before) }, onFailed = { saveFill(before) },
@@ -2416,12 +2462,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             picks = m.picks - item.id,
             lines = m.lines - item.id,
             accepted = if (pick == DayFill.Pick.TAKE && id != null) m.accepted - id else m.accepted,
-            slots = if (pick == DayFill.Pick.TAKE) item.slot?.let { m.slots - it } ?: m.slots else m.slots,
-            keptOnce = if (pick == DayFill.Pick.LATER && id != null) m.keptOnce - id else m.keptOnce,
+            slots = if (pick == DayFill.Pick.TAKE && id != null) m.slots.filterValues { it != id } else m.slots,
             asked = if (item.kind == DayFill.Kind.ASK && id != null) m.asked - id else m.asked,
             tired = if (pick == DayFill.Pick.TIRED && id != null) m.tired - id else m.tired,
         )
-        if (pick == DayFill.Pick.SPLIT && task != null) deskNote("ยกเลิกขอแบ่งงาน: " + task.title)
+        if (pick == DayFill.Pick.SPLIT && task != null) deskNote("ยกเลิกขอแบ่งงาน: " + task.title, tell = true)
         if (task != null && line != null) {
             if (task.raw != line.after) {
                 saveFill(next)
@@ -2441,15 +2486,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** "มีธุระ": nothing is planned from now for [minutes] (null: the rest of the evening). */
     fun fillErrand(from: Int, minutes: Int?, label: String) {
         val change = { m: DayFill.Memory -> m.copy(errand = DayFill.Errand(from, minutes?.let { from + it })) }
-        reflowNews(tr("มีธุระ ", "Errand ") + label, change)
-        changeFill(tr("มีธุระ ", "Errand ") + label, label, change)
+        changeFill(tr("มีธุระ", "Errand"), label, reflowNews(tr("มีธุระ ", "Errand ") + label, change), change)
     }
 
     /** "ธุระเสร็จแล้ว จัดคืนให้". */
     fun fillErrandEnd() {
         val change = { m: DayFill.Memory -> m.copy(errand = null) }
-        reflowNews(tr("ธุระเสร็จแล้ว", "Errand over"), change)
-        changeFill(tr("ธุระเสร็จแล้ว จัดคืนให้", "Errand over, replanned"), tr("ธุระ", "Errand"), change)
+        changeFill(tr("ธุระเสร็จแล้ว", "Errand over"), tr("จัดคืนให้แล้ว", "planned again"), reflowNews(tr("ธุระเสร็จแล้ว", "Errand over"), change), change)
     }
 
     /** The week's sprint: "รับ" ([take] true) or "เปลี่ยน" the second project; "รับแล้ว" tapped opens it again. */
@@ -2464,36 +2507,52 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             projects.joinToString(", "),
         ) { m ->
             val cur = m.sprint?.takeIf { it.week == week }
-            m.copy(sprint = DayFill.SprintPick(week, projects, taken = take == true, swap = (cur?.swap ?: 0) + if (swap) 1 else 0))
+            m.copy(
+                sprint = DayFill.SprintPick(
+                    week, projects, taken = take == true, swap = (cur?.swap ?: 0) + if (swap) 1 else 0,
+                    takenOn = if (take == true) LocalDate.now().toString() else null,
+                ),
+            )
         }
     }
 
     /**
-     * Taken slots the plan moved (an event landed on one, an errand, a late start): their 🎯 follows, or, with no room
-     * left today, ⏳ goes to tomorrow at the same time. Run from the today page; each move is remembered first, so it
-     * is written once.
+     * Taken slots whose line no longer matches the plan (an event landed on one, an errand, "ช่วงนี้ไม่ว่าง", or the undo
+     * of one of these): their 🎯 follows, or, with no room left today, ⏳ goes to tomorrow at the same time. A line the
+     * owner changed since the plan wrote it ([letGo]) is left as it is and the slot let go of. Run from the today page;
+     * the memory is changed first, so each line is written once.
      */
-    fun fillApplyMoves(moves: List<DayFill.Move>) {
-        if (moves.isEmpty()) return
+    fun fillFollow(moves: List<DayFill.Move>, letGo: List<String>) {
+        if (moves.isEmpty() && letGo.isEmpty()) return
         val today = LocalDate.now()
         var m = _state.value.dayFill.on(today)
+        letGo.forEach { id -> m = m.copy(accepted = m.accepted - id, lines = m.lines - id) }
+        class Write(val task: Task, val after: String, val id: String, val card: String, val acc: DayFill.Accepted, val line: DayFill.Line)
         val writes = moves.mapNotNull { mv ->
             val id = DayFill.ident(mv.task)
             val acc = m.accepted[id] ?: return@mapNotNull null
+            val line = m.lines[mv.card] ?: return@mapNotNull null
             val at = mv.at ?: return@mapNotNull null
-            m = m.copy(accepted = m.accepted + (id to acc.copy(day = mv.day.toString(), at = at)))
-            mv to acc.timed
+            val after = TaskLine.setDate(mv.task.raw, DateField.SCHEDULED, mv.day).let {
+                if (acc.timed) TaskLine.setReminder(it, DayFill.clock(at), ReminderOn.SCHEDULED) else it
+            }
+            // A write that failed once this session is not tried again on its own (the message already said why).
+            if (mv.card + "\u0001" + after in followFailed) return@mapNotNull null
+            m = m.copy(accepted = m.accepted + (id to acc.copy(day = mv.day.toString(), at = at)), lines = m.lines + (mv.card to line.copy(after = after)))
+            Write(mv.task, after, id, mv.card, acc, line)
         }
         saveFill(m)
-        writes.forEach { (mv, timed) ->
-            val at = mv.at ?: return@forEach
-            edit(mv.task) { raw ->
-                TaskLine.setDate(raw, DateField.SCHEDULED, mv.day).let {
-                    if (timed) TaskLine.setReminder(it, kotlinx.datetime.LocalTime((at / 60) % 24, at % 60), ReminderOn.SCHEDULED) else it
-                }
-            }
+        writes.forEach { w ->
+            // Not written: the plan keeps knowing the line as it still reads, so the slot is not let go of.
+            edit(w.task, onFailed = {
+                followFailed += w.card + "\u0001" + w.after
+                val cur = _state.value.dayFill
+                saveFill(cur.copy(accepted = cur.accepted + (w.id to w.acc), lines = cur.lines + (w.card to w.line)))
+            }) { w.after }
         }
     }
+
+    private val followFailed = HashSet<String>()
 
     /** "รับวันส่งนี้" in the secretary's questions: the task gets the 📅 the secretary proposed. Not a move: it had none. */
     fun askDue(task: Task, day: LocalDate) {
@@ -2509,8 +2568,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** "ไม่มีวันส่ง": told to the secretary in สถิติเลขา.md, so it stops proposing one ([back] takes that back). */
-    fun askNoDue(task: Task, back: Boolean) =
-        deskNote((if (back) "ยกเลิกไม่มีวันส่ง: " else "ไม่มีวันส่ง: ") + task.title)
+    fun askNoDue(task: Task, back: Boolean) {
+        deskNote((if (back) "ยกเลิกไม่มีวันส่ง: " else "ไม่มีวันส่ง: ") + task.title, tell = true)
+        if (!back) remember(
+            UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("จำไว้ว่างานนี้ไม่มีวันส่ง", "No due date, noted"), local = { deskNote("ยกเลิกไม่มีวันส่ง: " + task.title, tell = true) }),
+            inTree = false,
+        )
+    }
 
     // ---- Review mode (โหมดทบทวนงาน), on the secretary page ----
 
@@ -2563,6 +2627,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             reload()
         }
     }
+
+    /**
+     * A review opened from a day plan card closes once it is saved, so its own "ย้อน" is out of reach: the bar's
+     * "เลิกทำ" puts it back instead.
+     */
+    fun reviewFromPlan(saved: ReviewSaved) = remember(
+        UndoStep(UndoStep.Kind.PLAN, saved.task.title, label = tr("ทบทวนแล้ว", "Reviewed"), local = { reviewUndo(saved) {} }),
+        inTree = false,
+    )
 
     /** Puts back what [saved] changed: the task's block as it was, and the asking task it added. */
     fun reviewUndo(saved: ReviewSaved, onDone: (Boolean) -> Unit) {
@@ -4634,11 +4707,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(tasks = it.tasks.swap(), parked = it.parked.swap(), listItems = it.listItems.swap()) }
     }
 
-    private fun edit(task: Task, onSaved: (() -> Unit)? = null, transform: (String) -> String) {
+    private fun edit(task: Task, onSaved: (() -> Unit)? = null, onFailed: (() -> Unit)? = null, transform: (String) -> String) {
         runCatching { transform(task.raw) }.getOrNull()?.let { showEdited(task, it) }
         viewModelScope.launch {
             val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } } }
-            if (result.isSuccess) onSaved?.invoke()
+            if (result.isSuccess) onSaved?.invoke() else onFailed?.invoke()
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
                     tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")

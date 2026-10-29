@@ -97,9 +97,10 @@ fun SecretaryAskSheet(asks: List<SecretaryAsk.Open>, vm: TaskViewModel, onOpen: 
                     Projects.projectOf(o.task)?.let { Text(it, color = C.muted, fontSize = TS.caption) }
                     Text(o.task.title, Modifier.clickable { onDismiss(); onOpen(o.task) }, color = C.text, fontSize = TS.body)
                     o.ask.why?.let { Text(it, color = C.faint, fontSize = TS.caption) }
-                    // The secretary's proposed due date (step 2): one tap takes it, or says the task has none.
+                    // The secretary's proposed due date (step 2, behind the day plan's switch): one tap takes it, or
+                    // says the task has none.
                     val due = o.ask.due
-                    if (due != null && (o.task.due == null || dues[key] == true)) {
+                    if (DayFillMode.on && due != null && (o.task.due == null || dues[key] == true)) {
                         val violet = if (Palettes.current.dark) androidx.compose.ui.graphics.Color(0xFFB49BE6) else androidx.compose.ui.graphics.Color(0xFF4B2D80)
                         val violetSoft = if (Palettes.current.dark) androidx.compose.ui.graphics.Color(0x33B49BE6) else androidx.compose.ui.graphics.Color(0xFFECE6F6)
                         Column(
