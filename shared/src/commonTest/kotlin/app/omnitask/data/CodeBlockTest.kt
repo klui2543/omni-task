@@ -59,4 +59,15 @@ class CodeBlockTest {
         ).joinToString("\n")
         assertEquals(listOf("งานจริง"), VaultText.parseFile("f", "x.md", text).map { it.title })
     }
+
+    @Test
+    fun inlineCodeAndAnUnclosedFenceHideNothing() {
+        val text = listOf(
+            "```x``` ตัวอย่างโค้ดในบรรทัด",
+            "- [ ] งานแรก",
+            "```",
+            "- [ ] งานหลังเครื่องหมายที่ไม่ปิด",
+        ).joinToString("\r\n")
+        assertEquals(listOf("งานแรก", "งานหลังเครื่องหมายที่ไม่ปิด"), VaultText.parseFile("f", "x.md", text).map { it.title })
+    }
 }

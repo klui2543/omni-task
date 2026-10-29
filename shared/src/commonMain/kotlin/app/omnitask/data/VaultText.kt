@@ -246,20 +246,23 @@ object VaultText {
 
     /**
      * Which lines sit inside a fenced code block (``` or ~~~, closed by the same mark at least as long), the fence
-     * lines included.
+     * lines included. A backtick opener with another backtick on its line is inline code, and a block that never
+     * closes counts as no block, so a stray mark cannot hide every task below it.
      */
     fun inCodeBlock(lines: List<String>): BooleanArray {
         val out = BooleanArray(lines.size)
         var open: String? = null
+        var start = 0
         lines.forEachIndexed { n, line ->
             val t = line.trimStart()
-            val mark = t.takeWhile { it == '`' }.takeIf { it.length >= 3 } ?: t.takeWhile { it == '~' }.takeIf { it.length >= 3 }
+            val ticks = t.takeWhile { it == '`' }
+            val mark = ticks.takeIf { it.length >= 3 } ?: t.takeWhile { it == '~' }.takeIf { it.length >= 3 }
             val fence = open
             if (fence == null) {
-                if (mark != null) { open = mark; out[n] = true }
-            } else {
-                out[n] = true
-                if (mark != null && mark[0] == fence[0] && mark.length >= fence.length && t.substring(mark.length).isBlank()) open = null
+                if (mark != null && (mark[0] == '~' || '`' !in t.substring(mark.length))) { open = mark; start = n }
+            } else if (mark != null && mark[0] == fence[0] && mark.length >= fence.length && t.substring(mark.length).isBlank()) {
+                for (k in start..n) out[k] = true
+                open = null
             }
         }
         return out
