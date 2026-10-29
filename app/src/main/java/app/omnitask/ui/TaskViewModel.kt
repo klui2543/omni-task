@@ -52,6 +52,7 @@ import app.omnitask.model.locale
 import app.omnitask.model.load
 import app.omnitask.model.AssistantMl
 import app.omnitask.model.Planner
+import app.omnitask.model.RealDay
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
@@ -172,6 +173,8 @@ data class UiState(
     /** Null until the first load; then whether the app may read the phone's calendars. */
     val calendarAccess: Boolean? = null,
     val calendars: List<CalendarReader.Calendar> = emptyList(),
+    /** Days the regular job is off (public holidays, observances left out), for the planner; see [RealDay]. */
+    val daysOff: Map<LocalDate, String> = emptyMap(),
     /** Ids of the phone's calendars the owner switched off in Omni (this phone only). */
     val hiddenCalendars: Set<Long> = emptySet(),
     val pendingImage: PendingImage? = null,
@@ -721,7 +724,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return when (reading.kind) {
             SecretaryAi.Kind.COMMAND -> turn.copy(reading = reading, command = SecretaryGuide.Action.parse(reading.command))
             SecretaryAi.Kind.FIND_TIME -> {
-                val plan = Planner.plan(reading.task.ifBlank { turn.question }, s.tasks, s.events, s.profile, LocalDateTime.now(), reading.minutes.takeIf { it > 0 })
+                val plan = Planner.plan(reading.task.ifBlank { turn.question }, s.tasks, s.events, s.profile, LocalDateTime.now(), reading.minutes.takeIf { it > 0 }, planFacts(s))
                 turn.copy(reading = reading, slots = plan.slots.take(3), slotTitle = plan.title)
             }
             else -> turn.copy(reading = reading)
@@ -996,7 +999,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             AssistantMl.Intent.FindTime -> {
                 if (via != null) desk.add(DeskTurn(mine = text, via = via))
                 val s = _state.value
-                val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now())
+                val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now(), facts = planFacts(s))
                 desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, slots = plan.slots.take(3), slotTitle = plan.title, note = note, id = id)))
             }
         }
@@ -1433,6 +1436,26 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         CalendarEvent.distinct(now + other)
     }.getOrDefault(emptyList())
 
+    /** Days off over the planner's reach (the assistant plans up to about three months ahead). */
+    private fun loadDaysOff(app: Application): Map<LocalDate, String> = runCatching {
+        val today = LocalDate.now()
+        CalendarReader.daysOff(app, today.minusDays(1), today.plusDays(100))
+    }.getOrElse { e ->
+        // Without the holidays the planner would keep the day job on them; say so in the log rather than hide it.
+        android.util.Log.w("Omni", "days off not read", e)
+        emptyMap()
+    }
+
+    /**
+     * What the planner knows beyond the events (owner, 2026-10-29): the day job Monday to Friday 08:30 to 16:30, the
+     * days it is off, and the calendars whose every event is a shift ("SiRxShift").
+     */
+    private fun planFacts(s: UiState = _state.value) = RealDay.Facts(
+        job = RealDay.Job.WEEKDAYS,
+        daysOff = s.daysOff,
+        shiftCalendars = s.calendars.filter { RealDay.isShiftCalendar(it.name, s.profile) }.map { it.id }.toSet(),
+    )
+
     /** The pinned countdown events over the year ahead, by their ids on this phone. */
     private fun loadPinned(app: Application, pins: List<Countdown.Pin>): List<CalendarEvent> = runCatching {
         val ids = pins.filterIsInstance<Countdown.EventPin>().map { it.id }.filter { it != 0L }.toSet()
@@ -1449,7 +1472,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val app = getApplication<Application>()
             val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
-            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned) }
+            val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
+            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned, daysOff = daysOff) }
             // A sync that changed nothing leaves the widgets as they are.
             runCatching { withContext<Unit>(Dispatchers.IO) { CalendarPrint.refreshIfChanged(app, "app saw the calendar") } }
         }
@@ -1587,6 +1611,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
+            val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
             val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
@@ -1631,6 +1656,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     pinnedEvents = pinned,
                     calendarAccess = CalendarReader.hasPermission(app),
                     calendars = calendars,
+                    daysOff = daysOff,
                     loading = false,
                     today = LocalDate.now(),
                     tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null && !Branches.isParked(t, it.branchStates) } ?: it.tasks,
@@ -3277,7 +3303,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             Planner.Ask.RANK -> rankAll(text)
             Planner.Ask.SLOTS -> {
                 val s = _state.value
-                val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
+                val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now(), facts = planFacts(s))
                 _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
             }
             Planner.Ask.DURATION -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
@@ -3289,7 +3315,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val item = _state.value.chat.getOrNull(index) as? Chat.Duration ?: return
         if (item.answered != null) return
         val s = _state.value
-        val plan = Planner.plan(item.request, s.tasks, s.events, s.profile, LocalDateTime.now(), minutes.takeIf { it > 0 })
+        val plan = Planner.plan(item.request, s.tasks, s.events, s.profile, LocalDateTime.now(), minutes.takeIf { it > 0 }, planFacts(s))
         _state.update {
             it.copy(chat = it.chat.toMutableList().also { list -> list[index] = item.copy(answered = minutes) } + Chat.Slots(plan))
         }
@@ -3342,7 +3368,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 t.scheduled.let { it == null || it < today } && t.due.let { it == null || it >= from } && t.reminderTime == null
             }.take(12)
             val days = generateSequence(maxOf(from, today)) { it.plusDays(1) }.takeWhile { it <= to }.toList()
-            val proposals = withContext(Dispatchers.Default) { Planner.planRange(candidates, days, s.tasks, events, s.profile, now) }
+            val proposals = withContext(Dispatchers.Default) { Planner.planRange(candidates, days, s.tasks, events, s.profile, now, planFacts(s)) }
             _state.update { it.copy(chat = it.chat + Chat.Asked(asked) + Chat.RangePlan(rangeTitle(from, to), proposals)) }
         }
     }

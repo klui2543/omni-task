@@ -169,12 +169,15 @@ object Planner {
         return t.ifEmpty { text.trim() }
     }
 
-    fun plan(text: String, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, minutesOverride: Int? = null): Plan {
+    fun plan(
+        text: String, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, minutesOverride: Int? = null,
+        facts: RealDay.Facts = RealDay.Facts(),
+    ): Plan {
         val kind = kindOf(text)
         val minutes = minutesOverride ?: minutesOf(text, kind)
         val need = minutes + kind.buffer
         val today = now.toLocalDate()
-        val slots = daysOf(text, today).flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, need, tasks, events, profile, now) }
+        val slots = daysOf(text, today).flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, need, tasks, events, profile, now, facts) }
             .sortedByDescending { it.score }
         // One option per day first, so the three shown are spread out; the rest come after "ดูช่วงอื่น".
         val firstPerDay = slots.distinctBy { it.day }
@@ -190,8 +193,11 @@ object Planner {
     }
 
     /** Ranked slots for work of this kind and length over the given days. */
-    fun slotsFor(kind: Kind, minutes: Int, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime): List<Slot> =
-        days.flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, minutes + kind.buffer, tasks, events, profile, now) }
+    fun slotsFor(
+        kind: Kind, minutes: Int, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime,
+        facts: RealDay.Facts = RealDay.Facts(),
+    ): List<Slot> =
+        days.flatMapIndexed { index, day -> slotsOn(day, index, kind, minutes, minutes + kind.buffer, tasks, events, profile, now, facts) }
             .sortedByDescending { it.score }
 
     /** One task placed in a range plan. */
@@ -201,14 +207,17 @@ object Planner {
      * Places tasks that have no date yet into the free time of [days], most urgent first. Each placed task
      * blocks its slot for the next, so two never land on the same time. Tasks with no room are left out.
      */
-    fun planRange(candidates: List<Task>, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime): List<Proposal> {
+    fun planRange(
+        candidates: List<Task>, days: List<LocalDate>, tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime,
+        facts: RealDay.Facts = RealDay.Facts(),
+    ): List<Proposal> {
         val busy = events.toMutableList()
         val out = ArrayList<Proposal>()
         candidates.forEach { t ->
             val kind = kindOf(t.title)
             val minutes = minutesOf(t.title, kind)
             // Spread the work: each task already placed on a day makes that day a little less attractive.
-            val slot = slotsFor(kind, minutes, days, tasks, busy, profile, now)
+            val slot = slotsFor(kind, minutes, days, tasks, busy, profile, now, facts)
                 .maxByOrNull { sl -> sl.score - 8 * out.count { it.slot.day == sl.day } } ?: return@forEach
             out += Proposal(t, slot, minutes)
             busy += CalendarEvent(-1L - out.size, t.title, slot.day.atTime(slot.start), slot.day.atTime(slot.start).plusMinutes((minutes + kind.buffer).toLong()))
@@ -218,21 +227,28 @@ object Planner {
 
     private fun slotsOn(
         day: LocalDate, index: Int, kind: Kind, minutes: Int, need: Int,
-        tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime,
+        tasks: List<Task>, events: List<CalendarEvent>, profile: Profile, now: LocalDateTime, facts: RealDay.Facts,
     ): List<Slot> {
-        fun isShift(e: CalendarEvent) = profile.shiftWords.any { e.title.contains(it, ignoreCase = true) }
-        fun isNight(e: CalendarEvent) = isShift(e) && profile.nightWords.any { e.title.contains(it, ignoreCase = true) }
+        // A shift is named so or sits in a shift calendar; a night shift is named so or runs through midnight to 06:00 (RealDay).
+        fun isShift(e: CalendarEvent) = RealDay.isShift(e, profile, facts)
+        fun isNight(e: CalendarEvent) = RealDay.isNight(e, profile, facts)
         fun on(d: LocalDate) = events.filter { it.begin < d.plusDays(1).atStartOfDay() && it.end > d.atStartOfDay() }
 
-        val todays = on(day)
+        // The day job is in no calendar, so it joins the day's events as one more busy block.
+        val todays = on(day) + RealDay.jobBlocks(listOf(day), events, facts)
         val shifts = todays.filter(::isShift)
-        val nightToday = todays.any(::isNight)
-        val nightBefore = on(day.minusDays(1)).any(::isNight)
-        val earlyTomorrow = on(day.plusDays(1)).any { isShift(it) && !it.allDay && it.begin.toLocalTime() < LocalTime.of(9, 0) }
+        val nights = todays.filter(::isNight)
+        val nightToday = nights.isNotEmpty()
+        // The night just before this day: a night shift between 18:00 yesterday and 06:00 today.
+        val nightBefore = events.any { isNight(it) && it.begin < day.atTime(RealDay.NIGHT_END) && it.end > day.minusDays(1).atTime(18, 0) }
+        // A shift tomorrow after midnight ("O11 รอบ 3" at 02:30) means an early night today.
+        val nightNext = RealDay.nightStart(day.plusDays(1), events, profile, facts)
+        val earlyTomorrow = nightNext == null && on(day.plusDays(1)).any { isShift(it) && !it.allDay && it.begin.toLocalTime() < LocalTime.of(9, 0) }
         val dueThatDay = tasks.count { it.isOpen && it.due == day }
 
         var from = day.atTime(profile.wake).plusMinutes(30)
-        val until = day.atTime(profile.sleep).minusMinutes(60)
+        var until = day.atTime(profile.sleep).minusMinutes(60)
+        if (nightNext != null) until = minOf(until, day.atTime(RealDay.BED_BEFORE_NIGHT).minusMinutes(60))
         if (day == now.toLocalDate()) from = maxOf(from, roundUp(now.plusMinutes(15)))
         if (from >= until) return emptyList()
 
@@ -294,14 +310,18 @@ object Planner {
                 }
                 if (nightBefore && kind != Kind.QUICK) { score -= 20; reasons += tr("เพิ่งลงเวรดึกเมื่อคืน", "Just off a night shift.") }
                 if (earlyTomorrow && t >= LocalTime.of(19, 30)) { score -= 20; reasons += tr("พรุ่งนี้มีเวรเช้า ไม่ควรดึก", "Early shift next day, so not too late.") }
+                nightNext?.let { n ->
+                    val at = Profile.hm(n.begin.toLocalTime())
+                    reasons += tr("พรุ่งนี้มีเวรตี $at ควรนอนเร็ว", "Shift at $at tomorrow, so an early night.")
+                }
                 if (dueThatDay >= 3 && kind != Kind.QUICK) { score -= 10; reasons += tr("วันนั้นมีงานครบกำหนด $dueThatDay งาน", "$dueThatDay tasks due that day.") }
                 reasons += tr("ว่างถึง ${Profile.hm(gapEnd.toLocalTime())}", "Free until ${Profile.hm(gapEnd.toLocalTime())}.")
-                Slot(day, t, t.plusMinutes(minutes.toLong()), titleFor(t, shifts, start, nightToday), reasons.joinToString(" "), score)
+                Slot(day, t, t.plusMinutes(minutes.toLong()), titleFor(t, shifts, start, nightToday, nights.all { it.end <= start }), reasons.joinToString(" "), score)
             }
         }.distinctBy { it.start }
     }
 
-    private fun titleFor(t: LocalTime, shifts: List<CalendarEvent>, start: LocalDateTime, night: Boolean): String {
+    private fun titleFor(t: LocalTime, shifts: List<CalendarEvent>, start: LocalDateTime, night: Boolean, nightOver: Boolean): String {
         val part = when {
             t < LocalTime.of(12, 0) -> tr("ช่วงเช้า", "Morning")
             t < LocalTime.of(16, 0) -> tr("ช่วงบ่าย", "Afternoon")
@@ -309,6 +329,7 @@ object Planner {
             else -> tr("ช่วงค่ำ", "Night")
         }
         val context = when {
+            night && nightOver -> tr("หลังลงเวรดึก", "after night shift")
             night -> tr("ก่อนเวรดึก", "before night shift")
             shifts.isEmpty() -> tr("ไม่มีเวร", "no shift")
             shifts.all { !it.allDay && it.end <= start } -> tr("หลังเลิกเวร", "after shift")

@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.CalendarContract
+import app.omnitask.model.RealDay
 import app.omnitask.model.tr
 import app.omnitask.model.Recurrence
 import app.omnitask.notify.CalendarEvent
@@ -310,6 +311,45 @@ object CalendarReader {
             while (d <= end) {
                 if (d >= from && d <= to) out.putIfAbsent(d, e.title)
                 d = d.plusDays(1)
+            }
+        }
+        return out
+    }
+
+    /**
+     * Days from [from] to [to] (both included) the regular job is off, from the holiday calendars like [holidays] but
+     * without observances such as Christmas Eve, which Google marks in the description ([RealDay.isDayOff]).
+     */
+    fun daysOff(context: Context, from: LocalDate, to: LocalDate): Map<LocalDate, String> {
+        if (!hasPermission(context)) return emptyMap()
+        val ids = calendars(context).filter { it.holiday }.map { it.id }
+        if (ids.isEmpty()) return emptyMap()
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
+            ContentUris.appendId(it, from.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+            ContentUris.appendId(it, to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        }.build()
+        val cols = arrayOf(
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
+            CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.DESCRIPTION,
+        )
+        val where = CalendarContract.Instances.CALENDAR_ID + " IN (" + ids.joinToString(",") + ")"
+        val out = HashMap<LocalDate, String>()
+        context.contentResolver.query(uri, cols, where, null, CalendarContract.Instances.BEGIN)?.use { c ->
+            while (c.moveToNext()) {
+                if (!RealDay.isDayOff(c.getString(4))) continue
+                val allDay = c.getInt(3) == 1
+                val zone = if (allDay) ZoneOffset.UTC else ZoneId.systemDefault()
+                val first = LocalDateTime.ofInstant(Instant.ofEpochMilli(c.getLong(1)), zone).date
+                // An all-day holiday ends at the next midnight; a timed one counts on the day it starts.
+                val last = if (allDay) LocalDateTime.ofInstant(Instant.ofEpochMilli(c.getLong(2) - 1), zone).date else first
+                var d = first
+                while (d <= last) {
+                    if (d >= from && d <= to) out.putIfAbsent(d, c.getString(0) ?: "")
+                    d = d.plusDays(1)
+                }
             }
         }
         return out
