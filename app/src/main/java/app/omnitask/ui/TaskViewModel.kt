@@ -2295,7 +2295,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         changeFill(tr("วันนี้หมดแรง ไม่นับว่าข้าม", "Out of energy, not counted"), item.title) { m ->
             m.copy(
                 picks = m.picks + (item.id to DayFill.Pick.TIRED),
-                tired = if (item.task != null && mode != DayFill.Mode.AFTER_NIGHT) m.tired + (DayFill.ident(item.task) to today) else m.tired,
+                tired = item.task?.takeIf { mode != DayFill.Mode.AFTER_NIGHT }?.let { m.tired + (DayFill.ident(it) to today) } ?: m.tired,
             )
         }
     }
@@ -2308,7 +2308,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun fillBusy(p: DayFill.Placed, mode: DayFill.Mode) {
         val today = LocalDate.now()
         val change = { m: DayFill.Memory ->
-            val pushed = if (p.item.task != null && mode != DayFill.Mode.AFTER_NIGHT) m.withPush(DayFill.ident(p.item.task), today) else m
+            val pushed = p.item.task?.takeIf { mode != DayFill.Mode.AFTER_NIGHT }?.let { m.withPush(DayFill.ident(it), today) } ?: m
             pushed.copy(notBefore = pushed.notBefore + (p.item.id to p.at + p.len + 30))
         }
         reflowNews(tr("ช่วงนี้ไม่ว่าง: ", "Busy now: ") + p.item.title, change)
@@ -2338,12 +2338,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         fun answered(m: DayFill.Memory) = m.copy(picks = m.picks + (item.id to pick), asked = m.asked + (id to today.toString()))
         when (pick) {
             DayFill.Pick.SPLIT -> {
-                deskNote(tr("ขอให้เลขาแบ่งงาน: ", "Asked the secretary to split: ") + task.title)
+                deskNote("ขอให้เลขาแบ่งงาน: " + task.title)
                 saveFill(answered(before.on(today)))
                 remember(
                     UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ขอให้เลขาแบ่งงานแล้ว", "Asked to split"), local = {
                         saveFill(before)
-                        deskNote(tr("ยกเลิกขอแบ่งงาน: ", "Took back the split request: ") + task.title)
+                        deskNote("ยกเลิกขอแบ่งงาน: " + task.title)
                     }),
                     inTree = false,
                 )
@@ -2421,7 +2421,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             asked = if (item.kind == DayFill.Kind.ASK && id != null) m.asked - id else m.asked,
             tired = if (pick == DayFill.Pick.TIRED && id != null) m.tired - id else m.tired,
         )
-        if (pick == DayFill.Pick.SPLIT && task != null) deskNote(tr("ยกเลิกขอแบ่งงาน: ", "Took back the split request: ") + task.title)
+        if (pick == DayFill.Pick.SPLIT && task != null) deskNote("ยกเลิกขอแบ่งงาน: " + task.title)
         if (task != null && line != null) {
             if (task.raw != line.after) {
                 saveFill(next)
@@ -2510,7 +2510,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** "ไม่มีวันส่ง": told to the secretary in สถิติเลขา.md, so it stops proposing one ([back] takes that back). */
     fun askNoDue(task: Task, back: Boolean) =
-        deskNote((if (back) tr("ยกเลิกไม่มีวันส่ง: ", "Took back no due date: ") else tr("ไม่มีวันส่ง: ", "No due date: ")) + task.title)
+        deskNote((if (back) "ยกเลิกไม่มีวันส่ง: " else "ไม่มีวันส่ง: ") + task.title)
 
     // ---- Review mode (โหมดทบทวนงาน), on the secretary page ----
 
