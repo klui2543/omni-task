@@ -292,6 +292,18 @@ object CalendarReader {
                 }
             }
         }
+        // Events Google has that the phone has not synced yet (see GoogleCalendarCheck), until the phone has them:
+        // one the phone now holds with the same title and time stays the phone's.
+        if (ids == null) {
+            val held = out.map { listOf(it.title.trim(), it.begin, it.end, it.allDay) }.toHashSet()
+            GoogleCalendarCheck.pending().forEach { e ->
+                if (calendars?.let { e.calendarId !in it } ?: isHidden(e.calendarId, hidden)) return@forEach
+                if (titleContains != null && !e.title.contains(titleContains, ignoreCase = true)) return@forEach
+                if (e.begin >= to || (e.end <= from && e.begin < from)) return@forEach
+                if (listOf(e.title.trim(), e.begin, e.end, e.allDay) in held) return@forEach
+                out += e
+            }
+        }
         return CalendarEvent.distinct(out)
     }
 
@@ -387,7 +399,7 @@ object CalendarReader {
 
     /** Reads event [id] straight from the Events table, deleted rows included; null when the phone has no such row. */
     fun inspect(context: Context, id: Long): EventInfo? {
-        if (!hasPermission(context)) return null
+        if (id < 0 || !hasPermission(context)) return null
         val cols = arrayOf(
             CalendarContract.Events.TITLE,
             CalendarContract.Events.CALENDAR_ID,
