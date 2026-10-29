@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -340,7 +341,15 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
     }
     val moves = remember(task?.title) { task?.let(vm::reviewMoves) ?: 0 }
 
-    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 14.dp).padding(top = 8.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The review takes the whole screen, as in the mock Klui picked: the bottom bar steps aside, so the answer bar
+    // ("↶ ย้อน", "บันทึก ใบถัดไป") is not hidden under it (Klui, 2026-10-29: answered all, could not go on or back).
+    val dock = LocalDockClearance.current
+    FullPage()
+    Column(
+        Modifier.fillMaxSize().padding(bottom = dock).then(if (dock == 0.dp) Modifier.navigationBarsPadding() else Modifier).imePadding()
+            .padding(horizontal = 14.dp).padding(top = 8.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
                 Icon(Ic.back, tr("กลับ", "Back"), tint = C.text, modifier = Modifier.size(22.dp))
