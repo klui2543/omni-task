@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -41,6 +43,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +71,8 @@ import app.omnitask.time.*
  * "บันทึก" write into the notes. With [writes] off a card is answered and moved on, and "ดูต้นฉบับ" shows what would
  * be written, but nothing is. [writes] starts on (Klui, 2026-10-29, after the check that every app keeps the review
  * lines when a description is edited); it is kept under a new key so an earlier "off" from the trial does not stick.
+ * [full] lets the review take the whole screen (the bottom bar steps aside); it starts off, so the bottom bar stays and
+ * the answer bar sits above it (Klui, 2026-10-29: "ตั้งค่าให้เปลี่ยนกันเต็มจอหรือไม่เต็มจอก็ได้").
  */
 object ReviewMode {
     private const val PREFS = "omni-review"
@@ -75,6 +80,9 @@ object ReviewMode {
         private set
     private const val WRITES = "writes-v2"
     var writes by mutableStateOf(true)
+        private set
+    private const val FULL = "full"
+    var full by mutableStateOf(false)
         private set
     private var loaded = false
 
@@ -84,6 +92,7 @@ object ReviewMode {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         on = p.getBoolean("on", false)
         writes = p.getBoolean(WRITES, true)
+        full = p.getBoolean(FULL, false)
     }
 
     fun setOn(context: Context, value: Boolean) {
@@ -94,6 +103,11 @@ object ReviewMode {
     fun setWrites(context: Context, value: Boolean) {
         writes = value
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(WRITES, value).apply()
+    }
+
+    fun setFull(context: Context, value: Boolean) {
+        full = value
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(FULL, value).apply()
     }
 }
 
@@ -108,6 +122,11 @@ fun ReviewSetting(context: Context) {
             tr("ปิดไว้: ตอบได้ ดูต้นฉบับได้ แต่ยังไม่จดอะไรลงโน้ต", "Off: you can answer and see the note, nothing is written"),
             ReviewMode.writes,
         ) { ReviewMode.setWrites(context, it) }
+        SettingSwitch(
+            tr("ทบทวนแบบเต็มจอ", "Full screen review"),
+            tr("เปิด: ซ่อนแถบเมนูด้านล่างตอนทบทวน  ปิด: แถบเมนูยังอยู่ ปุ่มตอบอยู่เหนือแถบ", "On: the bottom bar hides while you review. Off: the bar stays, the answer buttons sit above it"),
+            ReviewMode.full,
+        ) { ReviewMode.setFull(context, it) }
     }
 }
 
@@ -341,12 +360,15 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
     }
     val moves = remember(task?.title) { task?.let(vm::reviewMoves) ?: 0 }
 
-    // The review takes the whole screen, as in the mock Klui picked: the bottom bar steps aside, so the answer bar
-    // ("↶ ย้อน", "บันทึก ใบถัดไป") is not hidden under it (Klui, 2026-10-29: answered all, could not go on or back).
+    // The answer bar ("↶ ย้อน", "บันทึก ใบถัดไป") must never sit under the floating bottom bar (Klui, 2026-10-29:
+    // answered all, could not go on or back). Full screen (a Settings switch, off at first): the bar steps aside.
+    // Otherwise the page ends above the bar; with the keyboard up the bar is under the keyboard, so only the keyboard counts.
+    if (ReviewMode.full) FullPage()
     val dock = LocalDockClearance.current
-    FullPage()
+    val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Column(
-        Modifier.fillMaxSize().padding(bottom = dock).then(if (dock == 0.dp) Modifier.navigationBarsPadding() else Modifier).imePadding()
+        Modifier.fillMaxSize().padding(bottom = if (keyboard) 0.dp else dock)
+            .then(if (dock == 0.dp) Modifier.navigationBarsPadding() else Modifier).imePadding()
             .padding(horizontal = 14.dp).padding(top = 8.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
