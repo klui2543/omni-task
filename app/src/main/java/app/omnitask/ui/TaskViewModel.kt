@@ -199,6 +199,8 @@ data class UiState(
     /** The line under the day plan's numbers after a tap changed the plan. */
     /** The day plan's news line and its day. */
     val fillNews: Pair<String, String>? = null,
+    /** Counts the day plan's line writes that ended, so the today page looks again at what still needs following. */
+    val fillWrites: Int = 0,
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
     val chat: List<Chat> = emptyList(),
@@ -2278,11 +2280,28 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val cur = _state.value.dayFill
         val line = cur.lines[card]
         saveFill(before.copy(lines = cur.lines - card))
-        if (line == null) return
-        val task = _state.value.tasks.firstOrNull { DayFill.ident(it) == ident && it.raw == line.after }
+        val task = line?.let { l -> _state.value.tasks.firstOrNull { DayFill.ident(it) == ident && DayFill.marks(it) == DayFill.marks(l.after) } }
             ?: return _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
+        val was = DayFill.marks(line.before) ?: return
         // Not written back: the plan keeps the slot as taken, as the note still says (the message says why).
-        edit(task, onFailed = { saveFill(cur) }) { line.before }
+        fillWrite(task, onFailed = { saveFill(cur) }) { DayFill.withMarks(it, was) }
+    }
+
+    /**
+     * The day plan's own line writes. While one is on its way the today page may still show the line from before it,
+     * so the plan neither follows nor lets go of that task until the write has ended ([UiState.fillWrites]).
+     */
+    private val fillPending = HashMap<String, Int>()
+
+    private fun fillWrite(task: Task, onSaved: (() -> Unit)? = null, onFailed: (() -> Unit)? = null, transform: (String) -> String) {
+        val id = DayFill.ident(task)
+        fillPending[id] = (fillPending[id] ?: 0) + 1
+        fun ended() {
+            val left = (fillPending[id] ?: 1) - 1
+            if (left <= 0) fillPending.remove(id) else fillPending[id] = left
+            _state.update { it.copy(fillWrites = it.fillWrites + 1) }
+        }
+        edit(task, onSaved = { ended(); onSaved?.invoke() }, onFailed = { ended(); onFailed?.invoke() }, transform = transform)
     }
 
     fun fillInput(s: UiState, now: LocalDateTime): DayFill.Input {
@@ -2311,7 +2330,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun fillTake(p: DayFill.Placed) {
         val task = p.item.task ?: return
         val today = LocalDate.now()
-        val timed = task.reminderTime == null
+        val id0 = DayFill.ident(task)
+        val mem0 = _state.value.dayFill
+        // A reminder the plan set on an earlier day is the plan's, not the task's own: it is set again.
+        val planned = mem0.accepted[id0]?.timed == true && mem0.lines[id0]?.let { DayFill.marks(it.after) } == DayFill.marks(task)
+        val timed = task.reminderTime == null || planned
         val at = p.at
         val after = TaskLine.setDate(task.raw, DateField.SCHEDULED, today).let {
             if (timed) TaskLine.setReminder(it, DayFill.clock(at), ReminderOn.SCHEDULED) else it
@@ -2329,7 +2352,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             },
         )
         // Its reminder may follow the plan later, so the undo puts back the line from what the plan wrote last.
-        edit(
+        fillWrite(
             task,
             onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ลงเป็นงานแล้ว", "Planned"), local = { fillPutBack(before, p.item.id, id) }), inTree = false) },
             onFailed = { saveFill(before) },
@@ -2395,7 +2418,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             DayFill.Pick.LATER -> {
-                val day = DayFill.laterDay(inp, 30)
+                val day = DayFill.laterDay(inp, 30, task.due)
                 val after = TaskLine.setDate(task.raw, DateField.SCHEDULED, day)
                 saveFill(answered(before.on(today)).let { m -> m.copy(lines = m.lines + (item.id to DayFill.Line(task.raw, after))) })
                 editRecorded(
@@ -2468,7 +2491,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         )
         if (pick == DayFill.Pick.SPLIT && task != null) deskNote("ยกเลิกขอแบ่งงาน: " + task.title, tell = true)
         if (task != null && line != null) {
-            if (task.raw != line.after) {
+            // Only ⏳ and the reminder are the plan's: a change to the rest of the line since is kept.
+            val was = DayFill.marks(line.before)
+            if (DayFill.marks(task) != DayFill.marks(line.after) || was == null) {
                 saveFill(next)
                 _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
                 return
@@ -2477,7 +2502,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             editRecorded(
                 task, UndoStep.Kind.PLAN, inTree = false, label = tr("เปลี่ยนใจแล้ว", "Changed your mind"),
                 local = { saveFill(before) }, onFailed = { saveFill(before) },
-            ) { line.before }
+            ) { DayFill.withMarks(it, was) }
         } else {
             changeFill(tr("เปลี่ยนใจแล้ว", "Changed your mind"), item.title) { next }
         }
@@ -2526,10 +2551,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         if (moves.isEmpty() && letGo.isEmpty()) return
         val today = LocalDate.now()
         var m = _state.value.dayFill.on(today)
-        letGo.forEach { id -> m = m.copy(accepted = m.accepted - id, lines = m.lines - id) }
+        letGo.filter { it !in fillPending }.forEach { id ->
+            m = m.copy(accepted = m.accepted - id, lines = m.lines - id, slots = m.slots.filterValues { it != id }, picks = m.picks - id)
+        }
         class Write(val task: Task, val after: String, val id: String, val card: String, val acc: DayFill.Accepted, val line: DayFill.Line)
         val writes = moves.mapNotNull { mv ->
             val id = DayFill.ident(mv.task)
+            if (id in fillPending) return@mapNotNull null
             val acc = m.accepted[id] ?: return@mapNotNull null
             val line = m.lines[mv.card] ?: return@mapNotNull null
             val at = mv.at ?: return@mapNotNull null
@@ -2544,7 +2572,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         saveFill(m)
         writes.forEach { w ->
             // Not written: the plan keeps knowing the line as it still reads, so the slot is not let go of.
-            edit(w.task, onFailed = {
+            fillWrite(w.task, onFailed = {
                 followFailed += w.card + "\u0001" + w.after
                 val cur = _state.value.dayFill
                 saveFill(cur.copy(accepted = cur.accepted + (w.id to w.acc), lines = cur.lines + (w.card to w.line)))

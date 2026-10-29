@@ -427,12 +427,76 @@ class DayFillTest {
         val moves = { t: Task -> if (t.title.startsWith(mock)) 4 else if (t.title.startsWith(superApp)) 3 else 0 }
         val first = DayFill.plan(input("2026-10-29T16:45", moves = moves))
         assertTrue((first.placed.map { it.item } + first.later.map { it.item }).single { it.kind == DayFill.Kind.ASK }.title.startsWith(mock))
+        // "ปล่อยไป": the task is cancelled and moved to the archive, so it is gone from the note. No new question today.
         val ask = "ask:" + id(note, mock)
-        val answered = DayFill.Memory(day = "2026-10-29", picks = mapOf(ask to DayFill.Pick.SPLIT), asked = mapOf(id(note, mock) to "2026-10-29"))
-        val plan = DayFill.plan(input("2026-10-29T16:45", memory = answered, moves = moves))
-        val asks = (plan.placed.map { it.item } + plan.later.map { it.item }).filter { it.kind == DayFill.Kind.ASK }
-        assertEquals(listOf(ask), asks.map { it.id }, "the answered one stays (to be taken back), no new one today")
-        assertEquals(DayFill.Pick.SPLIT, plan.later.single { it.item.id == ask }.picked)
+        val answered = DayFill.Memory(day = "2026-10-29", picks = mapOf(ask to DayFill.Pick.DROP), asked = mapOf(id(note, mock) to "2026-10-29"))
+        val left = note.filterNot { it.startsWith("- [ ] Mock UX UI") || it.startsWith("    - ค้าง 2026-10-26 งานใหญ่") }
+        val plan = DayFill.plan(input("2026-10-29T16:45", left, memory = answered, moves = moves))
+        assertTrue((plan.placed.map { it.item } + plan.later.map { it.item }).none { it.kind == DayFill.Kind.ASK })
+        // The next day it may ask about the next one.
+        val tomorrow = DayFill.plan(input("2026-10-30T16:45", left, memory = answered, moves = moves))
+        assertTrue((tomorrow.placed.map { it.item } + tomorrow.later.map { it.item }).single { it.kind == DayFill.Kind.ASK }.title.startsWith(superApp))
+    }
+
+    @Test
+    fun aChangeElsewhereInTheLineIsNotTheOwnerTakingTheSlotBack() {
+        // Taken at 17:15; then its priority changed (the review card, or the owner). An event lands on the slot.
+        val (taken, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val lines = taken.map { if (it.startsWith("- [/] Flow")) it.replace("⏫", "🔼") else it }
+        val call = timed(31, ownCal, "โทรคุยกับร้าน", "2026-10-29T17:00", "2026-10-29T18:00")
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, extra = listOf(call), memory = memory))
+        assertTrue(plan.letGo.isEmpty(), plan.letGo.joinToString())
+        assertEquals(1, plan.moves.count { it.task.title.startsWith("Flow") })
+    }
+
+    @Test
+    fun theLineBeforeThePlansWriteLandsIsWaitedFor() {
+        // Taken, but the note still reads as before (the write is on its way): nothing to follow, nothing let go of.
+        val (_, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val plan = DayFill.plan(input("2026-10-29T16:45", memory = memory))
+        assertTrue(plan.moves.isEmpty() && plan.letGo.isEmpty(), plan.moves.joinToString() + plan.letGo)
+    }
+
+    @Test
+    fun puttingBackTheMarksKeepsTheRestOfTheLine() {
+        val (taken, memory) = taken("Flow น้ำเกลือ", m(17, 15))
+        val line = memory.lines.getValue(id(taken, "Flow น้ำเกลือ"))
+        val changed = line.after.replace("⏫", "🔼")
+        val back = DayFill.withMarks(changed, DayFill.marks(line.before)!!)
+        assertEquals(line.before.replace("⏫", "🔼"), back)
+    }
+
+    @Test
+    fun aTakenSprintCardStaysWhenTheSprintIsOpenedAgain() {
+        val week = DayFill.weekOf(LocalDate.parse("2026-10-29")).toString()
+        val superApp = "Super-app"
+        val (lines, taken) = taken(superApp, m(18, 0))
+        val ident = id(lines, superApp)
+        // "รับแล้ว" was tapped to choose the sprint again: it is not taken now, but the slot taken today still is.
+        val memory = taken.copy(
+            sprint = DayFill.SprintPick(week, listOf("omni", "Siriraj")),
+            picks = mapOf(ident to DayFill.Pick.TAKE), slots = mapOf("sprint:omni" to ident),
+        )
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
+        val card = assertNotNull(plan.card(superApp))
+        assertEquals(DayFill.Kind.PROJECT, card.item.kind)
+        assertEquals("sprint:omni", card.item.slot)
+        assertEquals(m(18, 0), card.at)
+    }
+
+    @Test
+    fun aTakenSlotMovedToTomorrowStaysTomorrows() {
+        // No room was left today, so the plan wrote ⏳ tomorrow at the same time. The errand is over: it does not come back.
+        val (lines, taken) = taken("Flow น้ำเกลือ", m(17, 15), day = "2026-10-30", extra = DayFill.Memory(day = "2026-10-29"))
+        val ident = id(lines, "Flow น้ำเกลือ")
+        val memory = taken.copy(picks = mapOf(ident to DayFill.Pick.TAKE))
+        val plan = DayFill.plan(input("2026-10-29T16:45", lines, memory = memory))
+        assertNull(plan.card("Flow น้ำเกลือ"))
+        assertTrue(plan.later.none { it.item.title.startsWith("Flow") })
+        assertTrue(plan.moves.isEmpty() && plan.letGo.isEmpty())
+        // Tomorrow it is that day's taken slot, at its time.
+        val next = DayFill.plan(input("2026-10-30T16:45", lines, memory = memory.on(LocalDate.parse("2026-10-30"))))
+        assertEquals(m(17, 15), next.card("Flow น้ำเกลือ")?.at)
     }
 
     @Test
@@ -580,6 +644,8 @@ class DayFillTest {
     fun keptForLaterGoesToTheNextNormalDayWithRoom() {
         // Fri 30: a night shift at 02:30 that night. Sat 31: just off it, and the pharmacy until 20:00. Sun 1 Nov: free.
         assertEquals(LocalDate.parse("2026-11-01"), DayFill.laterDay(input("2026-10-29T16:45"), 60))
+        // Never past the 📅: due Saturday 31, so not Sunday 1 Nov.
+        assertTrue(DayFill.laterDay(input("2026-10-29T16:45"), 60, due = LocalDate.parse("2026-10-31")) <= LocalDate.parse("2026-10-31"))
     }
 
     // ---- The weekly sprint ----

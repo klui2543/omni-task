@@ -126,8 +126,8 @@ fun DayFillCard(
     var chips by remember { mutableStateOf(false) }
     var sprintDetail by remember { mutableStateOf(false) }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
-    // owner changed (written once, see TaskViewModel.fillFollow).
-    LaunchedEffect(plan.moves, plan.letGo) { vm.fillFollow(plan.moves, plan.letGo) }
+    // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
+    LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }
     // A new event or a new urgent task changed the plan without a tap: say what moved.
     var seen by remember { mutableStateOf<DayFill.Plan?>(null) }
     LaunchedEffect(plan) {

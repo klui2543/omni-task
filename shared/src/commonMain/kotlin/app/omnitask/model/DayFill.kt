@@ -1,5 +1,6 @@
 package app.omnitask.model
 
+import app.omnitask.data.TaskLine
 import app.omnitask.notify.CalendarEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -108,6 +109,24 @@ object DayFill {
 
     /** How a task is known across reloads (its line number moves when lines are added above it). */
     fun ident(t: Task): String = t.noteName + "\u0001" + t.title.trim()
+
+    /**
+     * What the plan writes on a line and follows: ⏳ and the reminder. The rest of the line is the owner's (or another
+     * part of the app's), so a change there is not the owner taking the slot back.
+     */
+    data class Marks(val scheduled: LocalDate?, val time: LocalTime?, val on: ReminderOn?)
+
+    fun marks(t: Task) = Marks(t.scheduled, t.reminderTime, t.reminderOn)
+
+    fun marks(raw: String): Marks? = TaskLine.parse(raw)?.let(::marks)
+
+    /** [raw] with the ⏳ and reminder of [to] put back; everything else stays as the line reads now. */
+    fun withMarks(raw: String, to: Marks): String {
+        val dated = TaskLine.setDate(raw, TaskLine.DateField.SCHEDULED, to.scheduled)
+        val now = marks(dated)
+        return if (now != null && now.time == to.time && (to.time == null || now.on == to.on)) dated
+        else TaskLine.setReminder(dated, to.time, to.on ?: ReminderOn.SCHEDULED)
+    }
 
     // ---- The plan ----
 
@@ -404,6 +423,11 @@ object DayFill {
         val out = ArrayList<Item>()
         val used = HashSet<String>()
         val sprint = mem.sprint?.takeIf { it.taken && it.week == weekOf(today).toString() }?.projects.orEmpty()
+        // A sprint slot taken today keeps its card even when the sprint is opened again to choose anew.
+        val sprintSlots = (sprint + mem.slots.keys.filter { it.startsWith("sprint:") }.map { it.removePrefix("sprint:") })
+            .distinctBy { it.lowercase() }
+        // A taken slot the plan moved to tomorrow (no room left today) is tomorrow's now, as its line says.
+        fun movedOn(t: Task) = mem.accepted[ident(t)]?.let { it.day > today.toString() } == true
         fun tagOf(t: Task) = if (Projects.projectOf(t)?.let { p -> sprint.any { it.equals(p, ignoreCase = true) } } == true) tr("สปรินต์", "Sprint") else null
 
         // Work: what each open task is for today, if anything.
@@ -413,7 +437,7 @@ object DayFill {
         open.filter { !isMine(it) }.forEach { t ->
             val id = ident(t)
             // A task that took a net or sprint slot stays that card, as it was offered (see below).
-            if (id in takers) return@forEach
+            if (id in takers || movedOn(t)) return@forEach
             val acc = mem.accepted[id]?.takeIf { it.day == today.toString() }
             val ownTime = t.reminderAt?.takeIf { acc == null && it.date == today }
             val len0 = Planner.minutesOf(t.title, Planner.kindOf(t.title)).coerceIn(15, 90)
@@ -471,14 +495,16 @@ object DayFill {
         (rest + doing + slipped).forEach { out += if (after && it.must && it.fixedAt == null) it.copy(must = false, prio = 3.0) else it; used += it.id }
 
         // The sprint's projects: one slot a day each, its next task (not after a night shift).
-        if (!after) sprint.forEach { proj ->
+        if (!after) sprintSlots.forEach { proj ->
             val slot = "sprint:$proj"
             val taker = mem.slots[slot]
             val cands = open.filter { !isMine(it) && Projects.projectOf(it)?.equals(proj, ignoreCase = true) == true && ident(it) !in used && it.parent == null && !Focus.isSomeday(it) }
                 .sortedWith(compareBy<Task>({ if (it.status == Status.IN_PROGRESS) 0 else 1 }, { it.due ?: LocalDate(9999, 12, 31) }, { it.created ?: LocalDate(9999, 12, 31) }))
             val n = mem.swaps[slot] ?: 0
-            // Taken today: the same task keeps the slot (gone once it is done or dropped); otherwise the n-th choice.
-            val next = (if (taker != null) open.firstOrNull { ident(it) == taker } else cands.getOrNull(n)) ?: return@forEach
+            // Taken today: the same task keeps the slot (gone once it is done, dropped or moved to tomorrow); otherwise
+            // the n-th choice, while the project is still in the sprint.
+            val next = (if (taker != null) open.firstOrNull { ident(it) == taker } else if (proj in sprint) cands.getOrNull(n) else null)
+                ?.takeIf { !movedOn(it) } ?: return@forEach
             used += ident(next)
             val why = progressWhy(next, subtasks) ?: next.nextStep?.let { tr("ก้าวถัดไป: $it", "Next step: $it") } ?: tr("ทำต่อโปรเจกต์ในสปรินต์", "Sprint project")
             out += Item(
@@ -499,7 +525,7 @@ object DayFill {
             }.sortedByDescending { quiet(it, subtasks, today, before = today) ?: 0 }
             val n = (mem.swaps["net"] ?: 0)
             // Taken today: the same task keeps the slot (gone once it is done or dropped); otherwise the n-th choice.
-            (if (taker != null) open.firstOrNull { ident(it) == taker } else sunk.getOrNull(n))?.let { t ->
+            (if (taker != null) open.firstOrNull { ident(it) == taker } else sunk.getOrNull(n))?.takeIf { !movedOn(it) }?.let { t ->
                 used += ident(t)
                 val days = quiet(t, subtasks, today, before = today)
                 out += Item(
@@ -561,7 +587,7 @@ object DayFill {
             val n = mem.swaps["mine"] ?: 0
             val taker = mem.slots["mine"]
             // Taken today: the same task keeps the slot, wherever the sort now puts it; otherwise the n-th choice.
-            (if (taker != null) mine.firstOrNull { ident(it) == taker } else mine.getOrNull(n))?.let { t ->
+            (if (taker != null) mine.firstOrNull { ident(it) == taker } else mine.getOrNull(n))?.takeIf { !movedOn(it) }?.let { t ->
                 val (wFrom, len, min) = when (fr.mode) {
                     Mode.NORMAL -> Triple(19 * 60, 60, 30)
                     Mode.BEFORE_NIGHT -> Triple(18 * 60, 45, 20)
@@ -683,7 +709,15 @@ object DayFill {
         fun follow(t: Task, card: String, acc: Accepted, day: LocalDate, at: Int) {
             val time = if (acc.timed) clock(at) else null
             if (t.scheduled == day && (time == null || t.reminderTime == time)) return
-            if (mem.lines[card]?.after == t.raw) moves += Move(t, at, day, card) else letGo += ident(t)
+            val line = mem.lines[card]
+            when (marks(t)) {
+                // As the plan wrote it last: it follows the card.
+                line?.let { marks(it.after) } -> moves += Move(t, at, day, card)
+                // As it was before the plan wrote it: that write has not landed yet, so wait for it.
+                line?.let { marks(it.before) } -> Unit
+                // The owner set ⏳ or the reminder themselves: left as it is, and the slot let go of.
+                else -> letGo += ident(t)
+            }
         }
         pl.placed.forEach { p ->
             val t = p.item.task ?: return@forEach
@@ -719,7 +753,7 @@ object DayFill {
             RealDay.isShift(e, inp.profile, inp.facts) && e.end.date == today && e.begin.date == today && e.begin.hour < 6 ->
                 tr("เมื่อคืน จากปฏิทินเวร$from", "Last night, from the shift calendar$from")
             RealDay.isShift(e, inp.profile, inp.facts) -> tr("จากปฏิทินเวร$from", "From the shift calendar$from")
-            else -> tr("จากปฏิทิน$from", "From the calendar$from")
+            else -> tr("จากปฏิทิน", "From the calendar")
         }
     }
 
@@ -745,9 +779,9 @@ object DayFill {
      * The next day from tomorrow, within [NET_DAYS] days, with free time for [len] minutes after a third kept clear:
      * where "เก็บไว้ก่อน" puts a task. Night-shift days come last.
      */
-    fun laterDay(inp: Input, len: Int): LocalDate {
+    fun laterDay(inp: Input, len: Int, due: LocalDate? = null): LocalDate {
         val today = inp.now.date
-        val days = (1L..NET_DAYS).map { today.plusDays(it) }
+        val days = (1L..NET_DAYS).map { today.plusDays(it) }.filter { due == null || it <= due }
         val ok = days.filter { d ->
             val fr = frame(d, inp)
             freeIn(fr) * 2 / 3 - 90 >= len
