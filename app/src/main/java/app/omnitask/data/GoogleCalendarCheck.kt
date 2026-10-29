@@ -61,12 +61,17 @@ object GoogleCalendarCheck {
 
     /**
      * One phone calendar that comes from Google: [google] is Google's id for it, [owns] whether the owner owns it, and
-     * [shown] whether it is shown in the calendar app and not switched off in Omni.
+     * [shown] whether it is shown in the calendar app, not switched off in Omni and synced (a calendar with sync
+     * off never gets Google's new events, so they would wait for good).
      */
     private class PhoneCalendar(val id: Long, val google: String, val owns: Boolean, val shown: Boolean)
 
     /** One event Google lists, with what the views need to show it before the phone has it. */
-    private class LiveEvent(val id: String, val seriesId: String?, val title: String, val begin: LocalDateTime?, val end: LocalDateTime?, val allDay: Boolean)
+    private class LiveEvent(
+        val id: String, val seriesId: String?, val title: String, val begin: LocalDateTime?, val end: LocalDateTime?, val allDay: Boolean,
+        /** A plain event (Google's eventType "default"), not a birthday, focus time, out of office or working place. */
+        val plain: Boolean,
+    )
 
     /**
      * Checks again (at most every two minutes unless [force]). Returns true when the set of gone events or the events
@@ -111,9 +116,16 @@ object GoogleCalendarCheck {
                 next += CalendarGone.gone(rows, live.flatMap { listOfNotNull(it.id, it.seriesId) }.toSet())
             }
             if (shown.isEmpty()) continue
-            val phone = phoneIds[google].orEmpty()
+            // Without the phone's ids every event would look new: keep what was known instead.
+            val phone = phoneIds?.get(google).orEmpty()
+            if (phoneIds == null) {
+                val ids = shown.map { it.id }.toSet()
+                nextPending += beforePending.filter { it.calendarId in ids }
+                continue
+            }
             val calendarId = shown.minOf { it.id }
-            CalendarGone.notOnPhone(live, phone) { CalendarGone.Listed(it.id, it.seriesId) }.forEach { e ->
+            // Only plain events: birthdays, focus time, out of office and the like may never reach the phone's store.
+            CalendarGone.notOnPhone(live.filter { it.plain }, phone) { CalendarGone.Listed(it.id, it.seriesId) }.forEach { e ->
                 if (e.begin != null && e.end != null) nextPending += CalendarEvent(pendingId(e.id), e.title, e.begin, e.end, e.allDay, calendarId)
             }
         }
@@ -137,13 +149,14 @@ object GoogleCalendarCheck {
                 arrayOf(
                     CalendarContract.Calendars._ID, CalendarContract.Calendars.OWNER_ACCOUNT, CalendarContract.Calendars.ACCOUNT_TYPE,
                     CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.VISIBLE,
+                    CalendarContract.Calendars.SYNC_EVENTS,
                 ),
                 null, null, null,
             )?.use { c ->
                 while (c.moveToNext()) {
                     val owner = c.getString(1)
                     if (c.getString(2) != "com.google" || owner.isNullOrBlank()) continue
-                    val shown = c.getInt(4) == 1 && !CalendarReader.isHidden(c.getLong(0), hidden)
+                    val shown = c.getInt(4) == 1 && c.getInt(5) == 1 && !CalendarReader.isHidden(c.getLong(0), hidden)
                     out += PhoneCalendar(c.getLong(0), owner, c.getInt(3) >= CalendarContract.Calendars.CAL_ACCESS_OWNER, shown)
                 }
             }
@@ -185,13 +198,13 @@ object GoogleCalendarCheck {
 
     /**
      * Google's ids of every phone row in the window, by Google's calendar id, deleted rows too (one deleted on the
-     * phone and not yet sent up must not come back as new).
+     * phone and not yet sent up must not come back as new). Null when the phone's store can't be read.
      */
-    private fun syncIds(context: Context, calendars: List<PhoneCalendar>, from: Long, to: Long): Map<String, Set<String>> {
+    private fun syncIds(context: Context, calendars: List<PhoneCalendar>, from: Long, to: Long): Map<String, Set<String>>? {
         if (calendars.isEmpty()) return emptyMap()
         val byId = calendars.associate { it.id to it.google }
         val out = HashMap<String, HashSet<String>>()
-        runCatching {
+        return runCatching {
             val where = CalendarContract.Events._SYNC_ID + " IS NOT NULL AND " +
                 CalendarContract.Events.CALENDAR_ID + " IN (" + byId.keys.joinToString(",") + ") AND " + window(from, to)
             context.contentResolver.query(
@@ -204,9 +217,9 @@ object GoogleCalendarCheck {
                     val sync = c.getString(1) ?: continue
                     out.getOrPut(calendar) { HashSet() } += sync
                 }
-            }
-        }
-        return out
+            } ?: return null
+            out
+        }.getOrNull()
     }
 
     /** The events Google lists for [calendar] in the window, one per round of a repeating event, or null when it can't say. */
@@ -222,7 +235,7 @@ object GoogleCalendarCheck {
                 .addQueryParameter("maxResults", "2500")
                 .addQueryParameter("timeMin", from.toString())
                 .addQueryParameter("timeMax", to.toString())
-                .addQueryParameter("fields", "items(id,recurringEventId,summary,start,end),nextPageToken")
+                .addQueryParameter("fields", "items(id,recurringEventId,summary,start,end,eventType),nextPageToken")
                 .apply { page?.let { addQueryParameter("pageToken", it) } }
                 .build()
             val body = runCatching {
@@ -252,7 +265,8 @@ object GoogleCalendarCheck {
                         Triple(at(start!!.getString("dateTime")), at(end!!.getString("dateTime")), false)
                     }
                 }.getOrNull()
-                out += LiveEvent(id, series, title, dates?.first, dates?.second, dates?.third ?: false)
+                val plain = item.optString("eventType").let { it.isEmpty() || it == "default" }
+                out += LiveEvent(id, series, title, dates?.first, dates?.second, dates?.third ?: false, plain)
             }
             page = json.optString("nextPageToken").takeIf { it.isNotEmpty() }
         } while (page != null)
