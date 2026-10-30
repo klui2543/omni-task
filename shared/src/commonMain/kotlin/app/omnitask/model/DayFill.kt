@@ -267,6 +267,11 @@ object DayFill {
          * to eight weeks ahead (the plan's [events] reach about five). Null: the look-ahead counts from [events].
          */
         val far: List<CalendarEvent>? = null,
+        /**
+         * Own time by day as this phone kept it (look-ahead rule 4, owner's pick ก of 2026-10-30): the minutes the plan
+         * offered and the minutes the owner did. Null: not kept (the switch off).
+         */
+        val own: Map<LocalDate, LookAhead.OwnDay>? = null,
     )
 
     /** Lengths and windows the owner saw in the mock. */
@@ -765,13 +770,7 @@ object DayFill {
                             Tone.WANT,
                         ),
                     )
-                    if (owed != null) add(
-                        Hint(
-                            tr("คืนเวลา", "Time back"),
-                            tr("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ $owed วัน", "Only $owed days of what you want to do in the last two weeks"),
-                            Tone.LIGHT,
-                        ),
-                    )
+                    if (owed != null) add(Hint(tr("คืนเวลา", "Time back"), owed, Tone.LIGHT))
                 }
                 out += Item(
                     ident(t), Kind.MINE, if (long) 0.4 else 0.5, if (long) LookAhead.LONG else len, t.title,

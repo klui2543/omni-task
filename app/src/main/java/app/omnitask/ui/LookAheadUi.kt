@@ -46,6 +46,25 @@ object LookAheadMode {
     }
 }
 
+/**
+ * Own time by day for the look-ahead's rule 4 (owner's pick ก, 2026-10-30): what the plan offered and what the owner
+ * did, kept on this phone only (nothing is written to the notes), the last [LookAhead.OWN_KEEP] days.
+ */
+object OwnTimeLog {
+    private const val PREFS = "omni-owntime"
+    private const val DAYS = "days"
+
+    fun load(context: Context): Map<LocalDate, LookAhead.OwnDay> {
+        val (days, bad) = LookAhead.ownParse(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(DAYS, null))
+        if (bad > 0) android.util.Log.w("Omni", "own time: $bad kept days did not read and were left out")
+        return days
+    }
+
+    fun save(context: Context, days: Map<LocalDate, LookAhead.OwnDay>, today: LocalDate) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(DAYS, LookAhead.ownText(days, today)).apply()
+    }
+}
+
 @Composable
 fun LookAheadSetting(context: Context) {
     LaunchedEffect(Unit) { LookAheadMode.load(context) }

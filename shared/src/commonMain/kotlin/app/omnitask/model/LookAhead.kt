@@ -257,10 +257,84 @@ object LookAhead {
         return days.size
     }
 
-    /** Rule 4: little own time lately, and this week is a light one (judged whole, so to its last evening). */
-    fun owed(inp: DayFill.Input, ws: List<Week>): Int? {
+    /**
+     * Rule 4: little own time lately, and this week is a light one (judged whole, so to its last evening): the reason
+     * the "คืนเวลา" tag gives, or null. Once this phone has kept own time for two weeks ([DayFill.Input.own]), as the
+     * rule says: less than half of what the plan offered. Until then, the days with own time ([OWED_DAYS]).
+     */
+    fun owed(inp: DayFill.Input, ws: List<Week>): String? {
         if (ws.firstOrNull()?.lightWeek != true) return null
-        return ownDays(inp).takeIf { it < OWED_DAYS }
+        val today = inp.now.date
+        val from = today.minusDays(OWED_SPAN)
+        // Kept on most of the last two weeks ([OWN_DAYS] of them): a gap of days the phone did not plan is not counted
+        // as two weeks kept.
+        val kept = inp.own?.filterKeys { it >= from && it < today }
+        if (kept != null && kept.size >= OWN_DAYS) {
+            val offered = kept.values.sumOf { it.offered }
+            // A want ticked or written on later that day (in Obsidian, with the app closed) counts too.
+            val done = kept.entries.sumOf { (d, o) -> if (o.done > 0) o.done else if (ownSign(inp.tasks, d)) o.offered else 0 }
+            if (offered == 0 || done * 2 >= offered) return null
+            val amount = when {
+                done == 0 -> tr(" 0 ชม.", " 0 h")
+                done < 60 -> tr("ราว $done นาที", " about $done min")
+                else -> tr("ราว ${(done + 30) / 60} ชม.", " about ${(done + 30) / 60} h")
+            }
+            return tr("2 สัปดาห์ล่าสุด ได้ทำเรื่องที่อยากทำแค่", "Only") + amount + tr("", " of what you want to do in the last two weeks")
+        }
+        val n = ownDays(inp).takeIf { it < OWED_DAYS } ?: return null
+        return tr("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ $n วัน", "Only $n days of what you want to do in the last two weeks")
+    }
+
+    /** One day's own time (rule 4): minutes the plan offered, and minutes the owner did. */
+    data class OwnDay(val offered: Int, val done: Int)
+
+    /** Days of own time kept on the phone: more than the two weeks rule 4 reads. */
+    const val OWN_KEEP = 30L
+    /** Days of the last fourteen that must be kept before rule 4 reads hours instead of counting days. */
+    const val OWN_DAYS = 10
+
+    /** [days] as the phone keeps them, the last [OWN_KEEP] days: "2026-10-30=60,45;2026-10-31=0,0". */
+    fun ownText(days: Map<LocalDate, OwnDay>, today: LocalDate): String =
+        days.filterKeys { it > today.minusDays(OWN_KEEP) }.toList().sortedBy { it.first }.joinToString(";") { (d, o) -> "$d=${o.offered},${o.done}" }
+
+    /** The days read back from [ownText], and how many parts did not read (left out, for the caller to log). */
+    fun ownParse(text: String?): Pair<Map<LocalDate, OwnDay>, Int> {
+        if (text.isNullOrBlank()) return emptyMap<LocalDate, OwnDay>() to 0
+        var bad = 0
+        val days = text.split(';').mapNotNull { part ->
+            val m = Regex("""^(\d{4}-\d{2}-\d{2})=(\d+),(\d+)$""").matchEntire(part.trim())
+            val day = m?.let { runCatching { LocalDate.parse(it.groupValues[1]) }.getOrNull() }
+            val offered = m?.groupValues?.get(2)?.toIntOrNull()
+            val done = m?.groupValues?.get(3)?.toIntOrNull()
+            if (day == null || offered == null || done == null) { bad++; null } else day to OwnDay(offered, done)
+        }.toMap()
+        return days to bad
+    }
+
+    /**
+     * Today's own time as [plan] shows it now, kept with what was seen earlier today ([before]): the most the plan
+     * offered, and that much done once the owner took the slot, ticked a want, or wrote progress on one today (not a
+     * note of why it got stuck).
+     */
+    fun ownToday(plan: DayFill.Plan, inp: DayFill.Input, before: OwnDay?): OwnDay {
+        val today = inp.now.date
+        val mine = plan.placed.filter { it.item.kind == DayFill.Kind.MINE }
+        val offered = maxOf(before?.offered ?: 0, mine.sumOf { it.len })
+        // Taking the slot is a promise: it counts once the slot's time has gone by with it still taken.
+        val nowMin = inp.now.hour * 60 + inp.now.minute
+        val took = inp.memory.takeIf { it.day == today.toString() }?.slots?.get("mine") != null &&
+            mine.isNotEmpty() && mine.all { it.at + it.len <= nowMin }
+        val did = took || ownSign(inp.tasks, today)
+        return OwnDay(offered, if (did) maxOf(before?.done ?: 0, offered) else before?.done ?: 0)
+    }
+
+    /**
+     * A sign the owner did own time on [day]: a want ticked, or progress written on one (not a note of why it got
+     * stuck). A daily habit (🔁) ticked is not one, as rule 3 says.
+     */
+    fun ownSign(tasks: List<Task>, day: LocalDate): Boolean = tasks.any { t ->
+        DayFill.isMine(t) && t.recurrence == null &&
+            (t.done == day || StuckLog.entries(t).any { e -> e.day == day && StuckLog.Reason.entries.none { it.opens(e.reason) } })
     }
 
     /**
@@ -269,7 +343,7 @@ object LookAhead {
      */
     fun booked(inp: DayFill.Input, day: LocalDate): List<DayFill.Placed> {
         if (day <= inp.now.date || !freeDay(day, inp)) return emptyList()
-        val then = DayFill.Input(inp.tasks, inp.events, inp.profile, inp.facts, day.atTime(0, 0), inp.memory, inp.moves, ahead = true, far = inp.far)
+        val then = DayFill.Input(inp.tasks, inp.events, inp.profile, inp.facts, day.atTime(0, 0), inp.memory, inp.moves, ahead = true, far = inp.far, own = inp.own)
         return DayFill.plan(then).placed.filter { p -> p.item.hints.any { it.tone == DayFill.Tone.WANT || it.tone == DayFill.Tone.HEAVY } }
     }
 }
