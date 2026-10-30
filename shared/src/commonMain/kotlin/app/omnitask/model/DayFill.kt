@@ -492,7 +492,8 @@ object DayFill {
             var len = if (shrink && it0.min != null) it0.min else it0.len
             var t = firstFit(from, to, len, work)
             if (t < 0 && it0.min != null && len != it0.min) { len = it0.min; t = firstFit(from, to, len, work) }
-            val leftNow = occ.count { !it }
+            // A slot the owner put counts as used, so the buffer stays what it should be.
+            val leftNow = (0 until span).count { !occ[it] && !pinOcc[it] }
             var capped = false
             if (t >= 0 && !it0.must && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
             if (t < 0) {
@@ -849,9 +850,9 @@ object DayFill {
         var cursor = fr.start
         val open = ArrayList<Pair<Int, Int>>()
         // [free]: where the free stretch for a task ends (the plan keeps [CLEAR] minutes before an event too).
-        fun gap(a: Int, b0: Int, free: Int = b0) {
-            val b = minOf(b0, fr.end)
-            if (minOf(free, b) > a) open += a to minOf(free, b)
+        fun gap(a: Int, b: Int, free: Int = b) {
+            val o = minOf(free, b, fr.end)
+            if (o > a) open += a to o
             if (b - a >= 15) rows += Row.Gap(a, b - a)
         }
         timeline.forEach { (at, x) ->

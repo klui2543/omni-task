@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -333,14 +334,15 @@ fun DayFillCard(
 
             // The day, part by part. Tasks done today are in their line above, not here.
             val expanded = open ?: plan.next
-            val counts = plan.rows.filterIsInstance<DayFill.Row.Card>().filter { it.placed.item.kind != DayFill.Kind.LIFE }.groupingBy { part(it.at) }.eachCount()
-            var section: DayPlan.Part? = null
-            var nowShown = false
-            fun enter(p: DayPlan.Part): Boolean = (p != section).also { if (it) section = p }
             // The slot not done that waits for a place: shown after the now line, where the time offered first is.
             val waiting = plan.rows.filterIsInstance<DayFill.Row.Card>().firstOrNull { c ->
                 c.placed.item.id == replacing && c.placed.at + c.placed.len <= nowMin && c.placed.item.task?.isOpen == true
             }?.placed
+            val counts = plan.rows.filterIsInstance<DayFill.Row.Card>().filter { it.placed.item.kind != DayFill.Kind.LIFE && it.placed != waiting }
+                .groupingBy { part(it.at) }.eachCount()
+            var section: DayPlan.Part? = null
+            var nowShown = false
+            fun enter(p: DayPlan.Part): Boolean = (p != section).also { if (it) section = p }
             val offers = waiting?.let { DayFill.suggest(plan, it.len, nowMin) }.orEmpty()
             var waitingShown = false
             // A long press drags a task; its time follows the finger between the rows around it (its own row too, so
@@ -383,15 +385,17 @@ fun DayFillCard(
                     },
                     onDragEnd = {
                         val d = drag
-                        val p = cur.value
-                        // A press let go where it began puts nothing.
-                        if (d != null && d.key == rowKey && p != null && abs(dragDy) >= slop) {
-                            vm.fillPlace(p, timeAt(d.from + dragDy, p.len))
-                            replacing = null
-                            open = null
+                        if (d != null && d.key == rowKey) {
+                            val p = cur.value
+                            // A press let go where it began puts nothing.
+                            if (p != null && abs(dragDy) >= slop) {
+                                vm.fillPlace(p, timeAt(d.from + dragDy, p.len))
+                                replacing = null
+                                open = null
+                            }
+                            drag = null
+                            dragDy = 0f
                         }
-                        drag = null
-                        dragDy = 0f
                     },
                     onDragCancel = {
                         if (drag?.key == rowKey) {
@@ -436,11 +440,22 @@ fun DayFillCard(
                     }
                 }
             }
-            plan.rows.forEachIndexed { index, row ->
-                if (row is DayFill.Row.Done) return@forEachIndexed
+            val used = HashSet<String>()
+            plan.rows.forEach { row ->
+                if (row is DayFill.Row.Done) return@forEach
                 // The slot waiting for a place shows after the now line instead, with the times offered.
-                if (row is DayFill.Row.Card && waiting != null && row.placed == waiting) return@forEachIndexed
-                val key = "r$index"
+                if (row is DayFill.Row.Card && waiting != null && row.placed == waiting) return@forEach
+                // A row is known by what it is, not by where it sits, so a drag holds on when the rows before it change.
+                val base = when (row) {
+                    is DayFill.Row.Card -> "c:" + row.placed.item.id
+                    is DayFill.Row.Locked -> "b:" + row.at + ":" + row.title
+                    is DayFill.Row.Gap -> "g:" + row.at
+                    is DayFill.Row.Done -> "d"
+                }
+                var unique = base
+                var n = 1
+                while (!used.add(unique)) unique = base + "#" + n++
+                val rk = unique
                 val at = row.at
                 if (at != null) {
                     val p = part(at)
@@ -454,67 +469,69 @@ fun DayFillCard(
                         Track("waiting", null, waiting) { WaitingCard(waiting, offers, today, vm) { replacing = null } }
                     }
                 }
-                when (row) {
-                    is DayFill.Row.Locked -> Track(key, at) {
-                        val (name, range) = blockText(row)
-                        val rk = "block:" + row.at + ":" + row.title
-                        BlockRow(
-                            name, range, row.why.takeIf { reasonOf == rk && range != it },
-                            faded = row.past || (at != null && at <= nowMin), bar = if (row.past) C.faint else C.teal,
-                        ) { reasonOf = if (reasonOf == rk) null else rk }
-                    }
-                    is DayFill.Row.Gap -> Track(key, at) {
-                        val hi = waiting != null && offers.firstOrNull()?.let { it >= row.at && it < row.at + row.len } == true
-                        GapRow(
-                            DayFill.hm(row.at) + tr(" ถึง ", " to ") + DayFill.hm(row.at + row.len) +
-                                if (hi) tr(" ว่าง ${DayFill.lenText(row.len)} ช่องที่แนะนำ", " free ${DayFill.lenText(row.len)}, the one offered")
-                                else tr(" ว่างไว้ เผื่อเรื่องไม่คาดคิด", " kept free for the unexpected"),
-                            hi,
-                        )
-                    }
-                    is DayFill.Row.Card -> {
-                        val p = row.placed
-                        val item = p.item
-                        if (item.kind == DayFill.Kind.LIFE) Track(key, at) {
-                            // Meals and rest read as blocks: they are where they are.
-                            val lk = "life:" + item.id
+                key(rk) {
+                    when (row) {
+                        is DayFill.Row.Locked -> Track(rk, at) {
+                            val (name, range) = blockText(row)
+                            val rk = "block:" + row.at + ":" + row.title
                             BlockRow(
-                                item.title, DayFill.hm(p.at) + tr(" ถึง ", " to ") + DayFill.hm(p.at + p.len),
-                                item.why.takeIf { reasonOf == lk || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
-                            ) { reasonOf = if (reasonOf == lk) null else lk }
-                        } else {
-                            val task = item.task
-                            val acc = task?.let { state.dayFill.accepted[DayFill.ident(it)] }?.takeIf { it.day == plan.day.toString() }
-                            val taken = row.picked == DayFill.Pick.TAKE && acc != null && task?.isOpen == true
-                            val gone = p.at + p.len <= nowMin
-                            val over = if (gone) null else DayFill.overlapText(DayFill.overlapsOf(plan, p), ::thaiShort)
-                            // Only a task taken today moves by a long press (and the one waiting for a place).
-                            Track(key, at, p.takeIf { taken }, over = over != null) {
-                                if (item.id == expanded) {
-                                    val timed = task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
-                                    NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
-                                } else {
-                                    PlanRow(p, row.picked, today, vm) { open = item.id }
-                                }
-                                val indent = Modifier.padding(start = 44.dp, end = 12.dp)
-                                over?.let { Text(it, indent, color = C.amber, fontSize = TS.caption) }
-                                if (taken && gone) {
-                                    Column(indent.padding(top = 2.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(tr("เลยเวลา ${DayFill.hm(p.at)} แล้ว ทำไปหรือยัง", "${DayFill.hm(p.at)} went by. Done it?"), color = C.text, fontSize = TS.body)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            SmallAction(tr("ทำแล้ว", "Done"), false) { task?.let(vm::toggleDone) }
-                                            SmallAction(tr("ยังไม่ได้ทำ", "Not yet"), true) { replacing = item.id; open = null }
+                                name, range, row.why.takeIf { reasonOf == rk && range != it },
+                                faded = row.past || (at != null && at <= nowMin), bar = if (row.past) C.faint else C.teal,
+                            ) { reasonOf = if (reasonOf == rk) null else rk }
+                        }
+                        is DayFill.Row.Gap -> Track(rk, at) {
+                            val hi = waiting != null && offers.firstOrNull()?.let { it >= row.at && it < row.at + row.len } == true
+                            GapRow(
+                                DayFill.hm(row.at) + tr(" ถึง ", " to ") + DayFill.hm(row.at + row.len) +
+                                    if (hi) tr(" ว่าง ${DayFill.lenText(row.len)} ช่องที่แนะนำ", " free ${DayFill.lenText(row.len)}, the one offered")
+                                    else tr(" ว่างไว้ เผื่อเรื่องไม่คาดคิด", " kept free for the unexpected"),
+                                hi,
+                            )
+                        }
+                        is DayFill.Row.Card -> {
+                            val p = row.placed
+                            val item = p.item
+                            if (item.kind == DayFill.Kind.LIFE) Track(rk, at) {
+                                // Meals and rest read as blocks: they are where they are.
+                                val lk = "life:" + item.id
+                                BlockRow(
+                                    item.title, DayFill.hm(p.at) + tr(" ถึง ", " to ") + DayFill.hm(p.at + p.len),
+                                    item.why.takeIf { reasonOf == lk || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
+                                ) { reasonOf = if (reasonOf == lk) null else lk }
+                            } else {
+                                val task = item.task
+                                val acc = task?.let { state.dayFill.accepted[DayFill.ident(it)] }?.takeIf { it.day == plan.day.toString() }
+                                val taken = row.picked == DayFill.Pick.TAKE && acc != null && task?.isOpen == true
+                                val gone = p.at + p.len <= nowMin
+                                val over = if (gone) null else DayFill.overlapText(DayFill.overlapsOf(plan, p), ::thaiShort)
+                                // Only a task taken today moves by a long press (and the one waiting for a place).
+                                Track(rk, at, p.takeIf { taken }, over = over != null) {
+                                    if (item.id == expanded) {
+                                        val timed = task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
+                                        NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
+                                    } else {
+                                        PlanRow(p, row.picked, today, vm) { open = item.id }
+                                    }
+                                    val indent = Modifier.padding(start = 44.dp, end = 12.dp)
+                                    over?.let { Text(it, indent, color = C.amber, fontSize = TS.caption) }
+                                    if (taken && gone) {
+                                        Column(indent.padding(top = 2.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(tr("เลยเวลา ${DayFill.hm(p.at)} แล้ว ทำไปหรือยัง", "${DayFill.hm(p.at)} went by. Done it?"), color = C.text, fontSize = TS.body)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                SmallAction(tr("ทำแล้ว", "Done"), false) { task?.let(vm::toggleDone) }
+                                                SmallAction(tr("ยังไม่ได้ทำ", "Not yet"), true) { replacing = item.id; open = null }
+                                            }
                                         }
                                     }
-                                }
-                                if (taken && p.at <= nowMin) DayFill.leftText(DayFill.latestStart(plan, p.len), nowMin)?.let { left ->
-                                    val soon = DayFill.latestStart(plan, p.len) - nowMin < 60
-                                    Text(left, indent.padding(bottom = 4.dp), color = if (soon) C.amber else C.lime, fontSize = TS.caption)
+                                    if (taken && p.at <= nowMin) DayFill.leftText(DayFill.latestStart(plan, p.len), nowMin)?.let { left ->
+                                        val soon = DayFill.latestStart(plan, p.len) - nowMin < 60
+                                        Text(left, indent.padding(bottom = 4.dp), color = if (soon) C.amber else C.lime, fontSize = TS.caption)
+                                    }
                                 }
                             }
                         }
+                        is DayFill.Row.Done -> Unit
                     }
-                    is DayFill.Row.Done -> Unit
                 }
             }
             if (!nowShown && plan.rows.isNotEmpty()) NowLine(nowMin)

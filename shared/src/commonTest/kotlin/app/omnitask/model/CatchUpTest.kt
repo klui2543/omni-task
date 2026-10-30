@@ -235,12 +235,35 @@ class CatchUpTest {
         val event = CalendarEvent(9, "นัดทำฟัน", LocalDateTime.parse("${day}T19:30"), LocalDateTime.parse("${day}T19:45"), calendarId = 3)
         val p = DayFill.plan(DayFill.Input(tasks(note), events + event, profile, facts, LocalDateTime.parse("${day}T16:45")))
         assertTrue(p.open.none { (a, b) -> a < m(19, 30) && b > m(19, 15) }, "15 minutes before the event stay clear: ${p.open}")
-        // Put after the plan stops (before bed): no free stretch or free row after the stop.
+        // Put after the plan stops (before bed): no free stretch is offered after the stop.
         val (lines, mem) = taken("เขียนถ้อยคำ", m(20, 15), pinned = true)
         val q = plan("${day}T16:45", lines, mem)
         assertEquals(m(20, 15), q.card("เขียนถ้อยคำ")?.at)
         assertTrue(q.open.all { it.second <= q.end }, "${q.open}")
-        assertTrue(q.rows.filterIsInstance<DayFill.Row.Gap>().all { it.at + it.len <= q.end })
+    }
+
+    @Test
+    fun aPutSlotCountsAgainstTheBuffer() {
+        // A plain evening (no shift tonight), 2 h 30 left at 19:00: a third is kept as the buffer.
+        val lines0 = listOf(
+            "- [/] งานกำลังทำ #omni 🔼 ➕ 2026-10-20",
+            "- [ ] งานที่วางเอง #omni ➕ 2026-10-20",
+        )
+        fun plain(lines: List<String>, memory: DayFill.Memory = DayFill.Memory()) =
+            DayFill.plan(DayFill.Input(tasks(lines), emptyList(), profile, facts, LocalDateTime.parse("${day}T19:00"), memory))
+        val free = plain(lines0)
+        assertEquals(150, free.free)
+        assertNotNull(free.card("งานกำลังทำ"), "with no put slot it fits")
+        // Put at 20:30 (an hour, to when the plan stops): it uses free time too, so the work under way no longer
+        // fits with the buffer kept and waits.
+        val (lines, mem) = taken("งานที่วางเอง", m(20, 30), pinned = true, lines = lines0)
+        val p = plain(lines, mem)
+        val put = assertNotNull(p.card("งานที่วางเอง"))
+        assertTrue(put.pinned)
+        assertEquals(p.end, put.at + put.len)
+        assertNull(p.card("งานกำลังทำ"), "placed: " + p.placed.map { it.item.title + " " + DayFill.hm(it.at) })
+        val waits = assertNotNull(p.later.firstOrNull { it.item.title.startsWith("งานกำลังทำ") })
+        assertEquals("ย้ายไปพรุ่งนี้ เพื่อเหลือช่องกันชนไว้", waits.why)
     }
 
     @Test
