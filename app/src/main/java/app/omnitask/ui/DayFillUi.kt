@@ -137,6 +137,7 @@ fun DayFillCard(
     var sprintDetail by remember { mutableStateOf(false) }
     var doneOpen by remember { mutableStateOf(false) }
     var laterOpen by remember { mutableStateOf(false) }
+    var logOpen by remember { mutableStateOf(false) }
     // A block's reason shows when it is tapped, one at a time.
     var reasonOf by remember { mutableStateOf<String?>(null) }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
@@ -164,12 +165,9 @@ fun DayFillCard(
     val nowMin = now.hour * 60 + now.minute
     Card {
         Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
-            Text(
-                tr("ว่างจริง ${dur(plan.free)}, จัดไว้ ${dur(plan.free - plan.buffer)}, เหลือกันชน ${dur(plan.buffer)}", "Free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}"),
-                Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = C.muted, fontSize = TS.caption,
-            )
-            plan.banner?.let { Notice(it, C.amberSoft) }
-            state.fillNews?.takeIf { it.first == plan.day.toString() }?.let { Notice(it.second, C.raised) }
+            // What the secretary did and the day's numbers, in one strip that opens to the whole day (owner's pick ก).
+            val numbers = tr("ว่างจริง ${dur(plan.free)}, จัดไว้ ${dur(plan.free - plan.buffer)}, เหลือกันชน ${dur(plan.buffer)}", "Free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}")
+            TellStrip(plan.banner, state.fillLog, numbers, logOpen) { logOpen = !logOpen }
             plan.sprint?.let { sp ->
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -324,6 +322,49 @@ fun DayFillCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * "เลขาทำอะไรไปบ้าง" (owner's pick ก, 2026-10-30): the latest thing the secretary did, with tonight's shift or the
+ * day's numbers under it; a tap lists the whole day, newest first.
+ */
+@Composable
+private fun TellStrip(banner: String?, log: List<Pair<String, String>>, numbers: String, isOpen: Boolean, onClick: () -> Unit) {
+    val latest = log.lastOrNull()
+    val title = latest?.let { tr("เลขาจัดใหม่ ", "Re-planned at ") + it.first + ": " + it.second } ?: banner ?: numbers
+    val sub = when {
+        latest != null -> banner ?: numbers
+        banner != null -> numbers
+        else -> null
+    }
+    Row(
+        Modifier.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(C.radius))
+            .background(C.raised).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(C.accent))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = C.text, fontSize = TS.body, maxLines = if (isOpen) 6 else 2, overflow = TextOverflow.Ellipsis)
+            sub?.let { Text(it, color = C.muted, fontSize = TS.caption, maxLines = if (isOpen) 4 else 2, overflow = TextOverflow.Ellipsis) }
+        }
+        Text(if (isOpen) tr("ย่อ", "Fold") else tr("ดูทั้งวัน", "Whole day"), color = C.muted, fontSize = TS.caption)
+    }
+    if (!isOpen) return
+    Column(Modifier.padding(start = 22.dp, end = 22.dp, top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LogLine(tr("ตอนนี้", "Now"), numbers)
+        banner?.let { LogLine(tr("วันนี้", "Today"), it) }
+        log.asReversed().forEach { (at, text) -> LogLine(at, text) }
+        if (log.isEmpty()) Text(tr("วันนี้เลขายังไม่ได้จัดใหม่", "Nothing re-planned today yet"), color = C.muted, fontSize = TS.caption)
+    }
+}
+
+@Composable
+private fun LogLine(at: String, text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(at, Modifier.width(44.dp), color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+        Text(text, Modifier.weight(1f), color = C.text2, fontSize = TS.caption)
     }
 }
 
@@ -566,12 +607,4 @@ private fun FootButton(text: String, onClick: () -> Unit) {
             .clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = C.text, fontSize = TS.body) }
-}
-
-@Composable
-private fun Notice(text: String, bg: Color) {
-    Text(
-        text, Modifier.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(bg).padding(horizontal = 12.dp, vertical = 10.dp),
-        color = C.text, fontSize = TS.body,
-    )
 }

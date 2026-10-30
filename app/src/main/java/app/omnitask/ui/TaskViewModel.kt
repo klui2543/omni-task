@@ -199,6 +199,8 @@ data class UiState(
     /** The line under the day plan's numbers after a tap changed the plan. */
     /** The day plan's news line and its day. */
     val fillNews: Pair<String, String>? = null,
+    /** What the day plan told today, oldest first, as (HH:mm, text): the strip's "ดูทั้งวัน" (owner's pick ก, 2026-10-30). */
+    val fillLog: List<Pair<String, String>> = emptyList(),
     /** Counts the day plan's line writes that ended, so the today page looks again at what still needs following. */
     val fillWrites: Int = 0,
     val insight: Insight.Ask? = null,
@@ -2247,6 +2249,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val read = DayFill.decode(fillPrefs.getString(FILL_MEMORY, null))
         if (read == null) _state.update { it.copy(message = tr("อ่านความจำของตารางวันนี้ไม่ได้ เริ่มจำใหม่จากวันนี้", "Could not read the day plan's memory, starting afresh today")) }
         _state.update { it.copy(dayFill = (read ?: DayFill.Memory()).on(LocalDate.now())) }
+        // Today's lines only ("day<TAB>HH:mm<TAB>text"); older days are dropped on the next write.
+        val today = LocalDate.now().toString()
+        val log = fillPrefs.getString(FILL_LOG, null).orEmpty().lines().mapNotNull { l ->
+            l.split('\t', limit = 3).takeIf { it.size == 3 && it[0] == today }?.let { it[1] to it[2] }
+        }
+        _state.update { it.copy(fillLog = log) }
+    }
+
+    private fun saveFillLog(log: List<Pair<String, String>>) {
+        val today = LocalDate.now().toString()
+        fillPrefs.edit().putString(FILL_LOG, log.joinToString("\n") { "$today\t${it.first}\t${it.second.replace('\n', ' ').replace('\t', ' ')}" }).apply()
+        _state.update { it.copy(fillLog = log) }
     }
 
     private fun saveFill(m: DayFill.Memory) {
@@ -2261,12 +2275,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun changeFill(label: String, title: String, news: String? = null, change: (DayFill.Memory) -> DayFill.Memory) {
         val before = _state.value.dayFill
         val newsBefore = _state.value.fillNews
+        val logBefore = _state.value.fillLog
         saveFill(change(before.on(LocalDate.now())))
         if (news != null) fillNews(news)
         remember(
             UndoStep(UndoStep.Kind.PLAN, title, label = label, local = {
                 saveFill(before.copy(lines = _state.value.dayFill.lines))
-                if (news != null) _state.update { it.copy(fillNews = newsBefore) }
+                if (news != null) {
+                    _state.update { it.copy(fillNews = newsBefore) }
+                    saveFillLog(logBefore)
+                }
             }),
             inTree = false,
         )
@@ -2312,7 +2330,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))
 
     /** The line under the plan's numbers after a change ("มีธุระ 2 ชม. เลขาจัดใหม่ให้แล้ว: ..."), for today only. */
-    fun fillNews(text: String?) = _state.update { it.copy(fillNews = text?.let { t -> LocalDate.now().toString() to t }) }
+    fun fillNews(text: String?) {
+        _state.update { it.copy(fillNews = text?.let { t -> LocalDate.now().toString() to t }) }
+        if (text == null) return
+        val now = LocalDateTime.now()
+        val log = _state.value.fillLog.takeIf { _state.value.fillLog.isEmpty() || fillPrefs.getString(FILL_LOG, null).orEmpty().startsWith(LocalDate.now().toString()) }.orEmpty()
+        saveFillLog(log + (DayFill.hm(now.hour * 60 + now.minute) to text))
+    }
 
     /** What [change] would move, told as the news line. */
     private fun reflowNews(what: String, change: (DayFill.Memory) -> DayFill.Memory): String {
@@ -4769,6 +4793,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_DONE_LOG = "doneLog"
         const val KEY_REVIEWED = "reviewedTasks"
         const val FILL_MEMORY = "memory"
+        const val FILL_LOG = "log"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
         const val KEY_PICKED_FOLDERS = "pickedFolders"
