@@ -168,6 +168,41 @@ fun DayFillCard(
             // What the secretary did and the day's numbers, in one strip that opens to the whole day (owner's pick ก).
             val numbers = tr("ว่างจริง ${dur(plan.free)}, จัดไว้ ${dur(plan.free - plan.buffer)}, เหลือกันชน ${dur(plan.buffer)}", "Free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}")
             TellStrip(plan.banner, state.fillLog.takeIf { state.fillLogDay == plan.day.toString() }.orEmpty(), numbers, logOpen) { logOpen = !logOpen }
+            // The errand, the secretary's questions and what moved to another day: one row of small buttons under the
+            // strip, so they are seen on opening the page (owner's pick ก, mock plan-buttons, 2026-10-30).
+            val later = plan.later.filter { it.item.kind != DayFill.Kind.LIFE }
+            val errand = state.dayFill.takeIf { it.day == plan.day.toString() }?.errand
+            FlowRow(
+                Modifier.padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (errand == null) ActChip(tr("มีธุระ", "Errand"), chips) { chips = !chips; laterOpen = false }
+                else ActChip(tr("ธุระเสร็จแล้ว จัดคืนให้", "Errand over, plan again"), false) { vm.fillErrandEnd(); chips = false }
+                if (asks > 0) ActChip(tr("เลขาถาม $asks ข้อ", "$asks questions"), false, onAsks)
+                if (later.isNotEmpty()) ActChip(tr("ย้ายไปวันอื่น ${later.size}", "${later.size} moved to another day"), laterOpen) { laterOpen = !laterOpen; chips = false }
+            }
+            if (chips && state.dayFill.errand == null) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(tr("ไม่ว่างนานแค่ไหน", "Busy for how long"), color = C.text2, fontSize = TS.caption)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(60 to tr("1 ชม.", "1 h"), 120 to tr("2 ชม.", "2 h"), 180 to tr("3 ชม.", "3 h"), null to tr("ทั้งเย็นนี้", "All evening")).forEach { (min, label) ->
+                            FootButton(label) { vm.fillErrand(plan.start, min, label); chips = false }
+                        }
+                    }
+                }
+            }
+            if (laterOpen && later.isNotEmpty()) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("ไม่นับว่าข้าม", "Not counted as skipped"), color = C.muted, fontSize = TS.caption)
+                later.forEach { l ->
+                    Column(
+                        // An answer given today can be taken back by tapping it, as a card can.
+                        if (l.picked != null) Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(l.item) } else Modifier.fillMaxWidth(),
+                    ) {
+                        Text(l.item.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(l.why, color = if (l.risk) C.red else C.muted, fontSize = TS.caption)
+                    }
+                }
+            }
             plan.sprint?.let { sp ->
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -269,58 +304,6 @@ fun DayFillCard(
             }
             if (!nowShown && plan.rows.isNotEmpty()) NowLine(nowMin)
 
-            // What moved to another day, folded into one line.
-            val later = plan.later.filter { it.item.kind != DayFill.Kind.LIFE }
-            if (later.isNotEmpty()) {
-                Box(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp).fillMaxWidth().height(1.dp).background(C.divider))
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { laterOpen = !laterOpen }.padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        buildAnnotatedString {
-                            append(tr("ย้ายไปวันอื่น ${later.size} งาน ", "${later.size} moved to another day "))
-                            pushStyle(SpanStyle(color = C.muted))
-                            append(tr("ไม่นับว่าข้าม", "not counted as skipped"))
-                            pop()
-                        },
-                        Modifier.weight(1f), color = C.text, fontSize = TS.body,
-                    )
-                    Text(if (laterOpen) tr("ย่อ", "Fold") else tr("แตะดู", "Tap to see"), color = C.muted, fontSize = TS.caption)
-                }
-                if (laterOpen) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    later.forEach { l ->
-                        Column(
-                            // An answer given today can be taken back by tapping it, as a card can.
-                            if (l.picked != null) Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(l.item) } else Modifier.fillMaxWidth(),
-                        ) {
-                            Text(l.item.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(l.why, color = if (l.risk) C.red else C.muted, fontSize = TS.caption)
-                        }
-                    }
-                }
-            }
-
-            // The errand and the secretary's questions, at the foot as in the mock.
-            FlowRow(
-                Modifier.padding(start = 14.dp, end = 14.dp, top = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                val errand = state.dayFill.takeIf { it.day == plan.day.toString() }?.errand
-                if (errand == null) FootButton(tr("มีธุระ", "Errand")) { chips = !chips }
-                else FootButton(tr("ธุระเสร็จแล้ว จัดคืนให้", "Errand over, plan again")) { vm.fillErrandEnd(); chips = false }
-                if (asks > 0) FootButton(tr("เลขาถาม $asks ข้อ", "$asks questions"), onAsks)
-            }
-            if (chips && state.dayFill.errand == null) {
-                Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(tr("ไม่ว่างนานแค่ไหน", "Busy for how long"), color = C.text2, fontSize = TS.caption)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(60 to tr("1 ชม.", "1 h"), 120 to tr("2 ชม.", "2 h"), 180 to tr("3 ชม.", "3 h"), null to tr("ทั้งเย็นนี้", "All evening")).forEach { (min, label) ->
-                            FootButton(label) { vm.fillErrand(plan.start, min, label); chips = false }
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -614,7 +597,17 @@ private fun SmallAction(text: String, filled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** The quiet buttons at the foot (มีธุระ, เลขาถาม), and the errand's lengths. */
+/** A small round button in the row under the strip; [on] while what it opens is open. */
+@Composable
+private fun ActChip(text: String, on: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(50)).background(if (on) C.accentSoft else C.raised)
+            .border(1.dp, if (on) C.accent else C.control, RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = if (on) C.accentText else C.text, fontSize = TS.caption) }
+}
+
+/** The errand's lengths. */
 @Composable
 private fun FootButton(text: String, onClick: () -> Unit) {
     Box(
