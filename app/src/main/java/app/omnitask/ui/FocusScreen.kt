@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
+import app.omnitask.model.LookAhead
 import app.omnitask.model.NextUp
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
@@ -360,7 +361,7 @@ fun FocusScreen(
             }
             val sleeps = SleepMode.forPlan
             val sleepStatus = SleepMode.status
-            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus) { vm.fillPlan(state, now) }
+            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus, LookAheadMode.on) { vm.fillPlan(state, now) }
             DayFillCard(state, vm, plan, now, { vm.fillInput(state, now) }, asks.size, { asking = true }, onOpen) { reviewingTask = it }
         } else if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
@@ -448,7 +449,15 @@ fun FocusScreen(
         if (nl) {
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
-            item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
+            item(key = "ahead") {
+                // The look-ahead (with today's plan): the next week's tag and what a free day ahead will hold (mock v2, board ก).
+                val look = if (DayFillMode.on && LookAheadMode.on) {
+                    remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, today) {
+                        lookAheadView(vm.fillInput(state, now), Week.sunday(today).plusDays(7))
+                    }
+                } else null
+                WeekCard(countdowns, week, today, onOpen, look) { pickingCountdown = true }
+            }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
@@ -1001,8 +1010,11 @@ private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EE
  * "ดูอีก N งาน" opens the rest in place. On a Sunday this week has no days left and only next week shows.
  */
 @Composable
-private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, onPick: () -> Unit) {
+private fun WeekCard(
+    countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, look: LookAheadView? = null, onPick: () -> Unit,
+) {
     var all by rememberSaveable { mutableStateOf(false) }
+    var tagOpen by remember { mutableStateOf(false) }
     val shown = if (all) week else week.take(6)
     val sunday = Week.sunday(today)
     val spans = buildList {
@@ -1016,19 +1028,28 @@ private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, t
         }
         spans.forEachIndexed { n, (name, from, to) ->
             if (n > 0 || countdowns.isNotEmpty()) Box(Modifier.padding(top = 4.dp).fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
+            // The look-ahead's tag on next week (mock look-ahead v2): tight or the lightest; a tap shows why.
+            val tag = look?.takeIf { from == sunday.plusDays(1) }?.let { LookAhead.weekHint(it.weeks, 1) }
             Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(name, color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
                 Text(
                     from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' '),
-                    Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption,
+                    Modifier.padding(start = 8.dp).weight(1f), color = C.muted, fontSize = TS.caption,
                 )
+                if (tag != null) HintPill(tag.label, tag.tone, Modifier.padding(start = 8.dp)) { tagOpen = !tagOpen }
             }
+            if (tag != null && tagOpen) Text(tag.why, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
             val inSpan = week.filter { it.day >= from && it.day <= to }
-            if (inSpan.isEmpty()) {
+            val booked = look?.booked.orEmpty().filterKeys { it >= from && it <= to }
+            if (inSpan.isEmpty() && booked.isEmpty()) {
                 Text(tr("ยังไม่มีงาน", "Nothing yet"), Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = C.faint, fontSize = TS.caption)
             }
-            shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }.forEach { (day, items) ->
+            val byDay = shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }
+            (byDay.keys + booked.keys).distinct().sorted().forEach { day ->
+                val items = byDay[day].orEmpty()
                 PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
+                // A whole free day ahead: what today's plan would put on it then (nothing is written).
+                booked[day]?.let { Text(bookedText(it), Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp), color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 items.forEach { w ->
                     val days = ChronoUnit.DAYS.between(today, day)
                     AheadRow(

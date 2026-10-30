@@ -2356,7 +2356,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun fillInput(s: UiState, now: LocalDateTime): DayFill.Input {
         val behavior = behaviorNow()
-        return DayFill.Input(s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date), { Learned.movesLater(it.title, behavior, s.today) }, SleepMode.forPlan, SleepMode.problem)
+        return DayFill.Input(
+            s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date), { Learned.movesLater(it.title, behavior, s.today) }, SleepMode.forPlan, SleepMode.problem,
+            ahead = LookAheadMode.on,
+        )
     }
 
     fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))

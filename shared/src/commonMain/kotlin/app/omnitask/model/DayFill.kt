@@ -148,6 +148,12 @@ object DayFill {
 
     enum class Mode { NORMAL, BEFORE_NIGHT, AFTER_NIGHT }
 
+    /** The look-ahead's tags (mock look-ahead v2): [WANT] the owner's own, [HEAVY] a tight week or a deadline, [LIGHT] a light week, [PLAIN] neither. */
+    enum class Tone { WANT, HEAVY, LIGHT, PLAIN }
+
+    /** A short tag on a row or line; a tap shows [why] (owner, 2026-10-30: "still too textful"). */
+    data class Hint(val label: String, val why: String, val tone: Tone)
+
     /** One thing the plan places. [must] work is placed whatever the buffer; other work only while a third stays clear. */
     data class Item(
         val id: String,
@@ -171,6 +177,8 @@ object DayFill {
         val more: Int = 0,
         /** The slot this card fills ("net", "mine", "sprint:<project>"): what "ไม่ใช่ เปลี่ยนให้" swaps, and what a take uses up. */
         val slot: String? = null,
+        /** Tags from the look-ahead (switch on only); empty otherwise. */
+        val hints: List<Hint> = emptyList(),
     ) {
         val movable get() = !own && kind != Kind.LIFE && kind != Kind.REVIEW && kind != Kind.ASK
     }
@@ -198,7 +206,13 @@ object DayFill {
     data class Move(val task: Task, val at: Int?, val day: LocalDate, val card: String)
 
     /** The week's sprint line; [taken]: taken today, it shows "รับแล้ว" in place of the buttons. */
-    data class SprintLine(val names: String, val note: String, val late: Boolean, val lines: List<String>, val projects: List<String>, val taken: Boolean = false)
+    data class SprintLine(
+        val names: String, val note: String, val late: Boolean, val lines: List<String>, val projects: List<String>, val taken: Boolean = false,
+        /** The look-ahead's tag for the line (switch on only): the line then shows in one row. */
+        val hint: Hint? = null,
+        /** With the tag, a deadline at risk names its task in that row ("สไลด์สอนน้องใหม่ ส่ง 27 พ.ย."), as mock v2 board ง. */
+        val lead: String? = null,
+    )
 
     data class Plan(
         val day: LocalDate,
@@ -238,6 +252,8 @@ object DayFill {
         val sleeps: List<SleepSession>? = null,
         /** Why the watch could not be read (no Health Connect, no permission, an error), said on the plan's rows. */
         val sleepProblem: String? = null,
+        /** The look-ahead (Settings switch "เลขามองไกล 8 สัปดาห์", off at first; see [LookAhead]). */
+        val ahead: Boolean = false,
     )
 
     /** Lengths and windows the owner saw in the mock. */
@@ -373,12 +389,13 @@ object DayFill {
         val today = inp.now.date
         val mem = inp.memory.on(today)
         val fr = frame(today, inp, inp.now)
-        val items = items(inp, fr, mem)
+        val ws = if (inp.ahead) LookAhead.weeks(inp) else null
+        val items = items(inp, fr, mem, ws)
         val first = place(fr, items, mem, shrink = false)
         val placed = if (first.later.any { it.item.must && it.picked == null && it.item.kind != Kind.LIFE && it.item.kind != Kind.MINE }) {
             place(fr, items, mem, shrink = true)
         } else first
-        return assemble(inp, fr, mem, items, placed)
+        return assemble(inp, fr, mem, items, placed, ws)
     }
 
     private class Placing(val placed: List<Placed>, val later: List<Later>, val free: Int)
@@ -476,7 +493,7 @@ object DayFill {
     fun shortDay(d: LocalDate): String = Planner.SHORT_DAYS[d.dayOfWeek.ordinal] + " " + d.dayOfMonth + " " + Countdown.monthShort(d)
 
     /** What the plan may place today, from the tasks, the owner's habits and the sprint. */
-    private fun items(inp: Input, fr: Frame, mem: Memory): List<Item> {
+    private fun items(inp: Input, fr: Frame, mem: Memory, ws: List<LookAhead.Week>?): List<Item> {
         val today = fr.day
         val tomorrow = today.plusDays(1)
         val yesterday = today.minusDays(1)
@@ -580,6 +597,41 @@ object DayFill {
             )
         }
 
+        // The look-ahead (switch on), rule 2: on a whole free day before a tight week, one long slot of work today. The
+        // sprint's first slot grows to it; with no sprint, the project most in need gets its next task. Not a must, so
+        // tiredness can still take it out (the owner's own time stays).
+        val freeDay = ws != null && LookAhead.freeDay(today, inp)
+        val tight = if (freeDay && !after) LookAhead.beforeTight(ws!!) else null
+        if (tight != null) {
+            val hint = Hint(
+                tr("ก่อนสัปดาห์แน่น", "Before a tight week"),
+                tr("สัปดาห์หน้า ", "Next week: ") + LookAhead.tightWhy(tight) + tr(" ทำวันนี้ตอนยังมีแรง", ". Done today while there is energy"),
+                Tone.HEAVY,
+            )
+            val i = out.indexOfFirst { it.slot?.startsWith("sprint:") == true }
+            if (i >= 0) {
+                val it0 = out[i]
+                out[i] = it0.copy(len = maxOf(it0.len, LookAhead.LONG), min = it0.len, hints = it0.hints + hint)
+            } else {
+                val slot = "ahead"
+                val taker = mem.slots[slot]
+                val cands = Sprint.rank(inp, ws).flatMap { r ->
+                    open.filter { t -> !isMine(t) && Projects.projectOf(t)?.equals(r.project, ignoreCase = true) == true && ident(t) !in used && t.parent == null && !Focus.isSomeday(t) }
+                        .sortedWith(compareBy<Task>({ if (it.status == Status.IN_PROGRESS) 0 else 1 }, { it.due ?: LocalDate(9999, 12, 31) }, { it.created ?: LocalDate(9999, 12, 31) }))
+                }.distinctBy { ident(it) }
+                val n = mem.swaps[slot] ?: 0
+                (if (taker != null) open.firstOrNull { ident(it) == taker } else cands.getOrNull(n))?.takeIf { !movedOn(it) }?.let { t ->
+                    used += ident(t)
+                    val why = progressWhy(t, subtasks) ?: t.nextStep?.let { tr("ก้าวถัดไป: $it", "Next step: $it") } ?: hint.why
+                    out += Item(
+                        ident(t), Kind.PROJECT, 2.8, LookAhead.LONG, t.title, why, t, min = 45,
+                        tag = tagOf(t), more = if (taker != null) 0 else cands.size - n - 1, slot = slot, hints = listOf(hint),
+                        fixedAt = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() }?.at,
+                    )
+                }
+            }
+        }
+
         // The 14-day net: work with no date that has not moved for two weeks gets 15 minutes, so it does not sink.
         // A review today does not take a task out of it: the card said it would get a slot once reviewed.
         if (!after) {
@@ -634,11 +686,11 @@ object DayFill {
             reviews++
             if (reviews > REVIEWS_PER_DAY) {
                 tr("ยังไม่ได้ทบทวน ทบทวนแล้วเลขาลงตารางให้", "Not reviewed yet").let { w ->
-                    it0.copy(id = "review:" + ident(t), kind = Kind.REVIEW, prio = 9.0, len = 5, must = false, more = 0, tag = null, why = w, lateText = w, from = fr.end, to = fr.end)
+                    it0.copy(id = "review:" + ident(t), kind = Kind.REVIEW, prio = 9.0, len = 5, must = false, more = 0, tag = null, why = w, lateText = w, from = fr.end, to = fr.end, hints = emptyList())
                 }
             } else {
                 it0.copy(
-                    id = "review:" + ident(t), kind = Kind.REVIEW, prio = 4.0, len = 5, must = false, more = 0, tag = null,
+                    id = "review:" + ident(t), kind = Kind.REVIEW, prio = 4.0, len = 5, must = false, more = 0, tag = null, hints = emptyList(),
                     why = tr("ยังไม่ได้ทบทวน เลขาเลยยังไม่รู้ว่าด่วนหรือสำคัญแค่ไหน ทบทวนแล้วจะลงตารางให้", "Not reviewed, so the secretary cannot tell how urgent it is. Review it and it gets a slot"),
                 )
             }
@@ -647,7 +699,12 @@ object DayFill {
         out += gated
 
         // The owner's own time: myspace starts on time, and meals move within their window.
-        val mine = open.filter { isMine(it) }.sortedWith(compareBy<Task>({ if (it.scheduled == today) 0 else 1 }, { it.created ?: LocalDate(9999, 12, 31) }))
+        // The look-ahead (switch on), rule 3: on a whole free day what got stuck comes first (as the owner's stock study,
+        // put off because "กลับห้องไปก็เหนื่อยแล้ว").
+        val mine = open.filter { isMine(it) }.sortedWith(
+            compareBy<Task>({ if (it.scheduled == today) 0 else 1 }, { if (freeDay && StuckLog.last(it) != null) 0 else 1 }, { it.created ?: LocalDate(9999, 12, 31) }),
+        )
+        val owed = ws?.let { LookAhead.owed(inp, it) }
         if (mine.isNotEmpty()) {
             val n = mem.swaps["mine"] ?: 0
             val taker = mem.slots["mine"]
@@ -659,15 +716,36 @@ object DayFill {
                     Mode.AFTER_NIGHT -> Triple(17 * 60, 30, 20)
                 }
                 val acc = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() }
+                val long = freeDay && fr.mode == Mode.NORMAL
+                // Rule 3: a whole free day's morning, two hours, before work. Rule 4: own time owed is not cut short.
+                val hints = buildList {
+                    if (long || owed != null) add(
+                        Hint(
+                            tr("อยากทำ", "Want to"),
+                            if (long) tr("วันว่างทั้งวัน ช่วงเช้าเป็นเรื่องที่อยากทำก่อนงาน", "A whole free day: the morning is for what you want to do") +
+                                (StuckLog.entries(t).lastOrNull()?.let { e -> tr(" เรื่องนี้เคยค้างเพราะ ", ". It got stuck before: ") + e.reason } ?: "")
+                            else tr("เวลาของตัวเอง งานไม่เบียด", "Your own time: work never pushes it"),
+                            Tone.WANT,
+                        ),
+                    )
+                    if (owed != null) add(
+                        Hint(
+                            tr("คืนเวลา", "Time back"),
+                            tr("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำ $owed วัน เลขาเลยคืนเวลาให้ก่อนงาน ไม่ย่อ", "Only $owed days of your own time in the last two weeks: it comes back first, not cut short"),
+                            Tone.LIGHT,
+                        ),
+                    )
+                }
                 out += Item(
-                    ident(t), Kind.MINE, 0.5, len, t.title,
+                    ident(t), Kind.MINE, if (long) 0.4 else 0.5, if (long) LookAhead.LONG else len, t.title,
                     when (fr.mode) {
                         Mode.AFTER_NIGHT -> tr("วันนี้เสนอแต่เรื่องเบา กดเปลี่ยนได้โดยไม่นับ", "Something light today")
                         Mode.BEFORE_NIGHT -> tr("เวลาของตัวเอง เรื่องเบา ๆ ก่อนนอน", "Your own time, something light before bed")
                         Mode.NORMAL -> tr("เวลาของตัวเอง งานไม่เบียด ขยับหรือย่อได้เมื่อมีธุระหรือนัดเท่านั้น", "Your own time: work never pushes it, only errands or events do")
                     },
-                    t, min = min, from = minOf(wFrom, maxOf(fr.start, fr.end - len)), to = fr.end, more = if (taker != null) 0 else mine.size - n - 1,
-                    fixedAt = acc?.at, slot = "mine",
+                    t, min = if (owed != null) (if (long) LookAhead.LONG else len) else if (long) 60 else min,
+                    from = if (long) LookAhead.MORNING else minOf(wFrom, maxOf(fr.start, fr.end - len)), to = fr.end, more = if (taker != null) 0 else mine.size - n - 1,
+                    fixedAt = acc?.at, slot = "mine", hints = hints,
                 )
             }
         }
@@ -702,7 +780,7 @@ object DayFill {
 
     fun weekOf(d: LocalDate): LocalDate = d.minusDays((d.dayOfWeek.ordinal).toLong())
 
-    private fun assemble(inp: Input, fr: Frame, mem: Memory, items: List<Item>, pl: Placing): Plan {
+    private fun assemble(inp: Input, fr: Frame, mem: Memory, items: List<Item>, pl: Placing, ws: List<LookAhead.Week>?): Plan {
         val today = fr.day
         val rows = ArrayList<Row>()
         // Before the plan: the day so far (all-day events, what already happened, what is done).
@@ -805,7 +883,7 @@ object DayFill {
         val next = pl.placed.firstOrNull { it.item.kind != Kind.LIFE && !it.item.own && mem.picks[it.item.id] == null && !it.running && it.at + it.len > fr.start }?.item?.id
         return Plan(
             today, fr.start, fr.end, fr.mode, rows, later.distinctBy { it.item.id }, pl.free, planned, buffer, banner,
-            Sprint.line(inp, fr, mem), moves, letGo, next,
+            Sprint.line(inp, fr, mem, ws), moves, letGo, next,
         )
     }
 
@@ -868,66 +946,86 @@ object DayFill {
  */
 object Sprint {
 
-    data class Ranked(val project: String, val rank: Int, val need: Int, val freeBefore: Int?, val due: LocalDate?, val quiet: Long)
+    /** [far]: the deadline is past two weeks and counts only because the time left is nearly not enough (look-ahead). */
+    data class Ranked(
+        val project: String, val rank: Int, val need: Int, val freeBefore: Int?, val due: LocalDate?, val quiet: Long, val far: Boolean = false,
+        /** The task due first, when [due] counts. */
+        val dueTitle: String? = null,
+    )
 
     /** Usable minutes on [day]: the free time, less meals and own time, with a third kept clear. */
-    fun usable(day: LocalDate, inp: DayFill.Input): Int {
-        val fr = DayFill.frame(day, inp, if (day == inp.now.date) inp.now else null)
+    fun usable(day: LocalDate, inp: DayFill.Input): Int = usableIn(DayFill.frame(day, inp, if (day == inp.now.date) inp.now else null))
+
+    fun usableIn(fr: DayFill.Frame): Int {
         val life = (if (fr.job) 45 else 90) + 60
         return maxOf(0, (DayFill.freeIn(fr) - life) * 2 / 3)
     }
 
-    fun rank(inp: DayFill.Input): List<Ranked> {
+    fun rank(inp: DayFill.Input, ws0: List<LookAhead.Week>? = null): List<Ranked> {
         val today = inp.now.date
         val open = inp.tasks.filter { it.isOpen && it.list == null && !DayFill.isMine(it) && !Focus.isSomeday(it) }
         val subtasks = inp.tasks.filter { it.isSubtask }
         val byProject = open.groupBy { Projects.projectOf(it) }.filterKeys { it != null }.mapKeys { it.key!! }
         val usableBy = HashMap<LocalDate, Int>()
-        fun use(d: LocalDate) = usableBy.getOrPut(d) { usable(d, inp) }
+        // The look-ahead counts days as rule 1 does: none after a night shift or away, and a week the shift calendar
+        // has not reached loses its share to shifts.
+        val ws = if (inp.ahead) ws0 ?: if (byProject.isEmpty()) null else LookAhead.weeks(inp) else null
+        fun use(d: LocalDate) = usableBy.getOrPut(d) { if (ws != null) LookAhead.usableCounted(d, inp, ws) else usable(d, inp) }
         return byProject.map { (proj, tasks) ->
-            val soon = tasks.filter { it.due != null && it.due >= today && it.due <= today.plusDays(DayFill.NET_DAYS) }.sortedBy { it.due }
-            val due = soon.firstOrNull()?.due
-            val need = soon.filter { it.due!! <= (due ?: today) }.sumOf { Planner.minutesOf(it.title, Planner.kindOf(it.title)) } * 2
-            val free = due?.let { d -> (0L..(d.toEpochDays() - today.toEpochDays()).toLong()).sumOf { use(today.plusDays(it)) } }
+            // The look-ahead (switch on) sees deadlines eight weeks out; one past two weeks counts only when the time
+            // left is nearly not enough (rule 5: the need, doubled as always, at three quarters of the free time or more).
+            val horizon = if (inp.ahead) LookAhead.DAYS else DayFill.NET_DAYS
+            val soon = tasks.filter { it.due != null && it.due >= today && it.due <= today.plusDays(horizon) }.sortedBy { it.due }
+            val due0 = soon.firstOrNull()?.due
+            val need = soon.filter { it.due!! <= (due0 ?: today) }.sumOf { Planner.minutesOf(it.title, Planner.kindOf(it.title)) } * 2
+            val free0 = due0?.let { d -> (0L..(d.toEpochDays() - today.toEpochDays()).toLong()).sumOf { use(today.plusDays(it)) } }
+            val far = due0 != null && due0 > today.plusDays(DayFill.NET_DAYS)
+            val tight = free0 != null && need * 4 >= free0 * 3
+            val due = due0?.takeIf { !far || tight }
+            val free = free0?.takeIf { due != null }
             val waiting = tasks.any { Focus.isWaiting(it) }
             val recent = tasks.any { t -> t.status == Status.IN_PROGRESS && StuckLog.last(t)?.let { it >= today.minusDays(DayFill.NET_DAYS) } == true }
             val quiet = tasks.maxOf { DayFill.quiet(it, subtasks, today) ?: 0 }
             val rank = when {
-                due != null && free != null && need > free -> 0
+                due != null && free != null && (need > free || far) -> 0
                 due != null || waiting -> 1
                 recent -> 2
                 else -> 3
             }
-            Ranked(proj, rank, need, free, due, quiet)
+            Ranked(proj, rank, need, free, due, quiet, far = far && due != null, dueTitle = soon.firstOrNull()?.title?.takeIf { due != null })
         }.sortedWith(compareBy<Ranked>({ it.rank }, { it.due ?: LocalDate(9999, 12, 31) }, { -it.quiet }))
     }
 
     /** The proposal with the second project swapped [swap] times; one project in a tight week. */
-    fun propose(inp: DayFill.Input, swap: Int): List<Ranked> {
-        val ranked = rank(inp)
+    fun propose(inp: DayFill.Input, swap: Int, ws: List<LookAhead.Week>? = null): List<Ranked> {
+        val ranked = rank(inp, ws)
         if (ranked.isEmpty()) return emptyList()
         val today = inp.now.date
         val week = (0L..6L).map { DayFill.weekOf(today).plusDays(it) }.filter { it >= today }.sumOf { usable(it, inp) }
-        val count = if (week < 6 * 60) 1 else 2
+        // The look-ahead's rule 2: a tight week has one project.
+        val tight = ws?.firstOrNull()?.heavy == true
+        val count = if (week < 6 * 60 || tight) 1 else 2
         if (count == 1 || ranked.size == 1) return listOf(ranked[swap % ranked.size])
         val second = ranked.drop(1)
         return listOf(ranked[0], second[swap % second.size])
     }
 
-    fun line(inp: DayFill.Input, fr: DayFill.Frame, mem: DayFill.Memory): DayFill.SprintLine? {
+    fun line(inp: DayFill.Input, fr: DayFill.Frame, mem: DayFill.Memory, ws0: List<LookAhead.Week>? = null): DayFill.SprintLine? {
+        val ws = ws0 ?: if (inp.ahead) LookAhead.weeks(inp) else null
         val today = inp.now.date
         val week = DayFill.weekOf(today).toString()
         val pick = mem.sprint?.takeIf { it.week == week }
         // Taken: the line stays that day only, saying so (a tap opens it again, as in the mock), then the cards' tag is enough.
         if (pick?.taken == true && pick.takenOn != today.toString()) return null
         if (fr.mode == DayFill.Mode.AFTER_NIGHT) return null
-        val chosen = propose(inp, pick?.swap ?: 0)
+        val chosen = propose(inp, pick?.swap ?: 0, ws)
         if (chosen.isEmpty()) return null
         val hours = (0L..6L).map { DayFill.weekOf(today).plusDays(it) }.filter { it >= today }.sumOf { usable(it, inp) } / 60
         val late = chosen.firstOrNull { it.rank == 0 }
         val note = late?.let { r ->
             val short = maxOf(1, (r.need - (r.freeBefore ?: 0) + 59) / 60)
-            tr("${r.project} อาจไม่ทันวันส่ง ${DayFill.shortDay(r.due!!)} ขาดราว $short ชม.", "${r.project} may miss ${r.due}, about $short h short")
+            if (r.far && r.need <= (r.freeBefore ?: 0)) tr("${r.project} ต้องเริ่มสัปดาห์นี้ถึงจะทันวันส่ง ${DayFill.shortDay(r.due!!)}", "${r.project} needs a start this week to make ${r.due}")
+            else tr("${r.project} อาจไม่ทันวันส่ง ${DayFill.shortDay(r.due!!)} ขาดราว $short ชม.", "${r.project} may miss ${r.due}, about $short h short")
         } ?: tr("เวลาว่างนอกเวรสัปดาห์นี้ราว $hours ชม.", "About $hours h free outside shifts this week")
         val lines = buildList {
             add(tr("เวลาว่างนอกเวรสัปดาห์นี้ราว $hours ชม. (หักเวลากินข้าว เวลาของตัวเอง และช่องกันชนแล้ว)", "About $hours h free this week after meals, own time and buffer"))
@@ -938,7 +1036,35 @@ object Sprint {
                 )
             }
         }
-        if (pick?.taken == true) return DayFill.SprintLine(pick.projects.joinToString(", "), note, late != null, lines, pick.projects, taken = true)
-        return DayFill.SprintLine(chosen.joinToString(", ") { it.project }, note, late != null, lines, chosen.map { it.project })
+        val hint = ws?.let { hint(chosen, late, it, hours) }
+        val lead = if (ws == null) null else late?.dueTitle?.let { t -> late.due?.let { d -> t + tr(" ส่ง ", ", due ") + d.dayOfMonth + " " + Countdown.monthShort(d) } }
+        if (pick?.taken == true) return DayFill.SprintLine(pick.projects.joinToString(", "), note, late != null, lines, pick.projects, taken = true, hint = hint, lead = lead)
+        return DayFill.SprintLine(chosen.joinToString(", ") { it.project }, note, late != null, lines, chosen.map { it.project }, hint = hint, lead = lead)
+    }
+
+    /**
+     * The sprint line's one tag (look-ahead, mock v2): a deadline at risk first, then a far deadline that needs a start
+     * this week, then the lightest or a tight week, else the week's free hours.
+     */
+    private fun hint(chosen: List<Ranked>, late: Ranked?, ws: List<LookAhead.Week>, hours: Int): DayFill.Hint {
+        return when {
+            late != null && (!late.far || late.need > (late.freeBefore ?: 0)) -> DayFill.Hint(
+                tr("อาจไม่ทัน", "May be late"),
+                tr("${late.project} ส่ง ${DayFill.shortDay(late.due!!)} ต้องใช้ราว ${(late.need + 59) / 60} ชม. ว่างก่อนวันส่งราว ${(late.freeBefore ?: 0) / 60} ชม.", "${late.project} due ${late.due}: about ${(late.need + 59) / 60} h needed, about ${(late.freeBefore ?: 0) / 60} h free before it"),
+                DayFill.Tone.HEAVY,
+            )
+            late != null -> late.let { r ->
+                DayFill.Hint(
+                    tr("เริ่มสัปดาห์นี้", "Start this week"),
+                    tr("${r.project} ส่ง ${DayFill.shortDay(r.due!!)} ต้องใช้ราว ${(r.need + 59) / 60} ชม. (เผื่อ 2 เท่าแล้ว) ว่างก่อนวันส่งเหลือราว ${(r.freeBefore ?: 0) / 60} ชม.", "${r.project} due ${r.due}: about ${(r.need + 59) / 60} h needed (doubled), about ${(r.freeBefore ?: 0) / 60} h free before it"),
+                    DayFill.Tone.HEAVY,
+                )
+            }
+            else -> LookAhead.weekHint(ws, 0) ?: DayFill.Hint(
+                tr("ว่าง ${ws.firstOrNull()?.hours ?: hours} ชม.", "${ws.firstOrNull()?.hours ?: hours} h free"),
+                tr("เวลาว่างนอกเวรสัปดาห์นี้ หักเวลากินข้าว เวลาของตัวเอง และช่องกันชนแล้ว", "Free time this week after meals, own time and buffer"),
+                DayFill.Tone.PLAIN,
+            )
+        }
     }
 }

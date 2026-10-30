@@ -117,6 +117,7 @@ fun OmniTaskApp(vm: TaskViewModel) {
     NewLook.load(LocalContext.current)
     ReviewMode.load(LocalContext.current)
     DayFillMode.load(LocalContext.current)
+    LookAheadMode.load(LocalContext.current)
     val pickVault = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setVault(uri)
     }

@@ -82,6 +82,7 @@ fun DayFillSetting(context: Context) {
             DayFillMode.on,
         ) { DayFillMode.setOn(context, it) }
         SleepSetting(context)
+        LookAheadSetting(context)
     }
 }
 
@@ -211,7 +212,39 @@ fun DayFillCard(
                     }
                 }
             }
-            plan.sprint?.let { sp ->
+            val sprintHint = plan.sprint?.hint?.takeIf { LookAheadMode.on }
+            if (sprintHint != null) plan.sprint?.let { sp ->
+                // Mock look-ahead v2: the sprint and its warning in one row, led by a tag; the tag opens the reason and
+                // the week's numbers.
+                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (sp.late) C.redSoft else C.raised)
+                            .padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        HintPill(sprintHint.label, sprintHint.tone) { sprintDetail = !sprintDetail }
+                        Text(
+                            sp.lead ?: (tr("สปรินต์ ", "Sprint ") + sp.names),
+                            Modifier.weight(1f), color = C.text, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        if (sp.taken) {
+                            Text(
+                                tr("รับแล้ว", "Taken"),
+                                Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.fillSprint(sp.projects, take = null, swap = false) }.padding(horizontal = 4.dp, vertical = 6.dp),
+                                color = C.lime, fontSize = TS.caption,
+                            )
+                        } else {
+                            SmallAction(tr("รับ", "Take"), true) { vm.fillSprint(sp.projects, take = true, swap = false) }
+                            SmallAction(tr("เปลี่ยน", "Swap"), false) { vm.fillSprint(sp.projects, take = false, swap = true) }
+                        }
+                    }
+                    if (sprintDetail) Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(sprintHint.why, color = C.muted, fontSize = TS.caption)
+                        if (sp.lead != null) Text(tr("สปรินต์ ", "Sprint ") + sp.names, color = C.text2, fontSize = TS.caption)
+                        sp.lines.forEach { Text(it, color = C.text2, fontSize = TS.caption) }
+                    }
+                }
+            } else plan.sprint?.let { sp ->
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
@@ -445,14 +478,47 @@ private fun Mark(item: DayFill.Item, vm: TaskViewModel) {
 }
 
 /** A task row's second line, led by its time: "16:45, เลย 9 วัน, 15 นาที, สปรินต์". Red only for late. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) {
     val item = p.item
     val late = lateWord(item.task, today)
     val kind = item.tag ?: when (item.kind) {
-        DayFill.Kind.MINE -> tr("เวลาของตัวเอง", "Your own time")
+        // The look-ahead's "อยากทำ" says it in the mock's place.
+        DayFill.Kind.MINE -> tr("เวลาของตัวเอง", "Your own time").takeIf { !LookAheadMode.on || item.hints.none { it.tone == DayFill.Tone.WANT } }
         DayFill.Kind.WORK, DayFill.Kind.NET, DayFill.Kind.LIFE -> null
         else -> item.kind.label
+    }
+    if (LookAheadMode.on) {
+        // Mock look-ahead v2: the kind and the look-ahead's tags as short tags after the time; a tap shows the reason.
+        var why by remember(item.id) { mutableStateOf<String?>(null) }
+        fun toggle(w: String) { why = if (why == w) null else w }
+        Column {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    buildAnnotatedString {
+                        append(DayFill.hm(p.at))
+                        if (late != null) {
+                            append(", ")
+                            pushStyle(SpanStyle(color = C.red, fontWeight = FontWeight.Medium))
+                            append(late)
+                            pop()
+                        }
+                        append(", ")
+                        if (picked == DayFill.Pick.TAKE) {
+                            pushStyle(SpanStyle(color = C.lime))
+                            append(tr("รับแล้ว", "Taken"))
+                            pop()
+                        } else append(dur(p.len))
+                    },
+                    Modifier.align(Alignment.CenterVertically).padding(end = 2.dp), color = C.muted, fontSize = TS.caption,
+                )
+                if (kind != null) HintPill(kind, null, Modifier.align(Alignment.CenterVertically)) { toggle(item.why) }
+                item.hints.forEach { h -> HintPill(h.label, h.tone, Modifier.align(Alignment.CenterVertically)) { toggle(h.why) } }
+            }
+            why?.let { Text(it, Modifier.padding(top = 3.dp), color = C.muted, fontSize = TS.caption) }
+        }
+        return
     }
     Text(
         buildAnnotatedString {
