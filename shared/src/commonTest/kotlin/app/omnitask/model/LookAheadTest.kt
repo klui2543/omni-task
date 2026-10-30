@@ -326,10 +326,19 @@ class LookAheadTest {
         // Half or more done: nothing owed, though no want was ticked (the count of days would say owed).
         val enough = DayFill.plan(input("2026-11-16T17:00", own = kept(60, 30)))
         assertTrue(enough.placed.first { it.item.kind == DayFill.Kind.MINE }.item.hints.none { it.label == "คืนเวลา" })
-        // Kept for less than two weeks: the count of days stands in.
-        val short = kept(60, 60).filterKeys { it > d("2026-11-05") }
-        val days = DayFill.plan(input("2026-11-16T17:00", own = short)).placed.first { it.item.kind == DayFill.Kind.MINE }
-        assertEquals("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ 0 วัน", days.item.hints.first { it.label == "คืนเวลา" }.why)
+        // Nothing done: said plainly.
+        val none = DayFill.plan(input("2026-11-16T17:00", own = kept(60, 0))).placed.first { it.item.kind == DayFill.Kind.MINE }
+        assertEquals("2 สัปดาห์ล่าสุด ได้ทำเรื่องที่อยากทำแค่ 0 ชม.", none.item.hints.first { it.label == "คืนเวลา" }.why)
+        // Kept on fewer than ten of the fourteen days: the count of days stands in, also when an old day is kept
+        // before a gap (the switch was off, or the app not opened).
+        fun byDays(own: Map<LocalDate, LookAhead.OwnDay>) =
+            DayFill.plan(input("2026-11-16T17:00", own = own)).placed.first { it.item.kind == DayFill.Kind.MINE }.item.hints.first { it.label == "คืนเวลา" }.why
+        assertEquals("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ 0 วัน", byDays(kept(60, 60).filterKeys { it > d("2026-11-07") }))
+        assertEquals("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ 0 วัน", byDays(kept(60, 60).filterKeys { it < d("2026-11-02") || it > d("2026-11-11") }))
+        // A want ticked later that day, with the app closed (in Obsidian), counts for that day.
+        val later = (2..14 step 2).map { "- [x] สเก็ตช์ $it #My-space ✅ 2026-11-${it.toString().padStart(2, '0')}" }
+        val ticked = DayFill.plan(input("2026-11-16T17:00", note + later, own = kept(60, 0))).placed.first { it.item.kind == DayFill.Kind.MINE }
+        assertTrue(ticked.item.hints.none { it.label == "คืนเวลา" }, "seven of fourteen days: half, not owed")
     }
 
     @Test
@@ -353,10 +362,17 @@ class LookAheadTest {
         // A note of why it got stuck is not own time done.
         val stuck = input("2026-11-16T17:00", under("    - ค้าง 2026-11-16 ไม่มีแรง"))
         assertEquals(0, LookAhead.ownToday(DayFill.plan(stuck), stuck, earlier).done)
-        // The slot taken today: done.
+        // A daily habit (🔁) ticked is not the want done, as rule 3 says.
+        val habit = input("2026-11-16T17:00", note + "- [x] ยืดเส้นตอนเช้า #My-space 🔁 every day ✅ 2026-11-16")
+        assertEquals(0, LookAhead.ownToday(DayFill.plan(habit), habit, earlier).done)
+        // The slot taken at 19:00: a promise until its time has gone by with it still taken.
         val mine = plan.placed.first { it.item.kind == DayFill.Kind.MINE }.item.task!!
-        val taken = input("2026-11-16T17:00", memory = DayFill.Memory(day = "2026-11-16", slots = mapOf("mine" to DayFill.ident(mine))))
-        assertEquals(slot, LookAhead.ownToday(DayFill.plan(taken), taken, null).done)
+        val id = DayFill.ident(mine)
+        fun taken(now: String) = input(now, memory = DayFill.Memory(day = "2026-11-16", slots = mapOf("mine" to id), accepted = mapOf(id to DayFill.Accepted("2026-11-16", 19 * 60))))
+        val at17 = taken("2026-11-16T17:00")
+        assertEquals(0, LookAhead.ownToday(DayFill.plan(at17), at17, null).done, "taken, not yet its time")
+        val at21 = taken("2026-11-16T21:00")
+        assertEquals(slot, LookAhead.ownToday(DayFill.plan(at21), at21, earlier).done, "its time gone by, still taken")
     }
 
     @Test

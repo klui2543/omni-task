@@ -1493,7 +1493,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val app = getApplication<Application>()
             val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
-            val own = withContext(Dispatchers.IO) { OwnTimeLog.load(app) }
+            val own = withContext(Dispatchers.IO) { if (LookAheadMode.on) OwnTimeLog.load(app) else emptyMap() }
             _state.update { it.copy(lookEvents = look, ownTime = own) }
         }
     }
@@ -1686,7 +1686,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
             val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
-            val own = withContext(Dispatchers.IO) { OwnTimeLog.load(app) }
+            val own = withContext(Dispatchers.IO) { if (LookAheadMode.on) OwnTimeLog.load(app) else emptyMap() }
             val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
@@ -2407,13 +2407,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun ownSeen(plan: DayFill.Plan, input: DayFill.Input) {
         if (!LookAheadMode.on || plan.day != input.now.date) return
-        val s = _state.value
-        val before = s.ownTime[plan.day]
+        // From what the phone kept, not the page's copy: on a cold start the page plans before that copy is read in.
+        val app = getApplication<Application>()
+        val kept = OwnTimeLog.load(app)
+        val before = kept[plan.day]
         val seen = LookAhead.ownToday(plan, input, before)
-        if (seen == before) return
-        val days = s.ownTime + (plan.day to seen)
+        if (seen == before) {
+            if (_state.value.ownTime != kept) _state.update { it.copy(ownTime = kept) }
+            return
+        }
+        val days = kept + (plan.day to seen)
+        OwnTimeLog.save(app, days, plan.day)
         _state.update { it.copy(ownTime = days) }
-        OwnTimeLog.save(getApplication(), days, plan.day)
     }
 
     fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))

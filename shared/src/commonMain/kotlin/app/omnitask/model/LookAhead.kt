@@ -266,14 +266,20 @@ object LookAhead {
         if (ws.firstOrNull()?.lightWeek != true) return null
         val today = inp.now.date
         val from = today.minusDays(OWED_SPAN)
-        val own = inp.own
-        if (own != null && own.keys.any { it <= from }) {
-            val days = own.filterKeys { it >= from && it < today }.values
-            val offered = days.sumOf { it.offered }
-            val done = days.sumOf { it.done }
+        // Kept on most of the last two weeks ([OWN_DAYS] of them): a gap of days the phone did not plan is not counted
+        // as two weeks kept.
+        val kept = inp.own?.filterKeys { it >= from && it < today }
+        if (kept != null && kept.size >= OWN_DAYS) {
+            val offered = kept.values.sumOf { it.offered }
+            // A want ticked or written on later that day (in Obsidian, with the app closed) counts too.
+            val done = kept.entries.sumOf { (d, o) -> if (o.done > 0) o.done else if (ownSign(inp.tasks, d)) o.offered else 0 }
             if (offered == 0 || done * 2 >= offered) return null
-            val h = (done + 30) / 60
-            return tr("2 สัปดาห์ล่าสุด ได้ทำเรื่องที่อยากทำแค่ราว $h ชม.", "Only about $h h of what you want to do in the last two weeks")
+            val amount = when {
+                done == 0 -> tr(" 0 ชม.", " 0 h")
+                done < 60 -> tr("ราว $done นาที", " about $done min")
+                else -> tr("ราว ${(done + 30) / 60} ชม.", " about ${(done + 30) / 60} h")
+            }
+            return tr("2 สัปดาห์ล่าสุด ได้ทำเรื่องที่อยากทำแค่", "Only") + amount + tr("", " of what you want to do in the last two weeks")
         }
         val n = ownDays(inp).takeIf { it < OWED_DAYS } ?: return null
         return tr("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ $n วัน", "Only $n days of what you want to do in the last two weeks")
@@ -282,8 +288,10 @@ object LookAhead {
     /** One day's own time (rule 4): minutes the plan offered, and minutes the owner did. */
     data class OwnDay(val offered: Int, val done: Int)
 
-    /** Days of own time kept on the phone: more than the two weeks rule 4 reads, so the record's start is known. */
+    /** Days of own time kept on the phone: more than the two weeks rule 4 reads. */
     const val OWN_KEEP = 30L
+    /** Days of the last fourteen that must be kept before rule 4 reads hours instead of counting days. */
+    const val OWN_DAYS = 10
 
     /** [days] as the phone keeps them, the last [OWN_KEEP] days: "2026-10-30=60,45;2026-10-31=0,0". */
     fun ownText(days: Map<LocalDate, OwnDay>, today: LocalDate): String =
@@ -310,12 +318,23 @@ object LookAhead {
      */
     fun ownToday(plan: DayFill.Plan, inp: DayFill.Input, before: OwnDay?): OwnDay {
         val today = inp.now.date
-        val offered = maxOf(before?.offered ?: 0, plan.placed.filter { it.item.kind == DayFill.Kind.MINE }.sumOf { it.len })
-        val taken = inp.memory.takeIf { it.day == today.toString() }?.slots?.get("mine") != null
-        val did = taken || inp.tasks.any { t ->
-            DayFill.isMine(t) && (t.done == today || StuckLog.entries(t).any { e -> e.day == today && StuckLog.Reason.entries.none { it.opens(e.reason) } })
-        }
+        val mine = plan.placed.filter { it.item.kind == DayFill.Kind.MINE }
+        val offered = maxOf(before?.offered ?: 0, mine.sumOf { it.len })
+        // Taking the slot is a promise: it counts once the slot's time has gone by with it still taken.
+        val nowMin = inp.now.hour * 60 + inp.now.minute
+        val took = inp.memory.takeIf { it.day == today.toString() }?.slots?.get("mine") != null &&
+            mine.isNotEmpty() && mine.all { it.at + it.len <= nowMin }
+        val did = took || ownSign(inp.tasks, today)
         return OwnDay(offered, if (did) maxOf(before?.done ?: 0, offered) else before?.done ?: 0)
+    }
+
+    /**
+     * A sign the owner did own time on [day]: a want ticked, or progress written on one (not a note of why it got
+     * stuck). A daily habit (🔁) ticked is not one, as rule 3 says.
+     */
+    fun ownSign(tasks: List<Task>, day: LocalDate): Boolean = tasks.any { t ->
+        DayFill.isMine(t) && t.recurrence == null &&
+            (t.done == day || StuckLog.entries(t).any { e -> e.day == day && StuckLog.Reason.entries.none { it.opens(e.reason) } })
     }
 
     /**
