@@ -177,6 +177,8 @@ data class UiState(
     val events: List<CalendarEvent> = emptyList(),
     /** The look-ahead's own read (switch on only): two months back to eight weeks ahead; null while not read. */
     val lookEvents: List<CalendarEvent>? = null,
+    /** Own time by day as this phone kept it (look-ahead rule 4; [OwnTimeLog]). */
+    val ownTime: Map<LocalDate, LookAhead.OwnDay> = emptyMap(),
     /** Null until the first load; then whether the app may read the phone's calendars. */
     val calendarAccess: Boolean? = null,
     val calendars: List<CalendarReader.Calendar> = emptyList(),
@@ -1489,8 +1491,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Reads the look-ahead's calendar now (the switch was turned on, or the today page opened). */
     fun lookLoad() {
         viewModelScope.launch {
-            val look = withContext(Dispatchers.IO) { loadLookEvents(getApplication()) }
-            _state.update { it.copy(lookEvents = look) }
+            val app = getApplication<Application>()
+            val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
+            val own = withContext(Dispatchers.IO) { OwnTimeLog.load(app) }
+            _state.update { it.copy(lookEvents = look, ownTime = own) }
         }
     }
 
@@ -1682,6 +1686,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
             val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
+            val own = withContext(Dispatchers.IO) { OwnTimeLog.load(app) }
             val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
@@ -1728,6 +1733,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     calendars = calendars,
                     daysOff = daysOff,
                     lookEvents = look,
+                    ownTime = own,
                     loading = false,
                     today = LocalDate.now(),
                     tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null && !Branches.isParked(t, it.branchStates) } ?: it.tasks,
@@ -2391,8 +2397,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val behavior = behaviorNow()
         return DayFill.Input(
             s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date), { Learned.movesLater(it.title, behavior, s.today) }, SleepMode.forPlan, SleepMode.problem,
-            ahead = LookAheadMode.on, far = s.lookEvents?.takeIf { LookAheadMode.on },
+            ahead = LookAheadMode.on, far = s.lookEvents?.takeIf { LookAheadMode.on }, own = s.ownTime.takeIf { LookAheadMode.on },
         )
+    }
+
+    /**
+     * Keeps today's own time as [plan] shows it (look-ahead rule 4, switch on): the most the plan offered today, and
+     * that much done once the owner took the slot, ticked a want or wrote progress on one. On this phone only.
+     */
+    fun ownSeen(plan: DayFill.Plan, input: DayFill.Input) {
+        if (!LookAheadMode.on || plan.day != input.now.date) return
+        val s = _state.value
+        val before = s.ownTime[plan.day]
+        val seen = LookAhead.ownToday(plan, input, before)
+        if (seen == before) return
+        val days = s.ownTime + (plan.day to seen)
+        _state.update { it.copy(ownTime = days) }
+        OwnTimeLog.save(getApplication(), days, plan.day)
     }
 
     fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))
