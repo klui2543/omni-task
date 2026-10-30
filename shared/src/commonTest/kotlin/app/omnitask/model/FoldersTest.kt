@@ -106,7 +106,13 @@ class FoldersTest {
             "- [ ] จ #My-space ➕ 2026-09-01",
             "- [ ] ฉ #My-space ➕ 2026-09-02",
             "- [ ] ช #My-space",
-        ).map(::task)
+            // Not the owner's own adding: the secretary's, a cancelled one, a finished round of a repeating task.
+            "- [ ] ซ #kluido #My-space ➕ 2026-10-29",
+            "- [-] ฌ #My-space ➕ 2026-10-29",
+            "- [x] ญ #My-space 🔁 every day ➕ 2026-10-29 ✅ 2026-10-29",
+        ).map { task(it).copy(filePath = app.omnitask.data.VaultText.TASK_FILE) } +
+            // A task in another note (the secretary's book) does not count either.
+            task("- [ ] ฎ #My-space ➕ 2026-10-29").copy(filePath = "📁 Folder/หลังบ้าน/Claude/Claude log.md")
         val all = Folders.paths(tasks, emptySet()) + "Siriraj/ใหม่"
         assertEquals(
             listOf("Siriraj/ตารางเวรเภสัช" to 3, "Omni" to 1, "Siriraj/ใหม่" to 0, "My-space" to 0),
