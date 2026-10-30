@@ -262,7 +262,7 @@ class TodayWidget : GlanceAppWidget() {
 class PageAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val go = parameters[TodayWidget.GO] ?: 0
-        updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) {
+        updateAppWidgetState(context, glanceId) {
             it[TodayWidget.PAGE] = go
             it[TodayWidget.TOUCHED] = System.currentTimeMillis()
         }

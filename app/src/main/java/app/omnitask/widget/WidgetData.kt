@@ -29,7 +29,7 @@ class WidgetData(
     val eventsAhead: List<CalendarEvent> = events,
 ) {
     /** The Today widget's days, today first. */
-    fun days(now: LocalDateTime): List<TodayWeek.Day> =
+    internal fun days(now: LocalDateTime): List<TodayWeek.Day> =
         TodayWeek.days(today, now, tasks, eventsAhead, DAYS_AHEAD) { calendarArgb(it.calendarId) }
 
     val brief by lazy { Focus.build(tasks, today, futureCount = 1) }
