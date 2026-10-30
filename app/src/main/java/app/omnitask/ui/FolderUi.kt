@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -136,9 +137,10 @@ fun FolderPicker(
         val open = state.tasks.filter { it.isOpen && it.list == null }.mapNotNull { Folders.of(it) }
         all.associateWith { p -> open.count { it == p || it.startsWith("$p/") } }
     }
-    // The folders the owner picked here lately (not where the secretary wrote tasks), while they still exist.
-    val recent = remember(state.pickedFolders, all) {
-        state.pickedFolders.mapNotNull { p -> all.firstOrNull { it.equals(ProjectNames.canonical(p), ignoreCase = true) } }.distinct()
+    // "ใช้บ่อย" (owner's pick, 2026-10-30, way ค): the folders with the most tasks made in 30 days, then the ones
+    // picked here lately, worked out by itself with nothing to pin.
+    val frequent = remember(state.tasks, state.pickedFolders, all, state.today) {
+        Folders.frequent(state.tasks, state.today, state.pickedFolders, all)
     }
     val usedLabels = remember(state.tasks) {
         state.tasks.flatMap { it.tags }.filter { Folders.isLabel(it) && !it.startsWith("remind-at-") }
@@ -259,10 +261,12 @@ fun FolderPicker(
                     }
                 }
             } else {
-                if (recent.isNotEmpty()) {
-                    Hint(tr("ใช้ล่าสุด", "Used lately"))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        recent.forEach { p -> Chip(p.substringAfterLast('/'), p == current, { onPick(p) }, dot = folderTint(p)) }
+                if (frequent.isNotEmpty()) {
+                    Hint(tr("ใช้บ่อย", "Used often"))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        frequent.forEach { (p, n) ->
+                            Chip(p.substringAfterLast('/') + (if (n > 0) "  $n" else ""), p == current, { onPick(p) }, dot = folderTint(p))
+                        }
                     }
                 }
                 Hint(tr("ไล่เปิดทีละชั้น", "Step through"))

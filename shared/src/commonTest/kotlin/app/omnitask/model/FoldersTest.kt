@@ -93,4 +93,26 @@ class FoldersTest {
         // The folder's own name matching ranks before a match higher up its path.
         assertEquals(listOf("Omni", "Omni/เลขา"), Folders.search(paths, "omni"))
     }
+
+    @Test
+    fun usedOftenCountsTasksMadeLatelyThenFoldersPickedLately() = chosen(setOf("Siriraj", "Omni", "My-space")) {
+        val today = kotlinx.datetime.LocalDate.parse("2026-10-30")
+        val tasks = listOf(
+            "- [ ] ก #Siriraj/ตารางเวรเภสัช ➕ 2026-10-29",
+            "- [ ] ข #Siriraj/ตารางเวรเภสัช ➕ 2026-10-20",
+            "- [x] ค #Siriraj/ตารางเวรเภสัช ➕ 2026-10-10 ✅ 2026-10-11",
+            "- [ ] ง #Omni ➕ 2026-10-28",
+            // Made more than 30 days ago, or with no made date: not counted.
+            "- [ ] จ #My-space ➕ 2026-09-01",
+            "- [ ] ฉ #My-space ➕ 2026-09-02",
+            "- [ ] ช #My-space",
+        ).map(::task)
+        val all = Folders.paths(tasks, emptySet()) + "Siriraj/ใหม่"
+        assertEquals(
+            listOf("Siriraj/ตารางเวรเภสัช" to 3, "Omni" to 1, "Siriraj/ใหม่" to 0, "My-space" to 0),
+            // A pick of a folder that is gone is skipped; the newer pick comes first among the uncounted.
+            Folders.frequent(tasks, today, listOf("Siriraj/ใหม่", "ไม่มีแล้ว", "my-space"), all),
+        )
+        assertEquals(1, Folders.frequent(tasks, today, emptyList(), all, n = 1).size)
+    }
 }
