@@ -23,6 +23,7 @@ import app.omnitask.model.Lang
 import app.omnitask.model.StuckLog
 import app.omnitask.model.load
 import app.omnitask.model.tr
+import app.omnitask.ui.DayFillMode
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlin.concurrent.thread
@@ -73,7 +74,10 @@ class AlarmReceiver : BroadcastReceiver() {
                 val raw = intent.getStringExtra(Scheduler.EXTRA_RAW) ?: return
                 val task = Scheduler.loadVaultTasks(context).firstOrNull { it.raw == raw } ?: return
                 if (!task.isOpen) return
-                val b = base(context, CHANNEL_TASKS, title, text, reminded = raw)
+                // A slot the day plan gave it today says how long is left to make it (the owner's mix, 2026-10-30).
+                val left = DayFillMode.reminderText(context, task, LocalDateTime.now())
+                val b = base(context, CHANNEL_TASKS, title, left ?: text, reminded = raw)
+                if (left != null) b.setStyle(NotificationCompat.BigTextStyle().bigText(left))
                 b.setDeleteIntent(action(context, ACTION_DISMISS, intent))
                 b.addAction(0, tr("เสร็จ", "Done"), action(context, ACTION_DONE, intent))
                 b.addAction(0, tr("อีก 1 ชม.", "In 1 hour"), action(context, ACTION_SNOOZE_HOUR, intent))

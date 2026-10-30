@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,14 +27,24 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Task
@@ -56,6 +68,8 @@ import app.omnitask.time.*
 object DayFillMode {
     private const val PREFS = "omni-dayfill"
     private const val ON = "on"
+    /** The key the view model keeps the plan's memory under (its FILL_MEMORY), in the same file. */
+    private const val MEMORY = "memory"
     var on by mutableStateOf(false)
         private set
     private var loaded = false
@@ -69,6 +83,18 @@ object DayFillMode {
     fun setOn(context: Context, value: Boolean) {
         on = value
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ON, value).apply()
+    }
+
+    /**
+     * The reminder of a slot taken today, at its time (the owner's mix, mock plan-catchup): "ถ้ายังไม่เริ่มตอนนี้ เหลืออีก
+     * N ถึงจะทำทันวันนี้ (เริ่มช้าสุด HH:mm)". Read fresh from the phone, since the reminder wakes without the app open;
+     * null (the reminder as before) with the switch off or when the memory cannot be read.
+     */
+    fun reminderText(context: Context, task: Task, now: LocalDateTime): String? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(ON, false)) return null
+        val mem = DayFill.decode(prefs.getString(MEMORY, null)) ?: return null
+        return DayFill.reminderLeft(mem, task, now)
     }
 }
 
@@ -142,6 +168,18 @@ fun DayFillCard(
     var logOpen by remember { mutableStateOf(false) }
     // A block's reason shows when it is tapped, one at a time.
     var reasonOf by remember { mutableStateOf<String?>(null) }
+    // The owner's mix (mock plan-catchup, 2026-10-30): a taken slot gone by and not done asks "ทำไปหรือยัง"; after
+    // "ยังไม่ได้ทำ" it waits for a place ([replacing]); a long press drags any task to a time of the owner's own.
+    var replacing by remember { mutableStateOf<String?>(null) }
+    var drag by remember { mutableStateOf<Dragged?>(null) }
+    var dragDy by remember { mutableFloatStateOf(0f) }
+    val haptic = LocalHapticFeedback.current
+    // Where each timed row sits on screen (its time and its middle), to turn a drag into a time.
+    val centers = remember(plan) { HashMap<String, Pair<Int, Float>>() }
+    val planNow by rememberUpdatedState(plan)
+    val nowNow by rememberUpdatedState(now.hour * 60 + now.minute)
+    // The reminder at a taken slot counts to when the plan stops: kept on the phone for it.
+    LaunchedEffect(plan.day, plan.end) { if (plan.day == now.date) vm.fillStop(plan.end) }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
     // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
     LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }
@@ -286,8 +324,93 @@ fun DayFillCard(
             var section: DayPlan.Part? = null
             var nowShown = false
             fun enter(p: DayPlan.Part): Boolean = (p != section).also { if (it) section = p }
-            plan.rows.forEach { row ->
-                if (row is DayFill.Row.Done) return@forEach
+            // The slot not done that waits for a place: shown after the now line, where the time offered first is.
+            val waiting = plan.rows.filterIsInstance<DayFill.Row.Card>().firstOrNull { c ->
+                c.placed.item.id == replacing && c.placed.at + c.placed.len <= nowMin && c.placed.item.task?.isOpen == true
+            }?.placed
+            val offers = waiting?.let { DayFill.suggest(plan, it.len, nowMin) }.orEmpty()
+            var waitingShown = false
+            // A long press on a task drags it; its time follows the finger between the rows around it.
+            fun timeAt(y: Float, len: Int, skip: String): Int {
+                val pl = planNow
+                val lo = maxOf(nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
+                val hi = maxOf(lo, (pl.bed - len) - (pl.bed - len) % 5)
+                val pts = centers.filterKeys { it != skip }.values.sortedBy { it.second }
+                if (pts.isEmpty()) return lo
+                val raw = when {
+                    y <= pts.first().second -> pts.first().first.toFloat()
+                    y >= pts.last().second -> pts.last().first.toFloat()
+                    else -> {
+                        val i = pts.indexOfLast { it.second <= y }
+                        val a = pts[i]
+                        val b = pts[minOf(i + 1, pts.lastIndex)]
+                        if (b.second <= a.second) a.first.toFloat() else a.first + (y - a.second) / (b.second - a.second) * (b.first - a.first)
+                    }
+                }
+                return (Math.round(raw / 5f) * 5).coerceIn(lo, hi)
+            }
+            fun Modifier.dragging(key: String, p: DayFill.Placed): Modifier = pointerInput(key, p.item.id, p.at) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        drag = Dragged(key, p, centers[key]?.second ?: 0f)
+                        dragDy = 0f
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        dragDy += amount.y
+                    },
+                    onDragEnd = {
+                        drag?.let { d ->
+                            vm.fillPlace(d.placed, timeAt(d.from + dragDy, d.placed.len, d.key))
+                            replacing = null
+                            open = null
+                        }
+                        drag = null
+                        dragDy = 0f
+                    },
+                    onDragCancel = {
+                        drag = null
+                        dragDy = 0f
+                    },
+                )
+            }
+            /** One timed row: where it sits is kept for the drag; the dragged one follows the finger with its time. */
+            @Composable
+            fun Track(key: String, at: Int?, p: DayFill.Placed? = null, over: Boolean = false, content: @Composable () -> Unit) {
+                val moving = p != null && drag?.key == key
+                val amber = C.amber
+                Column(
+                    Modifier.fillMaxWidth()
+                        .onGloballyPositioned { c -> if (at != null) centers[key] = at to (c.positionInRoot().y + c.size.height / 2f) }
+                        .then(if (moving) Modifier.zIndex(1f).graphicsLayer { translationY = dragDy; shadowElevation = 12f } .background(C.raised) else Modifier)
+                        .then(if (over && !moving) Modifier.drawBehind { drawRect(amber, size = Size(3.dp.toPx(), size.height)) } else Modifier)
+                        .then(if (p != null) Modifier.dragging(key, p) else Modifier),
+                ) {
+                    if (moving && p != null) {
+                        val d = drag!!
+                        val t = timeAt(d.from + dragDy, p.len, key)
+                        val o = DayFill.overlapText(DayFill.overlaps(plan, t, p.len, p.item.id))
+                        Text(
+                            buildAnnotatedString {
+                                pushStyle(SpanStyle(color = C.text, fontWeight = FontWeight.SemiBold))
+                                append(DayFill.hm(t))
+                                pop()
+                                if (o != null) {
+                                    pushStyle(SpanStyle(color = C.amber))
+                                    append("  $o")
+                                    pop()
+                                }
+                            },
+                            Modifier.padding(start = 44.dp, top = 4.dp), fontSize = TS.caption,
+                        )
+                    }
+                    content()
+                }
+            }
+            plan.rows.forEachIndexed { index, row ->
+                if (row is DayFill.Row.Done) return@forEachIndexed
+                val key = "r$index"
                 val at = row.at
                 if (at != null) {
                     val p = part(at)
@@ -296,41 +419,78 @@ fun DayFillCard(
                         NowLine(nowMin)
                         nowShown = true
                     }
+                    if (waiting != null && !waitingShown && nowShown && (offers.isEmpty() || at >= offers.first())) {
+                        waitingShown = true
+                        Track("waiting", null, waiting) { WaitingCard(waiting, offers, today, vm) { replacing = null } }
+                    }
                 }
                 when (row) {
-                    is DayFill.Row.Locked -> {
+                    is DayFill.Row.Locked -> Track(key, at) {
                         val (name, range) = blockText(row)
-                        val key = "block:" + row.at + ":" + row.title
+                        val rk = "block:" + row.at + ":" + row.title
                         BlockRow(
-                            name, range, row.why.takeIf { reasonOf == key && range != it },
+                            name, range, row.why.takeIf { reasonOf == rk && range != it },
                             faded = row.past || (at != null && at <= nowMin), bar = if (row.past) C.faint else C.teal,
-                        ) { reasonOf = if (reasonOf == key) null else key }
+                        ) { reasonOf = if (reasonOf == rk) null else rk }
                     }
-                    is DayFill.Row.Gap -> GapRow(
-                        DayFill.hm(row.at) + tr(" ถึง ", " to ") + DayFill.hm(row.at + row.len) +
-                            tr(" ว่างไว้ เผื่อเรื่องไม่คาดคิด", " kept free for the unexpected"),
-                    )
+                    is DayFill.Row.Gap -> Track(key, at) {
+                        val hi = waiting != null && offers.firstOrNull()?.let { it >= row.at && it < row.at + row.len } == true
+                        GapRow(
+                            DayFill.hm(row.at) + tr(" ถึง ", " to ") + DayFill.hm(row.at + row.len) +
+                                if (hi) tr(" ว่าง ${DayFill.lenText(row.len)} ช่องที่แนะนำ", " free ${DayFill.lenText(row.len)}, the one offered")
+                                else tr(" ว่างไว้ เผื่อเรื่องไม่คาดคิด", " kept free for the unexpected"),
+                            hi,
+                        )
+                    }
                     is DayFill.Row.Card -> {
                         val p = row.placed
                         val item = p.item
-                        if (item.kind == DayFill.Kind.LIFE) {
+                        if (item.kind == DayFill.Kind.LIFE) Track(key, at) {
                             // Meals and rest read as blocks: they are where they are.
-                            val key = "life:" + item.id
+                            val lk = "life:" + item.id
                             BlockRow(
                                 item.title, DayFill.hm(p.at) + tr(" ถึง ", " to ") + DayFill.hm(p.at + p.len),
-                                item.why.takeIf { reasonOf == key || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
-                            ) { reasonOf = if (reasonOf == key) null else key }
-                        } else if (item.id == expanded) {
-                            val timed = item.task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
-                            NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
+                                item.why.takeIf { reasonOf == lk || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
+                            ) { reasonOf = if (reasonOf == lk) null else lk }
+                        } else if (p == waiting) {
+                            // Shown after the now line instead, with the times offered.
                         } else {
-                            PlanRow(p, row.picked, today, vm) { open = item.id }
+                            val task = item.task
+                            val acc = task?.let { state.dayFill.accepted[DayFill.ident(it)] }?.takeIf { it.day == plan.day.toString() }
+                            val taken = row.picked == DayFill.Pick.TAKE && acc != null && task?.isOpen == true
+                            val gone = p.at + p.len <= nowMin
+                            val over = if (gone) null else DayFill.overlapText(DayFill.overlaps(plan, p.at, p.len, item.id))
+                            val canDrag = task != null && task.isOpen && item.kind != DayFill.Kind.REVIEW && item.kind != DayFill.Kind.ASK
+                            Track(key, at, p.takeIf { canDrag }, over = over != null) {
+                                if (item.id == expanded) {
+                                    val timed = task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
+                                    NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
+                                } else {
+                                    PlanRow(p, row.picked, today, vm) { open = item.id }
+                                }
+                                val indent = Modifier.padding(start = 44.dp, end = 12.dp)
+                                over?.let { Text(it, indent, color = C.amber, fontSize = TS.caption) }
+                                if (taken && gone) {
+                                    Column(indent.padding(top = 2.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(tr("เลยเวลา ${DayFill.hm(p.at)} แล้ว ทำไปหรือยัง", "${DayFill.hm(p.at)} went by. Done it?"), color = C.text, fontSize = TS.body)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            SmallAction(tr("ทำแล้ว", "Done"), false) { task?.let(vm::toggleDone) }
+                                            SmallAction(tr("ยังไม่ได้ทำ", "Not yet"), true) { replacing = item.id; open = null }
+                                        }
+                                    }
+                                }
+                                if (taken && p.at <= nowMin) DayFill.leftText(DayFill.latestStart(plan, p.len), nowMin)?.let { left ->
+                                    val soon = DayFill.latestStart(plan, p.len) - nowMin < 60
+                                    Text(left, indent.padding(bottom = 4.dp), color = if (soon) C.amber else C.lime, fontSize = TS.caption)
+                                }
+                            }
                         }
                     }
                     is DayFill.Row.Done -> Unit
                 }
             }
             if (!nowShown && plan.rows.isNotEmpty()) NowLine(nowMin)
+            if (waiting != null && !waitingShown) Track("waiting", null, waiting) { WaitingCard(waiting, offers, today, vm) { replacing = null } }
 
         }
     }
@@ -457,16 +617,87 @@ private fun BlockRow(title: String, right: String, reason: String?, faded: Boole
     }
 }
 
-/** Free time left clear on purpose. */
+/** Free time left clear on purpose; [hi] while it holds the time offered first for a task not done. */
 @Composable
-private fun GapRow(text: String) {
+private fun GapRow(text: String, hi: Boolean = false) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp).heightIn(min = 36.dp).height(IntrinsicSize.Min),
+        Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp).heightIn(min = 36.dp).height(IntrinsicSize.Min)
+            .then(if (hi) Modifier.clip(RoundedCornerShape(8.dp)).background(C.accentSoft) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(3.dp).fillMaxHeight().background(C.control))
-        Text(text, Modifier.weight(1f).padding(start = 10.dp), color = C.muted, fontSize = TS.body)
+        Box(Modifier.width(3.dp).fillMaxHeight().background(if (hi) C.accent else C.control))
+        Text(text, Modifier.weight(1f).padding(start = 10.dp), color = if (hi) C.accentText else C.muted, fontSize = TS.body)
     }
+}
+
+/** The task being dragged: its row, its slot, and where the finger started. */
+private data class Dragged(val key: String, val placed: DayFill.Placed, val from: Float)
+
+/**
+ * A taken slot gone by and not done, after "ยังไม่ได้ทำ" (mock plan-catchup board 3): the times free after now, the first
+ * one recommended and the last the latest, or a long press to drag it anywhere, on top of other work too.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WaitingCard(p: DayFill.Placed, offers: List<Int>, today: LocalDate, vm: TaskViewModel, onPlaced: () -> Unit) {
+    val item = p.item
+    Column(
+        Modifier.padding(vertical = 4.dp).fillMaxWidth().background(C.accentSoft).padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Mark(item, vm)
+            Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
+                Text(item.title, color = C.text, fontSize = TS.title)
+                val late = lateWord(item.task, today)
+                Text(
+                    buildAnnotatedString {
+                        append(tr("ยังไม่ได้วาง", "Not placed"))
+                        if (late != null) {
+                            append(", ")
+                            pushStyle(SpanStyle(color = C.red, fontWeight = FontWeight.Medium))
+                            append(late)
+                            pop()
+                        }
+                        append(", ")
+                        append(dur(p.len))
+                    },
+                    color = C.muted, fontSize = TS.caption,
+                )
+            }
+        }
+        Column(Modifier.padding(start = 38.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (offers.isNotEmpty()) {
+                Text(tr("ยังไม่ได้ทำ: วางช่องไหนดี", "Not done yet: where to put it?"), color = C.text, fontSize = TS.body)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    offers.forEachIndexed { i, at ->
+                        val label = DayFill.hm(at) + when {
+                            i == 0 -> tr(" แนะนำ", " recommended")
+                            i == offers.lastIndex -> tr(" ช้าสุด", " latest")
+                            else -> ""
+                        }
+                        PlaceChip(label, rec = i == 0) { vm.fillPlace(p, at); onPlaced() }
+                    }
+                }
+                Text(tr("หรือกดค้างที่งานแล้วลากไปวางเวลาไหนก็ได้ ซ้อนกับงานอื่นได้", "Or press and hold the task and drag it to any time, on top of other work too"), color = C.muted, fontSize = TS.caption)
+            } else {
+                Text(
+                    tr("วันนี้ไม่มีช่องว่างพอ กดค้างที่งานแล้วลากไปวางเวลาไหนก็ได้ ซ้อนกับงานอื่นได้", "No free time left today: press and hold the task and drag it to any time, on top of other work too"),
+                    color = C.muted, fontSize = TS.caption,
+                )
+            }
+        }
+    }
+}
+
+/** A time offered for a task not done; the recommended one is outlined. */
+@Composable
+private fun PlaceChip(text: String, rec: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(8.dp)).background(C.raised)
+            .border(1.dp, if (rec) C.accent else C.control, RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = if (rec) C.accentText else C.text, fontSize = TS.caption, fontWeight = if (rec) FontWeight.SemiBold else FontWeight.Normal) }
 }
 
 /** The ring of a card that is a task, or a quiet dot for one that is not. */
@@ -507,7 +738,7 @@ private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) 
                         append(", ")
                         if (picked == DayFill.Pick.TAKE) {
                             pushStyle(SpanStyle(color = C.lime))
-                            append(tr("รับแล้ว", "Taken"))
+                            append(if (p.pinned) tr("Klui วางเอง", "Put by you") else tr("รับแล้ว", "Taken"))
                             pop()
                         } else append(dur(p.len))
                     },
@@ -532,7 +763,7 @@ private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) 
             append(", ")
             if (picked == DayFill.Pick.TAKE) {
                 pushStyle(SpanStyle(color = C.lime))
-                append(tr("รับแล้ว", "Taken"))
+                append(if (p.pinned) tr("Klui วางเอง", "Put by you") else tr("รับแล้ว", "Taken"))
                 pop()
             } else append(dur(p.len))
             if (kind != null) append(", $kind")

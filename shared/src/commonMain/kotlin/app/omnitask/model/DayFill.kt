@@ -35,10 +35,12 @@ object DayFill {
 
     /**
      * A slot the owner took: the day and time the plan wrote as ⏳ (and as 🎯 when [timed]; a task with a reminder of
-     * its own keeps it, so only ⏳ is written).
+     * its own keeps it, so only ⏳ is written). [pinned]: the owner put it at [at] themselves (a suggested time or a
+     * drag): it stays there even on top of something else, and nothing else is pushed for it. [len]: its length when
+     * taken, for the reminder's "เหลืออีก N ถึงจะทำทันวันนี้" (0 when taken before that was kept: the reminder is as before).
      */
     @Serializable
-    data class Accepted(val day: String, val at: Int, val timed: Boolean = true)
+    data class Accepted(val day: String, val at: Int, val timed: Boolean = true, val pinned: Boolean = false, val len: Int = 0)
 
     @Serializable
     data class Line(val before: String, val after: String)
@@ -74,6 +76,8 @@ object DayFill {
          * the plan wrote last. A line that no longer reads as written last was changed by the owner: the plan leaves it.
          */
         val lines: Map<String, Line> = emptyMap(),
+        /** When today's plan stops (minutes from the day's start), as the today page last saw it: the reminder counts to it. */
+        val stop: Int? = null,
     ) {
         /** The same memory on [today]: yesterday's taps go, what lasts stays (put-off days for 30 days). */
         fun on(today: LocalDate): Memory {
@@ -183,7 +187,7 @@ object DayFill {
         val movable get() = !own && kind != Kind.LIFE && kind != Kind.REVIEW && kind != Kind.ASK
     }
 
-    data class Placed(val item: Item, val at: Int, val len: Int, val short: Boolean, val running: Boolean)
+    data class Placed(val item: Item, val at: Int, val len: Int, val short: Boolean, val running: Boolean, val pinned: Boolean = false)
 
     data class Later(val item: Item, val why: String, val risk: Boolean, val picked: Pick?)
 
@@ -191,7 +195,7 @@ object DayFill {
         abstract val at: Int?
 
         /** A block the plan works around: the day job, an event, a shift, sleep, an errand. */
-        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false) : Row()
+        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false, val until: Int? = null) : Row()
 
         /** Free time left clear on purpose. */
         data class Gap(override val at: Int, val len: Int) : Row()
@@ -232,6 +236,10 @@ object DayFill {
         val letGo: List<String>,
         /** The first work card, shown open. */
         val next: String?,
+        /** Bedtime (minutes from the day's start): a task the owner drags is placed before it. */
+        val bed: Int = end,
+        /** The free stretches from [start] to [end] that no block or card takes (any length): where a task can be put. */
+        val open: List<Pair<Int, Int>> = emptyList(),
     ) {
         val placed: List<Placed> get() = rows.filterIsInstance<Row.Card>().map { it.placed }
     }
@@ -437,6 +445,14 @@ object DayFill {
         }
         val placed = ArrayList<Placed>()
         val later = ArrayList<Later>()
+        // Put by the owner at a time of their own (a suggested time or a drag): placed after everything else, where
+        // they put it, taking no room, so nothing is pushed for it; an overlap is only flagged (mock plan-catchup).
+        val pinnedLater = ArrayList<Pair<Item, Int>>()
+        fun pinnedAt(it0: Item): Int? {
+            val f = it0.fixedAt ?: return null
+            val acc = it0.task?.let { mem.accepted[ident(it)] }?.takeIf { it.pinned && it.day == fr.day.toString() && it.at == f } ?: return null
+            return acc.at.takeIf { (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= it }
+        }
         // Taken slots and the owner's own times hold their place first; the rest follow by priority.
         val ordered = items.sortedWith(compareBy<Item>({ if (it.fixedAt != null) 0 else 1 }, { it.prio }))
         ordered.forEach { it0 ->
@@ -445,6 +461,7 @@ object DayFill {
                 later += Later(it0, pickText(pick, it0), risk = false, picked = pick)
                 return@forEach
             }
+            pinnedAt(it0)?.let { pinnedLater += it0 to it; return@forEach }
             // "ช่วงนี้ไม่ว่าง" on a taken slot moves it on like any card; its reminder then follows.
             val fixed = it0.fixedAt?.takeIf { f -> it0.own || (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= f }
             if (fixed != null) {
@@ -482,6 +499,7 @@ object DayFill {
             take(t, len)
             placed += Placed(it0, t, len, short = len < it0.len, running = false)
         }
+        pinnedLater.forEach { (it0, at) -> placed += Placed(it0, at, it0.len, short = false, running = at < start && at + it0.len > start, pinned = true) }
         return Placing(placed.sortedBy { it.at }, later, free)
     }
 
@@ -818,13 +836,17 @@ object DayFill {
             .forEach { t -> rows += Row.Done(t.reminderAt?.takeIf { it.date == today }?.let { minutesOf(it, today) }, t) }
         // The plan itself: cards, the blocks it works around and the free time between them.
         val blocks = ArrayList<Row.Locked>()
-        mem.errand?.let { e -> blocks += Row.Locked(e.from, tr("ธุระ ถึง ${hm(e.to ?: fr.end)}", "Errand until ${hm(e.to ?: fr.end)}"), tr("คุณกดมีธุระไว้ งานช่วงนี้ย้ายออกหมด", "You said you have an errand: work moved out of it")) }
+        mem.errand?.let { e -> blocks += Row.Locked(e.from, tr("ธุระ ถึง ${hm(e.to ?: fr.end)}", "Errand until ${hm(e.to ?: fr.end)}"), tr("คุณกดมีธุระไว้ งานช่วงนี้ย้ายออกหมด", "You said you have an errand: work moved out of it"), until = e.to ?: fr.end) }
         fr.timed.filter { minutesOf(it.end, today) > fr.start && minutesOf(it.begin, today) < fr.end }.forEach { e ->
             blocks += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today, inp), lockedWhy(e, inp, today), e)
         }
         val timeline = (pl.placed.map { it.at to (it as Any) } + blocks.map { it.at!! to (it as Any) }).sortedBy { it.first }
         var cursor = fr.start
-        fun gap(a: Int, b: Int) { if (b - a >= 15) rows += Row.Gap(a, b - a) }
+        val open = ArrayList<Pair<Int, Int>>()
+        fun gap(a: Int, b: Int) {
+            if (b > a) open += a to b
+            if (b - a >= 15) rows += Row.Gap(a, b - a)
+        }
         timeline.forEach { (at, x) ->
             when (x) {
                 is Row.Locked -> {
@@ -904,7 +926,7 @@ object DayFill {
         val next = pl.placed.firstOrNull { it.item.kind != Kind.LIFE && !it.item.own && mem.picks[it.item.id] == null && !it.running && it.at + it.len > fr.start }?.item?.id
         return Plan(
             today, fr.start, fr.end, fr.mode, rows, later.distinctBy { it.item.id }, pl.free, planned, buffer, banner,
-            Sprint.line(inp, fr, mem, ws), moves, letGo, next,
+            Sprint.line(inp, fr, mem, ws), moves, letGo, next, bed = fr.bed, open = open,
         )
     }
 
@@ -957,6 +979,75 @@ object DayFill {
         }
         return ok.firstOrNull { frame(it, inp).mode == Mode.NORMAL } ?: ok.firstOrNull() ?: today.plusDays(1)
     }
+
+    // ---- When real life does not follow the plan (the owner's mix, mock plan-catchup, 2026-10-30) ----
+
+    /** The latest a task of [len] minutes can start and still be done before the plan stops today. */
+    fun latestStart(plan: Plan, len: Int): Int = plan.end - len
+
+    /** On a taken row: "ถ้ายังไม่เริ่ม เหลืออีก 3 ชม. ถึงจะทันวันนี้"; null once [latest] went by. */
+    fun leftText(latest: Int, now: Int): String? = (latest - now).takeIf { it > 0 }?.let { n ->
+        tr("ถ้ายังไม่เริ่ม เหลืออีก ${lenText(n)} ถึงจะทันวันนี้", "If not started, ${lenText(n)} left to make it today")
+    }
+
+    /**
+     * The reminder of a slot taken today, at its time: "ถ้ายังไม่เริ่มตอนนี้ เหลืออีก 3 ชม. ถึงจะทำทันวันนี้ (เริ่มช้าสุด
+     * 19:45)". Null (the reminder says what it said before) when it is not one, when the plan's stop today is not known
+     * (the today page was not opened today), when the slot was taken before its length was kept, or once it is too late.
+     */
+    fun reminderLeft(mem: Memory, t: Task, now: LocalDateTime): String? {
+        val today = now.date.toString()
+        if (mem.day != today) return null
+        val stop = mem.stop ?: return null
+        val acc = mem.accepted[ident(t)]?.takeIf { it.day == today && it.timed && it.len > 0 } ?: return null
+        val latest = stop - acc.len
+        val n = latest - (now.hour * 60 + now.minute)
+        if (n <= 0) return null
+        return tr("ถ้ายังไม่เริ่มตอนนี้ เหลืออีก ${lenText(n)} ถึงจะทำทันวันนี้ (เริ่มช้าสุด ${hm(latest)})", "If not started now, ${lenText(n)} left to make it today (start by ${hm(latest)})")
+    }
+
+    /**
+     * Where a task of [len] minutes not done in its slot can go, from [now]: the first free time (recommended), one half
+     * hour or the next free stretch after it, and the latest; times in the plan's free stretches only, so none sits on
+     * anything. Empty when nothing fits before the plan stops.
+     */
+    fun suggest(plan: Plan, len: Int, now: Int): List<Int> {
+        val from = roundUp(maxOf(now, plan.start))
+        val fits = plan.open.mapNotNull { (a, b) -> roundUp(maxOf(a, from)).takeIf { it + len <= b }?.let { it to b } }
+        if (fits.isEmpty()) return emptyList()
+        val first = fits.first().first
+        val latest = fits.last().let { (a, b) -> maxOf(a, (b - len) - (b - len) % STEP) }
+        val marks = fits.flatMap { (a, b) -> listOf(a) + generateSequence(a - a % 30 + 30) { it + 30 }.takeWhile { it + len <= b } }
+        val mid = marks.filter { it >= first + 30 && it < latest }.minOrNull()
+        return listOfNotNull(first, mid, latest).distinct()
+    }
+
+    /** What [at] for [len] minutes sits on, besides the card [skip]: each one's name and the minutes they share. */
+    fun overlaps(plan: Plan, at: Int, len: Int, skip: String): List<Pair<String, Int>> = plan.rows.mapNotNull { r ->
+        val span: Triple<Int, Int, String>? = when (r) {
+            is Row.Card -> r.placed.takeIf { it.item.id != skip }?.let { Triple(it.at, it.at + it.len, it.item.title) }
+            is Row.Locked -> {
+                val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { minutesOf(it.end, plan.day) }
+                if (r.at != null && end != null) Triple(r.at, end, r.title) else null
+            }
+            else -> null
+        }
+        span?.let { (a, b, name) -> (minOf(at + len, b) - maxOf(at, a)).takeIf { it > 0 }?.let { name to it } }
+    }
+
+    /** "ซ้อนกับ How to ดูหุ้น 15 นาที": the overlaps of a card, names cut short. */
+    fun overlapText(list: List<Pair<String, Int>>): String? = list.takeIf { it.isNotEmpty() }?.joinToString(", ") { (name, n) -> short(name) + " " + lenText(n) }
+        ?.let { tr("ซ้อนกับ ", "Overlaps ") + it }
+
+    /** A name cut to about [n] letters at a whole letter (Thai marks stay with theirs), with "…" when cut. */
+    fun short(name: String, n: Int = 16): String {
+        if (name.length <= n) return name
+        var i = n
+        while (i < name.length && name[i].code in THAI_MARKS) i++
+        return name.substring(0, i).trimEnd() + "…"
+    }
+
+    private val THAI_MARKS = setOf(0x0E30, 0x0E31, 0x0E32, 0x0E33, 0x0E45) + (0x0E34..0x0E3A) + (0x0E47..0x0E4E)
 }
 
 /**

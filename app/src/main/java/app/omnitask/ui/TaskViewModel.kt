@@ -2443,7 +2443,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             before.on(today).let { m ->
                 m.copy(
                     picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
-                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed)),
+                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed, len = p.len)),
                     lines = m.lines + (p.item.id to DayFill.Line(task.raw, after)),
                     slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
                 )
@@ -2455,6 +2455,56 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ลงเป็นงานแล้ว", "Planned"), local = { fillPutBack(before, p.item.id, id) }), inTree = false) },
             onFailed = { saveFill(before) },
         ) { after }
+    }
+
+    /**
+     * The owner puts a task at [at] themselves (the owner's mix, mock plan-catchup, 2026-10-30): a time offered after
+     * "ยังไม่ได้ทำ", or a drag. It gets ⏳ today and its reminder at [at] (even one it had of its own: it reminds where it
+     * is put), stays there even on top of something else, and nothing else is pushed for it. Not a move in the
+     * behaviour log. The undo puts back the line and the plan's memory as they were just before.
+     */
+    fun fillPlace(p: DayFill.Placed, at: Int) {
+        val task = p.item.task ?: return
+        val today = LocalDate.now()
+        val id = DayFill.ident(task)
+        val before = _state.value.dayFill
+        val after = TaskLine.setReminder(TaskLine.setDate(task.raw, DateField.SCHEDULED, today), DayFill.clock(at), ReminderOn.SCHEDULED)
+        if (after == task.raw && before.accepted[id]?.let { it.pinned && it.at == at && it.day == today.toString() } == true) return
+        val was = DayFill.marks(task)
+        saveFill(
+            before.on(today).let { m ->
+                m.copy(
+                    picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
+                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed = true, pinned = true, len = p.item.len)),
+                    // What the line was before the plan first wrote it stays, so "แตะเพื่อเปลี่ยนใจ" still puts that back.
+                    lines = m.lines + (p.item.id to DayFill.Line(m.lines[p.item.id]?.before ?: task.raw, after)),
+                    slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
+                    notBefore = m.notBefore - p.item.id,
+                )
+            },
+        )
+        fillWrite(
+            task,
+            onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("วางที่ ${DayFill.hm(at)} แล้ว", "Put at ${DayFill.hm(at)}"), local = { fillPlaceBack(before, p.item.id, id, was) }), inTree = false) },
+            onFailed = { saveFill(before) },
+        ) { after }
+    }
+
+    /** Undoes [fillPlace]: the memory as it was just before, and the line's ⏳ and reminder as [was], unless changed since. */
+    private fun fillPlaceBack(before: DayFill.Memory, card: String, ident: String, was: DayFill.Marks) {
+        val cur = _state.value.dayFill
+        val wrote = cur.lines[card]?.after
+        saveFill(before.copy(lines = (cur.lines - card) + listOfNotNull(before.lines[card]?.let { card to it })))
+        val task = wrote?.let { w -> _state.value.tasks.firstOrNull { DayFill.ident(it) == ident && DayFill.marks(it) == DayFill.marks(w) } }
+            ?: return _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
+        fillWrite(task, onFailed = { saveFill(cur) }) { DayFill.withMarks(it, was) }
+    }
+
+    /** Keeps when today's plan stops, for the reminder at a taken slot ("เหลืออีก N ถึงจะทำทันวันนี้"). */
+    fun fillStop(end: Int) {
+        val today = LocalDate.now()
+        val m = _state.value.dayFill.on(today)
+        if (m.stop != end) saveFill(m.copy(stop = end))
     }
 
     /** "วันนี้หมดแรง": out of today's plan, not counted as skipped; tomorrow it comes first for 15 minutes (not after a night shift). */
