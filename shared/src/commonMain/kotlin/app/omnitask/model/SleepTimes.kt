@@ -19,14 +19,28 @@ object SleepTimes {
     const val DAYS = 14
     /** Fewer nights than this and the usual time is not told: the profile's time stands. */
     const val MIN_NIGHTS = 3
-    /** Shorter sleeps are naps, not the night. */
+    /** Shorter nights are naps. */
     private const val MIN_NIGHT = 3 * 60
+    /** Sleeps this close together are one night woken up in the middle (or the same night from two apps). */
+    private const val GAP = 90
 
-    /** The main sleep of the night that starts on the evening of [eve]: the longest that begins from 18:00 to 04:00. */
+    /**
+     * The night that starts on the evening of [eve], from its first sleep to its last waking: the sleeps that begin from
+     * 18:00 to noon, joined when they overlap or lie within [GAP] minutes, and of those the longest that began by 04:00
+     * and lasts [MIN_NIGHT] or more.
+     */
     fun night(sessions: List<SleepSession>, eve: LocalDate): SleepSession? {
         val from = eve.atTime(18, 0)
-        val to = eve.plusDays(1).atTime(4, 0)
-        return sessions.filter { it.start >= from && it.start < to && it.minutes >= MIN_NIGHT }.maxByOrNull { it.minutes }
+        val until = eve.plusDays(1).atTime(12, 0)
+        val startBy = eve.plusDays(1).atTime(4, 0)
+        val joined = ArrayList<SleepSession>()
+        sessions.filter { it.start >= from && it.start < until && it.end > it.start }.sortedBy { it.start }.forEach { s ->
+            val last = joined.lastOrNull()
+            if (last != null && SleepSession(last.end, s.start).minutes <= GAP) {
+                joined[joined.size - 1] = SleepSession(last.start, maxOf(last.end, s.end))
+            } else joined += s
+        }
+        return joined.filter { it.start < startBy && it.minutes >= MIN_NIGHT }.maxByOrNull { it.minutes }
     }
 
     /** This morning's wake on [day] (minutes from its start), when the watch has the night before it. */

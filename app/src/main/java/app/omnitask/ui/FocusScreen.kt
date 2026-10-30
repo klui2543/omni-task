@@ -355,7 +355,8 @@ fun FocusScreen(
                 SleepMode.refresh(context)
             }
             val sleeps = SleepMode.forPlan
-            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps) { vm.fillPlan(state, now) }
+            val sleepStatus = SleepMode.status
+            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus) { vm.fillPlan(state, now) }
             DayFillCard(state, vm, plan, now, { vm.fillInput(state, now) }, asks.size, { asking = true }, onOpen) { reviewingTask = it }
         } else if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {

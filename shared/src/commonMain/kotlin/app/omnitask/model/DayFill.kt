@@ -236,6 +236,8 @@ object DayFill {
          * and then the profile's wake and bed times stand as before; empty when it is on and nothing came in yet.
          */
         val sleeps: List<SleepSession>? = null,
+        /** Why the watch could not be read (no Health Connect, no permission, an error), said on the plan's rows. */
+        val sleepProblem: String? = null,
     )
 
     /** Lengths and windows the owner saw in the mock. */
@@ -304,27 +306,31 @@ object DayFill {
         var bed = profileBed
         var wakeWhy: String? = null
         var bedWhy: String? = null
-        inp.sleeps?.let { sl ->
+        // Only today's plan: other days (a day to keep a task for, the sprint's hours) stay on the profile.
+        inp.sleeps?.takeIf { day == inp.now.date }?.let { sl ->
             // The watch (owner's pick, 2026-10-30). Days and evenings set by a night shift are not the owner's usual.
             fun job(d: LocalDate) = RealDay.jobBlocks(listOf(d), own, f).isNotEmpty()
             fun shiftMorning(d: LocalDate) = afterNightOn(d) || RealDay.nightStart(d, own, p, f) != null
             fun kind(d: LocalDate) = if (job(d)) tr("วันทำงาน", "work days") else tr("วันหยุด", "days off")
+            val fallback = inp.sleepProblem?.let { tr("จากโปรไฟล์ เพราะ", "From your profile: ") + it }
+                ?: tr("จากโปรไฟล์ ข้อมูลนาฬิกายังไม่พอ", "From your profile: not enough from the watch yet")
             val woke = SleepTimes.wokeOn(sl, day)
-            val usualWake = SleepTimes.usual(day, { d -> !shiftMorning(d) && job(d) == job(day) }) { d -> SleepTimes.wokeOn(sl, d) }
+            // The morning after the early night that follows a shift is left out too.
+            val usualWake = SleepTimes.usual(day, { d -> !shiftMorning(d) && !afterNightOn(d.minusDays(1)) && job(d) == job(day) }) { d -> SleepTimes.wokeOn(sl, d) }
             when {
                 woke != null -> { wakeAt = woke; wakeWhy = tr("จากนาฬิกาเมื่อเช้า", "From the watch this morning") }
                 usualWake != null -> {
                     wakeAt = usualWake
-                    wakeWhy = tr("ยังไม่มีข้อมูลนาฬิกาเมื่อเช้า ใช้เวลาปกติของ${kind(day)} 14 วันล่าสุดไปก่อน", "Not in from the watch yet: the usual time of the last 14 ${kind(day)}")
+                    wakeWhy = tr("ยังไม่มีข้อมูลนาฬิกาเมื่อเช้า ใช้เวลาปกติของ${kind(day)}ใน 14 วันล่าสุดไปก่อน", "Not in from the watch yet: your usual time on ${kind(day)} over the last 14 days")
                 }
-                else -> wakeWhy = tr("จากโปรไฟล์ ข้อมูลนาฬิกายังไม่พอ", "From your profile: not enough from the watch yet")
+                else -> wakeWhy = fallback
             }
             val tomorrow = day.plusDays(1)
             val usualBed = SleepTimes.usual(day, { d -> !shiftMorning(d.plusDays(1)) && !afterNightOn(d) && job(d.plusDays(1)) == job(tomorrow) }) { d -> SleepTimes.bedOn(sl, d) }
             if (usualBed != null) {
                 bed = usualBed
-                bedWhy = tr("เวลาปกติของคืนก่อน${kind(tomorrow)} 14 วันล่าสุด จากนาฬิกา", "The usual time before ${kind(tomorrow)}, last 14 days, from the watch")
-            } else bedWhy = tr("จากโปรไฟล์ ข้อมูลนาฬิกายังไม่พอ", "From your profile: not enough from the watch yet")
+                bedWhy = tr("เวลาปกติของคืนก่อน${kind(tomorrow)}ใน 14 วันล่าสุด จากนาฬิกา", "Your usual time before ${kind(tomorrow)} over the last 14 days, from the watch")
+            } else bedWhy = fallback
         }
         if (nightNext != null) bed = minOf(bed, minutes(RealDay.BED_BEFORE_NIGHT))
         if (afterNight) bed -= 60

@@ -39,8 +39,8 @@ class SleepTimesTest {
     /** Evenings of 15 to 27 Oct at 23:00, up at 07:30 (a week before the shift weeks). */
     private val usual = (15..27).map { night("2026-10-" + it.toString().padStart(2, '0'), "23:00", "07:30") }
 
-    private fun input(now: String, sleeps: List<SleepSession>?, extra: List<CalendarEvent> = emptyList()) =
-        DayFill.Input(emptyList(), events + extra, profile, facts, LocalDateTime.parse(now), sleeps = sleeps)
+    private fun input(now: String, sleeps: List<SleepSession>?, extra: List<CalendarEvent> = emptyList(), problem: String? = null) =
+        DayFill.Input(emptyList(), events + extra, profile, facts, LocalDateTime.parse(now), sleeps = sleeps, sleepProblem = problem)
 
     private fun m(h: Int, min: Int = 0) = h * 60 + min
 
@@ -121,5 +121,54 @@ class SleepTimesTest {
         assertNull(SleepTimes.wokeOn(listOf(s("2026-10-29T13:00", "2026-10-29T14:30")), LocalDate.parse("2026-10-29")))
         // A nap alone in the night's hours is not a night either.
         assertNull(SleepTimes.wokeOn(listOf(s("2026-10-29T01:00", "2026-10-29T02:00")), LocalDate.parse("2026-10-29")))
+    }
+
+    @Test
+    fun aNightWokenInTheMiddleIsOneNight() {
+        // Up at 03:30 for a while, back to sleep 04:10 to 07:30: the night ends at 07:30 and began at 23:00.
+        val sleeps = listOf(s("2026-10-28T23:00", "2026-10-29T03:30"), s("2026-10-29T04:10", "2026-10-29T07:30"))
+        assertEquals(m(7, 30), SleepTimes.wokeOn(sleeps, LocalDate.parse("2026-10-29")))
+        assertEquals(m(23), SleepTimes.bedOn(sleeps, LocalDate.parse("2026-10-28")))
+    }
+
+    @Test
+    fun theSameNightFromTwoAppsIsOneNight() {
+        val sleeps = listOf(s("2026-10-28T23:10", "2026-10-29T07:20"), s("2026-10-28T23:00", "2026-10-29T07:40"))
+        assertEquals(m(7, 40), SleepTimes.wokeOn(sleeps, LocalDate.parse("2026-10-29")))
+        assertEquals(m(23), SleepTimes.bedOn(sleeps, LocalDate.parse("2026-10-28")))
+    }
+
+    @Test
+    fun aSleepAfterTheShiftIsNotLastNight() {
+        // Shift day: up 01:45 for 02:30, then a longer sleep 09:00 to 14:30. Last night ended at 01:45.
+        val sleeps = listOf(s("2026-10-30T21:00", "2026-10-31T01:45"), s("2026-10-31T09:00", "2026-10-31T14:30"))
+        assertEquals(m(1, 45), SleepTimes.wokeOn(sleeps, LocalDate.parse("2026-10-31")))
+    }
+
+    @Test
+    fun whyTheWatchCouldNotBeReadIsSaid() {
+        val fr = DayFill.frame(LocalDate.parse("2026-10-29"), input("2026-10-29T06:00", emptyList(), problem = "ยังไม่ได้อนุญาตให้อ่านการนอน"))
+        assertEquals(m(7), fr.wake)
+        assertTrue(assertNotNull(fr.wakeWhy).contains("ยังไม่ได้อนุญาต"))
+        assertTrue(assertNotNull(fr.bedWhy).contains("ยังไม่ได้อนุญาต"))
+    }
+
+    @Test
+    fun otherDaysStayOnTheProfile() {
+        // Only today's plan follows the watch: tomorrow's frame (a day to keep a task for) is as before.
+        val fr = DayFill.frame(LocalDate.parse("2026-10-30"), input("2026-10-29T08:00", usual + night("2026-10-28", "23:05", "07:42")))
+        assertNull(fr.wakeWhy)
+        assertEquals(m(7, 30), fr.start)
+    }
+
+    @Test
+    fun theMorningAfterAShiftsEarlyNightIsNotTheUsualWake() {
+        // Shifts at 02:30 on 22 Oct, 27 Oct and 3 Nov: the night after each is early, and so is the morning after it.
+        val sleeps = listOf(
+            night("2026-10-22", "20:30", "04:30"), night("2026-10-27", "20:30", "04:30"), night("2026-11-03", "20:30", "04:30"),
+            night("2026-10-28", "23:00", "07:30"), night("2026-10-29", "23:00", "07:30"), night("2026-11-01", "23:00", "07:30"),
+        )
+        val fr = DayFill.frame(LocalDate.parse("2026-11-05"), input("2026-11-05T06:00", sleeps, listOf(shift(3, "2026-10-27"), shift(4, "2026-10-22"))))
+        assertEquals(m(7, 30), fr.wake)
     }
 }

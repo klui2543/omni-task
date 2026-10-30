@@ -45,7 +45,7 @@ object SleepMode {
     /** Read again at most this often, unless asked (the switch, a new permission). */
     private const val EVERY_MS = 10 * 60_000L
 
-    enum class Status { OFF, READING, NO_APP, NO_PERMISSION, OK, FAILED }
+    enum class Status { OFF, READING, NO_APP, UPDATE, NO_PERMISSION, OK, FAILED }
 
     val PERMISSIONS = setOf(HealthPermission.getReadPermission(SleepSessionRecord::class))
 
@@ -83,6 +83,16 @@ object SleepMode {
     /** What the day plan reads: null while the switch is off, so the plan stays as it was. */
     val forPlan: List<SleepSession>? get() = if (on) sleeps else null
 
+    /** Why nothing could be read, said on the plan's "ตื่น" and "นอน" rows as well as in Settings. */
+    val problem: String?
+        get() = if (!on) null else when (status) {
+            Status.NO_APP -> tr("มือถือเปิด Health Connect ไม่ได้", "Health Connect is not available")
+            Status.UPDATE -> tr("ต้องอัปเดต Health Connect ก่อน", "Health Connect needs an update")
+            Status.NO_PERMISSION -> tr("ยังไม่ได้อนุญาตให้อ่านการนอน (ดูในตั้งค่า)", "reading sleep is not allowed yet (see Settings)")
+            Status.FAILED -> tr("อ่านข้อมูลการนอนไม่ได้ (ดูในตั้งค่า)", "sleep could not be read (see Settings)")
+            else -> null
+        }
+
     /** Reads the sleeps from Health Connect, at most every 10 minutes unless [force]. */
     suspend fun refresh(context: Context, force: Boolean = false) {
         load(context)
@@ -90,16 +100,27 @@ object SleepMode {
         val nowMs = System.currentTimeMillis()
         if (!force && nowMs - readAt < EVERY_MS) return
         readAt = nowMs
-        if (HealthConnectClient.getSdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
-            status = Status.NO_APP
-            sleeps = emptyList()
-            return
+        when (HealthConnectClient.getSdkStatus(context)) {
+            HealthConnectClient.SDK_AVAILABLE -> Unit
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
+                status = Status.UPDATE
+                sleeps = emptyList()
+                readAt = 0L
+                return
+            }
+            else -> {
+                status = Status.NO_APP
+                sleeps = emptyList()
+                return
+            }
         }
         try {
             val client = HealthConnectClient.getOrCreate(context)
             if (!client.permissionController.getGrantedPermissions().containsAll(PERMISSIONS)) {
                 status = Status.NO_PERMISSION
                 sleeps = emptyList()
+                // Asked again on the next visit, so a permission given in Health Connect itself shows at once.
+                readAt = 0L
                 return
             }
             val end = Instant.now()
@@ -119,7 +140,7 @@ object SleepMode {
             readAt = 0L
             throw e
         } catch (e: Exception) {
-            // Said in Settings; the plan falls back on the profile's times and says so on its "ตื่น" row.
+            // Said in Settings and on the plan's "ตื่น" and "นอน" rows ([problem]); the plan uses the profile's times.
             status = Status.FAILED
             failure = e.message ?: e.javaClass.simpleName
             sleeps = emptyList()
@@ -156,6 +177,10 @@ fun SleepSetting(context: Context) {
         SleepMode.Status.OFF, SleepMode.Status.READING -> Text(tr("กำลังอ่านข้อมูลการนอน", "Reading sleep"), muted, color = C.muted, fontSize = TS.caption)
         SleepMode.Status.NO_APP -> Text(
             tr("มือถือนี้เปิด Health Connect ไม่ได้ ตารางใช้เวลาจากโปรไฟล์ไปก่อน", "Health Connect is not available on this phone: the plan uses the profile's times"),
+            muted, color = C.muted, fontSize = TS.caption,
+        )
+        SleepMode.Status.UPDATE -> Text(
+            tr("ต้องอัปเดต Health Connect ใน Play Store ก่อน ตารางใช้เวลาจากโปรไฟล์ไปก่อน", "Update Health Connect in the Play Store first: the plan uses the profile's times"),
             muted, color = C.muted, fontSize = TS.caption,
         )
         SleepMode.Status.NO_PERMISSION -> Text(
