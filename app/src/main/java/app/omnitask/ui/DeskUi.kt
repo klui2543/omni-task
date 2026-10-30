@@ -150,6 +150,12 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
     // The review mode (โหมดทบทวนงาน): the first card of the deck opens it over the whole page, always there (owner, 2026-10-28).
     var reviewing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (reviewing) { ReviewScreen(state, vm) { reviewing = false }; return }
+    // The deck's "เลขาถาม" opens the same card on the secretary's questions only (Klui's pick ข, 2026-10-30).
+    var askReview by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (askReview) {
+        ReviewScreen(state, vm, asks = app.omnitask.model.SecretaryAsk.open(state.secretaryAsks, state.tasks, state.today), onOpen = onOpen) { askReview = false }
+        return
+    }
     val reviewCount = remember(state.tasks, state.today) { reviewDeck(state).size }
 
     // The page ends above the keyboard, so the chat box stays in sight while typing (the window does not resize itself:
@@ -191,7 +197,7 @@ fun DeskScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, onSett
                 }
             }
             // What waits on Klui to decide, after the chat (owner's pick, 2026-10-28): new answers come above it.
-            item(key = "deck") { DecisionDeck(state, vm, onOpen, reviewCount) { reviewing = true } }
+            item(key = "deck") { DecisionDeck(state, vm, onOpen, reviewCount, onReview = { reviewing = true }, onAsks = { askReview = true }) }
         }
         if (resetAt > 0) Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(14.dp)).background(C.raised).padding(start = 14.dp, end = 4.dp),

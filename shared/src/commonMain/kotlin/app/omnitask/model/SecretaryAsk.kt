@@ -86,7 +86,8 @@ object SecretaryAsk {
     }
 
     /**
-     * The questions whose task is still open and was not answered today (a [StuckLog] line dated [today]), each with
+     * The questions whose task is still open and was not answered today (a [StuckLog] line or a [ReviewLog] line dated
+     * [today]), each with
      * that task, in the file's order. A question whose task cannot be found is left out: there is nothing to tick or
      * note on.
      */
@@ -98,6 +99,8 @@ object SecretaryAsk {
                     (a.file == null || t.filePath.substringAfterLast('/') == a.file.substringAfterLast('/'))
             } ?: return@mapNotNull null
             if (StuckLog.entries(task).any { it.day == today }) return@mapNotNull null
+            // Answered on the review card (Klui's pick ข, 2026-10-30): a card saved today writes `ทบทวน <today>`.
+            if (ReviewLog.last(task) == today) return@mapNotNull null
             if (!seen.add(task.key)) return@mapNotNull null
             Open(a, task)
         }

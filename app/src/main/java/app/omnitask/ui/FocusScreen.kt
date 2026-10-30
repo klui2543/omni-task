@@ -94,7 +94,8 @@ fun FocusScreen(
     }
     val today = state.today
     val asks = SecretaryAsk.open(state.secretaryAsks, state.tasks, today)
-    if (asking) SecretaryAskSheet(asks, vm, onOpen) { asking = false }
+    // "เลขาถาม" opens the review card on the secretary's questions only (Klui's pick ข, 2026-10-30).
+    if (asking) { ReviewScreen(state, vm, asks = asks, onOpen = onOpen) { asking = false }; return }
     val brief = state.brief
     val events = state.todayEvents
     // Tasks already ticked today stay in the day's timeline, greyed, so the day reads as a whole.

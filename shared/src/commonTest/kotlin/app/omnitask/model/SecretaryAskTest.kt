@@ -86,6 +86,19 @@ class SecretaryAskTest {
     }
 
     @Test
+    fun aTaskReviewedTodayIsAnswered() {
+        // A review card saved today writes `ทบทวน <today>` under the task (the asks open on the review card, Klui ข).
+        val reviewed = note.replace(
+            "- [ ] จองตั๋ว ➕ 2026-10-10\n    - ค้าง 2026-10-26 รอคนอื่น: รอพี่เอส่งวัน",
+            "- [ ] จองตั๋ว ➕ 2026-10-10\n    - ทบทวน 2026-10-27",
+        )
+        val tasks = VaultText.parseFile("n", "📁 Folder/หลังบ้าน/Omni/Omni note.md", reviewed)
+        val asks = SecretaryAsk.parse(file)
+        assertTrue(SecretaryAsk.open(asks, tasks, today.plusDays(1L)).none { it.task.title == "จองตั๋ว" }, "reviewed that day: answered")
+        assertTrue(SecretaryAsk.open(asks, tasks, today.plusDays(2L)).any { it.task.title == "จองตั๋ว" }, "asked again the next day")
+    }
+
+    @Test
     fun askedAgainTheNextDay() {
         // The day after the owner said not done, the same question is open again: nothing is hushed.
         val open = SecretaryAsk.open(SecretaryAsk.parse(file), tasks(), today.plusDays(1L))
