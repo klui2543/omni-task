@@ -279,6 +279,8 @@ object DayFill {
         val wakeWhy: String? = null,
         /** Where the bedtime came from, added to the "นอน" row's reason; null while the watch switch is off. */
         val bedWhy: String? = null,
+        /** How tired the owner likely is (today's plan, watch switch on); null: not read, the plan is as before. */
+        val tired: Fatigue.Read? = null,
     )
 
     fun frame(day: LocalDate, inp: Input, from: LocalDateTime? = null): Frame {
@@ -335,12 +337,19 @@ object DayFill {
         if (nightNext != null) bed = minOf(bed, minutes(RealDay.BED_BEFORE_NIGHT))
         if (afterNight) bed -= 60
         var end = bed - 60
+        // Tiredness built up over days (owner's pick ก, 2026-10-30): today's plan only, with the watch switch on.
+        val tired = inp.sleeps?.takeIf { day == inp.now.date }?.let { sl ->
+            val nights = own.count { e -> !e.allDay && RealDay.isNight(e, p, f) && e.begin.date >= day.minusDays(Fatigue.WEEK.toLong()) && e.begin.date < day }
+            val often = inp.tasks.count { it.isOpen && inp.moves(it) >= 3 }
+            Fatigue.read(day, sl, nights, often)
+        }
+        tired?.let { end -= it.stopEarlier }
         nightEvening?.let { end = minOf(end, minutesOf(it.begin, day) - 30) }
         val wake = wakeAt + 30
         val start = maxOf(wake, from?.let { roundUp(minutesOf(it, day)) } ?: wake)
         val timed = todays.filter { !it.allDay }.sortedBy { it.begin }
         val busy = timed.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
-        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy)
+        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tired)
     }
 
     private fun roundUp(m: Int) = if (m % STEP == 0) m else m + STEP - m % STEP
@@ -378,7 +387,13 @@ object DayFill {
         mem.errand?.let { e -> busy += e.from to (e.to ?: end) }
         busy.forEach { (a, b) -> for (t in maxOf(a, start) until minOf(b, end)) occ[t - start] = true }
         val free = occ.count { !it }
-        val target = maxOf(30, free / 3)
+        // The buffer: a third of the free time; half when tired; all of it when very tired, so only what must be done
+        // is placed (the owner's own time and meals keep their place).
+        val target = when (fr.tired?.level) {
+            Fatigue.Level.VERY_TIRED -> free
+            Fatigue.Level.TIRED -> maxOf(30, free / 2)
+            else -> maxOf(30, free / 3)
+        }
         fun fits(t: Int, len: Int): Boolean {
             if (t < start || t + len > end) return false
             for (i in t until t + len) if (occ[i - start]) return false
@@ -430,6 +445,7 @@ object DayFill {
                 val why = when {
                     it0.lateText != null -> it0.lateText
                     it0.kind == Kind.MINE -> tr("วันนี้ไม่มีช่องว่างพอ ไว้พรุ่งนี้", "No room today, tomorrow then")
+                    capped && fr.tired != null && fr.tired.level != Fatigue.Level.OK -> tr("ย้ายไปพรุ่งนี้ วันนี้น่าจะล้า เลขาจัดเบาลง", "Moved to tomorrow: likely tired today, a lighter plan")
                     capped -> tr("ย้ายไปพรุ่งนี้ เพื่อเหลือช่องกันชนไว้", "Moved to tomorrow to keep a buffer")
                     else -> tr("วันนี้ไม่มีเวลาพอ ย้ายไปพรุ่งนี้", "Not enough time today, moved to tomorrow")
                 }
@@ -749,7 +765,7 @@ object DayFill {
             Mode.AFTER_NIGHT -> tr("เพิ่งลงเวรดึก วันนี้วันพักฟื้น ไม่มีงานที่ต้องเริ่ม สปรินต์พัก ข้ามได้โดยไม่นับ", "Just off a night shift: a recovery day, nothing must start, skips do not count")
             Mode.BEFORE_NIGHT -> fr.nightAt?.let { tr("คืนนี้มีเวร ${hm(minutesOf(it.begin, today))} เลขาจัดงานเบาให้ และหยุดจัดงานตั้งแต่ ${hm(fr.end)} จะได้นอนพอ", "Shift at ${hm(minutesOf(it.begin, today))} tonight: a light plan that stops at ${hm(fr.end)}") }
             Mode.NORMAL -> null
-        }
+        }.let { b -> listOfNotNull(b, fr.tired?.let(Fatigue::text)).joinToString("\n").ifEmpty { null } }
         // Taken slots: their line follows the plan (its reminder moves with the card; with no room today, ⏳ goes to
         // tomorrow at the same time, but never past the 📅). The note is compared with where the card is, so an undo
         // puts the line back too. A line the owner changed since the plan wrote it is left alone and let go of.
