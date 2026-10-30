@@ -2030,6 +2030,33 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Reads and encodes a photo picked for a task that is not written yet; [onReady] gets it on the main thread.
+     * Nothing is saved until the task is added, so a sheet closed without adding leaves no stray file.
+     */
+    fun prepareImage(uri: Uri, onReady: (ImageAttach.Prepared?) -> Unit) {
+        viewModelScope.launch {
+            val prepared = withContext(Dispatchers.IO) { runCatching { ImageAttach.prepare(getApplication(), uri) } }
+            prepared.onFailure { e -> _state.update { it.copy(message = tr("แนบรูปไม่ได้: ${e.message}", "Cannot attach image: ${e.message}")) } }
+            onReady(prepared.getOrNull())
+        }
+    }
+
+    /**
+     * Saves the images picked for a new task, then [write]s the task naming them. If anything fails, the files
+     * saved so far are deleted again, so a task that was not written leaves no image behind.
+     */
+    private fun withNewImages(vault: Uri, images: List<ByteArray>, write: (List<String>) -> String): String {
+        val saved = mutableListOf<String>()
+        try {
+            images.forEach { saved += repo.saveAttachment(vault, ImageAttach.fileName(), "image/webp", it) }
+            return write(saved)
+        } catch (e: Exception) {
+            saved.forEach { runCatching { repo.deleteAttachment(vault, it) } }
+            throw e
+        }
+    }
+
     fun resolvePendingImage(reduced: Boolean?) {
         val pending = _state.value.pendingImage ?: return
         _state.update { it.copy(pendingImage = null) }
@@ -3558,14 +3585,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setCalendarSpan(span: CalendarSpan) = _state.update { it.copy(calendarSpan = span) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
-    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {
+    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null, links: List<String> = emptyList(), images: List<ByteArray> = emptyList()) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val today = LocalDate.now()
-                val line = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) } +
-                    (link?.let { "\n    - $it" } ?: "")
-                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) }.map { line }
+                runCatching {
+                    // Images picked while adding are saved first, so the line can name the files as written.
+                    withNewImages(vault, images) { names ->
+                        val first = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) }
+                        val block = (listOf(first) + listOfNotNull(link?.let { "    - $it" }) + QuickAdd.attachLines(links, names)).joinToString("\n")
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, block)
+                        first
+                    }
+                }
             }
             result.getOrNull()?.let { noteCreated(it) }
             val text = result.fold(
@@ -3578,15 +3611,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** A task from the detailed add page: the line, its description and its subtasks go in together. */
-    fun addDetailedTask(detail: QuickAdd.Detail, status: Status = Status.TODO, link: String? = null) {
+    fun addDetailedTask(detail: QuickAdd.Detail, status: Status = Status.TODO, link: String? = null, images: List<ByteArray> = emptyList()) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val today = LocalDate.now()
-                val lines = detail.block(today).split("\n").toMutableList()
-                if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
-                if (link != null) lines.add(1, "    - $link")
-                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n")) }.map { lines[0] }
+                runCatching {
+                    // Images picked while adding are saved first, so the block can name the files as written.
+                    withNewImages(vault, images) { names ->
+                        val lines = detail.copy(images = detail.images + names).block(today).split("\n").toMutableList()
+                        if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
+                        if (link != null) lines.add(1, "    - $link")
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n"))
+                        lines[0]
+                    }
+                }
             }
             result.getOrNull()?.let { noteCreated(it) }
             val text = result.fold(

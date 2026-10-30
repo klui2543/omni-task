@@ -1,6 +1,7 @@
 package app.omnitask.model
 
 import app.omnitask.data.TaskLine
+import kotlinx.datetime.daysUntil
 
 /**
  * Tags seen as folders, the way files sit in folders on a computer (owner's pick, 2026-10-26, mock way 1). Nothing
@@ -51,7 +52,37 @@ object Folders {
             .flatMap { p -> p.split('/').indices.map { i -> p.split('/').take(i + 1).joinToString("/") } }
             .filter { it.isNotEmpty() }.toSet().sortedBy { it.lowercase() }
 
-    /** The folders the owner picked lately, newest first, after picking [path]: what "used lately" offers. */
+    /**
+     * The folder picker's "ใช้บ่อย" row (owner's pick, 2026-10-30, mock way ค: used often, by itself, no pins): the
+     * folders of [all] that got the most tasks made in the last [days] days, with that count, most first. Folders
+     * picked lately ([picked], newest first) follow, so a new folder shows before it has tasks; a tie keeps that order.
+     */
+    fun frequent(tasks: List<Task>, today: kotlinx.datetime.LocalDate, picked: List<String>, all: List<String>, days: Int = 30, n: Int = 6): List<Pair<String, Int>> {
+        fun known(p: String) = all.firstOrNull { it.equals(ProjectNames.canonical(p), ignoreCase = true) }
+        val counts = tasks.asSequence()
+            .filter { t -> t.created?.let { c -> c <= today && c.daysUntil(today) < days } == true && madeByOwner(t) }
+            .mapNotNull { t -> of(t)?.let(::known) }
+            .groupingBy { it }.eachCount()
+        val lately = picked.mapNotNull(::known).distinct()
+        return (counts.keys + lately).distinct()
+            .sortedWith(compareByDescending<String> { counts[it] ?: 0 }.thenBy { lately.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }.thenBy { it.lowercase() })
+            .take(n).map { it to (counts[it] ?: 0) }
+    }
+
+    /**
+     * A task the owner added, for [frequent]: one in the task note, not the secretary's (`#kluido`, `#claudedo`), not a
+     * cancelled one, and not a finished round of a repeating task or its copy for today, which would count one task many times.
+     * Finished tasks leave for the archive after a week and are not read, so a done task counts only that long.
+     */
+    private val TASK_NOTES = setOf(app.omnitask.data.VaultText.TASK_FILE, app.omnitask.data.VaultText.LEGACY_TASK_FILE).map { it.substringAfterLast('/') }.toSet()
+
+    private fun madeByOwner(t: Task): Boolean =
+        !t.todayCopy && t.status != Status.CANCELLED &&
+            t.filePath.substringAfterLast('/') in TASK_NOTES &&
+            t.tags.none { tag -> tag.substringBefore('/').let { it.equals(SecretaryBook.OWNER_TAG, ignoreCase = true) || it.equals("claudedo", ignoreCase = true) } } &&
+            !(t.recurrence != null && t.status == Status.DONE)
+
+    /** The folders the owner picked lately, newest first, after picking [path]: the newest feed the "ใช้บ่อย" row. */
     fun picked(list: List<String>, path: String, n: Int = 3): List<String> =
         (listOf(path) + list.filterNot { it.equals(path, ignoreCase = true) }).take(n)
 

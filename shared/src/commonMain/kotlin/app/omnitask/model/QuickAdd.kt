@@ -49,6 +49,10 @@ object QuickAdd {
         val priority: Priority = Priority.NONE,
         val notes: List<String> = emptyList(),
         val subtasks: List<String> = emptyList(),
+        /** Notes linked under the task, as their link text (`[[name]]` without brackets). */
+        val links: List<String> = emptyList(),
+        /** Image files already saved in the attachments folder, by file name. */
+        val images: List<String> = emptyList(),
     ) {
         fun line(today: LocalDate): String {
             var line = "- [ ] $title"
@@ -66,9 +70,18 @@ object QuickAdd {
         fun block(today: LocalDate): String = buildList {
             add(line(today))
             notes.map { it.trim() }.filter { it.isNotEmpty() }.forEach { add("    - $it") }
+            addAll(attachLines(links, images))
             subtasks.map { it.trim() }.filter { it.isNotEmpty() }.forEach { add("    - [ ] $it") }
         }.joinToString("\n")
     }
+
+    /**
+     * Linked notes and images under a new task, written the way the edit page writes them one at a time
+     * (`- [[note]]`, `- ![[image.webp]]`), so a task made with them reads the same as one given them later.
+     */
+    fun attachLines(links: List<String>, images: List<String>): List<String> =
+        links.map { it.trim() }.filter { it.isNotEmpty() }.distinct().map { "    - [[$it]]" } +
+            images.map { it.trim() }.filter { it.isNotEmpty() }.map { "    - ![[$it]]" }
 
     private val TAG = Regex(app.omnitask.data.TaskLine.TAG_PATTERN)
     // "9:00-11:00", "9:00 ถึง 11:00", "9:00 to 11:00".

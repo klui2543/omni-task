@@ -91,6 +91,26 @@ class QuickAddTest {
     }
 
     @Test
+    fun newTaskCarriesLinkedNotesAndImagesLikeTheEditPage() {
+        // Linked notes and images picked while adding go under the task as the edit page would write them.
+        val d = QuickAdd.Detail(
+            title = "ส่งรายงานยา", date = LocalDate.parse("2026-10-08"), notes = listOf("ส่งทางอีเมล"), subtasks = listOf("รวบตัวเลข"),
+            links = listOf("รายงานยาเดือนตุลา", " ", "รายงานยาเดือนตุลา"), images = listOf("Omni-2026-10-07-091500.webp"),
+        )
+        val block = d.block(today)
+        assertEquals(
+            "- [ ] ส่งรายงานยา ➕ 2026-10-07 📅 2026-10-08\n    - ส่งทางอีเมล\n    - [[รายงานยาเดือนตุลา]]\n    - ![[Omni-2026-10-07-091500.webp]]\n    - [ ] รวบตัวเลข",
+            block,
+        )
+        // Read back from the note, the task has the link and the image, and the subtask stays a subtask.
+        val tasks = app.omnitask.data.VaultText.parseFile("u", "Omni note.md", block)
+        assertEquals(listOf("รายงานยาเดือนตุลา"), tasks.first().links)
+        assertEquals(listOf("Omni-2026-10-07-091500.webp"), tasks.first().attachments)
+        assertEquals(listOf("ส่งทางอีเมล"), tasks.first().description.lines().filter { it.isNotBlank() })
+        assertEquals(2, tasks.size)
+    }
+
+    @Test
     fun customRulesAndCalendarRules() {
         assertEquals("every 2 weeks when done", Recurrence.build(2, "week", whenDone = true))
         assertEquals("every month", Recurrence.build(1, "month"))
