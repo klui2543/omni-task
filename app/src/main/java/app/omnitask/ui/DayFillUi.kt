@@ -332,24 +332,29 @@ fun DayFillCard(
                 Text(tr("วันนี้ไม่เหลือเวลาว่างให้จัดแล้ว", "No free time left to plan today"), Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = C.muted, fontSize = TS.caption)
             }
 
-            // The day, part by part. Tasks done today are in their line above, not here.
-            val expanded = open ?: plan.next
+            // The day, part by part. Tasks done today are in their line above, not here. While a finger drags, the
+            // timeline holds still as it was when the press began (the plan is rebuilt each minute), so the row under
+            // the finger stays that row and goes on getting the drag.
+            val held = drag
+            val view = held?.plan ?: plan
+            val viewNow = held?.now ?: nowMin
+            val expanded = open ?: view.next
             // The slot not done that waits for a place: shown after the now line, where the time offered first is.
-            val waiting = plan.rows.filterIsInstance<DayFill.Row.Card>().firstOrNull { c ->
-                c.placed.item.id == replacing && c.placed.at + c.placed.len <= nowMin && c.placed.item.task?.isOpen == true
+            val waiting = view.rows.filterIsInstance<DayFill.Row.Card>().firstOrNull { c ->
+                c.placed.item.id == replacing && c.placed.at + c.placed.len <= viewNow && c.placed.item.task?.isOpen == true
             }?.placed
-            val counts = plan.rows.filterIsInstance<DayFill.Row.Card>().filter { it.placed.item.kind != DayFill.Kind.LIFE && it.placed != waiting }
+            val counts = view.rows.filterIsInstance<DayFill.Row.Card>().filter { it.placed.item.kind != DayFill.Kind.LIFE && it.placed != waiting }
                 .groupingBy { part(it.at) }.eachCount()
             var section: DayPlan.Part? = null
             var nowShown = false
             fun enter(p: DayPlan.Part): Boolean = (p != section).also { if (it) section = p }
-            val offers = waiting?.let { DayFill.suggest(plan, it.len, nowMin) }.orEmpty()
+            val offers = waiting?.let { DayFill.suggest(view, it.len, viewNow) }.orEmpty()
             var waitingShown = false
             // A long press drags a task; its time follows the finger between the rows around it (its own row too, so
             // where it starts is its own time).
             fun timeAt(y: Float, len: Int): Int {
-                val pl = planNow
-                val lo = maxOf(nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
+                val pl = drag?.plan ?: planNow
+                val lo = maxOf(drag?.now ?: nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
                 val hi = maxOf(lo, (pl.bed - len) - (pl.bed - len) % 5)
                 val pts = times.mapNotNull { (k, t) -> tops[k]?.let { t to it } }.sortedBy { it.second }
                 if (pts.isEmpty()) return lo
@@ -371,9 +376,10 @@ fun DayFillCard(
                 detectDragGesturesAfterLongPress(
                     onDragStart = {
                         val y = tops[rowKey]
-                        if (cur.value != null && y != null) {
+                        // One drag at a time: a second finger's long press leaves the first one be.
+                        if (drag == null && cur.value != null && y != null) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            drag = Dragged(rowKey, y)
+                            drag = Dragged(rowKey, y, planNow, nowNow)
                             dragDy = 0f
                         }
                     },
@@ -428,7 +434,7 @@ fun DayFillCard(
                     val d = drag
                     if (moving && p != null && d != null) {
                         val t = timeAt(d.from + dragDy, p.len)
-                        val o = DayFill.overlapText(DayFill.overlaps(plan, t, p.len, p.item.id), ::thaiShort)
+                        val o = DayFill.overlapText(DayFill.overlaps(view, t, p.len, p.item.id), ::thaiShort)
                         Column(
                             Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 10.dp).clip(RoundedCornerShape(12.dp))
                                 .background(C.accent).padding(horizontal = 10.dp, vertical = 4.dp),
@@ -441,7 +447,7 @@ fun DayFillCard(
                 }
             }
             val used = HashSet<String>()
-            plan.rows.forEach { row ->
+            view.rows.forEach { row ->
                 if (row is DayFill.Row.Done) return@forEach
                 // The slot waiting for a place shows after the now line instead, with the times offered.
                 if (row is DayFill.Row.Card && waiting != null && row.placed == waiting) return@forEach
@@ -460,8 +466,8 @@ fun DayFillCard(
                 if (at != null) {
                     val p = part(at)
                     if (enter(p)) PartHead(p, counts[p] ?: 0)
-                    if (!nowShown && at > nowMin && !(row is DayFill.Row.Locked && row.past)) {
-                        NowLine(nowMin)
+                    if (!nowShown && at > viewNow && !(row is DayFill.Row.Locked && row.past)) {
+                        NowLine(viewNow)
                         nowShown = true
                     }
                     if (waiting != null && !waitingShown && nowShown && (offers.isEmpty() || at >= offers.first())) {
@@ -476,7 +482,7 @@ fun DayFillCard(
                             val rk = "block:" + row.at + ":" + row.title
                             BlockRow(
                                 name, range, row.why.takeIf { reasonOf == rk && range != it },
-                                faded = row.past || (at != null && at <= nowMin), bar = if (row.past) C.faint else C.teal,
+                                faded = row.past || (at != null && at <= viewNow), bar = if (row.past) C.faint else C.teal,
                             ) { reasonOf = if (reasonOf == rk) null else rk }
                         }
                         is DayFill.Row.Gap -> Track(rk, at) {
@@ -496,19 +502,19 @@ fun DayFillCard(
                                 val lk = "life:" + item.id
                                 BlockRow(
                                     item.title, DayFill.hm(p.at) + tr(" ถึง ", " to ") + DayFill.hm(p.at + p.len),
-                                    item.why.takeIf { reasonOf == lk || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
+                                    item.why.takeIf { reasonOf == lk || item.id == expanded }, faded = p.at + p.len <= viewNow, bar = C.teal,
                                 ) { reasonOf = if (reasonOf == lk) null else lk }
                             } else {
                                 val task = item.task
-                                val acc = task?.let { state.dayFill.accepted[DayFill.ident(it)] }?.takeIf { it.day == plan.day.toString() }
+                                val acc = task?.let { state.dayFill.accepted[DayFill.ident(it)] }?.takeIf { it.day == view.day.toString() }
                                 val taken = row.picked == DayFill.Pick.TAKE && acc != null && task?.isOpen == true
-                                val gone = p.at + p.len <= nowMin
-                                val over = if (gone) null else DayFill.overlapText(DayFill.overlapsOf(plan, p), ::thaiShort)
+                                val gone = p.at + p.len <= viewNow
+                                val over = if (gone) null else DayFill.overlapText(DayFill.overlapsOf(view, p), ::thaiShort)
                                 // Only a task taken today moves by a long press (and the one waiting for a place).
                                 Track(rk, at, p.takeIf { taken }, over = over != null) {
                                     if (item.id == expanded) {
                                         val timed = task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
-                                        NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
+                                        NextCard(p, row.picked, timed, today, view, vm, input, onReview) { open = it }
                                     } else {
                                         PlanRow(p, row.picked, today, vm) { open = item.id }
                                     }
@@ -523,8 +529,8 @@ fun DayFillCard(
                                             }
                                         }
                                     }
-                                    if (taken && p.at <= nowMin) DayFill.leftText(DayFill.latestStart(plan, p.len), nowMin)?.let { left ->
-                                        val soon = DayFill.latestStart(plan, p.len) - nowMin < 60
+                                    if (taken && p.at <= viewNow) DayFill.leftText(DayFill.latestStart(view, p.len), viewNow)?.let { left ->
+                                        val soon = DayFill.latestStart(view, p.len) - viewNow < 60
                                         Text(left, indent.padding(bottom = 4.dp), color = if (soon) C.amber else C.lime, fontSize = TS.caption)
                                     }
                                 }
@@ -534,7 +540,7 @@ fun DayFillCard(
                     }
                 }
             }
-            if (!nowShown && plan.rows.isNotEmpty()) NowLine(nowMin)
+            if (!nowShown && view.rows.isNotEmpty()) NowLine(viewNow)
             if (waiting != null && !waitingShown) Track("waiting", null, waiting) { WaitingCard(waiting, offers, today, vm) { replacing = null } }
 
         }
@@ -675,8 +681,8 @@ private fun GapRow(text: String, hi: Boolean = false) {
     }
 }
 
-/** The row being dragged and where its middle was when the finger pressed. */
-private data class Dragged(val key: String, val from: Float)
+/** The row being dragged, where its middle was when the finger pressed, and the plan and minute held while it lasts. */
+private data class Dragged(val key: String, val from: Float, val plan: DayFill.Plan, val now: Int)
 
 /**
  * A name cut short for "ซ้อนกับ" at a whole word, about ten letters or more: Thai has no spaces, so the phone's word

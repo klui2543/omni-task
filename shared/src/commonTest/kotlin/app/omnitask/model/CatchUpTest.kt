@@ -244,11 +244,14 @@ class CatchUpTest {
         val event = CalendarEvent(9, "นัดทำฟัน", LocalDateTime.parse("${day}T19:30"), LocalDateTime.parse("${day}T19:45"), calendarId = 3)
         val p = DayFill.plan(DayFill.Input(tasks(note), events + event, profile, facts, LocalDateTime.parse("${day}T16:45")))
         assertTrue(p.open.none { (a, b) -> a < m(19, 30) && b > m(19, 15) }, "15 minutes before the event stay clear: ${p.open}")
-        // Put after the plan stops (before bed): no free stretch is offered after the stop.
+        // Put after the plan stops (before bed): no free stretch is offered after the stop, while the free row before
+        // it shows as it did before.
         val (lines, mem) = taken("เขียนถ้อยคำ", m(20, 15), pinned = true)
         val q = plan("${day}T16:45", lines, mem)
         assertEquals(m(20, 15), q.card("เขียนถ้อยคำ")?.at)
         assertTrue(q.open.all { it.second <= q.end }, "${q.open}")
+        val rows = q.rows.filterIsInstance<DayFill.Row.Gap>()
+        assertTrue(rows.any { it.at + it.len > q.end }, "free rows: " + rows.map { DayFill.hm(it.at) + "+" + it.len })
     }
 
     @Test
