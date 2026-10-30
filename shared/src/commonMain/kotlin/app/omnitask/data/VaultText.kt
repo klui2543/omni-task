@@ -213,12 +213,14 @@ object VaultText {
 
     fun parseFile(fileUri: String, filePath: String, text: String): List<Task> {
         val lines = text.split("\r\n", "\n")
+        // A checkbox inside a code block is a sample (the secretary's guide shows the task format that way), not a task.
+        val code = inCodeBlock(lines)
         val tasks = ArrayList<Task>()
         // Open parents by indent: a deeper checkbox line right under a task is its subtask.
         val stack = ArrayList<Task>()
         var i = 0
         while (i < lines.size) {
-            val parsed = TaskLine.parse(lines[i])
+            val parsed = if (code[i]) null else TaskLine.parse(lines[i])
             if (parsed == null) {
                 // Anything at the left margin (a heading, a paragraph) ends the nesting.
                 if (lines[i].isNotBlank() && !lines[i].first().isWhitespace()) stack.clear()
@@ -228,7 +230,7 @@ object VaultText {
             // Indented plain lines right under a task are its notes.
             val notes = ArrayList<String>()
             var j = i + 1
-            while (j < lines.size && lines[j].isNotBlank() && lines[j].first().isWhitespace() && !TaskLine.isTask(lines[j])) {
+            while (j < lines.size && lines[j].isNotBlank() && lines[j].first().isWhitespace() && (code[j] || !TaskLine.isTask(lines[j]))) {
                 notes += lines[j].trim().removePrefix("- ").trim()
                 j++
             }
@@ -240,5 +242,29 @@ object VaultText {
             i = j
         }
         return tasks
+    }
+
+    /**
+     * Which lines sit inside a fenced code block (``` or ~~~, closed by the same mark at least as long), the fence
+     * lines included. A backtick opener with another backtick on its line is inline code, and a block that never
+     * closes counts as no block, so a stray mark cannot hide every task below it.
+     */
+    fun inCodeBlock(lines: List<String>): BooleanArray {
+        val out = BooleanArray(lines.size)
+        var open: String? = null
+        var start = 0
+        lines.forEachIndexed { n, line ->
+            val t = line.trimStart()
+            val ticks = t.takeWhile { it == '`' }
+            val mark = ticks.takeIf { it.length >= 3 } ?: t.takeWhile { it == '~' }.takeIf { it.length >= 3 }
+            val fence = open
+            if (fence == null) {
+                if (mark != null && (mark[0] == '~' || '`' !in t.substring(mark.length))) { open = mark; start = n }
+            } else if (mark != null && mark[0] == fence[0] && mark.length >= fence.length && t.substring(mark.length).isBlank()) {
+                for (k in start..n) out[k] = true
+                open = null
+            }
+        }
+        return out
     }
 }
