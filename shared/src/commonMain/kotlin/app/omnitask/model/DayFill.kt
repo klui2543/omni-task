@@ -231,6 +231,13 @@ object DayFill {
         val memory: Memory = Memory(),
         /** Times a task was moved to a later day ([Learned.movesLater] over the behaviour log). */
         val moves: (Task) -> Int = { 0 },
+        /**
+         * The watch's sleeps of the last [SleepTimes.DAYS] days (Settings switch, off at first): null while it is off,
+         * and then the profile's wake and bed times stand as before; empty when it is on and nothing came in yet.
+         */
+        val sleeps: List<SleepSession>? = null,
+        /** Why the watch could not be read (no Health Connect, no permission, an error), said on the plan's rows. */
+        val sleepProblem: String? = null,
     )
 
     /** Lengths and windows the owner saw in the mock. */
@@ -266,6 +273,12 @@ object DayFill {
         val timed: List<CalendarEvent>,
         val allDay: List<CalendarEvent>,
         val busy: List<Pair<Int, Int>>,
+        /** When the owner woke (or usually wakes), in minutes from the day's start. */
+        val wake: Int = 0,
+        /** Where [wake] came from, shown on the plan's "ตื่น" row; null while the watch switch is off (no row). */
+        val wakeWhy: String? = null,
+        /** Where the bedtime came from, added to the "นอน" row's reason; null while the watch switch is off. */
+        val bedWhy: String? = null,
     )
 
     fun frame(day: LocalDate, inp: Input, from: LocalDateTime? = null): Frame {
@@ -280,23 +293,54 @@ object DayFill {
         val nightEvening = todays.filter { !it.allDay && it.begin.date == day && it.begin.hour >= 12 && RealDay.isNight(it, p, f) }.minByOrNull { it.begin }
         val nightAt = nightEvening ?: nightNext
         // A night shift that ran into this morning.
-        val afterNight = own.any { !it.allDay && RealDay.isNight(it, p, f) && it.begin < day.atTime(RealDay.NIGHT_END) && it.end > day.minusDays(1).atTime(18, 0) } ||
-            on(day.minusDays(1)).any { it.allDay && RealDay.isNight(it, p, f) }
+        fun afterNightOn(d: LocalDate) = own.any { !it.allDay && RealDay.isNight(it, p, f) && it.begin < d.atTime(RealDay.NIGHT_END) && it.end > d.minusDays(1).atTime(18, 0) } ||
+            on(d.minusDays(1)).any { it.allDay && RealDay.isNight(it, p, f) }
+        val afterNight = afterNightOn(day)
         val mode = when {
             afterNight -> Mode.AFTER_NIGHT
             nightAt != null -> Mode.BEFORE_NIGHT
             else -> Mode.NORMAL
         }
-        var bed = minutes(p.sleep).let { if (it < 12 * 60) it + 1440 else it }
+        val profileBed = minutes(p.sleep).let { if (it < 12 * 60) it + 1440 else it }
+        var wakeAt = minutes(p.wake)
+        var bed = profileBed
+        var wakeWhy: String? = null
+        var bedWhy: String? = null
+        // Only today's plan: other days (a day to keep a task for, the sprint's hours) stay on the profile.
+        inp.sleeps?.takeIf { day == inp.now.date }?.let { sl ->
+            // The watch (owner's pick, 2026-10-30). Days and evenings set by a night shift are not the owner's usual.
+            fun job(d: LocalDate) = RealDay.jobBlocks(listOf(d), own, f).isNotEmpty()
+            fun shiftMorning(d: LocalDate) = afterNightOn(d) || RealDay.nightStart(d, own, p, f) != null
+            fun kind(d: LocalDate) = if (job(d)) tr("วันทำงาน", "work days") else tr("วันหยุด", "days off")
+            val fallback = inp.sleepProblem?.let { tr("จากโปรไฟล์ เพราะ", "From your profile: ") + it }
+                ?: tr("จากโปรไฟล์ ข้อมูลนาฬิกายังไม่พอ", "From your profile: not enough from the watch yet")
+            val woke = SleepTimes.wokeOn(sl, day)
+            // The morning after the early night that follows a shift is left out too.
+            val usualWake = SleepTimes.usual(day, { d -> !shiftMorning(d) && !afterNightOn(d.minusDays(1)) && job(d) == job(day) }) { d -> SleepTimes.wokeOn(sl, d) }
+            when {
+                woke != null -> { wakeAt = woke; wakeWhy = tr("จากนาฬิกาเมื่อเช้า", "From the watch this morning") }
+                usualWake != null -> {
+                    wakeAt = usualWake
+                    wakeWhy = tr("ยังไม่มีข้อมูลนาฬิกาเมื่อเช้า ใช้เวลาปกติของ${kind(day)}ใน 14 วันล่าสุดไปก่อน", "Not in from the watch yet: your usual time on ${kind(day)} over the last 14 days")
+                }
+                else -> wakeWhy = fallback
+            }
+            val tomorrow = day.plusDays(1)
+            val usualBed = SleepTimes.usual(day, { d -> !shiftMorning(d.plusDays(1)) && !afterNightOn(d) && job(d.plusDays(1)) == job(tomorrow) }) { d -> SleepTimes.bedOn(sl, d) }
+            if (usualBed != null) {
+                bed = usualBed
+                bedWhy = tr("เวลาปกติของคืนก่อน${kind(tomorrow)}ใน 14 วันล่าสุด จากนาฬิกา", "Your usual time before ${kind(tomorrow)} over the last 14 days, from the watch")
+            } else bedWhy = fallback
+        }
         if (nightNext != null) bed = minOf(bed, minutes(RealDay.BED_BEFORE_NIGHT))
         if (afterNight) bed -= 60
         var end = bed - 60
         nightEvening?.let { end = minOf(end, minutesOf(it.begin, day) - 30) }
-        val wake = minutes(p.wake) + 30
+        val wake = wakeAt + 30
         val start = maxOf(wake, from?.let { roundUp(minutesOf(it, day)) } ?: wake)
         val timed = todays.filter { !it.allDay }.sortedBy { it.begin }
         val busy = timed.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
-        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy)
+        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy)
     }
 
     private fun roundUp(m: Int) = if (m % STEP == 0) m else m + STEP - m % STEP
@@ -642,9 +686,14 @@ object DayFill {
         val rows = ArrayList<Row>()
         // Before the plan: the day so far (all-day events, what already happened, what is done).
         fr.allDay.forEach { rows += Row.Locked(null, it.title, tr("ทั้งวัน", "All day"), it) }
+        val before = ArrayList<Row.Locked>()
+        // With the watch switch on, the day starts at the owner's wake (real, usual, or the profile's).
+        val nowMin = minutesOf(inp.now, today)
+        fr.wakeWhy?.let { before += Row.Locked(fr.wake, tr("ตื่น", "Woke up"), it, past = fr.wake <= nowMin) }
         fr.timed.filter { minutesOf(it.end, today) <= fr.start }.forEach { e ->
-            rows += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today, inp), lockedWhy(e, inp, today), e, past = true)
+            before += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today, inp), lockedWhy(e, inp, today), e, past = true)
         }
+        rows += before.sortedBy { it.at }
         inp.tasks.filter { it.done == today && it.list == null && (it.due ?: it.scheduled)?.let { d -> d <= today } != false }
             .forEach { t -> rows += Row.Done(t.reminderAt?.takeIf { it.date == today }?.let { minutesOf(it, today) }, t) }
         // The plan itself: cards, the blocks it works around and the free time between them.
@@ -686,7 +735,7 @@ object DayFill {
             when (fr.mode) {
                 Mode.BEFORE_NIGHT -> tr("นอนเร็ว ให้พร้อมเข้าเวร", "Early night, ready for the shift")
                 Mode.AFTER_NIGHT -> tr("นอนเร็วขึ้น เพราะเพิ่งลงเวรดึก", "Earlier, after the night shift")
-                Mode.NORMAL -> tr("${hm(fr.end)} ถึง ${hm(fr.bed)} ไม่จัดอะไร ไว้ผ่อนก่อนนอน", "Nothing planned from ${hm(fr.end)}: wind down")
+                Mode.NORMAL -> listOfNotNull(fr.bedWhy, tr("${hm(fr.end)} ถึง ${hm(fr.bed)} ไม่จัดอะไร ไว้ผ่อนก่อนนอน", "Nothing planned from ${hm(fr.end)}: wind down")).joinToString(", ")
             },
         )
         inp.events.filter { !it.allDay && !inp.facts.isOthers(it) && it.begin.date == today.plusDays(1) && it.begin.time < RealDay.NIGHT_END && RealDay.isShift(it, inp.profile, inp.facts) }

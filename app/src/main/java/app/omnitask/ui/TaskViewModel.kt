@@ -199,6 +199,10 @@ data class UiState(
     /** The line under the day plan's numbers after a tap changed the plan. */
     /** The day plan's news line and its day. */
     val fillNews: Pair<String, String>? = null,
+    /** What the day plan told today, oldest first, as (HH:mm, text): the strip's "ดูทั้งวัน" (owner's pick ก, 2026-10-30). */
+    val fillLog: List<Pair<String, String>> = emptyList(),
+    /** The day [fillLog] belongs to (yyyy-MM-dd), so a page left open past midnight does not show yesterday's lines. */
+    val fillLogDay: String? = null,
     /** Counts the day plan's line writes that ended, so the today page looks again at what still needs following. */
     val fillWrites: Int = 0,
     val insight: Insight.Ask? = null,
@@ -2274,6 +2278,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val read = DayFill.decode(fillPrefs.getString(FILL_MEMORY, null))
         if (read == null) _state.update { it.copy(message = tr("อ่านความจำของตารางวันนี้ไม่ได้ เริ่มจำใหม่จากวันนี้", "Could not read the day plan's memory, starting afresh today")) }
         _state.update { it.copy(dayFill = (read ?: DayFill.Memory()).on(LocalDate.now())) }
+        // Today's lines only ("day<TAB>HH:mm<TAB>text"); older days are dropped on the next write.
+        val today = LocalDate.now().toString()
+        val log = fillPrefs.getString(FILL_LOG, null).orEmpty().lines().mapNotNull { l ->
+            l.split('\t', limit = 3).takeIf { it.size == 3 && it[0] == today }?.let { it[1] to it[2] }
+        }
+        _state.update { it.copy(fillLog = log, fillLogDay = today) }
+    }
+
+    /** Writes today's lines only: lines of another day are left out. */
+    private fun saveFillLog(log: List<Pair<String, String>>) {
+        val today = LocalDate.now().toString()
+        fillPrefs.edit().putString(FILL_LOG, log.joinToString("\n") { "$today\t${it.first}\t${it.second.replace('\n', ' ').replace('\t', ' ')}" }).apply()
+        _state.update { it.copy(fillLog = log, fillLogDay = today) }
     }
 
     private fun saveFill(m: DayFill.Memory) {
@@ -2289,11 +2306,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val before = _state.value.dayFill
         val newsBefore = _state.value.fillNews
         saveFill(change(before.on(LocalDate.now())))
-        if (news != null) fillNews(news)
+        val told = news?.let { fillNews(it) }
         remember(
             UndoStep(UndoStep.Kind.PLAN, title, label = label, local = {
                 saveFill(before.copy(lines = _state.value.dayFill.lines))
-                if (news != null) _state.update { it.copy(fillNews = newsBefore) }
+                if (told != null) {
+                    _state.update { it.copy(fillNews = newsBefore) }
+                    // Takes out only the line this change added; lines told after it stay.
+                    val s = _state.value
+                    val at = s.fillLog.lastIndexOf(told)
+                    if (at >= 0 && s.fillLogDay == LocalDate.now().toString()) saveFillLog(s.fillLog.filterIndexed { i, _ -> i != at })
+                }
             }),
             inTree = false,
         )
@@ -2333,13 +2356,25 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun fillInput(s: UiState, now: LocalDateTime): DayFill.Input {
         val behavior = behaviorNow()
-        return DayFill.Input(s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date)) { Learned.movesLater(it.title, behavior, s.today) }
+        return DayFill.Input(s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date), { Learned.movesLater(it.title, behavior, s.today) }, SleepMode.forPlan, SleepMode.problem)
     }
 
     fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))
 
-    /** The line under the plan's numbers after a change ("มีธุระ 2 ชม. เลขาจัดใหม่ให้แล้ว: ..."), for today only. */
-    fun fillNews(text: String?) = _state.update { it.copy(fillNews = text?.let { t -> LocalDate.now().toString() to t }) }
+    /**
+     * What a change did ("มีธุระ 2 ชม. เลขาจัดใหม่ให้แล้ว: ..."), added to today's lines that the strip on top of the plan
+     * shows; returns the line added, so an undo can take out that one.
+     */
+    fun fillNews(text: String?): Pair<String, String>? {
+        _state.update { it.copy(fillNews = text?.let { t -> LocalDate.now().toString() to t }) }
+        if (text == null) return null
+        val now = LocalDateTime.now()
+        val s = _state.value
+        val log = s.fillLog.takeIf { s.fillLogDay == now.date.toString() }.orEmpty()
+        val line = DayFill.hm(now.hour * 60 + now.minute) to text
+        saveFillLog(log + line)
+        return line
+    }
 
     /** What [change] would move, told as the news line. */
     private fun reflowNews(what: String, change: (DayFill.Memory) -> DayFill.Memory): String {
@@ -4808,6 +4843,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_DONE_LOG = "doneLog"
         const val KEY_REVIEWED = "reviewedTasks"
         const val FILL_MEMORY = "memory"
+        const val FILL_LOG = "log"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
         const val KEY_PICKED_FOLDERS = "pickedFolders"

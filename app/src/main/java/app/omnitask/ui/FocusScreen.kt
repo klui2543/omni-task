@@ -350,8 +350,13 @@ fun FocusScreen(
 
         // The secretary's plan for the rest of today (Settings switch, off at first) takes the timeline's place.
         if (DayFillMode.on) item(key = "dayfill") {
-            LaunchedEffect(Unit) { vm.fillLoad() }
-            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now) { vm.fillPlan(state, now) }
+            LaunchedEffect(Unit) {
+                vm.fillLoad()
+                SleepMode.refresh(context)
+            }
+            val sleeps = SleepMode.forPlan
+            val sleepStatus = SleepMode.status
+            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus) { vm.fillPlan(state, now) }
             DayFillCard(state, vm, plan, now, { vm.fillInput(state, now) }, asks.size, { asking = true }, onOpen) { reviewingTask = it }
         } else if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
