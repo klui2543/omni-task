@@ -92,8 +92,4 @@ fun lookAheadView(input: DayFill.Input, last: LocalDate): LookAheadView {
 }
 
 /** "หุ้น 2 ชม., ระบบป้าย 45 นาที": what a free day ahead holds, as the mock's week card says it. */
-fun bookedText(placed: List<DayFill.Placed>): String = placed.joinToString(", ") { p ->
-    val m = p.len
-    val len = if (m >= 60) tr("${m / 60} ชม.", "${m / 60} h") + if (m % 60 != 0) tr(" ${m % 60} นาที", " ${m % 60} min") else "" else tr("$m นาที", "$m min")
-    p.item.title + " " + len
-}
+fun bookedText(placed: List<DayFill.Placed>): String = placed.joinToString(", ") { p -> p.item.title + " " + DayFill.lenText(p.len) }

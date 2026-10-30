@@ -726,14 +726,16 @@ object DayFill {
                     Mode.AFTER_NIGHT -> Triple(17 * 60, 30, 20)
                 }
                 val acc = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() }
-                val long = freeDay && fr.mode == Mode.NORMAL
+                // Rule 3 is the morning's: past noon without it, or once a want is done today, own time is the evening's.
+                val long = freeDay && fr.mode == Mode.NORMAL && (acc != null || fr.start < LookAhead.NOON) &&
+                    inp.tasks.none { isMine(it) && it.done == today }
                 // Rule 3: a whole free day's morning, two hours, before work. Rule 4: own time owed is not cut short.
                 val hints = buildList {
                     if (long || owed != null) add(
                         Hint(
                             tr("อยากทำ", "Want to"),
-                            if (long) tr("วันว่างทั้งวัน ช่วงเช้าเป็นของคุณ", "A whole free day: the morning is yours") +
-                                (StuckLog.entries(t).lastOrNull()?.let { e -> tr(" เรื่องนี้เคยค้างเพราะ", ". It got stuck before:") + " " + e.reason } ?: "")
+                            if (long) tr("วันว่างทั้งวัน ช่วงเช้าเป็นของ Klui", "A whole free day: the morning is yours") +
+                                (StuckLog.entries(t).lastOrNull()?.let { e -> tr(" เรื่องนี้เคยค้างเพราะ", ". It got stuck before: ") + e.reason } ?: "")
                             else tr("เวลาของตัวเอง งานไม่เบียด", "Your own time: work never pushes it"),
                             Tone.WANT,
                         ),
@@ -1082,29 +1084,39 @@ object Sprint {
     }
 
     /**
-     * Rule 5's easiest way to make a far deadline: two hours at most on a day, on the days with the most time first, until
-     * the work (doubled) fits; said by date ("ทางที่ทันสบายสุด: อา 1 พ.ย. 2 ชม., ...").
+     * Rule 5's easiest way to make a far deadline, in the shape of mock round 1 ("อาทิตย์ 8 กับ 15 วันละ 2 ชม. แล้วเป็น
+     * สปรินต์ในสัปดาห์เบา 16 ถึง 22"): two hours a day on the days with the most time first (the whole free days), until
+     * the work (doubled) fits. The whole free days are said by date, the other days as their week's sprint.
      */
     private fun easiest(inp: DayFill.Input, r: Ranked, ws: List<LookAhead.Week>): String? {
         val due = r.due ?: return null
         val today = inp.now.date
         val free = (0L..(due.toEpochDays() - today.toEpochDays()).toLong()).map { today.plusDays(it) }
             .map { it to LookAhead.usableCounted(it, inp, ws) }.filter { it.second >= 60 }
-        // Two hours a day at most when that is enough; when not, the free days' whole time, the freest first.
+        val whole = free.map { it.first }.filter { it > today && LookAhead.freeDay(it, inp) }.toSet()
+        val order = free.sortedWith(compareBy({ -it.second }, { it.first }))
+        // Two hours a day at most when that is enough; when not, the days' whole time.
         fun pick(cap: Int): List<Pair<LocalDate, Int>>? {
             var left = r.need
             val out = ArrayList<Pair<LocalDate, Int>>()
-            for ((d, m) in free.map { it.first to minOf(cap, it.second) }.sortedWith(compareBy({ -it.second }, { it.first }))) {
+            for ((d, m) in order) {
                 if (left <= 0) break
-                val take = minOf(m, left)
+                val take = minOf(cap, m, left)
                 out += d to take
                 left -= take
             }
             return out.takeIf { left <= 0 && it.isNotEmpty() }
         }
-        val picked = pick(LookAhead.LONG) ?: pick(Int.MAX_VALUE) ?: return null
-        return tr("ทางที่ทันสบายสุด: ", "The easiest way: ") + picked.sortedBy { it.first }.joinToString(", ") { (d, m) ->
-            DayFill.shortDay(d) + " " + DayFill.lenText(m)
-        }
+        val picked = (pick(LookAhead.LONG) ?: pick(Int.MAX_VALUE) ?: return null).sortedBy { it.first }
+        fun one(d: LocalDate, m: Int) = d to DayFill.shortDay(d) + " " + DayFill.lenText(m)
+        val parts = picked.filter { it.first in whole }.map { (d, m) -> one(d, m) } +
+            picked.filter { it.first !in whole }.groupBy { DayFill.weekOf(it.first) }.values.map { days ->
+                val a = days.first().first
+                val b = days.last().first
+                if (days.size == 1) one(a, days.single().second)
+                else a to tr("สปรินต์ ", "sprint ") + (if (a.monthNumber == b.monthNumber) "${a.dayOfMonth}" else "${a.dayOfMonth} ${Countdown.monthShort(a)}") +
+                    tr(" ถึง ", " to ") + b.dayOfMonth + " " + Countdown.monthShort(b) + " " + DayFill.lenText(days.sumOf { it.second })
+            }
+        return tr("ทางที่ทันสบายสุด: ", "The easiest way: ") + parts.sortedBy { it.first }.joinToString(", ") { it.second }
     }
 }

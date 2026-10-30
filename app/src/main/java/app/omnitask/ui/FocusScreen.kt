@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,7 +58,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import app.omnitask.model.Countdown
 import app.omnitask.model.StuckLog
 import kotlinx.datetime.LocalDate
@@ -453,11 +456,15 @@ fun FocusScreen(
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
             item(key = "ahead") {
                 // The look-ahead (with today's plan): the next week's tag and what a free day ahead will hold (mock v2, board ก).
-                val look = if (DayFillMode.on && LookAheadMode.on) {
-                    remember(state.tasks, state.events, state.lookEvents, state.dayFill, state.profile, state.calendars, state.daysOff, today) {
-                        lookAheadView(vm.fillInput(state, now), Week.sunday(today).plusDays(7))
-                    }
-                } else null
+                // Each free day ahead is planned as it would be then, tens of milliseconds, so off the main thread; the
+                // card keeps the last view until the new one is ready.
+                val lookOn = DayFillMode.on && LookAheadMode.on
+                val look by produceState<LookAheadView?>(null, lookOn, state.tasks, state.events, state.lookEvents, state.dayFill, state.profile, state.calendars, state.daysOff, today) {
+                    value = if (lookOn) {
+                        val input = vm.fillInput(state, now)
+                        withContext(Dispatchers.Default) { lookAheadView(input, Week.sunday(today).plusDays(7)) }
+                    } else null
+                }
                 WeekCard(countdowns, week, today, onOpen, look) { pickingCountdown = true }
             }
         }

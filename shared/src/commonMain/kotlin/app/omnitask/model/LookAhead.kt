@@ -17,7 +17,8 @@ import app.omnitask.time.*
  * 2. A tight week (less than half its usual free time): a whole free day before it gets one long slot of work, and in
  *    the tight week itself the sprint has one project.
  * 3. A whole free day: its morning is two hours of something the owner wants to do, before work.
- * 4. Less own time than half of what the plan offered in the last two weeks: the next light week gives it back.
+ * 4. Less own time than half of what the plan offered in the last two weeks: the next light week gives it back. The app
+ *    keeps no record of the slots it offered, so for now this counts the days with own time instead ([OWED_DAYS]).
  * 5. A deadline further than two weeks: the sprint line warns only when the time left is nearly not enough (or not
  *    enough), with the easiest way to make it.
  * 6. What is planned for other days stays on the phone.
@@ -31,6 +32,8 @@ object LookAhead {
     /** The free day's morning of the owner's own, and the work slot before a tight week. */
     const val LONG = 120
     const val MORNING = 9 * 60
+    /** Rule 3 is the morning's: past this without it, own time is the evening's as before. */
+    const val NOON = 12 * 60
     /**
      * Own-time days in the last [OWED_SPAN] days below this: the time is owed (rule 4). The plan offers one own-time slot
      * a day, about ten in two weeks with the shifts, and keeps no record of them, so half is five days.
@@ -51,24 +54,29 @@ object LookAhead {
         val known: Boolean,
         /** Days counted: from today on, so this week may have fewer than seven. */
         val days: Int = 7,
-        /** The share an unknown week loses to shifts (rule 1); none for a known week. */
+        /** The share an unknown week's days not posted lose to shifts (rule 1); none for a known week. */
         val cut: Double = 0.0,
-        /** Usable minutes of each day, Monday first (before the cut; none before today). */
+        /** Usable minutes of each day, Monday first (a day not posted after the cut; none before today). */
         val byDay: List<Int> = emptyList(),
+        /** The whole week from its Monday, each day from its start: rule 4 judges the week, not the days left in it. */
+        val weekUsable: Int = usable,
+        val weekPlain: Int = plain,
     ) {
         /** Tight (rule 2): less than half its usual time, with most of the week still ahead. */
         val heavy: Boolean get() = known && days >= 3 && plain > 0 && usable * 2 < plain
         /** Light (rule 4): known, with three quarters of its usual time or more. */
         val light: Boolean get() = known && days >= 3 && !heavy && ratio >= 0.75
         val ratio: Double get() = if (plain > 0) usable.toDouble() / plain else 1.0
+        /** Light as a whole week, with three quarters of its usual time or more (rule 4). */
+        val lightWeek: Boolean get() = known && weekPlain > 0 && weekUsable * 4 >= weekPlain * 3
         val hours: Int get() = (usable + 30) / 60
         val plainHours: Int get() = (plain + 30) / 60
     }
 
     /** Usable minutes on [day] as the sprint counts them; none on a day after a night shift (the plan rests then) or away. */
-    fun usable(day: LocalDate, inp: DayFill.Input): Int {
+    fun usable(day: LocalDate, inp: DayFill.Input, fromNow: Boolean = true): Int {
         if (away(day, inp)) return 0
-        val fr = DayFill.frame(day, inp, if (day == inp.now.date) inp.now else null)
+        val fr = DayFill.frame(day, inp, if (fromNow && day == inp.now.date) inp.now else null)
         return if (fr.mode == DayFill.Mode.AFTER_NIGHT) 0 else Sprint.usableIn(fr)
     }
 
@@ -105,8 +113,11 @@ object LookAhead {
         override fun hashCode() = day.hashCode() * 31 + half
     }
 
-    /** The last few counts (today's, and the free days the week card plans ahead); replaced whole, never changed in place. */
-    private var counts: Map<Key, List<Week>> = emptyMap()
+    /**
+     * The last few counts (today's, and the free days the week card plans ahead, off the main thread); replaced whole,
+     * never changed in place, so a race only counts again.
+     */
+    @kotlin.concurrent.Volatile private var counts: Map<Key, List<Week>> = emptyMap()
 
     /**
      * This week (Monday to Sunday, from today on) and the seven after it. Counted again when the calendar, the tasks,
@@ -131,20 +142,29 @@ object LookAhead {
         val shifts = inp.events.filter { !f.isOthers(it) && RealDay.isShift(it, p, f) }
         val noShifts = DayFill.Input(inp.tasks, inp.events - shifts.toSet(), inp.profile, inp.facts, inp.now)
         val first = DayFill.weekOf(today)
+        // Shifts are posted a month at a time: a day is known when the calendar has a shift on or after it, or one in
+        // its month (a month posted to its end with no shift in its last week is still posted).
+        val months = shifts.map { it.begin.date.year * 12 + it.begin.date.monthNumber }.toSet()
+        fun posted(d: LocalDate) = lastShift == null || d <= lastShift || (d.year * 12 + d.monthNumber) in months
         val raw = (0 until WEEKS).map { w ->
             val start = first.plusDays(7L * w)
             val end = start.plusDays(7)
             val days = (0L..6L).map { start.plusDays(it) }.filter { it >= today }
-            val byDay = (0L..6L).map { start.plusDays(it) }.map { if (it >= today) usable(it, inp) else 0 }
+            val whole = (0L..6L).map { start.plusDays(it) }
+            val byDay = whole.map { if (it >= today) usable(it, inp) else 0 }
+            val plainBy = whole.map { if (it >= today) usable(it, plainInp) else 0 }
+            // The whole week as it stands from each day's start, today too (rule 4 judges it the same all week).
+            fun fromStart(i: Int, d: LocalDate, by: List<Int>, from: DayFill.Input) = if (d > today) by[i] else usable(d, from, fromNow = false)
             Week(
                 start,
                 byDay.sum(),
-                days.sumOf { usable(it, plainInp) },
+                plainBy.sum(),
                 shifts.count { !it.allDay && RealDay.isNight(it, p, f) && it.begin.date >= start && it.begin.date < end },
-                // Posted at least to the Thursday: a week with only its Monday posted is still a guess.
-                known = lastShift == null || start.plusDays(3) <= lastShift,
+                known = days.all { posted(it) },
                 days = days.size,
                 byDay = byDay,
+                weekUsable = whole.withIndex().sumOf { (i, d) -> fromStart(i, d, byDay, inp) },
+                weekPlain = whole.withIndex().sumOf { (i, d) -> fromStart(i, d, plainBy, plainInp) },
             )
         }
         if (lastShift == null || raw.all { it.known }) return raw
@@ -159,15 +179,20 @@ object LookAhead {
         }
         if (lost.isEmpty()) return raw
         val share = lost.sum() / lost.size
-        return raw.map { if (it.known) it else it.copy(usable = (it.usable * (1.0 - share)).toInt(), cut = share) }
+        // Only the days not posted lose the share: a posted day's own shifts are counted already.
+        return raw.map { w ->
+            if (w.known) w else {
+                val byDay = w.byDay.mapIndexed { i, u -> if (posted(w.start.plusDays(i.toLong()))) u else (u * (1.0 - share)).toInt() }
+                w.copy(usable = byDay.sum(), cut = share, byDay = byDay)
+            }
+        }
     }
 
     /** Usable minutes on [day] as rule 1 counts them, for the free time before a deadline (past the eight weeks, as the last). */
     fun usableCounted(day: LocalDate, inp: DayFill.Input, ws: List<Week>): Int {
         val n = (day.toEpochDays() - ws.first().start.toEpochDays()).toInt()
-        val w = ws.getOrNull(n / 7)
-        val u = w?.byDay?.getOrNull(n % 7) ?: usable(day, inp)
-        return (u * (1.0 - (w ?: ws.last()).cut)).toInt()
+        if (n >= 0) ws.getOrNull(n / 7)?.byDay?.getOrNull(n % 7)?.let { return it }
+        return (usable(day, inp) * (1.0 - ws.last().cut)).toInt()
     }
 
     /** A day off with most of the day free, and no night shift around it (the frame from its start, not from now). */
@@ -226,14 +251,15 @@ object LookAhead {
         fun add(d: LocalDate?) { if (d != null && d >= from && d < today) days += d }
         inp.tasks.filter { DayFill.isMine(it) }.forEach { t ->
             add(t.done)
-            StuckLog.entries(t).forEach { add(it.day) }
+            // A note of progress; not one that says why it got stuck ("ไม่มีแรง", "ไม่มีเวลา").
+            StuckLog.entries(t).filter { e -> StuckLog.Reason.entries.none { it.opens(e.reason) } }.forEach { add(it.day) }
         }
         return days.size
     }
 
-    /** Rule 4: little own time lately, and this week is a light one. */
+    /** Rule 4: little own time lately, and this week is a light one (judged whole, so to its last evening). */
     fun owed(inp: DayFill.Input, ws: List<Week>): Int? {
-        if (ws.firstOrNull()?.light != true) return null
+        if (ws.firstOrNull()?.lightWeek != true) return null
         return ownDays(inp).takeIf { it < OWED_DAYS }
     }
 

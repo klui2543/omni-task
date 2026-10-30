@@ -1474,12 +1474,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun loadLookEvents(app: Application): List<CalendarEvent>? {
         if (!LookAheadMode.on) return null
         val today = LocalDate.now()
-        return runCatching {
+        val read = runCatching {
             CalendarEvent.distinct(CalendarReader.events(app, today.minusDays(LookAhead.PAST_WEEKS * 7L + 7).atStartOfDay(), today.plusDays(LookAhead.DAYS + 7).atStartOfDay()))
         }.getOrElse { e ->
             android.util.Log.w("Omni", "look-ahead calendar not read", e)
-            null
+            return null
         }
+        // The reader gives an empty list when the phone's calendar cannot be read: then the plan's own events stand in,
+        // rather than sixteen weeks that look free.
+        if (read.isEmpty()) android.util.Log.w("Omni", "look-ahead calendar read empty; using the plan's events")
+        return read.takeIf { it.isNotEmpty() }
     }
 
     /** Reads the look-ahead's calendar now (the switch was turned on, or the today page opened). */

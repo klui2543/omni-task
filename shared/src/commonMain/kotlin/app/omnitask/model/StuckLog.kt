@@ -26,6 +26,9 @@ object StuckLog {
         ;
 
         val label get() = tr(th, en)
+
+        /** Whether a note's words start with this reason, in either language. */
+        fun opens(text: String) = text.startsWith(th) || text.startsWith(en)
     }
 
     /** Open this long (from ➕, or from the last note) with nothing written: the weekly notification asks why. */
