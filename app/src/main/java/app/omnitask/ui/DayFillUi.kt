@@ -80,6 +80,7 @@ fun DayFillSetting(context: Context) {
             tr("เปิด: หน้าวันนี้แสดงตารางที่เลขาจัดให้แทนรายการเดิม  ปิด: หน้าวันนี้แบบเดิม", "On: the today page shows the secretary's plan in place of the list. Off: as before"),
             DayFillMode.on,
         ) { DayFillMode.setOn(context, it) }
+        SleepSetting(context)
     }
 }
 
