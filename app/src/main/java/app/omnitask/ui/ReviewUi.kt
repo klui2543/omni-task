@@ -266,7 +266,7 @@ private fun questions(task: Task, a: Map<String, Ans>, today: LocalDate, ask: Se
                     Opt(proposed.toString(), tr("รับ ${Countdown.day(proposed)}", "Take ${Countdown.day(proposed)}")),
                     Opt(OWN, tr("เลือกวันเอง", "Pick a day")),
                     Opt(NODUE, tr("ไม่มีวันส่ง", "No due date"), Tone.QUIET),
-                ),
+                ) + (if (w != null && w != "no") listOf(Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure"))) else emptyList()),
             ),
         )
         else if (w != null && w != "no" && task.due == null) add(
@@ -317,7 +317,7 @@ private fun toAnswers(a: Map<String, Ans>): ReviewWrite.Answers {
         waiting = w?.let { it != "no" },
         waitName = w?.takeIf { it.startsWith("name:") }?.removePrefix("name:"),
         due = dateOf(a["due"]) ?: dateOf(a["wdate"]),
-        askWhen = a["wdate"]?.v == UNSURE,
+        askWhen = a["wdate"]?.v == UNSURE || a["due"]?.v == UNSURE,
         folder = a["folder"]?.v?.takeIf { it.startsWith("to:") }?.removePrefix("to:"),
         delay = a["delay"]?.v?.takeIf { it != UNSURE }?.let { Review.Delay.valueOf(it) },
         impact = a["pri"]?.let { Review.Impact.valueOf(it.v) },
@@ -450,7 +450,7 @@ fun ReviewScreen(
         val weight = if (answers["status"] != null && !closed) weigh(task, state.tasks, answers, today, moves) else null
 
         fun move(save: Boolean) {
-            val leaving = save && (asking || answers["status"]?.v.let { it == ReviewWrite.Progress.DONE.name || it == ReviewWrite.Progress.DROP.name })
+            val leaving = save && ((asking && ReviewMode.writes) || answers["status"]?.v.let { it == ReviewWrite.Progress.DONE.name || it == ReviewWrite.Progress.DROP.name })
             val before = Step(deck.toList(), answers, count, null)
             fun advance(saved: TaskViewModel.ReviewSaved?, written: Entry?) {
                 if (only != null) { saved?.let(vm::reviewFromPlan); return onClose() }
@@ -468,6 +468,16 @@ fun ReviewScreen(
                 }
             }
             if (!save || !ReviewMode.writes) { advance(null, null); return }
+            // A repeating task ticked done takes the usual tick, which sets up its next round (a plain tick would end it).
+            // Its undo is the app's undo bar, so "↶ ย้อน" does not step back over it.
+            if (answers["status"]?.v == ReviewWrite.Progress.DONE.name && task.recurrence != null) {
+                vm.toggleDone(task)
+                if (only != null) return onClose()
+                deck.removeAt(0); count++
+                answers = emptyMap(); cur = null; typing = ""
+                toast = tr("ติ๊กว่าเสร็จแล้ว งานซ้ำตั้งรอบถัดไปให้แล้ว", "Ticked done, the next round is set")
+                return
+            }
             busy = true
             val noDue = answers["due"]?.v == NODUE
             vm.reviewSave(task, toAnswers(answers), weight?.priority) { saved ->
@@ -681,6 +691,7 @@ fun ReviewScreen(
             FolderPicker(
                 state, here, labels = null, onLabel = null,
                 onPick = { p ->
+                    vm.notePickedFolder(p)
                     val ans = when {
                         p == null -> Ans("to:", tr("ยังไม่มีบ้าน", "No home yet"))
                         p == here -> Ans("=", folderTrail(p))
@@ -704,6 +715,7 @@ private fun pick(a: Map<String, Ans>, k: String, ans: Ans): Map<String, Ans> {
     if (k == "status" && ans.v in CLOSED) out = mapOf(k to ans)
     if (k == "status" && ans.v != ReviewWrite.Progress.STUCK.name) out = out - "why"
     if (k == "wait" && ans.v == "no") out = out - "wdate"
+    if (k == "wait" && ans.v == "no" && out["due"]?.v == UNSURE) out = out - "due"
     return out
 }
 

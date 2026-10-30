@@ -79,7 +79,7 @@ fun DecisionDeck(
                         color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                     DeckButtons {
-                        // Owner, 2026-10-28: done first, then "see all"; the sheet still takes the reason a task is not done.
+                        // Owner, 2026-10-28: done first, then "see all"; "ดูทั้งหมด" opens the questions on the review card.
                         DeckButton(tr("เสร็จแล้ว", "Done"), true) { vm.toggleDone(first.task) }
                         DeckButton(tr("ดูทั้งหมด", "See all"), false, onAsks)
                     }
