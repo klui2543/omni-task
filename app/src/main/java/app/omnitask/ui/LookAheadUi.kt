@@ -66,7 +66,6 @@ private fun toneColors(tone: DayFill.Tone?): Pair<Color, Color> {
         DayFill.Tone.WANT -> if (dark) Color(0xFFB39DD3) to Color(0xFF231D30) else Color(0xFF6A4FA3) to Color(0xFFEEE8F7)
         DayFill.Tone.HEAVY -> C.red to C.redSoft
         DayFill.Tone.LIGHT -> C.lime to C.limeSoft
-        DayFill.Tone.PLAIN -> C.text2 to C.raised
         null -> C.accentText to C.accentSoft
     }
 }

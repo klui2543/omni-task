@@ -359,9 +359,11 @@ fun FocusScreen(
                 vm.fillLoad()
                 SleepMode.refresh(context)
             }
+            // The look-ahead's own calendar read, as soon as its switch is on.
+            LaunchedEffect(LookAheadMode.on) { if (LookAheadMode.on && state.lookEvents == null) vm.lookLoad() }
             val sleeps = SleepMode.forPlan
             val sleepStatus = SleepMode.status
-            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus, LookAheadMode.on) { vm.fillPlan(state, now) }
+            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus, LookAheadMode.on, state.lookEvents) { vm.fillPlan(state, now) }
             DayFillCard(state, vm, plan, now, { vm.fillInput(state, now) }, asks.size, { asking = true }, onOpen) { reviewingTask = it }
         } else if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
@@ -452,7 +454,7 @@ fun FocusScreen(
             item(key = "ahead") {
                 // The look-ahead (with today's plan): the next week's tag and what a free day ahead will hold (mock v2, board ก).
                 val look = if (DayFillMode.on && LookAheadMode.on) {
-                    remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, today) {
+                    remember(state.tasks, state.events, state.lookEvents, state.dayFill, state.profile, state.calendars, state.daysOff, today) {
                         lookAheadView(vm.fillInput(state, now), Week.sunday(today).plusDays(7))
                     }
                 } else null

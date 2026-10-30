@@ -54,6 +54,7 @@ import app.omnitask.model.AssistantMl
 import app.omnitask.model.Planner
 import app.omnitask.model.RealDay
 import app.omnitask.model.DayFill
+import app.omnitask.model.LookAhead
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
@@ -174,6 +175,8 @@ data class UiState(
     val listItems: List<Task> = emptyList(),
     /** Calendar events around the shown month; empty until calendar access is granted. */
     val events: List<CalendarEvent> = emptyList(),
+    /** The look-ahead's own read (switch on only): two months back to eight weeks ahead; null while not read. */
+    val lookEvents: List<CalendarEvent>? = null,
     /** Null until the first load; then whether the app may read the phone's calendars. */
     val calendarAccess: Boolean? = null,
     val calendars: List<CalendarReader.Calendar> = emptyList(),
@@ -1464,6 +1467,29 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         CalendarEvent.distinct(now + other)
     }.getOrDefault(emptyList())
 
+    /**
+     * The look-ahead's calendar (Settings "เลขามองไกล 8 สัปดาห์"): the shifts of the two months before estimate a month
+     * not posted yet, and the eight weeks ahead are counted day by day. Read only while the switch is on.
+     */
+    private fun loadLookEvents(app: Application): List<CalendarEvent>? {
+        if (!LookAheadMode.on) return null
+        val today = LocalDate.now()
+        return runCatching {
+            CalendarEvent.distinct(CalendarReader.events(app, today.minusDays(LookAhead.PAST_WEEKS * 7L + 7).atStartOfDay(), today.plusDays(LookAhead.DAYS + 7).atStartOfDay()))
+        }.getOrElse { e ->
+            android.util.Log.w("Omni", "look-ahead calendar not read", e)
+            null
+        }
+    }
+
+    /** Reads the look-ahead's calendar now (the switch was turned on, or the today page opened). */
+    fun lookLoad() {
+        viewModelScope.launch {
+            val look = withContext(Dispatchers.IO) { loadLookEvents(getApplication()) }
+            _state.update { it.copy(lookEvents = look) }
+        }
+    }
+
     /** Days off over the planner's reach (the assistant plans up to about three months ahead). */
     private fun loadDaysOff(app: Application): Map<LocalDate, String> = runCatching {
         val today = LocalDate.now()
@@ -1511,7 +1537,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
-            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned, daysOff = daysOff) }
+            val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
+            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned, daysOff = daysOff, lookEvents = look) }
             // A sync that changed nothing leaves the widgets as they are.
             runCatching { withContext<Unit>(Dispatchers.IO) { CalendarPrint.refreshIfChanged(app, "app saw the calendar") } }
         }
@@ -1650,6 +1677,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
             val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
+            val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
             val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
@@ -1695,6 +1723,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     calendarAccess = CalendarReader.hasPermission(app),
                     calendars = calendars,
                     daysOff = daysOff,
+                    lookEvents = look,
                     loading = false,
                     today = LocalDate.now(),
                     tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null && !Branches.isParked(t, it.branchStates) } ?: it.tasks,
@@ -2358,7 +2387,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val behavior = behaviorNow()
         return DayFill.Input(
             s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date), { Learned.movesLater(it.title, behavior, s.today) }, SleepMode.forPlan, SleepMode.problem,
-            ahead = LookAheadMode.on,
+            ahead = LookAheadMode.on, far = s.lookEvents?.takeIf { LookAheadMode.on },
         )
     }
 

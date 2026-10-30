@@ -71,8 +71,19 @@ class LookAheadTest {
 
     private fun tasks(lines: List<String>) = VaultText.parseFile("f", "📁 Folder/หลังบ้าน/Omni/Omni note.md", lines.joinToString("\n"))
 
-    private fun input(now: String, lines: List<String> = note, memory: DayFill.Memory = DayFill.Memory(), ahead: Boolean = true) =
-        DayFill.Input(tasks(lines), events, profile, facts, LocalDateTime.parse(now), memory, { 0 }, ahead = ahead)
+    /**
+     * The two months before, as the look-ahead's own read finds them in the shift calendar: [perWeek] night shifts
+     * every week from 7 Sep to 1 Nov (the owner had about twelve in October).
+     */
+    private fun past(perWeek: Int) = (0L until 8L).flatMap { w ->
+        val monday = LocalDate.parse("2026-09-07").plusDays(7 * w)
+        listOf(1L, 3L, 5L).take(perWeek).map { night(monday.plusDays(it).toString()) }
+    }
+
+    private fun input(
+        now: String, lines: List<String> = note, memory: DayFill.Memory = DayFill.Memory(), ahead: Boolean = true,
+        far: List<CalendarEvent>? = null, extra: List<CalendarEvent> = emptyList(),
+    ) = DayFill.Input(tasks(lines), events + extra, profile, facts, LocalDateTime.parse(now), memory, { 0 }, ahead = ahead, far = far)
 
     private fun DayFill.Plan.card(title: String) = placed.firstOrNull { it.item.title.startsWith(title) }
 
@@ -118,20 +129,53 @@ class LookAheadTest {
     }
 
     @Test
-    fun aWeekTheShiftCalendarHasNotReachedLosesWhatShiftsTookFromTheKnownWeeks() {
-        val inp = input("2026-11-02T08:00")
-        val ws = LookAhead.weeks(inp)
+    fun aMonthNotPostedYetLosesWhatShiftsTookInTheTwoMonthsBefore() {
         // Shifts are posted up to 28 Nov: December is estimated, never tagged.
+        val busy = input("2026-11-02T08:00", far = past(3) + events)
+        val ws = LookAhead.weeks(busy)
         val dec = ws.drop(4)
         assertTrue(dec.all { !it.known && !it.heavy }, "$dec")
         assertTrue(dec.indices.none { LookAhead.weekHint(ws, 4 + it) != null })
-        // The week of 30 Nov has only the job: it loses the known weeks' average share to shifts...
-        val bare = (0L..6L).sumOf { LookAhead.usable(d("2026-11-30").plusDays(it), inp) }
+        // Three nights a week in September and October: the week of 30 Nov loses that share of its time...
+        val bare = (0L..6L).sumOf { LookAhead.usable(d("2026-11-30").plusDays(it), busy) }
         assertEquals((bare * (1 - ws[4].cut)).toInt(), ws[4].usable)
-        // ...about 38 percent here; the trip is the trip week's own and is not counted in it (with it, 55 percent).
-        assertTrue(ws[4].cut in 0.3..0.45, "${ws[4].cut}")
+        assertTrue(ws[4].cut > 0.4, "${ws[4].cut}")
+        // ...and with no night shift in those two months (31 Oct's taken out too), nothing.
+        val quiet = LookAhead.weeks(input("2026-11-02T08:00", far = past(0) + events.filterNot { it.calendarId == shiftCal && it.begin.date < d("2026-11-02") }))
+        assertEquals(0.0, quiet[4].cut)
+        assertEquals(bare, quiet[4].usable)
+        // One night a week then: a smaller share than three.
+        val one = LookAhead.weeks(input("2026-11-02T08:00", far = past(1) + events))
+        assertTrue(one[4].cut > 0.0 && one[4].cut < ws[4].cut, "${one[4].cut} vs ${ws[4].cut}")
         // The holidays of 7 and 10 Dec stay in their week.
         assertTrue(ws[5].usable > ws[4].usable)
+    }
+
+    @Test
+    fun withoutItsOwnReadThePostedWeeksStandInForTheMonthsBefore() {
+        // Until the look-ahead's calendar read comes in: the weeks posted ahead, their shifts only (not the trip).
+        val ws = LookAhead.weeks(input("2026-11-02T08:00"))
+        assertTrue(ws[4].cut in 0.3..0.45, "${ws[4].cut}")
+    }
+
+    @Test
+    fun aWeekWithOnlyItsMondayPostedIsStillAGuess() {
+        val ws = LookAhead.weeks(input("2026-11-02T08:00", extra = listOf(night("2026-11-30"))))
+        assertFalse(ws[4].known, "only Monday 30 Nov is posted")
+        assertTrue(ws[3].known)
+    }
+
+    @Test
+    fun theCountIsKeptUntilSomethingChanges() {
+        val inp = input("2026-11-02T08:00")
+        assertTrue(LookAhead.weeks(inp) === LookAhead.weeks(inp), "the same calendar, tasks and half hour")
+        // The week card's free days are counted in between: today's count is still kept.
+        LookAhead.booked(inp, d("2026-11-08"))
+        assertTrue(LookAhead.weeks(inp) === LookAhead.weeks(inp))
+        val ticked = DayFill.Input(tasks(note.drop(2)), inp.events, profile, facts, inp.now, ahead = true)
+        assertTrue(LookAhead.weeks(ticked) !== LookAhead.weeks(inp), "new tasks: counted again")
+        val later = DayFill.Input(inp.tasks, inp.events, profile, facts, LocalDateTime.parse("2026-11-02T08:30"), ahead = true)
+        assertTrue(LookAhead.weeks(later) !== LookAhead.weeks(inp), "the next half hour: counted again")
     }
 
     @Test
@@ -158,7 +202,7 @@ class LookAheadTest {
         val want = mine.item.hints.first()
         assertEquals("อยากทำ", want.label)
         assertEquals(DayFill.Tone.WANT, want.tone)
-        assertTrue(want.why.contains("เคยค้างเพราะ ยังติดงานที่มีคนรออยู่"), want.why)
+        assertEquals("วันว่างทั้งวัน ช่วงเช้าเป็นของคุณ เรื่องนี้เคยค้างเพราะ ยังติดงานที่มีคนรออยู่ และกลับห้องไปก็เหนื่อยแล้ว", want.why)
         // Two hours of work before the tight week, after the morning.
         val work = assertNotNull(plan.placed.firstOrNull { it.item.slot == "ahead" })
         assertEquals(DayFill.Kind.PROJECT, work.item.kind)
@@ -166,7 +210,7 @@ class LookAheadTest {
         assertTrue(work.at >= mine.at + mine.len)
         val tight = work.item.hints.single()
         assertEquals("ก่อนสัปดาห์แน่น", tight.label)
-        assertEquals("สัปดาห์หน้า เวรดึก 3 คืน ว่างราว 12 ชม. ปกติว่างราว 28 ชม. ทำวันนี้ตอนยังมีแรง", tight.why)
+        assertEquals("สัปดาห์หน้าว่างแค่ราว 12 ชม.", tight.why, "as mock v2")
         assertFalse(work.item.must, "tiredness can still take it out")
     }
 
@@ -190,6 +234,12 @@ class LookAheadTest {
         assertEquals(1, sprint.count { "ก่อนสัปดาห์แน่น" in labels(it) }, sprint.joinToString { it.item.title })
         assertEquals(120, sprint.first { "ก่อนสัปดาห์แน่น" in labels(it) }.len)
         assertNull(plan.placed.firstOrNull { it.item.slot == "ahead" })
+        // Rule 3: the morning is the owner's before work. The second sprint slot would otherwise start at 07:30.
+        val mine = plan.placed.first { it.item.kind == DayFill.Kind.MINE }
+        assertEquals(9 * 60, mine.at)
+        val work = plan.placed.filter { it.item.kind != DayFill.Kind.MINE && it.item.kind != DayFill.Kind.LIFE }
+        assertTrue(work.size >= 2, work.joinToString { it.item.title })
+        assertTrue(work.all { it.at >= 11 * 60 }, work.joinToString { "${it.item.title} ${DayFill.hm(it.at)}" })
     }
 
     @Test
@@ -203,17 +253,19 @@ class LookAheadTest {
     // ---- Rule 4: own time given back ----
 
     @Test
-    fun ownTimeIsGivenBackWholeInAWeekThatIsNotTight() {
+    fun ownTimeIsGivenBackWholeInTheNextLightWeek() {
         // No myspace task done, stuck or taken in the two weeks before 16 Nov.
         val mon16 = DayFill.plan(input("2026-11-16T17:00"))
         val mine = mon16.placed.first { it.item.kind == DayFill.Kind.MINE }
         val back = mine.item.hints.first { it.label == "คืนเวลา" }
         assertEquals(DayFill.Tone.LIGHT, back.tone)
-        assertTrue(back.why.startsWith("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำ 0 วัน"), back.why)
+        assertEquals("2 สัปดาห์ล่าสุดได้ทำเรื่องที่อยากทำแค่ 0 วัน", back.why)
         assertEquals(mine.item.len, mine.item.min, "not cut short")
-        // In a tight week it waits.
+        // In a tight week it waits; a week the shift calendar has not reached is not known to be light.
         val mon2 = DayFill.plan(input("2026-11-02T17:00"))
         assertTrue(mon2.placed.first { it.item.kind == DayFill.Kind.MINE }.item.hints.isEmpty())
+        val mon30 = DayFill.plan(input("2026-11-30T17:00"))
+        assertTrue(mon30.placed.first { it.item.kind == DayFill.Kind.MINE }.item.hints.isEmpty())
         // Five days of own time in the two weeks: nothing is owed.
         val done = (3..12 step 2).map { "- [x] วิ่งเช้า $it #My-space ✅ 2026-11-${it.toString().padStart(2, '0')}" }
         val enough = DayFill.plan(input("2026-11-16T17:00", note + done))
@@ -229,7 +281,9 @@ class LookAheadTest {
         val hint = assertNotNull(tight.hint)
         assertEquals("แน่น 12 ชม.", hint.label)
         assertEquals(DayFill.Tone.HEAVY, hint.tone)
-        assertTrue(hint.why.startsWith("เวรดึก 3 คืน ว่างราว 12 ชม."), hint.why)
+        assertEquals("เวรดึก 3 คืน ปกติว่างราว 28 ชม.", hint.why, "as mock v2")
+        // The hours under the tag are the tag's.
+        assertTrue(tight.lines.first().startsWith("เวลาว่างนอกเวรสัปดาห์นี้ราว 12 ชม."), tight.lines.first())
         assertEquals(1, tight.projects.size, "a tight week has one project (rule 2)")
         // CONTROL: the switch off keeps two projects and no tag.
         val before = assertNotNull(DayFill.plan(input("2026-11-02T08:00", ahead = false)).sprint)
@@ -240,7 +294,11 @@ class LookAheadTest {
         val light = assertNotNull(DayFill.plan(input("2026-11-16T08:00")).sprint?.hint)
         assertEquals(DayFill.Tone.LIGHT, light.tone)
         assertTrue(light.label.startsWith("เบาสุด "), light.label)
-        assertTrue(light.why.startsWith("เบาสุดใน 4 สัปดาห์ข้างหน้า สัปดาห์ จ 23 พ.ย. แน่น เวรดึก 3 คืน"), light.why)
+        assertEquals("ไม่มีเวรดึกทั้งสัปดาห์ สัปดาห์ถัดไปเวรดึก 3 คืน", light.why, "as mock v2")
+        // A week that is neither (here one the calendar has not reached) keeps the sprint line as it was: no tag.
+        assertNull(DayFill.plan(input("2026-11-30T08:00")).sprint?.hint)
+        // A Saturday with two days left is not "tight" for the two days.
+        assertFalse(LookAhead.weeks(input("2026-11-14T07:30")).first().heavy)
     }
 
     private fun slides(hours: Int) = note + "- [ ] สไลด์สอนน้องใหม่ $hours ชม. #Siriraj ➕ 2026-10-20 📅 2026-11-27"
@@ -260,12 +318,18 @@ class LookAheadTest {
         assertEquals("Siriraj", start.projects.first())
         assertEquals("เริ่มสัปดาห์นี้", start.hint?.label)
         assertEquals(DayFill.Tone.HEAVY, start.hint?.tone)
+        assertEquals("ต้องใช้ราว 36 ชม. ว่างก่อนวันส่งเหลือราว 42 ชม.", start.hint?.why, "as mock v2")
+        // With the easiest way to make it (rule 5): the freest days first, 36 hours in all.
+        val way = start.lines.first()
+        assertTrue(way.startsWith("ทางที่ทันสบายสุด: ") && way.contains("อา 8 พ.ย."), way)
+        assertFalse(way.contains("พ.ย. 0"), way)
         assertTrue(start.note.startsWith("Siriraj ต้องเริ่มสัปดาห์นี้ถึงจะทันวันส่ง"), start.note)
         assertEquals("สไลด์สอนน้องใหม่ 18 ชม. ส่ง 27 พ.ย.", start.lead, "the row names the task, as mock board ง")
-        // 25 hours (50 doubled): more than the time left.
+        // 25 hours (50 doubled): more than the time left. The line warns as it always did (no tag of its own in the mock).
         val late = assertNotNull(DayFill.plan(input("2026-11-02T08:00", slides(25))).sprint)
-        assertEquals("อาจไม่ทัน", late.hint?.label)
-        assertTrue(late.note.contains("อาจไม่ทันวันส่ง"), late.note)
+        assertNull(late.hint)
+        assertTrue(late.late)
+        assertTrue(late.note.startsWith("Siriraj อาจไม่ทันวันส่ง ศ 27 พ.ย. ขาดราว"), late.note)
         // CONTROL: the switch off does not see past two weeks.
         val off = Sprint.rank(input("2026-11-02T08:00", slides(25), ahead = false)).first { it.project == "Siriraj" }
         assertNull(off.due)
