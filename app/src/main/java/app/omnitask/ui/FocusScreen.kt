@@ -69,6 +69,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
+/** The today page's title: "ศุกร์ที่ 30 ตุลาคม" in Thai, "Friday 30 October" in English. */
+private fun titleDate(day: LocalDate): String =
+    day.format(DateTimeFormatter.ofPattern("EEEE", TH)).removePrefix("วัน") + tr("ที่ ", " ") + day.format(DateTimeFormatter.ofPattern("d MMMM", TH))
+
 @Composable
 fun FocusScreen(
     state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
@@ -156,8 +160,8 @@ fun FocusScreen(
         if (nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    // The day and date as the title, "ศุกร์ 30 ตุลาคม" (owner's pick ค แบบ 1, 2026-10-30), so the date is not said twice.
-                    Text(today.format(LONG_DATE).removePrefix("วัน"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
+                    // The day and date as the title, "ศุกร์ที่ 30 ตุลาคม" (owner's pick ค แบบ 1 and wording, 2026-10-30), so the date is not said twice.
+                    Text(titleDate(today), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
                     // The day in one line (owner's pick, 2026-10-27), in place of the old ring and numbers.
                     val left = if (night != null && isNight) tr("ก่อนนอน ${hm(night.toBed)}", "${hm(night.toBed)} to bed") else tr("ว่างเหลือ ${hours(free)}", "${hours(free)} free")
                     Text(

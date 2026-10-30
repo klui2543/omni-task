@@ -134,7 +134,7 @@ object DayFill {
         LIFE("ชีวิต", "Life"),
         MINE("myspace", "myspace"),
         URGENT("งานด่วนที่เพิ่งเข้ามา", "New and urgent"),
-        DUE("ส่งใกล้แล้ว", "Due soon"),
+        DUE("ใกล้ส่งแล้ว", "Due soon"),
         AGAIN("ต่อจากเมื่อวาน", "From yesterday"),
         ASK("เลขาขอถาม", "A question"),
         NET("งาน", "Work"),
