@@ -153,13 +153,11 @@ fun FocusScreen(
         contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
         verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
-        // The new look's card of what to do next, left over and to decide: built with the rest of the top, shown last.
-        var deckCards = emptyList<DeckCard>()
         if (nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(tr("วันนี้", "Today"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
-                    Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
+                    // The day and date as the title, "ศุกร์ 30 ตุลาคม" (owner's pick ค แบบ 1, 2026-10-30), so the date is not said twice.
+                    Text(today.format(LONG_DATE).removePrefix("วัน"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
                     // The day in one line (owner's pick, 2026-10-27), in place of the old ring and numbers.
                     val left = if (night != null && isNight) tr("ก่อนนอน ${hm(night.toBed)}", "${hm(night.toBed)} to bed") else tr("ว่างเหลือ ${hours(free)}", "${hours(free)} free")
                     Text(
@@ -272,7 +270,9 @@ fun FocusScreen(
                     },
                 )
             }
-            deckCards = cards
+            // The card of what to do next, left over and to decide: right under the day's title and any fixes
+            // (owner's pick, mock focus-order, 2026-10-30; it sat last on the page before).
+            if (cards.isNotEmpty()) item(key = "deck") { CardDeck(cards) }
         }
 
         // The secretary's questions: one line however many, the answers in a sheet (owner's pick, 2026-10-26).
@@ -440,12 +440,11 @@ fun FocusScreen(
         }
 
         // The new look: the next week (owner's pick, 2026-10-28), the pinned countdowns and then the open tasks due (📅)
-        // or scheduled (⏳) in the 7 days from tomorrow, by day. Then, last on the page, the card of what to do next.
+        // or scheduled (⏳) in the 7 days from tomorrow, by day.
         if (nl) {
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
             item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
-            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards) }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds

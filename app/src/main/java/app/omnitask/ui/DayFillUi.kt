@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -124,7 +125,7 @@ private fun lateWord(t: Task?, today: LocalDate): String? {
  * The plan on the today page, in the Focus page timeline's look (owner's pick, 2026-10-30, mock Timeline): the day's
  * notices, the day in its parts (morning, afternoon, evening) with the red now line, blocks it works around as event
  * rows, the next task open on a soft band with its buttons, the free time kept clear, what moved to another day folded
- * up; the errand, question and moved buttons sit in one row under the strip on top.
+ * up; under the strip on top, the line of tasks done today, then the errand, question and moved buttons in one row.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -168,6 +169,13 @@ fun DayFillCard(
             // What the secretary did and the day's numbers, in one strip that opens to the whole day (owner's pick ก).
             val numbers = tr("ว่างจริง ${dur(plan.free)}, จัดไว้ ${dur(plan.free - plan.buffer)}, เหลือกันชน ${dur(plan.buffer)}", "Free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}")
             TellStrip(plan.banner, state.fillLog.takeIf { state.fillLogDay == plan.day.toString() }.orEmpty(), numbers, logOpen) { logOpen = !logOpen }
+            // Tasks done today: one line between the strip and the buttons, open to the list (owner's pick, mock
+            // focus-order, 2026-10-30), no longer inside the timeline.
+            val done = plan.rows.filterIsInstance<DayFill.Row.Done>()
+            if (done.isNotEmpty()) {
+                DoneFold(done.size, doneOpen) { doneOpen = !doneOpen }
+                if (doneOpen) done.forEach { d -> DoneRow(d.task, { vm.toggleDone(d.task) }) { onOpen(d.task) } }
+            }
             // The errand, the secretary's questions and what moved to another day: one row of small buttons under the
             // strip, so they are seen on opening the page (owner's pick ก, mock plan-buttons, 2026-10-30).
             val later = plan.later.filter { it.item.kind != DayFill.Kind.LIFE }
@@ -239,27 +247,14 @@ fun DayFillCard(
                 Text(tr("วันนี้ไม่เหลือเวลาว่างให้จัดแล้ว", "No free time left to plan today"), Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = C.muted, fontSize = TS.caption)
             }
 
-            // The day, part by part. Tasks done today fold into one line where the first of them stood.
+            // The day, part by part. Tasks done today are in their line above, not here.
             val expanded = open ?: plan.next
-            val done = plan.rows.filterIsInstance<DayFill.Row.Done>()
             val counts = plan.rows.filterIsInstance<DayFill.Row.Card>().filter { it.placed.item.kind != DayFill.Kind.LIFE }.groupingBy { part(it.at) }.eachCount()
-            val firstPart = plan.rows.firstOrNull { it !is DayFill.Row.Done && it.at != null }?.at?.let(::part) ?: DayPlan.Part.MORNING
             var section: DayPlan.Part? = null
             var nowShown = false
-            var foldShown = false
             fun enter(p: DayPlan.Part): Boolean = (p != section).also { if (it) section = p }
             plan.rows.forEach { row ->
-                if (row is DayFill.Row.Done) {
-                    if (foldShown) return@forEach
-                    foldShown = true
-                    if (section == null) {
-                        enter(firstPart)
-                        PartHead(firstPart, counts[firstPart] ?: 0)
-                    }
-                    DoneFold(done.size, doneOpen) { doneOpen = !doneOpen }
-                    if (doneOpen) done.forEach { d -> DoneRow(d.task, { vm.toggleDone(d.task) }) { onOpen(d.task) } }
-                    return@forEach
-                }
+                if (row is DayFill.Row.Done) return@forEach
                 val at = row.at
                 if (at != null) {
                     val p = part(at)
@@ -385,14 +380,18 @@ private fun NowLine(nowMin: Int) {
     }
 }
 
-/** "เสร็จแล้ว N งาน": the tasks ticked today, one tap from seeing them. */
+/** "เสร็จแล้ว N งาน": the tasks ticked today, one tap from seeing them. A plain ring with a tick, not green (owner's pick ค). */
 @Composable
 private fun DoneFold(n: Int, isOpen: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(onClick = onClick).padding(start = 6.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(18.dp).clip(CircleShape).background(C.lime)) }
+        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(20.dp).border(1.8.dp, C.muted, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Ic.check, null, tint = C.muted, modifier = Modifier.size(12.dp))
+            }
+        }
         Text(tr("เสร็จแล้ว $n งาน", "$n done"), Modifier.weight(1f).padding(start = 2.dp), color = C.muted, fontSize = TS.body)
         Text(if (isOpen) tr("ย่อ", "Fold") else tr("แตะดู", "Tap to see"), color = C.muted, fontSize = TS.caption)
     }
