@@ -429,30 +429,35 @@ object DayFill {
             Fatigue.Level.TIRED -> maxOf(30, free / 2)
             else -> maxOf(30, free / 3)
         }
-        fun fits(t: Int, len: Int): Boolean {
+        // Put by the owner at a time of their own (a suggested time or a drag; mock plan-catchup): it stays where they
+        // put it and takes no room from what is already there, so nothing is pushed for it (an overlap is only flagged).
+        // Work the plan still has to place goes round it; the owner's own time and meals keep their place on it.
+        fun pinnedAt(it0: Item): Int? {
+            if (mem.picks[it0.id].let { it != null && it != Pick.TAKE }) return null
+            val f = it0.fixedAt ?: return null
+            val acc = it0.task?.let { mem.accepted[ident(it)] }?.takeIf { it.pinned && it.day == fr.day.toString() && it.at == f } ?: return null
+            return acc.at.takeIf { (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= it }
+        }
+        val pins = items.mapNotNull { it0 -> pinnedAt(it0)?.let { it0 to it } }
+        val pinOcc = BooleanArray(span)
+        pins.forEach { (it0, at) -> for (i in maxOf(at, start) until minOf(at + it0.len, end)) pinOcc[i - start] = true }
+        fun fits(t: Int, len: Int, work: Boolean = false): Boolean {
             if (t < start || t + len > end) return false
-            for (i in t until t + len) if (occ[i - start]) return false
+            for (i in t until t + len) if (occ[i - start] || (work && pinOcc[i - start])) return false
             return true
         }
         fun take(t: Int, len: Int) { for (i in maxOf(t, start) until minOf(t + len, end)) occ[i - start] = true }
-        fun firstFit(from: Int, to: Int, len: Int): Int {
+        fun firstFit(from: Int, to: Int, len: Int, work: Boolean): Int {
             var x = roundUp(from)
             while (x + len <= minOf(to, end)) {
-                if (fits(x, len)) return x
+                if (fits(x, len, work)) return x
                 x += STEP
             }
             return -1
         }
         val placed = ArrayList<Placed>()
         val later = ArrayList<Later>()
-        // Put by the owner at a time of their own (a suggested time or a drag): placed after everything else, where
-        // they put it, taking no room, so nothing is pushed for it; an overlap is only flagged (mock plan-catchup).
-        val pinnedLater = ArrayList<Pair<Item, Int>>()
-        fun pinnedAt(it0: Item): Int? {
-            val f = it0.fixedAt ?: return null
-            val acc = it0.task?.let { mem.accepted[ident(it)] }?.takeIf { it.pinned && it.day == fr.day.toString() && it.at == f } ?: return null
-            return acc.at.takeIf { (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= it }
-        }
+        val pinned = pins.map { it.first.id }.toSet()
         // Taken slots and the owner's own times hold their place first; the rest follow by priority.
         val ordered = items.sortedWith(compareBy<Item>({ if (it.fixedAt != null) 0 else 1 }, { it.prio }))
         ordered.forEach { it0 ->
@@ -461,7 +466,7 @@ object DayFill {
                 later += Later(it0, pickText(pick, it0), risk = false, picked = pick)
                 return@forEach
             }
-            pinnedAt(it0)?.let { pinnedLater += it0 to it; return@forEach }
+            if (it0.id in pinned) return@forEach
             // "ช่วงนี้ไม่ว่าง" on a taken slot moves it on like any card; its reminder then follows.
             val fixed = it0.fixedAt?.takeIf { f -> it0.own || (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= f }
             if (fixed != null) {
@@ -478,9 +483,10 @@ object DayFill {
             }
             val from = maxOf(start, it0.from ?: start, mem.notBefore[it0.id] ?: start)
             val to = it0.to ?: end
+            val work = it0.kind != Kind.LIFE && it0.kind != Kind.MINE
             var len = if (shrink && it0.min != null) it0.min else it0.len
-            var t = firstFit(from, to, len)
-            if (t < 0 && it0.min != null && len != it0.min) { len = it0.min; t = firstFit(from, to, len) }
+            var t = firstFit(from, to, len, work)
+            if (t < 0 && it0.min != null && len != it0.min) { len = it0.min; t = firstFit(from, to, len, work) }
             val leftNow = occ.count { !it }
             var capped = false
             if (t >= 0 && !it0.must && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
@@ -499,7 +505,7 @@ object DayFill {
             take(t, len)
             placed += Placed(it0, t, len, short = len < it0.len, running = false)
         }
-        pinnedLater.forEach { (it0, at) -> placed += Placed(it0, at, it0.len, short = false, running = at < start && at + it0.len > start, pinned = true) }
+        pins.forEach { (it0, at) -> placed += Placed(it0, at, it0.len, short = false, running = at < start && at + it0.len > start, pinned = true) }
         return Placing(placed.sortedBy { it.at }, later, free)
     }
 
@@ -843,14 +849,16 @@ object DayFill {
         val timeline = (pl.placed.map { it.at to (it as Any) } + blocks.map { it.at!! to (it as Any) }).sortedBy { it.first }
         var cursor = fr.start
         val open = ArrayList<Pair<Int, Int>>()
-        fun gap(a: Int, b: Int) {
-            if (b > a) open += a to b
+        // [free]: where the free stretch for a task ends (the plan keeps [CLEAR] minutes before an event too).
+        fun gap(a: Int, b0: Int, free: Int = b0) {
+            val b = minOf(b0, fr.end)
+            if (minOf(free, b) > a) open += a to minOf(free, b)
             if (b - a >= 15) rows += Row.Gap(a, b - a)
         }
         timeline.forEach { (at, x) ->
             when (x) {
                 is Row.Locked -> {
-                    gap(cursor, at)
+                    gap(cursor, at, if (x.event != null) at - CLEAR else at)
                     rows += x
                     val e = x.event
                     val stop = when {
@@ -1035,9 +1043,18 @@ object DayFill {
         span?.let { (a, b, name) -> (minOf(at + len, b) - maxOf(at, a)).takeIf { it > 0 }?.let { name to it } }
     }
 
-    /** "ซ้อนกับ How to ดูหุ้น 15 นาที": the overlaps of a card, names cut short. */
-    fun overlapText(list: List<Pair<String, Int>>): String? = list.takeIf { it.isNotEmpty() }?.joinToString(", ") { (name, n) -> short(name) + " " + lenText(n) }
-        ?.let { tr("ซ้อนกับ ", "Overlaps ") + it }
+    /**
+     * What a card shows as "ซ้อนกับ" (mock plan-catchup board 4): a card the owner put shows all it sits on; any other
+     * card only the put cards on it. The plan never overlaps cards by itself, so nothing else is flagged.
+     */
+    fun overlapsOf(plan: Plan, p: Placed): List<Pair<String, Int>> =
+        if (p.pinned) overlaps(plan, p.at, p.len, p.item.id)
+        else plan.placed.filter { it.pinned && it.item.id != p.item.id }
+            .mapNotNull { q -> (minOf(p.at + p.len, q.at + q.len) - maxOf(p.at, q.at)).takeIf { it > 0 }?.let { q.item.title to it } }
+
+    /** "ซ้อนกับ How to ดูหุ้น 15 นาที": the overlaps of a card, names cut short by [cut]. */
+    fun overlapText(list: List<Pair<String, Int>>, cut: (String) -> String = { short(it) }): String? =
+        list.takeIf { it.isNotEmpty() }?.joinToString(", ") { (name, n) -> cut(name) + " " + lenText(n) }?.let { tr("ซ้อนกับ ", "Overlaps ") + it }
 
     /** A name cut to about [n] letters at a whole letter (Thai marks stay with theirs), with "…" when cut. */
     fun short(name: String, n: Int = 16): String {

@@ -178,6 +178,15 @@ class CatchUpTest {
         assertEquals(listOf("How to ดูหุ้นแบบรอบด้านและลึก" to 15), DayFill.overlaps(p, omni.at, omni.len, omni.item.id))
         assertEquals(listOf("ปรับ Project Omni ให้รู้ใจมากขึ้น" to 15), DayFill.overlaps(p, after.at, after.len, after.item.id))
         assertEquals("ซ้อนกับ How to ดูหุ้นแบบ… 15 นาที", DayFill.overlapText(DayFill.overlaps(p, omni.at, omni.len, omni.item.id)))
+        // Both rows say it; a card nobody put sits on nothing.
+        assertEquals(listOf("How to ดูหุ้นแบบรอบด้านและลึก" to 15), DayFill.overlapsOf(p, omni))
+        assertEquals(listOf("ปรับ Project Omni ให้รู้ใจมากขึ้น" to 15), DayFill.overlapsOf(p, after))
+        assertEquals(emptyList(), DayFill.overlapsOf(p, p.card("เขียนถ้อยคำ")!!))
+        // The plan's own card on the day job (as the owner's own reminder time can be) is not flagged: only put cards are.
+        val onJob = p.card("เขียนถ้อยคำ")!!.copy(at = m(16), len = 60)
+        assertEquals(30, DayFill.overlaps(p, onJob.at, onJob.len, onJob.item.id).single { it.first.startsWith(RealDay.jobTitle) }.second)
+        assertEquals(emptyList(), DayFill.overlapsOf(p, onJob))
+        assertEquals("ซ้อนกับ How to ดูหุ้น 15 นาที", DayFill.overlapText(DayFill.overlapsOf(p, omni)) { if (it.startsWith("How to")) "How to ดูหุ้น" else it })
         assertEquals(emptyList(), p.moves, "the line already reads as put")
         assertEquals(emptyList(), p.letGo)
         // CONTROL: the same slot only taken (not put by the owner) does not fit there and moves; own time keeps its place.
@@ -203,6 +212,35 @@ class CatchUpTest {
         val moved = assertNotNull(busy.card("เขียนถ้อยคำ"))
         assertFalse(moved.pinned)
         assertTrue(moved.at >= m(17, 45), DayFill.hm(moved.at))
+    }
+
+    @Test
+    fun workTheDayPlanPlacesGoesRoundAPutSlotAllEvening() {
+        val (lines, mem) = taken("เขียนถ้อยคำ", m(19), pinned = true)
+        var checked = 0
+        for (now in m(16, 45)..m(19, 30) step 5) {
+            val p = plan("${day}T" + DayFill.hm(now), lines, mem)
+            val put = assertNotNull(p.card("เขียนถ้อยคำ"))
+            assertEquals(m(19), put.at)
+            p.placed.filter { !it.pinned && it.item.kind != DayFill.Kind.LIFE && it.item.kind != DayFill.Kind.MINE }.forEach { c ->
+                assertTrue(c.at + c.len <= m(19) || c.at >= m(19, 15), DayFill.hm(now) + ": " + c.item.title + " at " + DayFill.hm(c.at))
+                checked++
+            }
+        }
+        assertTrue(checked > 0)
+    }
+
+    @Test
+    fun theFreeStretchesKeepClearBeforeAnEventAndStopWithThePlan() {
+        val event = CalendarEvent(9, "นัดทำฟัน", LocalDateTime.parse("${day}T19:30"), LocalDateTime.parse("${day}T19:45"), calendarId = 3)
+        val p = DayFill.plan(DayFill.Input(tasks(note), events + event, profile, facts, LocalDateTime.parse("${day}T16:45")))
+        assertTrue(p.open.none { (a, b) -> a < m(19, 30) && b > m(19, 15) }, "15 minutes before the event stay clear: ${p.open}")
+        // Put after the plan stops (before bed): no free stretch or free row after the stop.
+        val (lines, mem) = taken("เขียนถ้อยคำ", m(20, 15), pinned = true)
+        val q = plan("${day}T16:45", lines, mem)
+        assertEquals(m(20, 15), q.card("เขียนถ้อยคำ")?.at)
+        assertTrue(q.open.all { it.second <= q.end }, "${q.open}")
+        assertTrue(q.rows.filterIsInstance<DayFill.Row.Gap>().all { it.at + it.len <= q.end })
     }
 
     @Test

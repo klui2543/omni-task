@@ -2301,7 +2301,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- The secretary fills today's free time (step 2, the owner's picks of 2026-10-29; Settings switch, off at first) ----
 
-    private val fillPrefs = app.getSharedPreferences("omni-dayfill", Context.MODE_PRIVATE)
+    private val fillPrefs = app.getSharedPreferences(DayFillMode.PREFS, Context.MODE_PRIVATE)
     private var fillLoaded = false
 
     /** Reads what the day plan keeps on this phone, once. */
@@ -2502,6 +2502,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Keeps when today's plan stops, for the reminder at a taken slot ("เหลืออีก N ถึงจะทำทันวันนี้"). */
     fun fillStop(end: Int) {
+        // Before the memory is read there is nothing to add it to: writing then would wipe what the phone keeps.
+        if (!fillLoaded) return
         val today = LocalDate.now()
         val m = _state.value.dayFill.on(today)
         if (m.stop != end) saveFill(m.copy(stop = end))
@@ -4928,7 +4930,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_DECLINED = "declinedInsights"
         const val KEY_DONE_LOG = "doneLog"
         const val KEY_REVIEWED = "reviewedTasks"
-        const val FILL_MEMORY = "memory"
+        const val FILL_MEMORY = DayFillMode.MEMORY
         const val FILL_LOG = "log"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"

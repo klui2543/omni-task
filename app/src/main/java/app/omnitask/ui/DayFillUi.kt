@@ -25,7 +25,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +44,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -60,16 +64,20 @@ import app.omnitask.model.tr
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import app.omnitask.time.*
+import java.text.BreakIterator
+import java.util.Locale
+import kotlin.math.abs
 
 /**
  * "เลขาจัดตารางวันนี้" (step 2, owner's picks of 2026-10-29, mock v12): the secretary fills today's real free time on
  * the today page. A Settings switch, off at first; this is its one reader.
  */
 object DayFillMode {
-    private const val PREFS = "omni-dayfill"
+    /** The phone's file of the day plan: the switch here, the plan's memory and its day log by the view model. */
+    const val PREFS = "omni-dayfill"
     private const val ON = "on"
-    /** The key the view model keeps the plan's memory under (its FILL_MEMORY), in the same file. */
-    private const val MEMORY = "memory"
+    /** The key of the plan's memory in [PREFS], for the view model and the reminder alike. */
+    const val MEMORY = "memory"
     var on by mutableStateOf(false)
         private set
     private var loaded = false
@@ -169,17 +177,20 @@ fun DayFillCard(
     // A block's reason shows when it is tapped, one at a time.
     var reasonOf by remember { mutableStateOf<String?>(null) }
     // The owner's mix (mock plan-catchup, 2026-10-30): a taken slot gone by and not done asks "ทำไปหรือยัง"; after
-    // "ยังไม่ได้ทำ" it waits for a place ([replacing]); a long press drags any task to a time of the owner's own.
+    // "ยังไม่ได้ทำ" it waits for a place ([replacing]); a long press drags it, or a task taken today, to a time of the
+    // owner's own.
     var replacing by remember { mutableStateOf<String?>(null) }
     var drag by remember { mutableStateOf<Dragged?>(null) }
     var dragDy by remember { mutableFloatStateOf(0f) }
     val haptic = LocalHapticFeedback.current
-    // Where each timed row sits on screen (its time and its middle), to turn a drag into a time.
-    val centers = remember(plan) { HashMap<String, Pair<Int, Float>>() }
+    // Where each row sits on screen (its middle) and the time of each timed one, to turn a drag into a time. A row
+    // that leaves the page takes its entries with it.
+    val tops = remember { HashMap<String, Float>() }
+    val times = remember { HashMap<String, Int>() }
     val planNow by rememberUpdatedState(plan)
     val nowNow by rememberUpdatedState(now.hour * 60 + now.minute)
-    // The reminder at a taken slot counts to when the plan stops: kept on the phone for it.
-    LaunchedEffect(plan.day, plan.end) { if (plan.day == now.date) vm.fillStop(plan.end) }
+    // The reminder at a taken slot counts to when the plan stops: kept on the phone for it, once its memory is read.
+    LaunchedEffect(plan.day, plan.end, state.dayFill) { if (plan.day == now.date) vm.fillStop(plan.end) }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
     // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
     LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }
@@ -330,12 +341,13 @@ fun DayFillCard(
             }?.placed
             val offers = waiting?.let { DayFill.suggest(plan, it.len, nowMin) }.orEmpty()
             var waitingShown = false
-            // A long press on a task drags it; its time follows the finger between the rows around it.
-            fun timeAt(y: Float, len: Int, skip: String): Int {
+            // A long press drags a task; its time follows the finger between the rows around it (its own row too, so
+            // where it starts is its own time).
+            fun timeAt(y: Float, len: Int): Int {
                 val pl = planNow
                 val lo = maxOf(nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
                 val hi = maxOf(lo, (pl.bed - len) - (pl.bed - len) % 5)
-                val pts = centers.filterKeys { it != skip }.values.sortedBy { it.second }
+                val pts = times.mapNotNull { (k, t) -> tops[k]?.let { t to it } }.sortedBy { it.second }
                 if (pts.isEmpty()) return lo
                 val raw = when {
                     y <= pts.first().second -> pts.first().first.toFloat()
@@ -349,20 +361,30 @@ fun DayFillCard(
                 }
                 return (Math.round(raw / 5f) * 5).coerceIn(lo, hi)
             }
-            fun Modifier.dragging(key: String, p: DayFill.Placed): Modifier = pointerInput(key, p.item.id, p.at) {
+            // The slot is read when the finger lifts, so a plan that changed meanwhile puts the line as it is now.
+            suspend fun PointerInputScope.drags(rowKey: String, cur: State<DayFill.Placed?>) {
+                val slop = 10.dp.toPx()
                 detectDragGesturesAfterLongPress(
                     onDragStart = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        drag = Dragged(key, p, centers[key]?.second ?: 0f)
-                        dragDy = 0f
+                        val y = tops[rowKey]
+                        if (cur.value != null && y != null) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            drag = Dragged(rowKey, y)
+                            dragDy = 0f
+                        }
                     },
                     onDrag = { change, amount ->
-                        change.consume()
-                        dragDy += amount.y
+                        if (drag?.key == rowKey) {
+                            change.consume()
+                            dragDy += amount.y
+                        }
                     },
                     onDragEnd = {
-                        drag?.let { d ->
-                            vm.fillPlace(d.placed, timeAt(d.from + dragDy, d.placed.len, d.key))
+                        val d = drag
+                        val p = cur.value
+                        // A press let go where it began puts nothing.
+                        if (d != null && d.key == rowKey && p != null && abs(dragDy) >= slop) {
+                            vm.fillPlace(p, timeAt(d.from + dragDy, p.len))
                             replacing = null
                             open = null
                         }
@@ -370,46 +392,52 @@ fun DayFillCard(
                         dragDy = 0f
                     },
                     onDragCancel = {
-                        drag = null
-                        dragDy = 0f
+                        if (drag?.key == rowKey) {
+                            drag = null
+                            dragDy = 0f
+                        }
                     },
                 )
             }
-            /** One timed row: where it sits is kept for the drag; the dragged one follows the finger with its time. */
+            /**
+             * One row: where it sits (and its time, when it has one) is kept for the drag. [p]: the task a long press
+             * drags. The dragged row follows the finger with the time it would get on a tag over it, so nothing under
+             * it shifts.
+             */
             @Composable
-            fun Track(key: String, at: Int?, p: DayFill.Placed? = null, over: Boolean = false, content: @Composable () -> Unit) {
-                val moving = p != null && drag?.key == key
+            fun Track(rowKey: String, at: Int?, p: DayFill.Placed? = null, over: Boolean = false, content: @Composable () -> Unit) {
+                val moving = p != null && drag?.key == rowKey
+                val cur = rememberUpdatedState(p)
+                SideEffect { if (at != null) times[rowKey] = at else times.remove(rowKey) }
+                DisposableEffect(rowKey) { onDispose { tops.remove(rowKey); times.remove(rowKey) } }
                 val amber = C.amber
-                Column(
+                Box(
                     Modifier.fillMaxWidth()
-                        .onGloballyPositioned { c -> if (at != null) centers[key] = at to (c.positionInRoot().y + c.size.height / 2f) }
-                        .then(if (moving) Modifier.zIndex(1f).graphicsLayer { translationY = dragDy; shadowElevation = 12f } .background(C.raised) else Modifier)
+                        .onGloballyPositioned { c -> if (!moving) tops[rowKey] = c.positionInRoot().y + c.size.height / 2f }
+                        .then(if (moving) Modifier.zIndex(1f).graphicsLayer { translationY = dragDy; shadowElevation = 12f }.background(C.raised) else Modifier)
                         .then(if (over && !moving) Modifier.drawBehind { drawRect(amber, size = Size(3.dp.toPx(), size.height)) } else Modifier)
-                        .then(if (p != null) Modifier.dragging(key, p) else Modifier),
+                        .then(if (p != null) Modifier.pointerInput(rowKey) { drags(rowKey, cur) } else Modifier),
                 ) {
-                    if (moving && p != null) {
-                        val d = drag!!
-                        val t = timeAt(d.from + dragDy, p.len, key)
-                        val o = DayFill.overlapText(DayFill.overlaps(plan, t, p.len, p.item.id))
-                        Text(
-                            buildAnnotatedString {
-                                pushStyle(SpanStyle(color = C.text, fontWeight = FontWeight.SemiBold))
-                                append(DayFill.hm(t))
-                                pop()
-                                if (o != null) {
-                                    pushStyle(SpanStyle(color = C.amber))
-                                    append("  $o")
-                                    pop()
-                                }
-                            },
-                            Modifier.padding(start = 44.dp, top = 4.dp), fontSize = TS.caption,
-                        )
+                    Column(Modifier.fillMaxWidth()) { content() }
+                    val d = drag
+                    if (moving && p != null && d != null) {
+                        val t = timeAt(d.from + dragDy, p.len)
+                        val o = DayFill.overlapText(DayFill.overlaps(plan, t, p.len, p.item.id), ::thaiShort)
+                        Column(
+                            Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 10.dp).clip(RoundedCornerShape(12.dp))
+                                .background(C.accent).padding(horizontal = 10.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.End,
+                        ) {
+                            Text(DayFill.hm(t), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                            if (o != null) Text(o, color = C.onAccent, fontSize = TS.micro)
+                        }
                     }
-                    content()
                 }
             }
             plan.rows.forEachIndexed { index, row ->
                 if (row is DayFill.Row.Done) return@forEachIndexed
+                // The slot waiting for a place shows after the now line instead, with the times offered.
+                if (row is DayFill.Row.Card && waiting != null && row.placed == waiting) return@forEachIndexed
                 val key = "r$index"
                 val at = row.at
                 if (at != null) {
@@ -452,16 +480,14 @@ fun DayFillCard(
                                 item.title, DayFill.hm(p.at) + tr(" ถึง ", " to ") + DayFill.hm(p.at + p.len),
                                 item.why.takeIf { reasonOf == lk || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
                             ) { reasonOf = if (reasonOf == lk) null else lk }
-                        } else if (p == waiting) {
-                            // Shown after the now line instead, with the times offered.
                         } else {
                             val task = item.task
                             val acc = task?.let { state.dayFill.accepted[DayFill.ident(it)] }?.takeIf { it.day == plan.day.toString() }
                             val taken = row.picked == DayFill.Pick.TAKE && acc != null && task?.isOpen == true
                             val gone = p.at + p.len <= nowMin
-                            val over = if (gone) null else DayFill.overlapText(DayFill.overlaps(plan, p.at, p.len, item.id))
-                            val canDrag = task != null && task.isOpen && item.kind != DayFill.Kind.REVIEW && item.kind != DayFill.Kind.ASK
-                            Track(key, at, p.takeIf { canDrag }, over = over != null) {
+                            val over = if (gone) null else DayFill.overlapText(DayFill.overlapsOf(plan, p), ::thaiShort)
+                            // Only a task taken today moves by a long press (and the one waiting for a place).
+                            Track(key, at, p.takeIf { taken }, over = over != null) {
                                 if (item.id == expanded) {
                                     val timed = task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
                                     NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
@@ -630,8 +656,22 @@ private fun GapRow(text: String, hi: Boolean = false) {
     }
 }
 
-/** The task being dragged: its row, its slot, and where the finger started. */
-private data class Dragged(val key: String, val placed: DayFill.Placed, val from: Float)
+/** The row being dragged and where its middle was when the finger pressed. */
+private data class Dragged(val key: String, val from: Float)
+
+/**
+ * A name cut short for "ซ้อนกับ" at a whole word, about ten letters or more: Thai has no spaces, so the phone's word
+ * breaker finds where words end. A name with no word end early enough is cut as the plan cuts it.
+ */
+private fun thaiShort(name: String): String {
+    if (name.length <= 16) return name
+    val words = BreakIterator.getWordInstance(Locale.forLanguageTag("th"))
+    words.setText(name)
+    var end = words.next()
+    while (end != BreakIterator.DONE && name.substring(0, end).trimEnd().length < 10) end = words.next()
+    if (end == BreakIterator.DONE || end > 22) return DayFill.short(name)
+    return name.substring(0, end).trimEnd()
+}
 
 /**
  * A taken slot gone by and not done, after "ยังไม่ได้ทำ" (mock plan-catchup board 3): the times free after now, the first
@@ -694,8 +734,8 @@ private fun WaitingCard(p: DayFill.Placed, offers: List<Int>, today: LocalDate, 
 @Composable
 private fun PlaceChip(text: String, rec: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(8.dp)).background(C.raised)
-            .border(1.dp, if (rec) C.accent else C.control, RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp),
+        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(50)).background(C.raised)
+            .border(1.dp, if (rec) C.accent else C.control, RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = if (rec) C.accentText else C.text, fontSize = TS.caption, fontWeight = if (rec) FontWeight.SemiBold else FontWeight.Normal) }
 }
@@ -814,6 +854,9 @@ private fun NextCard(
             val text = when (picked) {
                 DayFill.Pick.TAKE -> if (timed == false) {
                     tr("ลงเป็นงานวันนี้แล้ว ใช้เวลาเตือนเดิมของงานนี้ ", "Planned for today, with its own reminder. ")
+                } else if (p.pinned) {
+                    // Put by the owner: it stays there, so the plan does not move its reminder.
+                    tr("Klui วางเอง เตือน ${DayFill.hm(p.at)} ", "Put by you, reminder at ${DayFill.hm(p.at)}. ")
                 } else tr("ลงเป็นงานแล้ว เตือน ${DayFill.hm(p.at)} แผนขยับ เวลาเตือนก็ขยับตาม ", "Planned, reminder at ${DayFill.hm(p.at)}; it follows the plan. ")
                 else -> ""
             }
