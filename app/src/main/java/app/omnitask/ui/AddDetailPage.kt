@@ -179,6 +179,7 @@ fun AddDetailPage(
     fun save() {
         val name = title.trim()
         if (name.isEmpty()) { vm.showMessage(tr("ใส่ชื่องานก่อน", "Add a title first")); return }
+        if (extras.preparing > 0) { vm.showMessage(tr("รอรูปเตรียมเสร็จก่อน แล้วค่อยกดอีกครั้ง", "Wait for the image to be ready, then tap again")); return }
         if (!event) {
             val r = rep
             vm.addDetailedTask(
@@ -198,6 +199,7 @@ fun AddDetailPage(
             vm.showMessage(tr("ไม่พบปฏิทินที่เพิ่มนัดได้ในเครื่อง เปิดซิงค์ปฏิทินของบัญชี Google ในตั้งค่าเครื่อง", "No calendar on this phone takes new events: turn on calendar sync for your Google account"))
             return
         }
+        if (!extras.isEmpty) vm.showMessage(tr("นัดในปฏิทินเก็บรูปและโน้ตไม่ได้ จึงไม่ได้แนบไป", "Calendar events cannot hold images or notes, so they were left out"))
         val from = date.atTime(if (allDay) LocalTime.of(0, 0) else startClock)
         val to = endDay.atTime(if (allDay) LocalTime.of(0, 0) else endClock)
         val r = rep
@@ -393,8 +395,12 @@ fun AddDetailPage(
                         if (extras.links.isNotEmpty()) NewLinkRows(state, extras, Modifier.padding(start = 56.dp, end = 12.dp))
                         FormRow(Ic.image, onClick = pickImage) {
                             Text(
-                                if (extras.images.isEmpty()) tr("รูปแนบ", "Images") else tr("รูปแนบ ${extras.images.size}", "${extras.images.size} images"),
-                                Modifier.weight(1f), color = if (extras.images.isEmpty()) C.faint else C.text, fontSize = TS.body,
+                                when {
+                                    extras.preparing > 0 -> tr("กำลังเตรียมรูป", "Preparing image")
+                                    extras.images.isEmpty() -> tr("รูปแนบ", "Images")
+                                    else -> tr("รูปแนบ ${extras.images.size}", if (extras.images.size == 1) "1 image" else "${extras.images.size} images")
+                                },
+                                Modifier.weight(1f), color = if (extras.images.isEmpty() && extras.preparing == 0) C.faint else C.text, fontSize = TS.body,
                             )
                         }
                         if (extras.images.isNotEmpty()) NewImageRow(extras, 72.dp, pickImage, Modifier.padding(start = 56.dp, end = 20.dp, bottom = 12.dp))
@@ -441,7 +447,7 @@ fun AddDetailPage(
         "kind" -> OptionSheet(
             tr("ประเภท", "Kind"),
             listOf<String?>(null).map { it to TaskKind.NORMAL.label } +
-                TaskKind.entries.filter { it.tag != null && (it !in state.hiddenKinds || kindTag?.startsWith(it.tag!!) == true) }.map { it.tag to it.label } +
+                TaskKind.entries.filter { it.tag != null && (it !in state.hiddenKinds || kindTag?.let { t -> t.equals(it.tag, ignoreCase = true) || t.startsWith("${it.tag}/", ignoreCase = true) } == true) }.map { it.tag to it.label } +
                 state.customKinds.map { it.tag to it.label },
             kindTag?.let { t -> if (t.startsWith("${TaskKind.WAITING.tag}/")) TaskKind.WAITING.tag else t },
             { t -> if (t == TaskKind.WAITING.tag) picking = "who" else setKindTag(t) },

@@ -2030,11 +2030,26 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * Reads and encodes a photo picked for a task that is not written yet; [onReady] gets it on the main thread.
      * Nothing is saved until the task is added, so a sheet closed without adding leaves no stray file.
      */
-    fun prepareImage(uri: Uri, onReady: (ImageAttach.Prepared) -> Unit) {
+    fun prepareImage(uri: Uri, onReady: (ImageAttach.Prepared?) -> Unit) {
         viewModelScope.launch {
             val prepared = withContext(Dispatchers.IO) { runCatching { ImageAttach.prepare(getApplication(), uri) } }
             prepared.onFailure { e -> _state.update { it.copy(message = tr("แนบรูปไม่ได้: ${e.message}", "Cannot attach image: ${e.message}")) } }
-            prepared.onSuccess(onReady)
+            onReady(prepared.getOrNull())
+        }
+    }
+
+    /**
+     * Saves the images picked for a new task, then [write]s the task naming them. If anything fails, the files
+     * saved so far are deleted again, so a task that was not written leaves no image behind.
+     */
+    private fun withNewImages(vault: Uri, images: List<ByteArray>, write: (List<String>) -> String): String {
+        val saved = mutableListOf<String>()
+        try {
+            images.forEach { saved += repo.saveAttachment(vault, ImageAttach.fileName(), "image/webp", it) }
+            return write(saved)
+        } catch (e: Exception) {
+            saved.forEach { runCatching { repo.deleteAttachment(vault, it) } }
+            throw e
         }
     }
 
@@ -3542,11 +3557,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val today = LocalDate.now()
                 runCatching {
                     // Images picked while adding are saved first, so the line can name the files as written.
-                    val names = images.map { repo.saveAttachment(vault, ImageAttach.fileName(), "image/webp", it) }
-                    val first = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) }
-                    val block = (listOf(first) + listOfNotNull(link?.let { "    - $it" }) + QuickAdd.attachLines(links, names)).joinToString("\n")
-                    repo.appendLine(vault, VaultRepository.TASK_FILE, block)
-                    first
+                    withNewImages(vault, images) { names ->
+                        val first = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) }
+                        val block = (listOf(first) + listOfNotNull(link?.let { "    - $it" }) + QuickAdd.attachLines(links, names)).joinToString("\n")
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, block)
+                        first
+                    }
                 }
             }
             result.getOrNull()?.let { noteCreated(it) }
@@ -3567,12 +3583,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val today = LocalDate.now()
                 runCatching {
                     // Images picked while adding are saved first, so the block can name the files as written.
-                    val names = images.map { repo.saveAttachment(vault, ImageAttach.fileName(), "image/webp", it) }
-                    val lines = detail.copy(images = detail.images + names).block(today).split("\n").toMutableList()
-                    if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
-                    if (link != null) lines.add(1, "    - $link")
-                    repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n"))
-                    lines[0]
+                    withNewImages(vault, images) { names ->
+                        val lines = detail.copy(images = detail.images + names).block(today).split("\n").toMutableList()
+                        if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
+                        if (link != null) lines.add(1, "    - $link")
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n"))
+                        lines[0]
+                    }
                 }
             }
             result.getOrNull()?.let { noteCreated(it) }

@@ -111,6 +111,12 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
             .putExtra(RecognizerIntent.EXTRA_PROMPT, tr("พูดงานที่จะเพิ่ม", "Say the task to add"))
         try { listen.launch(intent) } catch (_: ActivityNotFoundException) { }
     }
+    // Linked notes and images for the new task (owner's pick, 2026-10-30, way ข): kept here until it is added,
+    // and handed to the full page so they are not lost there.
+    val extras = remember { NewAttachments() }
+    val pickImage = rememberNewImagePicker(vm, extras)
+    var linking by remember { mutableStateOf(false) }
+    if (linking) NewNotePicker(state, extras) { linking = false }
     fun addEvent(c: CalendarReader.Calendar?) {
         if (draft.title.isBlank()) return
         if (c == null) {
@@ -120,6 +126,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         CalendarReader.setAddTo(context, c.id)
         // No time typed: an all-day event, unless a time was picked in the rows.
         val ev = quickEvent(draft, eventPick, state.today)
+        if (!extras.isEmpty) vm.showMessage(tr("นัดในปฏิทินเก็บรูปและโน้ตไม่ได้ จึงไม่ได้แนบไป", "Calendar events cannot hold images or notes, so they were left out"))
         vm.addEvent(c.id, draft.title, ev.start, ev.end, ev.allDay)
         onDismiss()
     }
@@ -134,12 +141,6 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         if (CalendarReader.canWrite(context)) addEvent(calendar ?: pickCalendar(CalendarReader.calendars(context)))
         else allow.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
     }
-    // Linked notes and images for the new task (owner's pick, 2026-10-30, way ข): kept here until it is added,
-    // and handed to the full page so they are not lost there.
-    val extras = remember { NewAttachments() }
-    val pickImage = rememberNewImagePicker(vm, extras)
-    var linking by remember { mutableStateOf(false) }
-    if (linking) NewNotePicker(state, extras) { linking = false }
 
     // Task or event is picked first, so one button saves it and the two can no longer be mixed up (owner, 2026-10-24).
     // A typed time range (9:00-11:00) or day range picks the event until the owner picks for himself.
@@ -148,8 +149,9 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     val asEvent = target == null && (pickedEvent ?: autoEvent)
     fun add() {
         if (draft.title.isBlank()) return
+        if (extras.preparing > 0) { vm.showMessage(tr("รอรูปเตรียมเสร็จก่อน แล้วค่อยกดอีกครั้ง", "Wait for the image to be ready, then tap again")); return }
         val t = target
-        if (t != null && (extras.images.isNotEmpty() || extras.links.isNotEmpty())) {
+        if (t != null && !extras.isEmpty) {
             vm.showMessage(tr("ของในลิสต์เก็บรูปและโน้ตไม่ได้ จึงไม่ได้แนบไป", "List items cannot hold images or notes, so they were left out"))
         }
         if (t != null) vm.addListItem(t.list, draft.title, t.category, link) else vm.quickAdd(draft, status, link, extras.links.toList(), extras.images.toList())
@@ -263,7 +265,11 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                 if (list == null) {
                     AddChip(
                         { Icon(Ic.image, null, tint = it, modifier = Modifier.size(15.dp)) },
-                        extras.images.size.takeIf { it > 0 }?.let { tr("รูป $it", "$it images") }, tr("รูป", "Image"),
+                        when {
+                            extras.preparing > 0 -> tr("กำลังเตรียมรูป", "Preparing image")
+                            extras.images.isEmpty() -> null
+                            else -> tr("รูป ${extras.images.size}", if (extras.images.size == 1) "1 image" else "${extras.images.size} images")
+                        }, tr("รูป", "Image"),
                         onClear = { extras.images.clear() },
                     ) { pickImage() }
                     AddChip(

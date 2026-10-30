@@ -1,7 +1,6 @@
 package app.omnitask.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +54,9 @@ class NewAttachments {
     val links: SnapshotStateList<String> = mutableStateListOf()
     /** WebP bytes, saved to the attachments folder only when the task is added. */
     val images: SnapshotStateList<ByteArray> = mutableStateListOf()
+    /** Photos picked but still being read, or waiting on the "large image" choice; adding waits for them. */
+    var preparing by mutableIntStateOf(0)
+    val isEmpty get() = links.isEmpty() && images.isEmpty() && preparing == 0
 }
 
 /**
@@ -64,11 +67,21 @@ class NewAttachments {
 fun rememberNewImagePicker(vm: TaskViewModel, extras: NewAttachments): () -> Unit {
     var choosing by remember { mutableStateOf<ImageAttach.Prepared?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.prepareImage(uri) { p -> if (p.needsChoice) choosing = p else extras.images.add(p.full) }
+        if (uri != null) {
+            extras.preparing++
+            vm.prepareImage(uri) { p ->
+                when {
+                    p == null -> extras.preparing--
+                    p.needsChoice -> choosing = p
+                    else -> { extras.images.add(p.full); extras.preparing-- }
+                }
+            }
+        }
     }
     choosing?.let { p ->
         AttachChoiceDialog(p) { reduced ->
             choosing = null
+            extras.preparing--
             if (reduced != null) extras.images.add(if (reduced) p.reduced ?: p.full else p.full)
         }
     }
@@ -89,7 +102,7 @@ fun NewNotePicker(state: UiState, extras: NewAttachments, onDismiss: () -> Unit)
 @Composable
 fun NewImageRow(extras: NewAttachments, size: Dp, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        extras.images.forEachIndexed { i, bytes ->
+        extras.images.toList().forEach { bytes ->
             Box(Modifier.size(size)) {
                 val bmp = remember(bytes) { thumbOf(bytes) }
                 Box(Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(C.raised), contentAlignment = Alignment.Center) {
@@ -98,7 +111,7 @@ fun NewImageRow(extras: NewAttachments, size: Dp, onAdd: () -> Unit, modifier: M
                 }
                 Box(
                     Modifier.align(Alignment.TopEnd).padding(3.dp).size(24.dp).clip(CircleShape).background(C.card.copy(alpha = 0.85f))
-                        .clickable { extras.images.removeAt(i) },
+                        .clickable { extras.images.remove(bytes) },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Ic.close, tr("เอารูปออก", "Remove image"), tint = C.text2, modifier = Modifier.size(11.dp)) }
             }
@@ -134,11 +147,5 @@ fun NewLinkRows(state: UiState, extras: NewAttachments, modifier: Modifier = Mod
     }
 }
 
-/** A small preview of picked bytes; the full image is never decoded for it. */
-private fun thumbOf(bytes: ByteArray): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 240) sample *= 2
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-}
+/** A small preview of picked bytes, made the same way as the edit page's. */
+private fun thumbOf(bytes: ByteArray): Bitmap? = ImageAttach.thumbnail(bytes, 240)
