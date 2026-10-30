@@ -726,9 +726,10 @@ object DayFill {
                     Mode.AFTER_NIGHT -> Triple(17 * 60, 30, 20)
                 }
                 val acc = mem.accepted[ident(t)]?.takeIf { it.day == today.toString() }
-                // Rule 3 is the morning's: past noon without it, or once a want is done today, own time is the evening's.
+                // Rule 3 is the morning's: past noon without it, or once a want is done today, own time is the evening's
+                // (a daily habit ticked, 🔁, is not the morning's want).
                 val long = freeDay && fr.mode == Mode.NORMAL && (acc != null || fr.start < LookAhead.NOON) &&
-                    inp.tasks.none { isMine(it) && it.done == today }
+                    inp.tasks.none { isMine(it) && it.done == today && it.recurrence == null }
                 // Rule 3: a whole free day's morning, two hours, before work. Rule 4: own time owed is not cut short.
                 val hints = buildList {
                     if (long || owed != null) add(

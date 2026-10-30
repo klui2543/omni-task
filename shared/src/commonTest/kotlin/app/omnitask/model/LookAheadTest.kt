@@ -271,6 +271,10 @@ class LookAheadTest {
         assertTrue(next.len < 120, "${next.len}")
         val work = after.placed.filter { it.item.kind != DayFill.Kind.MINE && it.item.kind != DayFill.Kind.LIFE }
         assertTrue(work.any { it.at < 13 * 60 }, work.joinToString { "${it.item.title} ${DayFill.hm(it.at)}" })
+        // A daily habit ticked early is not the morning's want: the two hours stay.
+        val habit = note + "- [x] ยืดเส้นตอนเช้า #My-space 🔁 every day ✅ 2026-11-01"
+        val mine2 = DayFill.plan(input("2026-11-01T07:30", habit)).placed.first { it.item.kind == DayFill.Kind.MINE }
+        assertEquals(120, mine2.len)
     }
 
     @Test
