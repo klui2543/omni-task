@@ -9,15 +9,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,18 +32,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.omnitask.model.DayFill
+import app.omnitask.model.DayPlan
 import app.omnitask.model.Task
 import app.omnitask.model.tr
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import app.omnitask.time.*
 
@@ -79,42 +83,47 @@ fun DayFillSetting(context: Context) {
     }
 }
 
-/** The colours of a card's kind, as in the mock, with a dark version. */
-private class KindLook(val chipBg: Color, val chipFg: Color, val edge: Color, val dot: Color)
-
-private fun look(kind: DayFill.Kind): KindLook {
-    val dark = Palettes.current.dark
-    fun of(light: List<Long>, base: Long): KindLook =
-        if (!dark) KindLook(Color(light[0]), Color(light[1]), Color(light[2]), Color(light[3]))
-        else Color(base).let { KindLook(it.copy(alpha = 0.22f), it, it.copy(alpha = 0.45f), it) }
-    return when (kind) {
-        DayFill.Kind.DUE, DayFill.Kind.AGAIN -> of(listOf(0xFFFBEFD0, 0xFF7A5200, 0xFFE5C77A, 0xFFC8941E), 0xFFE0B04A)
-        DayFill.Kind.URGENT -> of(listOf(0xFFF8E0DA, 0xFF8A2D0E, 0xFFE0A27A, 0xFFC0502A), 0xFFE58A66)
-        DayFill.Kind.MINE -> of(listOf(0xFFF8E6DA, 0xFF8A3D0E, 0xFFDAD7CE, 0xFFD2793F), 0xFFE39A68)
-        DayFill.Kind.PROJECT -> of(listOf(0xFFE6F1E9, 0xFF1D5B33, 0xFFBFDCC8, 0xFF2F8A50), 0xFF6CC48C)
-        DayFill.Kind.REVIEW, DayFill.Kind.ASK -> of(listOf(0xFFECE6F6, 0xFF4B2D80, 0xFFCDBFE6, 0xFF7A5AB8), 0xFFB49BE6)
-        DayFill.Kind.LIFE -> of(listOf(0xFFEFEDE7, 0xFF3F3E3A, 0xFFDAD7CE, 0xFF9A968C), 0xFFB5B2AA)
-        DayFill.Kind.WORK, DayFill.Kind.NET -> of(listOf(0xFFE3EAF8, 0xFF1A3F91, 0xFFDAD7CE, 0xFF2457C5), 0xFF8FB0EE)
-    }
-}
-
-private val tagGreen get() = if (Palettes.current.dark) Color(0xFF6CC48C) else Color(0xFF1D5B33)
-private val warmText get() = if (Palettes.current.dark) Color(0xFFF0A070) else Color(0xFF8A3D0E)
-private val warmSoft get() = if (Palettes.current.dark) Color(0x33F0A070) else Color(0xFFF8E6DA)
-private val newsText get() = if (Palettes.current.dark) Color(0xFF9DB8F2) else Color(0xFF1A3F91)
-private val newsSoft get() = if (Palettes.current.dark) Color(0x339DB8F2) else Color(0xFFE3EAF8)
-private val violetText get() = if (Palettes.current.dark) Color(0xFFB49BE6) else Color(0xFF4B2D80)
-private val violetEdge get() = if (Palettes.current.dark) Color(0x66B49BE6) else Color(0xFFCDBFE6)
-private val okText get() = if (Palettes.current.dark) Color(0xFF6CC48C) else Color(0xFF1D6B3A)
 
 /** "1 ชม. 30 นาที", "45 นาที", as in the mock. */
 private fun dur(m: Int): String = if (m >= 60) {
     tr("${m / 60} ชม.", "${m / 60} h") + if (m % 60 != 0) tr(" ${m % 60} นาที", " ${m % 60} min") else ""
 } else tr("$m นาที", "$m min")
 
+/** Morning, afternoon or evening, cut where the Focus page timeline cuts them (noon, 17:00). Past midnight is evening. */
+private fun part(at: Int): DayPlan.Part = when {
+    at < 12 * 60 -> DayPlan.Part.MORNING
+    at < 17 * 60 -> DayPlan.Part.AFTERNOON
+    else -> DayPlan.Part.EVENING
+}
+
 /**
- * The plan on the today page: the free time in numbers, the day's notices, the errand and question buttons, the day
- * as rows (blocks it works around, cards, free time) and what moved to another day.
+ * A block's name and its time range: its title ends in "ถึง HH:mm", so that end goes on the right after its start
+ * ("08:30 ถึง 16:30"), as the mock has it. A block with no start (all day) shows its reason there instead.
+ */
+private fun blockText(row: DayFill.Row.Locked): Pair<String, String> {
+    val start = row.at?.let(DayFill::hm)
+    listOf(" ถึง ", " until ").forEach { sep ->
+        val end = row.title.substringAfterLast(sep, "")
+        if (end.matches(Regex("\\d{1,2}:\\d{2}"))) {
+            return row.title.substringBeforeLast(sep) to (start?.let { it + tr(" ถึง ", " to ") } ?: "") + end
+        }
+    }
+    return row.title to (start ?: row.why)
+}
+
+/** Days past the real deadline, for the red word on a task row ("เลย 9 วัน"). */
+private fun lateWord(t: Task?, today: LocalDate): String? {
+    val due = t?.due ?: return null
+    if (due >= today) return null
+    val n = today.toEpochDays() - due.toEpochDays()
+    return tr("เลย $n วัน", "$n days late")
+}
+
+/**
+ * The plan on the today page, in the Focus page timeline's look (owner's pick, 2026-10-30, mock Timeline): the day's
+ * notices, the day in its parts (morning, afternoon, evening) with the red now line, blocks it works around as event
+ * rows, the next task open on a soft band with its buttons, the free time kept clear, what moved to another day folded
+ * up, and the errand and question buttons at the foot.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -125,6 +134,10 @@ fun DayFillCard(
     var open by remember { mutableStateOf<String?>(null) }
     var chips by remember { mutableStateOf(false) }
     var sprintDetail by remember { mutableStateOf(false) }
+    var doneOpen by remember { mutableStateOf(false) }
+    var laterOpen by remember { mutableStateOf(false) }
+    // A block's reason shows when it is tapped, one at a time.
+    var reasonOf by remember { mutableStateOf<String?>(null) }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
     // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
     LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }
@@ -146,28 +159,22 @@ fun DayFillCard(
         if (what != null) vm.fillNews(DayFill.news(what, before, plan))
     }
 
+    val today = state.today
+    val nowMin = now.hour * 60 + now.minute
     Card {
-        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
             Text(
-                tr("ตอนนี้ ", "Now ") + DayFill.hm(now.hour * 60 + now.minute) + ", " +
-                    tr("ว่างจริง ${dur(plan.free)} จัดไว้ ${dur(plan.free - plan.buffer)} เหลือกันชน ${dur(plan.buffer)}", "free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}"),
-                color = C.text2, fontSize = TS.caption,
+                tr("ว่างจริง ${dur(plan.free)}, จัดไว้ ${dur(plan.free - plan.buffer)}, เหลือกันชน ${dur(plan.buffer)}", "Free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}"),
+                Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = C.muted, fontSize = TS.caption,
             )
-            plan.banner?.let { Notice(it, warmText, warmSoft, bold = true) }
-            state.fillNews?.takeIf { it.first == plan.day.toString() }?.let { Notice(it.second, newsText, newsSoft) }
+            plan.banner?.let { Notice(it, C.amberSoft) }
+            state.fillNews?.takeIf { it.first == plan.day.toString() }?.let { Notice(it.second, C.raised) }
             plan.sprint?.let { sp ->
-                val rule = C.divider
-                Column(
-                    Modifier.fillMaxWidth().drawBehind {
-                        drawLine(rule, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx())
-                        drawLine(rule, androidx.compose.ui.geometry.Offset(0f, size.height), androidx.compose.ui.geometry.Offset(size.width, size.height), 1.dp.toPx())
-                    }.padding(vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            androidx.compose.ui.text.buildAnnotatedString {
-                                pushStyle(androidx.compose.ui.text.SpanStyle(color = tagGreen, fontWeight = FontWeight.SemiBold))
+                            buildAnnotatedString {
+                                pushStyle(SpanStyle(color = C.text2, fontWeight = FontWeight.SemiBold))
                                 append(tr("สปรินต์สัปดาห์นี้ ", "This week's sprint "))
                                 pop()
                                 append(sp.names)
@@ -179,7 +186,7 @@ fun DayFillCard(
                             Text(
                                 tr("รับแล้ว", "Taken"),
                                 Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.fillSprint(sp.projects, take = null, swap = false) }.padding(horizontal = 4.dp, vertical = 6.dp),
-                                color = okText, fontSize = TS.caption,
+                                color = C.lime, fontSize = TS.caption,
                             )
                         } else {
                             SmallAction(tr("รับ", "Take"), true) { vm.fillSprint(sp.projects, take = true, swap = false) }
@@ -189,88 +196,129 @@ fun DayFillCard(
                     Text(
                         sp.note + if (sprintDetail) tr(" (แตะเพื่อย่อ)", " (tap to fold)") else tr(" (แตะดู)", " (tap to see)"),
                         Modifier.clip(RoundedCornerShape(6.dp)).clickable { sprintDetail = !sprintDetail },
-                        color = if (sp.late) warmText else C.muted, fontSize = TS.caption,
+                        color = if (sp.late) C.amber else C.muted, fontSize = TS.caption,
                     )
                     if (sprintDetail) sp.lines.forEach { Text(it, color = C.text2, fontSize = TS.caption) }
                 }
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (plan.end <= plan.start) {
+                Text(tr("วันนี้ไม่เหลือเวลาว่างให้จัดแล้ว", "No free time left to plan today"), Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = C.muted, fontSize = TS.caption)
+            }
+
+            // The day, part by part. Tasks done today fold into one line where the first of them stood.
+            val expanded = open ?: plan.next
+            val done = plan.rows.filterIsInstance<DayFill.Row.Done>()
+            val counts = plan.rows.filterIsInstance<DayFill.Row.Card>().filter { it.placed.item.kind != DayFill.Kind.LIFE }.groupingBy { part(it.at) }.eachCount()
+            val firstPart = plan.rows.firstOrNull { it !is DayFill.Row.Done && it.at != null }?.at?.let(::part) ?: DayPlan.Part.MORNING
+            var section: DayPlan.Part? = null
+            var nowShown = false
+            var foldShown = false
+            fun enter(p: DayPlan.Part): Boolean = (p != section).also { if (it) section = p }
+            plan.rows.forEach { row ->
+                if (row is DayFill.Row.Done) {
+                    if (foldShown) return@forEach
+                    foldShown = true
+                    if (section == null) {
+                        enter(firstPart)
+                        PartHead(firstPart, counts[firstPart] ?: 0)
+                    }
+                    DoneFold(done.size, doneOpen) { doneOpen = !doneOpen }
+                    if (doneOpen) done.forEach { d -> DoneRow(d.task, { vm.toggleDone(d.task) }) { onOpen(d.task) } }
+                    return@forEach
+                }
+                val at = row.at
+                if (at != null) {
+                    val p = part(at)
+                    if (enter(p)) PartHead(p, counts[p] ?: 0)
+                    if (!nowShown && at > nowMin && !(row is DayFill.Row.Locked && row.past)) {
+                        NowLine(nowMin)
+                        nowShown = true
+                    }
+                }
+                when (row) {
+                    is DayFill.Row.Locked -> {
+                        val (name, range) = blockText(row)
+                        val key = "block:" + row.at + ":" + row.title
+                        BlockRow(
+                            name, range, row.why.takeIf { reasonOf == key && range != it },
+                            faded = row.past || (at != null && at <= nowMin), bar = if (row.past) C.faint else C.teal,
+                        ) { reasonOf = if (reasonOf == key) null else key }
+                    }
+                    is DayFill.Row.Gap -> GapRow(
+                        DayFill.hm(row.at) + tr(" ถึง ", " to ") + DayFill.hm(row.at + row.len) +
+                            tr(" ว่างไว้ เผื่อเรื่องไม่คาดคิด", " kept free for the unexpected"),
+                    )
+                    is DayFill.Row.Card -> {
+                        val p = row.placed
+                        val item = p.item
+                        if (item.kind == DayFill.Kind.LIFE) {
+                            // Meals and rest read as blocks: they are where they are.
+                            val key = "life:" + item.id
+                            BlockRow(
+                                item.title, DayFill.hm(p.at) + tr(" ถึง ", " to ") + DayFill.hm(p.at + p.len),
+                                item.why.takeIf { reasonOf == key || item.id == expanded }, faded = p.at + p.len <= nowMin, bar = C.teal,
+                            ) { reasonOf = if (reasonOf == key) null else key }
+                        } else if (item.id == expanded) {
+                            val timed = item.task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
+                            NextCard(p, row.picked, timed, today, plan, vm, input, onReview) { open = it }
+                        } else {
+                            PlanRow(p, row.picked, today, vm) { open = item.id }
+                        }
+                    }
+                    is DayFill.Row.Done -> Unit
+                }
+            }
+            if (!nowShown && plan.rows.isNotEmpty()) NowLine(nowMin)
+
+            // What moved to another day, folded into one line.
+            val later = plan.later.filter { it.item.kind != DayFill.Kind.LIFE }
+            if (later.isNotEmpty()) {
+                Box(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp).fillMaxWidth().height(1.dp).background(C.divider))
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { laterOpen = !laterOpen }.padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        buildAnnotatedString {
+                            append(tr("ย้ายไปวันอื่น ${later.size} งาน ", "${later.size} moved to another day "))
+                            pushStyle(SpanStyle(color = C.muted))
+                            append(tr("ไม่นับว่าข้าม", "not counted as skipped"))
+                            pop()
+                        },
+                        Modifier.weight(1f), color = C.text, fontSize = TS.body,
+                    )
+                    Text(if (laterOpen) tr("ย่อ", "Fold") else tr("แตะดู", "Tap to see"), color = C.muted, fontSize = TS.caption)
+                }
+                if (laterOpen) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    later.forEach { l ->
+                        Column(
+                            // An answer given today can be taken back by tapping it, as a card can.
+                            if (l.picked != null) Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(l.item) } else Modifier.fillMaxWidth(),
+                        ) {
+                            Text(l.item.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(l.why, color = if (l.risk) C.red else C.muted, fontSize = TS.caption)
+                        }
+                    }
+                }
+            }
+
+            // The errand and the secretary's questions, at the foot as in the mock.
+            FlowRow(
+                Modifier.padding(start = 14.dp, end = 14.dp, top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 val errand = state.dayFill.takeIf { it.day == plan.day.toString() }?.errand
-                if (errand == null) PillButton(tr("มีธุระ", "Errand")) { chips = !chips }
-                else PillButton(tr("ธุระเสร็จแล้ว จัดคืนให้", "Errand over, plan again")) { vm.fillErrandEnd(); chips = false }
-                if (asks > 0) PillButton(tr("เลขาถาม $asks ข้อ", "$asks questions"), violetText, violetEdge, onAsks)
+                if (errand == null) FootButton(tr("มีธุระ", "Errand")) { chips = !chips }
+                else FootButton(tr("ธุระเสร็จแล้ว จัดคืนให้", "Errand over, plan again")) { vm.fillErrandEnd(); chips = false }
+                if (asks > 0) FootButton(tr("เลขาถาม $asks ข้อ", "$asks questions"), onAsks)
             }
             if (chips && state.dayFill.errand == null) {
-                Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(tr("ไม่ว่างนานแค่ไหน", "Busy for how long"), color = C.text2, fontSize = TS.caption)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(60 to tr("1 ชม.", "1 h"), 120 to tr("2 ชม.", "2 h"), 180 to tr("3 ชม.", "3 h"), null to tr("ทั้งเย็นนี้", "All evening")).forEach { (min, label) ->
-                            PillButton(label) { vm.fillErrand(plan.start, min, label); chips = false }
+                            FootButton(label) { vm.fillErrand(plan.start, min, label); chips = false }
                         }
-                    }
-                }
-            }
-            if (plan.end <= plan.start) Text(tr("วันนี้ไม่เหลือเวลาว่างให้จัดแล้ว", "No free time left to plan today"), color = C.muted, fontSize = TS.caption)
-
-            val expanded = open ?: plan.next
-            Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                plan.rows.forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val time = when (row) {
-                            is DayFill.Row.Card -> tr("ราว ", "about ") + DayFill.hm(row.at)
-                            is DayFill.Row.Locked -> row.at?.let(DayFill::hm) ?: ""
-                            is DayFill.Row.Gap -> DayFill.hm(row.at)
-                            is DayFill.Row.Done -> row.at?.let(DayFill::hm) ?: ""
-                        }
-                        Text(time, Modifier.width(50.dp).padding(top = 10.dp), color = C.muted, fontSize = TS.micro, textAlign = TextAlign.End)
-                        when (row) {
-                            is DayFill.Row.Locked -> Column(
-                                Modifier.weight(1f).alpha(if (row.past) 0.6f else 1f).clip(RoundedCornerShape(10.dp)).background(C.sunken).padding(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                Text(row.title, color = C.text2, fontSize = TS.body, fontWeight = FontWeight.Medium)
-                                Text(row.why, color = C.muted, fontSize = TS.caption)
-                            }
-                            is DayFill.Row.Gap -> Text(
-                                tr("ว่าง ${dur(row.len)} (ช่องกันชน ไว้รับเรื่องไม่คาดคิด ไม่มีอะไรก็พักได้)", "Free ${dur(row.len)} (a buffer for the unexpected, or a rest)"),
-                                Modifier.weight(1f).dashed(C.faint).padding(horizontal = 12.dp, vertical = 6.dp),
-                                color = C.muted, fontSize = TS.caption,
-                            )
-                            is DayFill.Row.Done -> Row(
-                                Modifier.weight(1f).alpha(0.55f).clip(RoundedCornerShape(10.dp)).background(C.card).border(1.dp, C.cardBorder, RoundedCornerShape(10.dp))
-                                    .clickable { onOpen(row.task) }.padding(start = 4.dp, end = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TaskCheck(row.task, { vm.toggleDone(row.task) }, size = 18.dp, touch = 36.dp)
-                                Text(row.task.title, Modifier.weight(1f), color = C.muted, fontSize = TS.body, textDecoration = TextDecoration.LineThrough, maxLines = 2)
-                            }
-                            is DayFill.Row.Card -> {
-                                val p = row.placed
-                                if (p.item.id == expanded) {
-                                    val timed = p.item.task?.let { state.dayFill.accepted[DayFill.ident(it)]?.timed }
-                                    BigCard(p, row.picked, timed, plan, vm, input, onReview) { open = it }
-                                } else {
-                                    SmallCard(p, row.picked, vm) { open = p.item.id }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            val later = plan.later.filter { it.item.kind != DayFill.Kind.LIFE }
-            if (later.isNotEmpty()) {
-                Column(Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(tr("ย้ายไปวันอื่น ไม่นับว่าข้าม", "Moved to another day, not counted as skipped"), color = C.text2, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
-                    later.forEach { l ->
-                        Text(
-                            l.item.title + ": " + l.why,
-                            // An answer given today can be taken back by tapping it, as a card can.
-                            if (l.picked != null) Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(l.item) } else Modifier,
-                            color = if (l.risk) warmText else C.text2, fontSize = TS.caption,
-                        )
                     }
                 }
             }
@@ -278,95 +326,199 @@ fun DayFillCard(
     }
 }
 
+/** A part of the day: its name, a hairline, and how many tasks it holds, as on the Focus page. */
 @Composable
-private fun RowScope.SmallCard(p: DayFill.Placed, picked: DayFill.Pick?, vm: TaskViewModel, onExpand: () -> Unit) {
-    val k = look(p.item.kind)
-    Row(
-        Modifier.weight(1f).heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp)).background(C.card).border(1.dp, k.edge, RoundedCornerShape(10.dp))
-            .clickable(onClick = onExpand).padding(start = if (p.item.task != null && p.item.kind != DayFill.Kind.LIFE) 2.dp else 12.dp, end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val task = p.item.task
-        if (task != null && p.item.kind != DayFill.Kind.LIFE) TaskCheck(task, { vm.toggleDone(task) }, size = 18.dp, touch = 36.dp)
-        else Box(Modifier.size(6.dp).clip(CircleShape).background(k.dot))
-        Text(p.item.title, Modifier.weight(1f).padding(vertical = 8.dp), color = C.text, fontSize = TS.body, maxLines = 2)
-        p.item.tag?.let { Text(it, color = tagGreen, fontSize = TS.micro) }
-        Text(if (picked == DayFill.Pick.TAKE) tr("รับแล้ว", "Taken") else dur(p.len), color = C.muted, fontSize = TS.caption)
+private fun PartHead(p: DayPlan.Part, count: Int) {
+    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(p.label, color = C.muted, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.weight(1f).padding(horizontal = 10.dp).height(1.dp).background(C.divider))
+        if (count > 0) Text("$count", color = C.muted, fontSize = TS.caption)
     }
 }
 
 @Composable
-private fun RowScope.BigCard(
-    p: DayFill.Placed, picked: DayFill.Pick?, timed: Boolean?, plan: DayFill.Plan, vm: TaskViewModel, input: () -> DayFill.Input,
-    onReview: (Task) -> Unit, setOpen: (String?) -> Unit,
+private fun NowLine(nowMin: Int) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(C.red))
+        Text(DayFill.hm(nowMin), Modifier.padding(horizontal = 6.dp), color = C.red, fontSize = TS.micro, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.weight(1f).height(1.5.dp).background(C.red.copy(alpha = 0.7f)))
+    }
+}
+
+/** "เสร็จแล้ว N งาน": the tasks ticked today, one tap from seeing them. */
+@Composable
+private fun DoneFold(n: Int, isOpen: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(onClick = onClick).padding(start = 6.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(18.dp).clip(CircleShape).background(C.lime)) }
+        Text(tr("เสร็จแล้ว $n งาน", "$n done"), Modifier.weight(1f).padding(start = 2.dp), color = C.muted, fontSize = TS.body)
+        Text(if (isOpen) tr("ย่อ", "Fold") else tr("แตะดู", "Tap to see"), color = C.muted, fontSize = TS.caption)
+    }
+}
+
+@Composable
+private fun DoneRow(task: Task, onTick: () -> Unit, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().alpha(0.55f).clickable(onClick = onClick).padding(start = 6.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TaskCheck(task, onTick, size = 18.dp, touch = 36.dp)
+        Text(task.title, Modifier.weight(1f).padding(start = 2.dp), color = C.muted, fontSize = TS.body, textDecoration = TextDecoration.LineThrough, maxLines = 2)
+    }
+}
+
+/** A block the plan works around (an event, the day job, sleep, an errand, a meal): a bar, its name, its time. */
+@Composable
+private fun BlockRow(title: String, right: String, reason: String?, faded: Boolean, bar: Color, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).fillMaxHeight().background(bar))
+            Text(
+                title, Modifier.weight(1f).padding(start = 10.dp), color = if (faded) C.faint else C.text,
+                style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Text(right, Modifier.padding(start = 8.dp), color = if (faded) C.faint else C.muted, fontSize = TS.caption, maxLines = 1)
+        }
+        if (reason != null) Text(reason, Modifier.padding(start = 13.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)
+    }
+}
+
+/** Free time left clear on purpose. */
+@Composable
+private fun GapRow(text: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp).heightIn(min = 36.dp).height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(C.control))
+        Text(text, Modifier.weight(1f).padding(start = 10.dp), color = C.muted, fontSize = TS.body)
+    }
+}
+
+/** The ring of a card that is a task, or a quiet dot for one that is not. */
+@Composable
+private fun Mark(item: DayFill.Item, vm: TaskViewModel) {
+    val task = item.task
+    if (task != null) TaskCheck(task, { vm.toggleDone(task) }, size = 20.dp, touch = 36.dp)
+    else Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(6.dp).clip(CircleShape).background(C.faint)) }
+}
+
+/** A task row's second line, led by its time: "16:45, เลย 9 วัน, 15 นาที, สปรินต์". Red only for late. */
+@Composable
+private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) {
+    val item = p.item
+    val late = lateWord(item.task, today)
+    val kind = item.tag ?: when (item.kind) {
+        DayFill.Kind.MINE -> tr("เวลาของตัวเอง", "Your own time")
+        DayFill.Kind.WORK, DayFill.Kind.NET, DayFill.Kind.LIFE -> null
+        else -> item.kind.label
+    }
+    Text(
+        buildAnnotatedString {
+            append(DayFill.hm(p.at))
+            if (late != null) {
+                append(", ")
+                pushStyle(SpanStyle(color = C.red, fontWeight = FontWeight.Medium))
+                append(late)
+                pop()
+            }
+            append(", ")
+            if (picked == DayFill.Pick.TAKE) {
+                pushStyle(SpanStyle(color = C.lime))
+                append(tr("รับแล้ว", "Taken"))
+                pop()
+            } else append(dur(p.len))
+            if (kind != null) append(", $kind")
+        },
+        color = C.muted, fontSize = TS.caption,
+    )
+}
+
+@Composable
+private fun PlanRow(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate, vm: TaskViewModel, onExpand: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onExpand).padding(start = 6.dp, end = 12.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Mark(p.item, vm)
+        Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
+            Text(p.item.title, color = C.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+            Caption(p, picked, today)
+        }
+    }
+}
+
+/** The task to do next, open on a soft band: why it is here, and its buttons. */
+@Composable
+private fun NextCard(
+    p: DayFill.Placed, picked: DayFill.Pick?, timed: Boolean?, today: LocalDate, plan: DayFill.Plan, vm: TaskViewModel,
+    input: () -> DayFill.Input, onReview: (Task) -> Unit, setOpen: (String?) -> Unit,
 ) {
     val item = p.item
-    val k = look(item.kind)
     val task = item.task
+    val indent = Modifier.padding(start = 38.dp)
     Column(
-        Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(C.card).border(1.dp, k.edge, RoundedCornerShape(12.dp))
-            .then(if (picked != null) Modifier.clickable { vm.fillUnpick(item); setOpen(null) } else Modifier)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.padding(vertical = 4.dp).fillMaxWidth().background(C.accentSoft).padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                item.kind.label, Modifier.clip(RoundedCornerShape(999.dp)).background(k.chipBg).padding(horizontal = 8.dp, vertical = 2.dp),
-                color = k.chipFg, fontSize = TS.micro, fontWeight = FontWeight.SemiBold,
-            )
-            Text(dur(p.len), color = C.muted, fontSize = TS.caption)
-            Box(Modifier.weight(1f))
-            item.tag?.let { Text(it, color = tagGreen, fontSize = TS.micro) }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (task != null && item.kind != DayFill.Kind.LIFE) TaskCheck(task, { vm.toggleDone(task) }, size = 18.dp, touch = 32.dp)
-            Text(item.title, Modifier.weight(1f), color = C.text, fontSize = TS.title, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.Top) {
+            Mark(item, vm)
+            Column(Modifier.weight(1f).heightIn(min = 36.dp).padding(start = 2.dp), verticalArrangement = Arrangement.Center) {
+                Text(item.title, color = C.text, fontSize = TS.title)
+                Caption(p, picked, today)
+            }
         }
         Text(
             item.why + if (p.short) tr(" (ย่อเหลือ ${dur(p.len)} เพราะวันนี้เวลาน้อยลง)", " (cut to ${dur(p.len)}, less time today)") else "",
-            color = C.text2, fontSize = TS.caption,
+            indent, color = C.muted, fontSize = TS.caption,
         )
         if (picked != null) {
             val text = when (picked) {
                 DayFill.Pick.TAKE -> if (timed == false) {
-                    tr("ลงเป็นงานวันนี้แล้ว ใช้เวลาเตือนเดิมของงานนี้", "Planned for today, with its own reminder")
-                } else tr("ลงเป็นงานแล้ว เตือนราว ${DayFill.hm(p.at)} แผนขยับ เวลาเตือนก็ขยับตาม", "Planned, reminder about ${DayFill.hm(p.at)}; it follows the plan")
+                    tr("ลงเป็นงานวันนี้แล้ว ใช้เวลาเตือนเดิมของงานนี้ ", "Planned for today, with its own reminder. ")
+                } else tr("ลงเป็นงานแล้ว เตือน ${DayFill.hm(p.at)} แผนขยับ เวลาเตือนก็ขยับตาม ", "Planned, reminder at ${DayFill.hm(p.at)}; it follows the plan. ")
                 else -> ""
             }
-            if (text.isNotEmpty()) Text(text, color = okText, fontSize = TS.body, fontWeight = FontWeight.Medium)
-            Text(tr("แตะการ์ดเพื่อเปลี่ยนใจ", "Tap the card to change your mind"), color = C.muted, fontSize = TS.caption)
+            Text(
+                text + tr("แตะเพื่อเปลี่ยนใจ", "Tap to change your mind"),
+                indent.clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(item); setOpen(null) }.padding(vertical = 6.dp),
+                color = if (text.isNotEmpty()) C.lime else C.muted, fontSize = TS.caption,
+            )
             return@Column
         }
-        // The owner's own time and meals have no answers: they are where they are.
-        if (item.kind == DayFill.Kind.LIFE || item.own) return@Column
+        // The owner's own reminder time has no answers: it is where it is.
+        if (item.own) return@Column
         val take = { vm.fillTake(p); setOpen(null) }
-        when (item.kind) {
-            DayFill.Kind.DUE, DayFill.Kind.URGENT, DayFill.Kind.AGAIN -> TwoButtons(
-                tr("เริ่ม 15 นาที", "Start 15 minutes"), take,
-                tr("วันนี้หมดแรง", "Out of energy"), { vm.fillTired(item, plan.mode); setOpen(null) },
-            )
-            DayFill.Kind.REVIEW -> TwoButtons(
-                tr("ทบทวน", "Review"), { task?.let(onReview) },
-                tr("ไว้ก่อน", "Later"), { vm.fillSkip(item); setOpen(null) },
-            )
-            DayFill.Kind.ASK -> {
-                val inp = input
-                BigButton(tr("แบ่งให้เล็กลง", "Make it smaller"), true, Modifier.fillMaxWidth()) { vm.fillAsk(item, DayFill.Pick.SPLIT, inp()); setOpen(null) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BigButton(tr("เก็บไว้ก่อน", "Keep for later"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.LATER, inp()); setOpen(null) }
-                    BigButton(tr("ปล่อยไป", "Let it go"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.DROP, inp()); setOpen(null) }
+        Column(indent.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (item.kind) {
+                DayFill.Kind.DUE, DayFill.Kind.URGENT, DayFill.Kind.AGAIN -> TwoButtons(
+                    tr("เริ่ม 15 นาที", "Start 15 minutes"), take,
+                    tr("วันนี้หมดแรง", "Out of energy"), { vm.fillTired(item, plan.mode); setOpen(null) },
+                )
+                DayFill.Kind.REVIEW -> TwoButtons(
+                    tr("ทบทวน", "Review"), { task?.let(onReview) },
+                    tr("ไว้ก่อน", "Later"), { vm.fillSkip(item); setOpen(null) },
+                )
+                DayFill.Kind.ASK -> {
+                    val inp = input
+                    BigButton(tr("แบ่งให้เล็กลง", "Make it smaller"), true, Modifier.fillMaxWidth()) { vm.fillAsk(item, DayFill.Pick.SPLIT, inp()); setOpen(null) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BigButton(tr("เก็บไว้ก่อน", "Keep for later"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.LATER, inp()); setOpen(null) }
+                        BigButton(tr("ปล่อยไป", "Let it go"), false, Modifier.weight(1f)) { vm.fillAsk(item, DayFill.Pick.DROP, inp()); setOpen(null) }
+                    }
                 }
+                else -> TwoButtons(
+                    tr("รับ", "Take"), take,
+                    tr("ไม่ใช่ เปลี่ยนให้", "Not this, swap"), { vm.fillSwap(item); setOpen(null) },
+                )
             }
-            else -> TwoButtons(
-                tr("รับ", "Take"), take,
-                tr("ไม่ใช่ เปลี่ยนให้", "Not this, swap"), { vm.fillSwap(item); setOpen(null) },
-            )
         }
         if (item.kind != DayFill.Kind.REVIEW && item.kind != DayFill.Kind.ASK) {
             Text(
                 tr("ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่น", "Busy now, move it later"),
-                Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.fillBusy(p, plan.mode); setOpen(null) }.padding(vertical = 8.dp),
+                indent.clip(RoundedCornerShape(6.dp)).clickable { vm.fillBusy(p, plan.mode); setOpen(null) }.padding(vertical = 8.dp),
                 color = C.accentText, fontSize = TS.caption,
             )
         }
@@ -384,12 +536,12 @@ private fun TwoButtons(a: String, onA: () -> Unit, b: String, onB: () -> Unit) {
 @Composable
 private fun BigButton(text: String, filled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(
-        modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
-            .then(if (filled) Modifier.background(C.accent) else Modifier.background(C.card).border(1.dp, C.control, RoundedCornerShape(10.dp)))
+        modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
+            .then(if (filled) Modifier.background(C.accent) else Modifier.background(C.raised).border(1.dp, C.control, RoundedCornerShape(10.dp)))
             .clickable(onClick = onClick).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = if (filled) C.onAccent else C.text2, fontSize = TS.body, fontWeight = if (filled) FontWeight.SemiBold else FontWeight.Normal, textAlign = TextAlign.Center)
+        Text(text, color = if (filled) C.onAccent else C.text, fontSize = TS.body, fontWeight = if (filled) FontWeight.SemiBold else FontWeight.Normal, textAlign = TextAlign.Center)
     }
 }
 
@@ -397,33 +549,28 @@ private fun BigButton(text: String, filled: Boolean, modifier: Modifier, onClick
 private fun SmallAction(text: String, filled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.heightIn(min = 32.dp).clip(RoundedCornerShape(8.dp))
-            .then(if (filled) Modifier.background(C.accent) else Modifier.background(C.card).border(1.dp, C.control, RoundedCornerShape(8.dp)))
+            .then(if (filled) Modifier.background(C.accent) else Modifier.background(C.raised).border(1.dp, C.control, RoundedCornerShape(8.dp)))
             .clickable(onClick = onClick).padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = if (filled) C.onAccent else C.text2, fontSize = TS.caption, fontWeight = if (filled) FontWeight.SemiBold else FontWeight.Normal)
+        Text(text, color = if (filled) C.onAccent else C.text, fontSize = TS.caption, fontWeight = if (filled) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
+/** The quiet buttons at the foot (มีธุระ, เลขาถาม), and the errand's lengths. */
 @Composable
-private fun PillButton(text: String, fg: Color = C.text2, edge: Color = C.control, onClick: () -> Unit) {
+private fun FootButton(text: String, onClick: () -> Unit) {
     Box(
-        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(999.dp)).background(C.card).border(1.dp, edge, RoundedCornerShape(999.dp))
-            .clickable(onClick = onClick).padding(horizontal = 12.dp),
+        Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp)).background(C.raised).border(1.dp, C.control, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = fg, fontSize = TS.caption) }
+    ) { Text(text, color = C.text, fontSize = TS.body) }
 }
 
 @Composable
-private fun Notice(text: String, fg: Color, bg: Color, bold: Boolean = false) {
+private fun Notice(text: String, bg: Color) {
     Text(
-        text, Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(bg).padding(horizontal = 10.dp, vertical = 6.dp),
-        color = fg, fontSize = TS.caption, fontWeight = if (bold) FontWeight.Medium else FontWeight.Normal,
+        text, Modifier.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(C.radius)).background(bg).padding(horizontal = 12.dp, vertical = 10.dp),
+        color = C.text, fontSize = TS.body,
     )
-}
-
-/** A dashed rounded border, for free time kept clear. */
-private fun Modifier.dashed(color: Color) = drawBehind {
-    val r = 10.dp.toPx()
-    drawRoundRect(color, cornerRadius = CornerRadius(r, r), style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))))
 }
