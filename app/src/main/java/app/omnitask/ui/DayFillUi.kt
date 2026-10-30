@@ -124,7 +124,7 @@ private fun lateWord(t: Task?, today: LocalDate): String? {
  * The plan on the today page, in the Focus page timeline's look (owner's pick, 2026-10-30, mock Timeline): the day's
  * notices, the day in its parts (morning, afternoon, evening) with the red now line, blocks it works around as event
  * rows, the next task open on a soft band with its buttons, the free time kept clear, what moved to another day folded
- * up, and the errand and question buttons at the foot.
+ * up; the errand, question and moved buttons sit in one row under the strip on top.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -181,7 +181,7 @@ fun DayFillCard(
                 if (asks > 0) ActChip(tr("เลขาถาม $asks ข้อ", "$asks questions"), false, onAsks)
                 if (later.isNotEmpty()) ActChip(tr("ย้ายไปวันอื่น ${later.size}", "${later.size} moved to another day"), laterOpen) { laterOpen = !laterOpen; chips = false }
             }
-            if (chips && state.dayFill.errand == null) {
+            if (chips && errand == null) {
                 Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(tr("ไม่ว่างนานแค่ไหน", "Busy for how long"), color = C.text2, fontSize = TS.caption)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

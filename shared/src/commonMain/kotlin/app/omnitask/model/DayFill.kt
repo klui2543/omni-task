@@ -339,17 +339,22 @@ object DayFill {
         var end = bed - 60
         // Tiredness built up over days (owner's pick ก, 2026-10-30): today's plan only, with the watch switch on.
         val tired = inp.sleeps?.takeIf { day == inp.now.date }?.let { sl ->
-            val nights = own.count { e -> !e.allDay && RealDay.isNight(e, p, f) && e.begin.date >= day.minusDays(Fatigue.WEEK.toLong()) && e.begin.date < day }
-            val often = inp.tasks.count { it.isOpen && inp.moves(it) >= 3 }
-            Fatigue.read(day, sl, nights, often)
+            // Shifts that began in the last week, the one that ended this morning too.
+            val nights = own.count { e -> !e.allDay && RealDay.isNight(e, p, f) && e.begin >= day.minusDays(Fatigue.WEEK.toLong()).atStartOfDay() && e.begin < inp.now }
+            // As the secretary's "slipping" counts: main tasks only, one per title.
+            val often = inp.tasks.filter { it.isOpen && !it.isSubtask && inp.moves(it) >= 3 }.map { it.title.trim() }.distinct().size
+            // The short nights a shift sets (the evening before it, the night after it) are its, counted under nights.
+            fun ownNight(eve: LocalDate) = RealDay.nightStart(eve.plusDays(1), own, p, f) == null && !afterNightOn(eve) && !afterNightOn(eve.plusDays(1))
+            Fatigue.read(day, sl, nights, often, ::ownNight)
         }
-        tired?.let { end -= it.stopEarlier }
         nightEvening?.let { end = minOf(end, minutesOf(it.begin, day) - 30) }
+        // Stops earlier only when it is not already stopping for a shift: the strip says by how much it really did.
+        val tiredRead = tired?.let { r -> val was = end; end = minOf(end, bed - 60 - r.stopEarlier); r.copy(stopped = was - end) }
         val wake = wakeAt + 30
         val start = maxOf(wake, from?.let { roundUp(minutesOf(it, day)) } ?: wake)
         val timed = todays.filter { !it.allDay }.sortedBy { it.begin }
         val busy = timed.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
-        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tired)
+        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tiredRead)
     }
 
     private fun roundUp(m: Int) = if (m % STEP == 0) m else m + STEP - m % STEP

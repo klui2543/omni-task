@@ -56,9 +56,44 @@ class FatigueTest {
     @Test
     fun oneShortNightAloneIsNotTired() {
         // The owner's point: one night does not say it.
-        val r = assertNotNull(Fatigue.read(day, weeks(short = 1, len = 360), 0, 0))
+        val r = assertNotNull(Fatigue.read(day, weeks(short = 1, len = 300), 0, 0))
         assertTrue(r.lastShort)
+        assertEquals(180, r.owed)
         assertEquals(Fatigue.Level.OK, r.level)
+    }
+
+    @Test
+    fun theShortNightsAShiftSetsAreNotOwed() {
+        // Bed 21:00 and up 01:45 before each 02:30 shift: the shift counts once, under night shifts.
+        val events = listOf(shift(1, "2026-10-24"), shift(2, "2026-10-27"))
+        val sleeps = weeks().map { s ->
+            if (s.start.date == LocalDate.parse("2026-10-23") || s.start.date == LocalDate.parse("2026-10-26")) SleepSession(s.start.date.atTime(21, 0), s.start.date.plusDays(1).atTime(1, 45)) else s
+        }
+        val fr = DayFill.frame(day, input(sleeps, events))
+        val r = assertNotNull(fr.tired)
+        assertEquals(0, r.owed)
+        assertEquals(2, r.nights)
+        assertEquals(Fatigue.Level.OK, r.level)
+    }
+
+    @Test
+    fun theUsualIsTheMiddleOfTheOwnersNights() {
+        // Nights of 7 h and 9 h by turns: the usual is 8 h, so a week of 7 h nights in the last seven owes some.
+        val mixed = (1..14).map { i -> night(day.minusDays(i.toLong()), 23, 0, if (i % 2 == 0) 540 else 420) }
+        val r = assertNotNull(Fatigue.read(day, mixed, 0, 0))
+        assertEquals(4 * 60, r.owed)
+    }
+
+    @Test
+    fun tooFewNightsSayNothing() {
+        assertNull(Fatigue.read(day, weeks().take(2), 3, 0))
+    }
+
+    @Test
+    fun theStripSaysAnEarlierStopOnlyWhenItHappened() {
+        val r = assertNotNull(Fatigue.read(day, weeks(short = 5, len = 420), 0, 0))
+        assertTrue(!assertNotNull(Fatigue.text(r)).contains("หยุดจัดงาน"))
+        assertTrue(assertNotNull(Fatigue.text(r.copy(stopped = 30))).contains("หยุดจัดงานเร็วขึ้น 30 นาที"))
     }
 
     @Test
@@ -94,7 +129,7 @@ class FatigueTest {
     @Test
     fun tiredStopsEarlierAndSaysWhy() {
         val tasks = listOf(task("ก"), task("ข"), task("ค"))
-        val inp = input(weeks(short = 5, len = 420), listOf(shift(1, "2026-10-24"), shift(2, "2026-10-26")), tasks, moves = { _: Task -> 3 })
+        val inp = input(weeks(short = 5, len = 240), listOf(shift(1, "2026-10-24"), shift(2, "2026-10-26")), tasks, moves = { _: Task -> 3 })
         val fr = DayFill.frame(day, inp)
         assertEquals(Fatigue.Level.VERY_TIRED, fr.tired!!.level)
         val plain = DayFill.frame(day, input(weeks()))

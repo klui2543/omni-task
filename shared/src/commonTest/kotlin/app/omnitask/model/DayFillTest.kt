@@ -165,6 +165,36 @@ class DayFillTest {
         assertTrue(flow.item.why.contains("26 ต.ค.") && flow.item.why.contains("น้องๆที่ห้อง"), flow.item.why)
     }
 
+    /** 14 nights of 8 h before 29 Oct, the last five of them 7 h: 5 h of sleep owed (tired). */
+    private val owedSleep = (1..14).map { i ->
+        val eve = LocalDate.parse("2026-10-29").minusDays(i.toLong())
+        SleepSession(eve.atTime(23, 0), eve.plusDays(1).atTime(if (i <= 5) 6 else 7, 0))
+    }
+
+    private fun tiredInput(now: String, lines: List<String>, extra: List<CalendarEvent> = emptyList()) =
+        DayFill.Input(tasks(lines), events + extra, profile, facts, LocalDateTime.parse(now), DayFill.Memory(), { 0 }, owedSleep)
+
+    @Test
+    fun tiredKeepsHalfTheFreeTimeClear() {
+        val busy = note + (1..6).map { "- [/] งานที่ทำค้าง $it #omni ➕ 2026-10-2$it\n    - ค้าง 2026-10-28 ทำไปครึ่งหนึ่ง" }
+        val plan = DayFill.plan(tiredInput("2026-10-29T16:45", busy))
+        assertEquals(Fatigue.Level.TIRED, DayFill.frame(LocalDate.parse("2026-10-29"), tiredInput("2026-10-29T16:45", busy)).tired?.level)
+        assertTrue(plan.buffer >= plan.free / 2, "buffer ${plan.buffer} of ${plan.free}")
+        assertTrue(plan.later.any { it.why.contains("น่าจะล้า") }, plan.later.joinToString { it.why })
+        assertTrue(assertNotNull(plan.banner).contains("น่าจะล้า"))
+    }
+
+    @Test
+    fun veryTiredPlacesOnlyWhatMustBeDone() {
+        // Three shifts early in the week, then four short nights of the owner's own (the shift nights are not owed).
+        val shifts = listOf("2026-10-22", "2026-10-23", "2026-10-24").mapIndexed { i, d -> timed(90L + i, shiftCal, "O11 รอบ 3", "${d}T02:30", "${d}T08:30") }
+        val sleeps = (1..14).map { i -> LocalDate.parse("2026-10-29").minusDays(i.toLong()).let { eve -> SleepSession(eve.atTime(23, 0), eve.plusDays(1).atTime(if (i <= 4) 5 else 7, 0)) } }
+        val inp = DayFill.Input(tasks(note), events + shifts, profile, facts, LocalDateTime.parse("2026-10-29T16:45"), DayFill.Memory(), { 0 }, sleeps)
+        assertEquals(Fatigue.Level.VERY_TIRED, DayFill.frame(LocalDate.parse("2026-10-29"), inp).tired?.level)
+        val plan = DayFill.plan(inp)
+        assertTrue(plan.work().all { it.item.must }, plan.work().joinToString { it.item.title })
+    }
+
     @Test
     fun aThirdOfTheFreeTimeStaysClear() {
         val plan = DayFill.plan(input("2026-10-29T16:45"))

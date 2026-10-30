@@ -21,8 +21,10 @@ object Fatigue {
         val oftenMoved: Int,
         /** The reasons, in the owner's words, for the strip on top of the plan; empty when [level] is [Level.OK]. */
         val why: List<String>,
+        /** Minutes the plan really stops earlier (0 when a shift already stops it sooner), set by the day's frame. */
+        val stopped: Int = 0,
     ) {
-        /** Minutes the plan stops earlier. */
+        /** Minutes the plan is to stop earlier. */
         val stopEarlier: Int get() = when (level) { Level.OK -> 0; Level.TIRED -> 30; Level.VERY_TIRED -> 60 }
     }
 
@@ -39,21 +41,18 @@ object Fatigue {
     /**
      * [day]'s read. [sleeps] are the watch's (null: switch off, then nothing is read and the plan stays as it was);
      * [nights] the night shifts that began in the [WEEK] days before [day]; [oftenMoved] the open tasks moved three
-     * times or more.
+     * times or more; [own] tells the evenings whose night is the owner's own (not one a shift set, which [nights]
+     * already counts). Null too while the watch has under [SleepTimes.MIN_NIGHTS] nights: not enough to say.
      */
-    fun read(day: LocalDate, sleeps: List<SleepSession>?, nights: Int, oftenMoved: Int): Read? {
+    fun read(day: LocalDate, sleeps: List<SleepSession>?, nights: Int, oftenMoved: Int, own: (LocalDate) -> Boolean = { true }): Read? {
         if (sleeps == null) return null
-        val lengths = (1..SleepTimes.DAYS).associateWith { SleepTimes.night(sleeps, day.minusDays(it.toLong()))?.minutes }
-        val usual = SleepTimes.usual(day, { true }) { d -> lengths[(day.toEpochDays() - d.toEpochDays()).toInt()] }
-        var owed = 0
-        var lastShort = false
-        if (usual != null) {
-            owed = (1..WEEK).sumOf { i -> lengths[i]?.let { maxOf(0, usual - it) } ?: 0 }
-            lastShort = lengths[1]?.let { it < usual - SHORT } == true
-        }
+        val lengths = (1..SleepTimes.DAYS).associateWith { i -> day.minusDays(i.toLong()).takeIf(own)?.let { SleepTimes.night(sleeps, it)?.minutes } }
+        val usual = SleepTimes.usual(day, { true }) { d -> lengths[(day.toEpochDays() - d.toEpochDays()).toInt()] } ?: return null
+        val owed = (1..WEEK).sumOf { i -> lengths[i]?.let { maxOf(0, usual - it) } ?: 0 }
+        val lastShort = lengths[1]?.let { it < usual - SHORT } == true
+        // One short night alone does not make a tired day (the owner's point): it is told, not counted.
         var score = 0
         if (owed >= 2 * OWED) score += 2 else if (owed >= OWED) score += 1
-        if (lastShort) score += 1
         if (nights > NIGHTS) score += 2 else if (nights >= NIGHTS) score += 1
         if (oftenMoved >= MOVED) score += 1
         val level = when {
@@ -76,8 +75,11 @@ object Fatigue {
     fun text(r: Read): String? = when (r.level) {
         Level.OK -> null
         Level.TIRED -> tr("วันนี้น่าจะล้า (", "Likely tired today (") + r.why.joinToString(", ") +
-            tr(") เลขาจัดเบาลง เผื่อเวลาว่างมากขึ้น และหยุดจัดงานเร็วขึ้น ${r.stopEarlier} นาที", "): a lighter plan, more free time, stops ${r.stopEarlier} min earlier")
+            tr(") เลขาจัดเบาลง เผื่อเวลาว่างมากขึ้น", "): a lighter plan, more free time") + earlier(r)
         Level.VERY_TIRED -> tr("วันนี้น่าจะล้ามาก (", "Likely very tired today (") + r.why.joinToString(", ") +
-            tr(") เลขาจัดเฉพาะที่จำเป็น เผื่อเวลาว่างมากขึ้น และหยุดจัดงานเร็วขึ้น 1 ชม.", "): only what must be done, more free time, stops 1 h earlier")
+            tr(") เลขาจัดเฉพาะที่จำเป็น เผื่อเวลาว่างมากขึ้น", "): only what must be done, more free time") + earlier(r)
     }
+
+    /** "และหยุดจัดงานเร็วขึ้น ..." only when the plan really stops earlier. */
+    private fun earlier(r: Read): String = if (r.stopped <= 0) "" else tr(" และหยุดจัดงานเร็วขึ้น ", ", stops ") + dur(r.stopped).let { if (r.stopped < 60) tr("${r.stopped} นาที", "${r.stopped} min") else it } + tr("", " earlier")
 }
