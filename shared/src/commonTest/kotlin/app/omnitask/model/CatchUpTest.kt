@@ -105,6 +105,15 @@ class CatchUpTest {
         assertNull(kept.on(LocalDate.parse("2026-10-31")).stop, "a new day forgets the stop")
     }
 
+    @Test
+    fun aNotYetIsKeptForTodayOnly() {
+        val m0 = DayFill.Memory(day = day, notYet = mapOf("x" to m(16, 45)))
+        assertEquals(m0, DayFill.decode(DayFill.encode(m0)))
+        assertEquals(mapOf("x" to m(16, 45)), m0.on(LocalDate.parse(day)).notYet, "the same day keeps it")
+        assertTrue(m0.on(LocalDate.parse("2026-10-31")).notYet.isEmpty(), "a new day forgets it")
+        assertTrue(assertNotNull(DayFill.decode("""{"day":"2026-10-30"}""")).notYet.isEmpty(), "memory from before reads with none")
+    }
+
     // ---- 2 and 3. Past its slot and not ticked: it stays, then free times are offered ----
 
     @Test

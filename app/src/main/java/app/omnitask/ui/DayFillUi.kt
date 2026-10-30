@@ -519,7 +519,7 @@ fun DayFillCard(
                                             Text(tr("เลยเวลา ${DayFill.hm(p.at)} แล้ว ทำไปหรือยัง", "${DayFill.hm(p.at)} went by. Done it?"), color = C.text, fontSize = TS.body)
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 SmallAction(tr("ทำแล้ว", "Done"), false) { task?.let(vm::toggleDone) }
-                                                SmallAction(tr("ยังไม่ได้ทำ", "Not yet"), true) { replacing = item.id; open = null }
+                                                SmallAction(tr("ยังไม่ได้ทำ", "Not yet"), true) { replacing = item.id; open = null; vm.fillNotYet(p) }
                                             }
                                         }
                                     }

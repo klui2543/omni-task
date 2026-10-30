@@ -2526,6 +2526,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         fillWrite(task, onFailed = { saveFill(cur) }) { DayFill.withMarks(it, was) }
     }
 
+    /**
+     * "ยังไม่ได้ทำ" on a taken slot gone by: kept for today with where the slot started, so the look-ahead's own-time
+     * record does not count it as done. Nothing is written to the note.
+     */
+    fun fillNotYet(p: DayFill.Placed) {
+        if (!fillLoaded) return
+        val task = p.item.task ?: return
+        val m = _state.value.dayFill.on(LocalDate.now())
+        val id = DayFill.ident(task)
+        if (m.notYet[id] != p.at) saveFill(m.copy(notYet = m.notYet + (id to p.at)))
+    }
+
     /** Keeps when today's plan stops, for the reminder at a taken slot ("เหลืออีก N ถึงจะทำทันวันนี้"). */
     fun fillStop(end: Int) {
         // Before the memory is read there is nothing to add it to: writing then would wipe what the phone keeps.

@@ -78,6 +78,11 @@ object DayFill {
         val lines: Map<String, Line> = emptyMap(),
         /** When today's plan stops (minutes from the day's start), as the today page last saw it: the reminder counts to it. */
         val stop: Int? = null,
+        /**
+         * "ยังไม่ได้ทำ" on a taken slot gone by, today: the task ([ident]) and where its slot started when it was tapped.
+         * The look-ahead's own-time record reads it; a slot put at a new time is judged afresh there.
+         */
+        val notYet: Map<String, Int> = emptyMap(),
     ) {
         /** The same memory on [today]: yesterday's taps go, what lasts stays (put-off days for 30 days). */
         fun on(today: LocalDate): Memory {
