@@ -167,7 +167,7 @@ fun DayFillCard(
         Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
             // What the secretary did and the day's numbers, in one strip that opens to the whole day (owner's pick ก).
             val numbers = tr("ว่างจริง ${dur(plan.free)}, จัดไว้ ${dur(plan.free - plan.buffer)}, เหลือกันชน ${dur(plan.buffer)}", "Free ${dur(plan.free)}, planned ${dur(plan.free - plan.buffer)}, buffer ${dur(plan.buffer)}")
-            TellStrip(plan.banner, state.fillLog, numbers, logOpen) { logOpen = !logOpen }
+            TellStrip(plan.banner, state.fillLog.takeIf { state.fillLogDay == plan.day.toString() }.orEmpty(), numbers, logOpen) { logOpen = !logOpen }
             plan.sprint?.let { sp ->
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -331,10 +331,10 @@ fun DayFillCard(
  */
 @Composable
 private fun TellStrip(banner: String?, log: List<Pair<String, String>>, numbers: String, isOpen: Boolean, onClick: () -> Unit) {
-    val latest = log.lastOrNull()
-    val title = latest?.let { tr("เลขาจัดใหม่ ", "Re-planned at ") + it.first + ": " + it.second } ?: banner ?: numbers
+    val latest = log.lastOrNull()?.let { (at, text) -> splitNews(text).let { (what, moves) -> "$at $what" to moves } }
+    val title = latest?.first ?: banner ?: numbers
     val sub = when {
-        latest != null -> banner ?: numbers
+        latest != null -> listOfNotNull(latest.second, banner).joinToString("\n").ifEmpty { numbers }
         banner != null -> numbers
         else -> null
     }
@@ -356,8 +356,23 @@ private fun TellStrip(banner: String?, log: List<Pair<String, String>>, numbers:
         LogLine(tr("ตอนนี้", "Now"), numbers)
         banner?.let { LogLine(tr("วันนี้", "Today"), it) }
         log.asReversed().forEach { (at, text) -> LogLine(at, text) }
-        if (log.isEmpty()) Text(tr("วันนี้เลขายังไม่ได้จัดใหม่", "Nothing re-planned today yet"), color = C.muted, fontSize = TS.caption)
     }
+}
+
+/**
+ * A told line cut in two: what happened (the strip's headline) and what the secretary moved for it (the smaller line).
+ * When the plan still fitted, the smaller line says so, and the headline does not claim a re-plan.
+ */
+private fun splitNews(text: String): Pair<String, String?> {
+    for (cut in listOf(" เลขาจัดใหม่ให้แล้ว: ", ". Replanned: ")) {
+        val i = text.indexOf(cut)
+        if (i >= 0) return text.substring(0, i) to tr("เลขาจัดใหม่: ", "Re-planned: ") + text.substring(i + cut.length)
+    }
+    for (cut in listOf(" แผนเดิมยังพอดี", ". The plan still fits")) {
+        val i = text.indexOf(cut)
+        if (i >= 0) return text.substring(0, i) to text.substring(i).trimStart(' ', '.')
+    }
+    return text to null
 }
 
 @Composable
