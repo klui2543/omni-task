@@ -134,6 +134,13 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         if (CalendarReader.canWrite(context)) addEvent(calendar ?: pickCalendar(CalendarReader.calendars(context)))
         else allow.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
     }
+    // Linked notes and images for the new task (owner's pick, 2026-10-30, way ข): kept here until it is added,
+    // and handed to the full page so they are not lost there.
+    val extras = remember { NewAttachments() }
+    val pickImage = rememberNewImagePicker(vm, extras)
+    var linking by remember { mutableStateOf(false) }
+    if (linking) NewNotePicker(state, extras) { linking = false }
+
     // Task or event is picked first, so one button saves it and the two can no longer be mixed up (owner, 2026-10-24).
     // A typed time range (9:00-11:00) or day range picks the event until the owner picks for himself.
     var pickedEvent by remember { mutableStateOf<Boolean?>(null) }
@@ -142,7 +149,10 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
     fun add() {
         if (draft.title.isBlank()) return
         val t = target
-        if (t != null) vm.addListItem(t.list, draft.title, t.category, link) else vm.quickAdd(draft, status, link)
+        if (t != null && (extras.images.isNotEmpty() || extras.links.isNotEmpty())) {
+            vm.showMessage(tr("ของในลิสต์เก็บรูปและโน้ตไม่ได้ จึงไม่ได้แนบไป", "List items cannot hold images or notes, so they were left out"))
+        }
+        if (t != null) vm.addListItem(t.list, draft.title, t.category, link) else vm.quickAdd(draft, status, link, extras.links.toList(), extras.images.toList())
         onDismiss()
     }
     // Focus (and the keyboard) only after the sheet has finished opening; asking earlier is the likeliest
@@ -170,7 +180,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
         current = if (target == null) Folders.ofTags(draft.tags) else null,
         labels = null,
         onLabel = null,
-        onPick = { f -> target = null; setText(QuickAddChips.withFolder(text, f, state.today)); choosingFolder = false },
+        onPick = { f -> vm.notePickedFolder(f); target = null; setText(QuickAddChips.withFolder(text, f, state.today)); choosingFolder = false },
         onDismiss = { choosingFolder = false },
         lists = state.lists,
         currentList = target?.let { it.list to it.category },
@@ -183,7 +193,7 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
 
     // The full-screen page for what one sentence can't say; it starts from what was typed so far.
     var full by remember { mutableStateOf(false) }
-    if (full) AddDetailPage(state, vm, text, status, link, startAsEvent = asEvent, onClose = { full = false }, onSaved = { full = false; onDismiss() })
+    if (full) AddDetailPage(state, vm, text, status, link, extras, startAsEvent = asEvent, onClose = { full = false }, onSaved = { full = false; onDismiss() })
 
     SheetFrame(onDismiss) {
         if (target == null) {
@@ -249,7 +259,22 @@ fun QuickAddSheet(state: UiState, vm: TaskViewModel, voice: Boolean, status: Sta
                     tr("โฟลเดอร์", "Folder"),
                     onClear = { if (list != null) target = null else setText(QuickAddChips.withFolder(text, null, state.today)) },
                 ) { choosingFolder = true }
+                // A list item is one line, so images and notes go only with a task.
+                if (list == null) {
+                    AddChip(
+                        { Icon(Ic.image, null, tint = it, modifier = Modifier.size(15.dp)) },
+                        extras.images.size.takeIf { it > 0 }?.let { tr("รูป $it", "$it images") }, tr("รูป", "Image"),
+                        onClear = { extras.images.clear() },
+                    ) { pickImage() }
+                    AddChip(
+                        { Icon(Ic.notes, null, tint = it, modifier = Modifier.size(15.dp)) },
+                        extras.links.size.takeIf { it > 0 }?.let { n -> if (n == 1) extras.links.first().substringAfterLast('/') else tr("โน้ต $n", "$n notes") }, tr("โน้ต", "Note"),
+                        onClear = { extras.links.clear() },
+                    ) { linking = true }
+                }
             }
+            if (list == null && extras.images.isNotEmpty()) NewImageRow(extras, 64.dp, pickImage, Modifier.padding(top = 10.dp))
+            if (list == null && extras.links.size > 1) NewLinkRows(state, extras, Modifier.padding(top = 6.dp))
             if (list != null) Text(
                 tr("ของในลิสต์ไม่มีวันที่และเวลา แตะ ✕ ที่ชิปลิสต์ ถ้าอยากให้เป็นงานปกติ", "List items have no date or time. Tap ✕ on the list chip for a normal task"),
                 Modifier.padding(top = 8.dp), color = C.accentText, fontSize = TS.caption,
