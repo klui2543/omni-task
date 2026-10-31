@@ -196,7 +196,8 @@ fun DayFillCard(
     // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
     LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }
     // The look-ahead's rule 4 (switch on): today's own time, offered and done, kept on the phone.
-    LaunchedEffect(plan, LookAheadMode.on) { if (LookAheadMode.on) vm.ownSeen(plan, input()) }
+    // Looked at again after "ยังไม่ได้ทำ", which leaves the plan as it was.
+    LaunchedEffect(plan, LookAheadMode.on, state.dayFill.notYet) { if (LookAheadMode.on) vm.ownSeen(plan, input()) }
     // A new event or a new urgent task changed the plan without a tap: say what moved.
     var seen by remember { mutableStateOf<DayFill.Plan?>(null) }
     LaunchedEffect(plan) {
