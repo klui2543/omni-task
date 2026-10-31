@@ -731,7 +731,7 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
  * calendar choice with its calendar pointed out. On a day ahead (the week block) it is [ahead]: plain, never past or running.
  */
 @Composable
-private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onClick: () -> Unit, day: LocalDate = now.toLocalDate(), ahead: Boolean = false) {
+private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, day: LocalDate = now.toLocalDate(), ahead: Boolean = false, onClick: () -> Unit) {
     val e = item.event
     val phase = if (ahead) DayPlan.Phase.UPCOMING else DayPlan.phase(e, now)
     val past = phase == DayPlan.Phase.PAST
@@ -1066,7 +1066,7 @@ private fun WeekCard(
                 PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
                 // A whole free day ahead: what today's plan would put on it then (nothing is written).
                 booked[day]?.let { Text(bookedText(it), Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp), color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                dayEvents[day].orEmpty().forEach { ev -> TimelineEvent(ev, now, { onEvent(ev.event) }, day = day, ahead = true) }
+                dayEvents[day].orEmpty().forEach { ev -> TimelineEvent(ev, now, day = day, ahead = true) { onEvent(ev.event) } }
                 items.forEach { w ->
                     val days = ChronoUnit.DAYS.between(today, day)
                     AheadRow(
