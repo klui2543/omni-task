@@ -19,9 +19,13 @@ import app.omnitask.time.*
 internal object TodayWeek {
 
     sealed interface Row {
-        /** The red line at the current time, on today only. */
+        /** The red line at the current time, on today only, when no event is happening now. */
         data class Now(val time: LocalTime) : Row
-        data class Event(val title: String, val time: String, val color: Int?, val past: Boolean) : Row
+        /**
+         * [run] is how far into the event the clock is (0 to 1) while it is happening: the red now line then crosses
+         * this row at that point instead of standing on its own (owner, 2026-10-31, mock widget-now, way ข).
+         */
+        data class Event(val title: String, val time: String, val color: Int?, val past: Boolean, val run: Float? = null) : Row
         data class Todo(val task: Task, val time: String, val late: Boolean) : Row
     }
 
@@ -34,6 +38,8 @@ internal object TodayWeek {
 
     // Heights in dp, as drawn by the widget.
     const val ROW = 28
+    /** A row the now line crosses is taller, so the line and the time gone by show clearly. */
+    const val RUN = 44
     const val ROW_GAP = 4
     const val NOW = 11
     const val EMPTY = 26
@@ -54,7 +60,7 @@ internal object TodayWeek {
         day.rows.forEach { r ->
             val rh = when (r) {
                 is Row.Now -> NOW
-                else -> if (cap != null && shown >= cap) return@forEach else { shown++; ROW }
+                else -> if (cap != null && shown >= cap) return@forEach else { shown++; if (r is Row.Event && r.run != null) RUN else ROW }
             }
             h += rh + if (first) 0 else ROW_GAP
             first = false
@@ -109,7 +115,8 @@ internal object TodayWeek {
         plan.filter { it.part == DayPlan.Part.ALL_DAY }.flatMap { it.items }.forEach { out += row(it, today, now, color) }
         val timed = plan.filter { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.part != DayPlan.Part.ALL_DAY }.flatMap { it.items }
         val clock = now.toLocalTime()
-        var nowShown = false
+        // An event happening now carries the line itself (it crosses that row), so there is no line of its own.
+        var nowShown = plan.flatMap { it.items }.any { it is DayPlan.Item.EventItem && running(it.event, now) }
         timed.forEach { item ->
             val t = item.time
             if (!nowShown && t != null && t > clock) { out += Row.Now(clock); nowShown = true }
@@ -122,6 +129,7 @@ internal object TodayWeek {
 
     private fun row(item: DayPlan.Item, today: LocalDate, now: LocalDateTime, color: (CalendarEvent) -> Int?): Row = when (item) {
         is DayPlan.Item.EventItem -> event(item.event, today, color, DayPlan.phase(item.event, now) == DayPlan.Phase.PAST)
+            .let { if (running(item.event, now)) it.copy(run = DayPlan.progress(item.event, now)) else it }
         is DayPlan.Item.TaskItem -> Row.Todo(item.task, item.time?.let(::hm) ?: aside(item.task), late = false)
     }
 
@@ -145,6 +153,9 @@ internal object TodayWeek {
         }
         return Row.Event(e.title, time, color(e), past)
     }
+
+    /** A timed event the clock is inside now (one that began on an earlier day too, such as the end of a night shift). */
+    private fun running(e: CalendarEvent, now: LocalDateTime) = DayPlan.phase(e, now) == DayPlan.Phase.ACTIVE
 
     /** What a task without a time shows on the right: its project, or who it waits on. */
     private fun aside(t: Task) = Projects.projectOf(t)?.let { "#$it" } ?: Focus.waitingFor(t)?.let { tr("รอ $it", "waiting on $it") } ?: ""

@@ -47,6 +47,13 @@ object LockCardNotifier {
     private val TITLE = intArrayOf(R.id.t0, R.id.t1, R.id.t2, R.id.t3, R.id.t4)
     private val TIME = intArrayOf(R.id.r0, R.id.r1, R.id.r2, R.id.r3, R.id.r4)
     private val NOWTIME = intArrayOf(R.id.m0, R.id.m1, R.id.m2, R.id.m3, R.id.m4)
+    // The taller row of an event happening now, which the red line crosses (mock widget-now, way ข).
+    private val RUN = intArrayOf(R.id.q0, R.id.q1, R.id.q2, R.id.q3, R.id.q4)
+    private val RUNSPENT = intArrayOf(R.id.qs0, R.id.qs1, R.id.qs2, R.id.qs3, R.id.qs4)
+    private val RUNLINE = intArrayOf(R.id.qx0, R.id.qx1, R.id.qx2, R.id.qx3, R.id.qx4)
+    private val RUNBAR = intArrayOf(R.id.qb0, R.id.qb1, R.id.qb2, R.id.qb3, R.id.qb4)
+    private val RUNTITLE = intArrayOf(R.id.qt0, R.id.qt1, R.id.qt2, R.id.qt3, R.id.qt4)
+    private val RUNTIME = intArrayOf(R.id.qr0, R.id.qr1, R.id.qr2, R.id.qr3, R.id.qr4)
 
     suspend fun refresh(context: Context) {
         val nm = NotificationManagerCompat.from(context)
@@ -81,11 +88,12 @@ object LockCardNotifier {
             if (slot >= PILL.size) return@forEach
             when (r) {
                 is TodayWeek.Row.Now -> {
+                    big.setViewVisibility(RUN[slot], android.view.View.GONE)
                     big.setViewVisibility(PILL[slot], android.view.View.GONE)
                     big.setViewVisibility(NOW[slot], android.view.View.VISIBLE)
                     big.setTextViewText(NOWTIME[slot], hm(r.time))
                 }
-                is TodayWeek.Row.Event -> pill(big, slot, r.title, r.time, r.color ?: SLATE)
+                is TodayWeek.Row.Event -> r.run?.let { running(context, big, slot, r, it) } ?: pill(big, slot, r.title, r.time, r.color ?: SLATE)
                 is TodayWeek.Row.Todo -> pill(big, slot, r.task.title, r.time, SLATE)
             }
             slot++
@@ -93,6 +101,7 @@ object LockCardNotifier {
         for (i in slot until PILL.size) {
             big.setViewVisibility(PILL[i], android.view.View.GONE)
             big.setViewVisibility(NOW[i], android.view.View.GONE)
+            big.setViewVisibility(RUN[i], android.view.View.GONE)
         }
         if (card.more > 0) {
             big.setViewVisibility(R.id.more, android.view.View.VISIBLE)
@@ -132,7 +141,24 @@ object LockCardNotifier {
         nm.notify(ID, n)
     }
 
+    /** An event happening now: the red line and the tint of the time gone sit [run] of the way down the row. */
+    private fun running(context: Context, rv: RemoteViews, slot: Int, r: TodayWeek.Row.Event, run: Float) {
+        rv.setViewVisibility(NOW[slot], android.view.View.GONE)
+        rv.setViewVisibility(PILL[slot], android.view.View.GONE)
+        rv.setViewVisibility(RUN[slot], android.view.View.VISIBLE)
+        val dp = context.resources.displayMetrics.density
+        val h = TodayWeek.RUN.toFloat()
+        val y = (run.coerceIn(0f, 1f) * h).coerceIn(3f, h - 3f)
+        // Padding is the one size a lock-screen view can take from code on every Android version.
+        rv.setViewPadding(RUNSPENT[slot], 0, 0, 0, ((h - y) * dp).toInt())
+        rv.setViewPadding(RUNLINE[slot], 0, ((y - 3f) * dp).toInt(), 0, 0)
+        rv.setInt(RUNBAR[slot], "setBackgroundColor", (r.color ?: SLATE) or Color.BLACK)
+        rv.setTextViewText(RUNTITLE[slot], r.title)
+        rv.setTextViewText(RUNTIME[slot], r.time)
+    }
+
     private fun pill(rv: RemoteViews, slot: Int, title: String, time: String, color: Int) {
+        rv.setViewVisibility(RUN[slot], android.view.View.GONE)
         rv.setViewVisibility(NOW[slot], android.view.View.GONE)
         rv.setViewVisibility(PILL[slot], android.view.View.VISIBLE)
         rv.setInt(BAR[slot], "setBackgroundColor", color or Color.BLACK)

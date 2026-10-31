@@ -360,6 +360,7 @@ private fun soft(argb: Int?, p: Palette): Color {
 
 @Composable
 private fun EventRow(context: Context, e: TodayWeek.Row.Event) {
+    e.run?.let { return RunningRow(context, e, it) }
     Row(
         GlanceModifier.fillMaxWidth().height(TodayWeek.ROW.dp).cornerRadius(9.dp)
             .background(if (e.past) cp { it.raised } else cp { soft(e.color, it) }).padding(horizontal = 9.dp).clickable(open(context)),
@@ -368,6 +369,37 @@ private fun EventRow(context: Context, e: TodayWeek.Row.Event) {
         Box(GlanceModifier.width(3.dp).height(15.dp).cornerRadius(2.dp).background(if (e.past) cp { it.faint } else e.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
         Label(e.title, if (e.past) cp { it.faint } else cp { it.text }, 14.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp))
         if (e.time.isNotEmpty()) Label(e.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.padding(start = 6.dp))
+    }
+}
+
+/**
+ * An event happening now: a taller row the red now line crosses at [run] (how far into it the clock is), with the
+ * time gone by tinted above the line (owner, 2026-10-31, mock widget-now, way ข).
+ */
+@Composable
+private fun RunningRow(context: Context, e: TodayWeek.Row.Event, run: Float) {
+    val h = TodayWeek.RUN.toFloat()
+    val y = (run.coerceIn(0f, 1f) * h).coerceIn(3f, h - 3f)
+    Box(
+        GlanceModifier.fillMaxWidth().height(TodayWeek.RUN.dp).cornerRadius(9.dp)
+            .background(cp { soft(e.color, it) }).clickable(open(context)),
+    ) {
+        Box(GlanceModifier.fillMaxWidth().height(y.dp).background(cp { it.red.copy(alpha = 0.12f) })) {}
+        Row(
+            GlanceModifier.fillMaxWidth().height((TodayWeek.ROW + 6).dp).padding(start = 9.dp, end = 9.dp, top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(GlanceModifier.width(3.dp).height(15.dp).cornerRadius(2.dp).background(e.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
+            Label(e.title, cp { it.text }, 14.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp))
+            if (e.time.isNotEmpty()) Label(e.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.padding(start = 6.dp))
+        }
+        Column(GlanceModifier.fillMaxWidth()) {
+            Spacer(GlanceModifier.height((y - 3f).dp))
+            Row(GlanceModifier.fillMaxWidth().height(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(GlanceModifier.size(6.dp).cornerRadius(3.dp).background(cp { it.red })) {}
+                Box(GlanceModifier.defaultWeight().height(1.5.dp).background(cp { it.red })) {}
+            }
+        }
     }
 }
 

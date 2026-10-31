@@ -39,6 +39,13 @@ class LockCardTest {
         assertEquals(1, c.more)
     }
 
+    @Test fun anEventHappeningNowStaysWithItsLine() {
+        val shop = TodayWeek.Row.Event("ร้านยาโลตัส", "11:00 ถึง 20:00", null, past = false, run = 0.26f)
+        val c = LockCard.card(TodayWeek.Day(day, listOf(ev("เวร", past = true), shop, todo("ไปรับบัตร"))))
+        assertEquals(listOf(shop), c.rows.take(1))
+        assertEquals(listOf("ร้านยาโลตัส", "ไปรับบัตร"), titles(c))
+    }
+
     @Test fun anEmptyDayKeepsOnlyTheNowLine() {
         val c = LockCard.card(TodayWeek.Day(day, listOf(ev("จบแล้ว", past = true), now)))
         assertEquals(listOf("NOW"), titles(c))
