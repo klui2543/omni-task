@@ -214,7 +214,7 @@ class TodayWidget : GlanceAppWidget() {
             val late = DayPlan.lateCount(data.plan)
             val hasToday = page.days.first().date == data.today
             Column(
-                GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp),
+                GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 10.dp, end = 10.dp, top = TOP.dp, bottom = 8.dp),
             ) {
                 Row(GlanceModifier.fillMaxWidth().height(HEADER.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(GlanceModifier.defaultWeight().padding(start = 4.dp).clickable(open(context))) {
@@ -233,12 +233,12 @@ class TodayWidget : GlanceAppWidget() {
                         Spacer(GlanceModifier.width(4.dp))
                     }
                     PageButton("‹", tr("ก่อนหน้า", "Previous"), (index - 1).coerceAtLeast(0))
-                    Spacer(GlanceModifier.width(4.dp))
+                    Spacer(GlanceModifier.width(2.dp))
                     PageButton("›", tr("ถัดไป", "Next"), (index + 1).coerceAtMost(pages.lastIndex))
-                    Spacer(GlanceModifier.width(4.dp))
-                    Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 30)
+                    Spacer(GlanceModifier.width(6.dp))
+                    Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 26)
                 }
-                Spacer(GlanceModifier.height(4.dp))
+                Spacer(GlanceModifier.height(UNDER.dp))
                 page.days.forEachIndexed { i, day ->
                     if (i > 0) Spacer(GlanceModifier.height(TodayWeek.DAY_GAP.dp))
                     DayBlock(context, day, data.today, cap = page.cap)
@@ -252,9 +252,12 @@ class TodayWidget : GlanceAppWidget() {
         internal val TOUCHED = longPreferencesKey("touched")
         internal val GO = ActionParameters.Key<Int>("go")
         private const val IDLE_MS = 10 * 60 * 1000L
-        private const val HEADER = 34
+        /** Header room (owner picked "ข" on 31 Oct: more air above and under it, lighter buttons). */
+        private const val TOP = 14
+        private const val HEADER = 40
+        private const val UNDER = 12
         /** Padding, header and the gap under it, in dp: what the days cannot use. */
-        private const val CHROME = 10 + 8 + HEADER + 4
+        private const val CHROME = TOP + 8 + HEADER + UNDER
     }
 }
 
@@ -273,10 +276,10 @@ class PageAction : ActionCallback {
 @Composable
 private fun PageButton(text: String, label: String, go: Int) {
     Box(
-        GlanceModifier.size(30.dp).cornerRadius(15.dp).background(cp { it.raised })
+        GlanceModifier.width(28.dp).height(34.dp).cornerRadius(10.dp)
             .clickable(actionRunCallback<PageAction>(actionParametersOf(TodayWidget.GO to go))),
         contentAlignment = Alignment.Center,
-    ) { Text(text, style = TextStyle(color = cp { it.text }, fontSize = 17.sp)) }
+    ) { Text(text, style = TextStyle(color = cp { it.text2 }, fontSize = 18.sp)) }
 }
 
 /** "30 ต.ค. ถึง 1 พ.ย.", or one date for a page of one day. */
