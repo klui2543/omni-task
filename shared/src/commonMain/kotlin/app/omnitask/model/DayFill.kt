@@ -919,6 +919,20 @@ object DayFill {
         inp.events.filter { !it.allDay && !inp.facts.isOthers(it) && it.begin.date == today.plusDays(1) && it.begin.time < RealDay.NIGHT_END && RealDay.isShift(it, inp.profile, inp.facts) }
             .forEach { e -> afterRows += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today, inp), lockedWhy(e, inp, today), e) }
         rows += afterRows.sortedBy { it.at }
+        // Timed events of other people's calendars (owner, 2026-10-31, lanes ข): placed by their time, faint and named,
+        // taking none of the owner's time (the free stretches above never saw them). Side by side with what they overlap.
+        val dayStart = today.atStartOfDay()
+        inp.events.filter { inp.facts.isOthers(it) && !it.allDay && it.end > it.begin && it.begin < today.plusDays(1).atStartOfDay() && it.end > dayStart }
+            .sortedBy { it.begin }
+            .forEach { e ->
+                val name = inp.facts.calendarNames[e.calendarId] ?: tr("ปฏิทินอื่น", "Other calendar")
+                val at = maxOf(0, minutesOf(e.begin, today))
+                val end = minutesOf(e.end, today)
+                val row = Row.Locked(at, e.title + tr(" ถึง ${hm(end)}", " until ${hm(end)}"), tr("จากปฏิทิน $name", "From the calendar $name"), e, past = end <= nowMin, from = name)
+                val lastBefore = rows.indexOfLast { it.at != null && it.at!! <= at }
+                val firstTimed = rows.indexOfFirst { it.at != null }.let { if (it < 0) rows.size else it }
+                rows.add(if (lastBefore >= 0) lastBefore + 1 else firstTimed, row)
+            }
 
         val planned = pl.placed.filter { it.item.kind != Kind.LIFE }.sumOf { it.len }
         val lifeLen = pl.placed.filter { it.item.kind == Kind.LIFE }.sumOf { it.len }
@@ -1058,14 +1072,43 @@ object DayFill {
         return listOfNotNull(first, mid, latest).distinct()
     }
 
+    /** Most events side by side in one timeline row; a fourth starts a new row (mock timeline-lanes). */
+    const val LANES = 3
+
+    /**
+     * The plan's rows as the timeline draws them (owner, 2026-10-31, mock timeline-lanes): timed events next to each
+     * other in the list whose times overlap share one row, side by side, at most [LANES] to a row; every other row
+     * stands alone.
+     */
+    fun lanes(rows: List<Row>): List<List<Row>> {
+        val out = ArrayList<List<Row>>()
+        var group = ArrayList<Row.Locked>()
+        var groupEnd = 0
+        fun timed(r: Row): Row.Locked? = (r as? Row.Locked)?.takeIf { it.at != null && it.event?.allDay == false }
+        fun endOf(r: Row.Locked) = r.event!!.let { e -> r.at!! + maxOf(1, minutesOf(e.end, e.begin.date) - minutesOf(e.begin, e.begin.date)) }
+        fun flush() { group.chunked(LANES).forEach { out += it }; group = ArrayList() }
+        rows.forEach { r ->
+            val t = timed(r)
+            if (t != null && group.isNotEmpty() && t.at!! < groupEnd) {
+                group += t
+                groupEnd = maxOf(groupEnd, endOf(t))
+            } else {
+                flush()
+                if (t != null) { group += t; groupEnd = endOf(t) } else out += listOf(r)
+            }
+        }
+        flush()
+        return out
+    }
+
     /** What [at] for [len] minutes sits on, besides the card [skip]: each one's name and the minutes they share. */
     fun overlaps(plan: Plan, at: Int, len: Int, skip: String): List<Pair<String, Int>> = plan.rows.mapNotNull { r ->
         val span: Triple<Int, Int, String>? = when (r) {
             is Row.Card -> r.placed.takeIf { it.item.id != skip }?.let { Triple(it.at, it.at + it.len, it.item.title) }
             is Row.Locked -> {
                 val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { minutesOf(it.end, plan.day) }
-                // Work put on an event called free is on no one's time.
-                if (r.at != null && end != null && !r.free) Triple(r.at, end, r.title) else null
+                // Work put on an event called free, or on another person's event, is on no one's time.
+                if (r.at != null && end != null && !r.free && r.from == null) Triple(r.at, end, r.title) else null
             }
             else -> null
         }

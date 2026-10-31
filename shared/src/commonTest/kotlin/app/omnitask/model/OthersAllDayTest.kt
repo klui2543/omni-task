@@ -10,7 +10,8 @@ import app.omnitask.time.*
 
 /**
  * Another person's calendar on today's plan (owner, 2026-10-31, way ข, mock others-today): its all-day events show at the
- * top, faint and named by that calendar; its timed events stay hidden; neither takes any of the owner's time. Real case:
+ * top, faint and named by that calendar; its timed events show at their time (lanes ข, see TimelineLanesTest); none
+ * takes any of the owner's time. Real case:
  * "ไปรับบัตรเปนเพื่อนพี่กาน", all day Saturday 31 October in the calendar "เบบี้รักยิ้ม", was on the widget but not the plan.
  */
 class OthersAllDayTest {
@@ -29,10 +30,10 @@ class OthersAllDayTest {
     @Test
     fun allDayEventsOfAnotherCalendarShowAtTheTopWithItsName() {
         val p = plan(listOf(card, bkk, lunch, tomorrow))
-        assertEquals(listOf("ไปรับบัตรเปนเพื่อนพี่กาน", "จ่ายบัตร Bangkok"), others(p).map { it.title })
-        assertTrue(others(p).all { it.from == "เบบี้รักยิ้ม" && it.at == null })
-        // The timed one stays hidden, and tomorrow's is not today's.
-        assertTrue(p.rows.filterIsInstance<DayFill.Row.Locked>().none { it.title == "กินข้าวกับที่บ้าน" || it.title == "ล้างรถ" })
+        assertEquals(listOf("ไปรับบัตรเปนเพื่อนพี่กาน", "จ่ายบัตร Bangkok"), others(p).filter { it.at == null }.map { it.title })
+        assertTrue(others(p).all { it.from == "เบบี้รักยิ้ม" })
+        // Tomorrow's is not today's.
+        assertTrue(p.rows.filterIsInstance<DayFill.Row.Locked>().none { it.title.startsWith("ล้างรถ") })
         // At the top: nothing comes before them.
         assertTrue(p.rows.take(2).all { it is DayFill.Row.Locked && it.from != null }, p.rows.take(3).toString())
     }

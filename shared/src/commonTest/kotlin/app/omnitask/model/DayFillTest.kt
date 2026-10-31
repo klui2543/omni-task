@@ -118,7 +118,8 @@ class DayFillTest {
         assertNull(plan.banner)
         // The other person's calendar (17:00 to 22:00 that evening) takes none of the owner's time.
         assertEquals(m(21, 30) - m(16, 45), plan.free)
-        assertTrue(plan.rows.none { it is DayFill.Row.Locked && it.title.startsWith("คลังยาดี") })
+        // It shows at its time only as another person's (faint, named), since lanes ข (owner, 2026-10-31).
+        assertTrue(plan.rows.filterIsInstance<DayFill.Row.Locked>().filter { it.title.startsWith("คลังยาดี") }.all { it.from != null && it.at == m(17, 0) })
         val job = plan.rows.filterIsInstance<DayFill.Row.Locked>().single { it.title.startsWith(RealDay.jobTitle) }
         assertEquals(m(8, 30), job.at)
         assertTrue(job.past, "the job is over by 16:45")

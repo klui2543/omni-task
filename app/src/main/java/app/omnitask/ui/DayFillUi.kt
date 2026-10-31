@@ -188,6 +188,8 @@ fun DayFillCard(
     var logOpen by remember { mutableStateOf(false) }
     // A block's reason shows when it is tapped, one at a time.
     var reasonOf by remember { mutableStateOf<String?>(null) }
+    // Another person's event opens in the calendar app on a tap (owner's pick ข, 2026-10-31); the owner's own keep their reason.
+    val events = rememberEventActions(vm)
     // The owner's mix (mock plan-catchup, 2026-10-30): a taken slot gone by and not done asks "ทำไปหรือยัง"; after
     // "ยังไม่ได้ทำ" it waits for a place ([replacing]); a long press drags it, or a task taken today, to a time of the
     // owner's own.
@@ -478,7 +480,9 @@ fun DayFillCard(
                 }
             }
             val used = HashSet<String>()
-            view.rows.forEach { row ->
+            // Events at the same time share one row, side by side (owner, 2026-10-31, mock timeline-lanes).
+            DayFill.lanes(view.rows).forEach { group ->
+                val row = group.first()
                 if (row is DayFill.Row.Done) return@forEach
                 // The slot waiting for a place shows after the now line instead, with the times offered.
                 if (row is DayFill.Row.Card && waiting != null && row.placed == waiting) return@forEach
@@ -508,17 +512,21 @@ fun DayFillCard(
                 }
                 key(rk) {
                     when (row) {
-                        is DayFill.Row.Locked -> Track(rk, at) {
+                        is DayFill.Row.Locked -> if (group.size > 1) Track(rk, at) {
+                            val cells = group.filterIsInstance<DayFill.Row.Locked>()
+                            fun keyOf(c: DayFill.Row.Locked) = "block:" + c.at + ":" + c.title
+                            LaneRow(cells, viewNow) { c ->
+                                val e = c.event
+                                if (c.from != null && e != null) events.open(e) else reasonOf = if (reasonOf == keyOf(c)) null else keyOf(c)
+                            }
+                            cells.firstOrNull { it.from == null && reasonOf == keyOf(it) }?.let { c ->
+                                Text(c.why, Modifier.padding(start = 23.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)
+                                freeActionOf(c, plan.end, vm)?.let { a -> Box(Modifier.padding(start = 23.dp, top = 2.dp, bottom = 6.dp)) { a() } }
+                            }
+                        } else Track(rk, at) {
                             val (name, range) = blockText(row)
                             val rk = "block:" + row.at + ":" + row.title
-                            // A calendar event can be called "ว่าง ทำงานได้" for today (owner's pick ก+ข, 2026-10-31).
-                            val ev = row.event?.takeIf { !it.allDay && !row.past && it.title != RealDay.jobTitle && (row.at ?: 0) < plan.end }
-                            val freeAction: (@Composable () -> Unit)? = if (ev != null && reasonOf == rk) {
-                                {
-                                    if (row.free) SmallAction(tr("นับว่าไม่ว่างตามปฏิทิน", "Busy as the calendar says"), false) { vm.fillFreeEvent(ev, false) }
-                                    else SmallAction(tr("ว่าง ทำงานได้ วันนี้", "Free to work today"), true) { vm.fillFreeEvent(ev, true) }
-                                }
-                            } else null
+                            val freeAction = if (reasonOf == rk) freeActionOf(row, plan.end, vm) else null
                             BlockRow(
                                 name, range, row.why.takeIf { reasonOf == rk && range != it },
                                 // Another person's calendar (way ข): faint, with that calendar's name; it takes none of the owner's time.
@@ -527,7 +535,10 @@ fun DayFillCard(
                                 tag = row.from ?: if (row.free) tr("ว่าง ทำงานได้", "Free to work") else null,
                                 tagColor = if (row.from != null) C.muted else C.lime,
                                 extra = freeAction,
-                            ) { reasonOf = if (reasonOf == rk) null else rk }
+                            ) {
+                                val e = row.event
+                                if (row.from != null && e != null) events.open(e) else reasonOf = if (reasonOf == rk) null else rk
+                            }
                         }
                         is DayFill.Row.Gap -> Track(rk, at) {
                             val hi = waiting != null && offers.firstOrNull()?.let { it >= row.at && it < row.at + row.len } == true
@@ -693,6 +704,47 @@ private fun DoneRow(task: Task, onTick: () -> Unit, onClick: () -> Unit) {
     ) {
         TaskCheck(task, onTick, size = 18.dp, touch = 36.dp)
         Text(task.title, Modifier.weight(1f).padding(start = 2.dp), color = C.muted, fontSize = TS.body, textDecoration = TextDecoration.LineThrough, maxLines = 2)
+    }
+}
+
+/** "ว่าง ทำงานได้ วันนี้" (or back to busy) under an event's reason; null for a block that cannot be called free. */
+private fun freeActionOf(row: DayFill.Row.Locked, planEnd: Int, vm: TaskViewModel): (@Composable () -> Unit)? {
+    // A calendar event can be called "ว่าง ทำงานได้" for today (owner's pick ก+ข, 2026-10-31); never another person's.
+    val ev = row.event?.takeIf { row.from == null && !it.allDay && !row.past && it.title != RealDay.jobTitle && (row.at ?: 0) < planEnd } ?: return null
+    return {
+        if (row.free) SmallAction(tr("นับว่าไม่ว่างตามปฏิทิน", "Busy as the calendar says"), false) { vm.fillFreeEvent(ev, false) }
+        else SmallAction(tr("ว่าง ทำงานได้ วันนี้", "Free to work today"), true) { vm.fillFreeEvent(ev, true) }
+    }
+}
+
+/**
+ * Events at the same time side by side (owner, 2026-10-31, mock timeline-lanes): each cell has its bar, its name and
+ * its own time under it; another person's is outlined, faint and named. [onTap] gets the cell tapped.
+ */
+@Composable
+private fun LaneRow(cells: List<DayFill.Row.Locked>, now: Int, onTap: (DayFill.Row.Locked) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp).height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        cells.forEach { c ->
+            val (name, range) = blockText(c)
+            val others = c.from != null
+            val faded = c.past || others || ((c.at ?: Int.MAX_VALUE) <= now && !c.free)
+            val shape = RoundedCornerShape(8.dp)
+            Row(
+                Modifier.weight(1f).fillMaxHeight().clip(shape)
+                    .then(if (others) Modifier.border(1.dp, C.control, shape) else Modifier.background(C.raised))
+                    .clickable { onTap(c) },
+            ) {
+                Box(Modifier.width(3.dp).fillMaxHeight().background(if (c.past || others) C.faint else if (c.free) C.lime else C.teal))
+                Column(Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)) {
+                    Text(name, color = if (faded) C.faint else C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(range, color = if (faded) C.faint else C.muted, fontSize = TS.micro, maxLines = 2)
+                    c.from?.let { Text(it, color = C.muted, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+        }
     }
 }
 
