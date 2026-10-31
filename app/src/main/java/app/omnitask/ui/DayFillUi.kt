@@ -283,7 +283,11 @@ fun DayFillCard(
                         val put = { at: Int -> vm.fillPlace(DayFill.Placed(l.item, at, l.item.len, short = false, running = false), at); putting = null }
                         PutTimes(plan, l.item.len, nowMin, put) {
                             val from = maxOf(nowMin, plan.start)
-                            pickSystemTime(context, LocalTime.of((from / 60) % 24, from % 60)) { t -> put(maxOf(t.hour * 60 + t.minute, from)) }
+                            pickSystemTime(context, LocalTime.of((from / 60) % 24, from % 60)) { t ->
+                                val at = t.hour * 60 + t.minute
+                                if (at < from) android.widget.Toast.makeText(context, tr("เลือกเวลาตั้งแต่ตอนนี้เป็นต้นไป", "Pick a time from now on"), android.widget.Toast.LENGTH_SHORT).show()
+                                else put(at)
+                            }
                         }
                     }
                 }
@@ -507,7 +511,7 @@ fun DayFillCard(
                             val (name, range) = blockText(row)
                             val rk = "block:" + row.at + ":" + row.title
                             // A calendar event can be called "ว่าง ทำงานได้" for today (owner's pick ก+ข, 2026-10-31).
-                            val ev = row.event?.takeIf { !it.allDay && !row.past && it.title != RealDay.jobTitle }
+                            val ev = row.event?.takeIf { !it.allDay && !row.past && it.title != RealDay.jobTitle && (row.at ?: 0) < plan.end }
                             val freeAction: (@Composable () -> Unit)? = if (ev != null && reasonOf == rk) {
                                 {
                                     if (row.free) SmallAction(tr("นับว่าไม่ว่างตามปฏิทิน", "Busy as the calendar says"), false) { vm.fillFreeEvent(ev, false) }

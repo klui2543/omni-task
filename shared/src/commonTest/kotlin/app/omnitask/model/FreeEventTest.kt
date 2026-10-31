@@ -81,6 +81,16 @@ class FreeEventTest {
     }
 
     @Test
+    fun theFreeTimeBeforeAFreeEventIsNotListedTwice() {
+        // Before the event nothing advances the plan's cursor: its free stretches must still be one each.
+        val early = DayFill.plan(DayFill.Input(tasks(), listOf(shift, lotus), profile, facts, LocalDateTime.parse("2026-10-31T09:00"), freed()))
+        val starts = early.open.map { it.first }
+        assertEquals(starts.distinct(), starts, "no free stretch twice: ${early.open}")
+        val gaps = early.rows.filterIsInstance<DayFill.Row.Gap>().map { it.at }
+        assertEquals(gaps.distinct(), gaps, "no free row twice")
+    }
+
+    @Test
     fun theMemoryKeepsItAcrossARestart() {
         val back = DayFill.decode(DayFill.encode(freed()))
         assertEquals(setOf(DayFill.freeKey(lotus)), back?.freeEvents)

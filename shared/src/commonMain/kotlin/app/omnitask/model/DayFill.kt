@@ -884,7 +884,7 @@ object DayFill {
                     val e = x.event
                     val stop = when {
                         // An event called free takes no time: the free stretches run on through it.
-                        x.free -> cursor
+                        x.free -> maxOf(cursor, at)
                         e != null -> minutesOf(e.end, today) + CLEAR
                         else -> mem.errand?.let { it.to ?: fr.end } ?: at
                     }
