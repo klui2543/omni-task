@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The time already gone in an event happening now, above the red line. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#1FD9726C" />
+    <corners android:topLeftRadius="8dp" android:topRightRadius="8dp" />
+</shape>

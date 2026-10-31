@@ -1007,6 +1007,7 @@ private fun UndoNote(undo: List<TaskViewModel.UndoStep>, redo: List<TaskViewMode
         TaskViewModel.UndoStep.Kind.DONE -> tr("ติ๊ก ${s.title}", "tick ${s.title}")
         TaskViewModel.UndoStep.Kind.OPENED -> tr("เปิดคืน ${s.title}", "reopen ${s.title}")
         TaskViewModel.UndoStep.Kind.MOVED -> tr("ย้าย ${s.title}", "move ${s.title}")
+        TaskViewModel.UndoStep.Kind.PLAN -> s.label ?: s.title
     }
     val what = undo.lastOrNull()?.let { tr("ย้อน: ", "Undo: ") + word(it) } ?: redo.lastOrNull()?.let { tr("ทำซ้ำ: ", "Redo: ") + word(it) }
     var shown by remember { mutableStateOf(false) }

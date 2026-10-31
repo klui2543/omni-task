@@ -65,6 +65,7 @@ import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.Recurrence
 import app.omnitask.model.Status
+import app.omnitask.model.TaskKind
 import app.omnitask.model.tr
 import app.omnitask.time.*
 import java.time.Instant
@@ -122,6 +123,8 @@ private fun repText(r: Rep, event: Boolean): String {
 @Composable
 fun AddDetailPage(
     state: UiState, vm: TaskViewModel, sentence: String, status: Status, link: String?,
+    // Linked notes and images picked on the quick-add sheet; more can be added here (owner's pick, 2026-10-30, way ข).
+    extras: NewAttachments,
     startAsEvent: Boolean = false, onClose: () -> Unit, onSaved: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -157,10 +160,26 @@ fun AddDetailPage(
     val endClock = endTime ?: startClock.plusMinutes(60L)
 
     var picking by remember { mutableStateOf<String?>(null) }
+    val pickImage = rememberNewImagePicker(vm, extras)
+    // The task's kind is one of its tags, as on the edit page: the built-in kinds and the owner's own.
+    val kindTags = TaskKind.entries.mapNotNull { it.tag } + state.customKinds.map { it.tag }
+    fun isKindTag(t: String) = kindTags.any { k -> t.equals(k, ignoreCase = true) || t.startsWith("$k/", ignoreCase = true) }
+    val kindTag = tags.firstOrNull(::isKindTag)
+    val kindLabel = kindTag?.let { t ->
+        state.customKinds.firstOrNull { it.tag.equals(t, ignoreCase = true) }?.label
+            ?: TaskKind.entries.firstOrNull { k -> k.tag != null && (t.equals(k.tag, ignoreCase = true) || t.startsWith("${k.tag}/", ignoreCase = true)) }?.let { k ->
+                k.label + (t.substringAfter('/', "").takeIf { it.isNotEmpty() }?.let { " ($it)" } ?: "")
+            }
+    }
+    fun setKindTag(tag: String?) {
+        tags.removeAll(::isKindTag)
+        if (tag != null) tags.add(tag)
+    }
 
     fun save() {
         val name = title.trim()
         if (name.isEmpty()) { vm.showMessage(tr("ใส่ชื่องานก่อน", "Add a title first")); return }
+        if (extras.preparing > 0) { vm.showMessage(tr("รอรูปเตรียมเสร็จก่อน แล้วค่อยกดอีกครั้ง", "Wait for the image to be ready, then tap again")); return }
         if (!event) {
             val r = rep
             vm.addDetailedTask(
@@ -168,8 +187,9 @@ fun AddDetailPage(
                     title = name, scheduled = scheduled, date = date, time = time, start = begin,
                     rule = r?.let { Recurrence.build(it.n, it.unit, it.days, it.whenDone) },
                     tags = tags.toList(), priority = priority, notes = notes.lines(), subtasks = subs.toList(),
+                    links = extras.links.toList(),
                 ),
-                status, link,
+                status, link, extras.images.toList(),
             )
             onSaved()
             return
@@ -179,6 +199,7 @@ fun AddDetailPage(
             vm.showMessage(tr("ไม่พบปฏิทินที่เพิ่มนัดได้ในเครื่อง เปิดซิงค์ปฏิทินของบัญชี Google ในตั้งค่าเครื่อง", "No calendar on this phone takes new events: turn on calendar sync for your Google account"))
             return
         }
+        if (!extras.isEmpty) vm.showMessage(tr("นัดในปฏิทินเก็บรูปและโน้ตไม่ได้ จึงไม่ได้แนบไป", "Calendar events cannot hold images or notes, so they were left out"))
         val from = date.atTime(if (allDay) LocalTime.of(0, 0) else startClock)
         val to = endDay.atTime(if (allDay) LocalTime.of(0, 0) else endClock)
         val r = rep
@@ -333,7 +354,7 @@ fun AddDetailPage(
                     }
 
                     // Details, and a task's subtasks.
-                    Group(last = true) {
+                    Group(last = event) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Icon(Ic.notes, null, tint = C.muted, modifier = Modifier.padding(top = 13.dp).size(20.dp))
                             PlainField(notes, { notes = it }, tr("รายละเอียด", "Details"), Modifier.weight(1f).heightIn(min = 70.dp).padding(vertical = 12.dp), single = false)
@@ -353,6 +374,36 @@ fun AddDetailPage(
                                 )
                             }
                         }
+                    }
+
+                    // Kind, linked notes and images: the rest of what the edit page has (owner's pick, 2026-10-30, way ข).
+                    if (!event) Group(last = true) {
+                        FormRow(Ic.spark, onClick = { picking = "kind" }) {
+                            Text(
+                                kindLabel?.let { tr("ประเภท: ", "Kind: ") + it } ?: tr("ประเภท", "Kind"), Modifier.weight(1f),
+                                color = if (kindLabel == null) C.faint else C.text, fontSize = TS.body,
+                            )
+                            if (kindTag != null) RemoveX { setKindTag(null) }
+                        }
+                        FormRow(Ic.notes, onClick = { picking = "link" }) {
+                            Text(
+                                if (extras.links.isEmpty()) tr("โน้ตที่เกี่ยวข้อง", "Linked notes") else tr("โน้ตที่เกี่ยวข้อง ${extras.links.size}", "${extras.links.size} linked notes"),
+                                Modifier.weight(1f), color = if (extras.links.isEmpty()) C.faint else C.text, fontSize = TS.body,
+                            )
+                            Text(tr("+ ลิงก์โน้ต", "+ Link a note"), color = C.accentText, fontSize = TS.body)
+                        }
+                        if (extras.links.isNotEmpty()) NewLinkRows(state, extras, Modifier.padding(start = 56.dp, end = 12.dp))
+                        FormRow(Ic.image, onClick = pickImage) {
+                            Text(
+                                when {
+                                    extras.preparing > 0 -> tr("กำลังเตรียมรูป", "Preparing image")
+                                    extras.images.isEmpty() -> tr("รูปแนบ", "Images")
+                                    else -> tr("รูปแนบ ${extras.images.size}", if (extras.images.size == 1) "1 image" else "${extras.images.size} images")
+                                },
+                                Modifier.weight(1f), color = if (extras.images.isEmpty() && extras.preparing == 0) C.faint else C.text, fontSize = TS.body,
+                            )
+                        }
+                        if (extras.images.isNotEmpty()) NewImageRow(extras, 72.dp, pickImage, Modifier.padding(start = 56.dp, end = 20.dp, bottom = 12.dp))
                     }
                 }
             }
@@ -392,6 +443,25 @@ fun AddDetailPage(
             onPick = { f -> vm.notePickedFolder(f); val next = app.omnitask.model.Folders.withFolder(tags.toList(), f); tags.clear(); tags.addAll(next); picking = null },
         ) { picking = null }
         "repeat" -> RepeatDialog(rep, event, date, { rep = it }) { picking = null }
+        "link" -> NewNotePicker(state, extras) { picking = null }
+        "kind" -> OptionSheet(
+            tr("ประเภท", "Kind"),
+            listOf<String?>(null).map { it to TaskKind.NORMAL.label } +
+                TaskKind.entries.filter { it.tag != null && (it !in state.hiddenKinds || kindTag?.let { t -> t.equals(it.tag, ignoreCase = true) || t.startsWith("${it.tag}/", ignoreCase = true) } == true) }.map { it.tag to it.label } +
+                state.customKinds.map { it.tag to it.label },
+            kindTag?.let { t -> if (t.startsWith("${TaskKind.WAITING.tag}/")) TaskKind.WAITING.tag else t },
+            { t -> if (t == TaskKind.WAITING.tag) picking = "who" else setKindTag(t) },
+            { if (picking == "kind") picking = null },
+        )
+        "who" -> TextDialog(
+            title = tr("ใครรองานนี้", "Who is waiting on this?"),
+            initial = kindTag?.substringAfter('/', "").orEmpty(),
+            placeholder = tr("ชื่อ (เว้นว่างได้)", "Name (optional)"),
+            suggestions = state.tasks.mapNotNull { app.omnitask.model.Focus.waitingFor(it) }.distinct().sorted(),
+            confirm = tr("ตั้งเป็นมีคนรอ", "Mark as waiting"),
+            onConfirm = { who -> setKindTag(TaskKind.WAITING.tag + (who.trim().takeIf { it.isNotEmpty() }?.let { "/$it" } ?: "")); picking = null },
+            onDismiss = { picking = null },
+        )
     }
 }
 

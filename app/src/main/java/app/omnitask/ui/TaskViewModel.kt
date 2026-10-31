@@ -52,6 +52,9 @@ import app.omnitask.model.locale
 import app.omnitask.model.load
 import app.omnitask.model.AssistantMl
 import app.omnitask.model.Planner
+import app.omnitask.model.RealDay
+import app.omnitask.model.DayFill
+import app.omnitask.model.LookAhead
 import app.omnitask.model.Profile
 import app.omnitask.model.QuickAdd
 import app.omnitask.model.AiAssist
@@ -117,6 +120,9 @@ const val DEFAULT_ARCHIVE_DAYS = 7
 /** The secretary chat's taps, a line each, for the secretary to learn habits from. */
 private const val DESK_STATS = "${app.omnitask.data.VaultText.OMNI_DIR}/สถิติเลขา.md"
 
+/** The day plan's answers the secretary keeps reading (secretary.md steps 5f and 5h): never cut from สถิติเลขา.md. */
+private val DESK_ANSWERS = listOf("ไม่มีวันส่ง:", "ยกเลิกไม่มีวันส่ง:", "ขอให้เลขาแบ่งงาน:", "ยกเลิกขอแบ่งงาน:")
+
 /** The filter set shared by the List and Eisenhower views. */
 data class Filters(
     val bucket: DateBucket? = null,
@@ -169,9 +175,15 @@ data class UiState(
     val listItems: List<Task> = emptyList(),
     /** Calendar events around the shown month; empty until calendar access is granted. */
     val events: List<CalendarEvent> = emptyList(),
+    /** The look-ahead's own read (switch on only): two months back to eight weeks ahead; null while not read. */
+    val lookEvents: List<CalendarEvent>? = null,
+    /** Own time by day as this phone kept it (look-ahead rule 4; [OwnTimeLog]). */
+    val ownTime: Map<LocalDate, LookAhead.OwnDay> = emptyMap(),
     /** Null until the first load; then whether the app may read the phone's calendars. */
     val calendarAccess: Boolean? = null,
     val calendars: List<CalendarReader.Calendar> = emptyList(),
+    /** Days the regular job is off (public holidays, observances left out), for the planner; see [RealDay]. */
+    val daysOff: Map<LocalDate, String> = emptyMap(),
     /** Ids of the phone's calendars the owner switched off in Omni (this phone only). */
     val hiddenCalendars: Set<Long> = emptySet(),
     val pendingImage: PendingImage? = null,
@@ -187,6 +199,17 @@ data class UiState(
     /** The secretary's questions (`Claude/เลขาถาม.md`), as last read; the today page matches them to open tasks. */
     val secretaryAsks: List<SecretaryAsk.Ask> = emptyList(),
     val profile: Profile = Profile(),
+    /** What the day plan keeps on this phone (step 2): today's taps, taken slots, the sprint; see [DayFill.Memory]. */
+    val dayFill: DayFill.Memory = DayFill.Memory(),
+    /** The line under the day plan's numbers after a tap changed the plan. */
+    /** The day plan's news line and its day. */
+    val fillNews: Pair<String, String>? = null,
+    /** What the day plan told today, oldest first, as (HH:mm, text): the strip's "ดูทั้งวัน" (owner's pick ก, 2026-10-30). */
+    val fillLog: List<Pair<String, String>> = emptyList(),
+    /** The day [fillLog] belongs to (yyyy-MM-dd), so a page left open past midnight does not show yesterday's lines. */
+    val fillLogDay: String? = null,
+    /** Counts the day plan's line writes that ended, so the today page looks again at what still needs following. */
+    val fillWrites: Int = 0,
     val insight: Insight.Ask? = null,
     /** The assistant conversation for this session, newest last. */
     val chat: List<Chat> = emptyList(),
@@ -721,7 +744,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return when (reading.kind) {
             SecretaryAi.Kind.COMMAND -> turn.copy(reading = reading, command = SecretaryGuide.Action.parse(reading.command))
             SecretaryAi.Kind.FIND_TIME -> {
-                val plan = Planner.plan(reading.task.ifBlank { turn.question }, s.tasks, s.events, s.profile, LocalDateTime.now(), reading.minutes.takeIf { it > 0 })
+                val plan = Planner.plan(reading.task.ifBlank { turn.question }, s.tasks, s.events, s.profile, LocalDateTime.now(), reading.minutes.takeIf { it > 0 }, planFacts(s))
                 turn.copy(reading = reading, slots = plan.slots.take(3), slotTitle = plan.title)
             }
             else -> turn.copy(reading = reading)
@@ -996,7 +1019,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             AssistantMl.Intent.FindTime -> {
                 if (via != null) desk.add(DeskTurn(mine = text, via = via))
                 val s = _state.value
-                val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now())
+                val plan = Planner.plan(taskText().ifBlank { text }, s.tasks, s.events, s.profile, LocalDateTime.now(), facts = planFacts(s))
                 desk.add(DeskTurn(ml = MlTurn(text, reading, acted = guess, slots = plan.slots.take(3), slotTitle = plan.title, note = note, id = id)))
             }
         }
@@ -1210,20 +1233,33 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         return SecretaryPretext.pack(note, situation, knows, log, s.tasks, s.events, { CalendarStyles.label(it.calendarId) }, s.today, deskTranscript(), loadGuide().forClaude)
     }
 
-    /** What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md). */
-    private fun deskNote(what: String) {
-        val vault = _state.value.vault ?: return
+    /**
+     * What the owner taps in the secretary chat, a line a tap, for the secretary to learn habits from (สถิติเลขา.md).
+     * The day plan's answers to the secretary ([DESK_ANSWERS]) go here too and stay; [tell]: a failed write is told.
+     */
+    private fun deskNote(what: String, tell: Boolean = false) {
+        val vault = _state.value.vault
+        if (vault == null) {
+            if (tell) _state.update { it.copy(message = tr("บันทึกให้เลขาไม่ได้ ยังไม่ได้เลือกที่เก็บโน้ต", "Cannot tell the secretary: no vault chosen")) }
+            return
+        }
         val line = "- ${LocalDate.now()} ${nowHm()} $what"
         viewModelScope.launch(Dispatchers.IO) {
-            deskLock.withLock {
+            val result = deskLock.withLock {
                 runCatching {
                     val old = repo.readPath(vault, DESK_STATS) ?: "# สถิติเลขา\n\nสิ่งที่กดในแชตเลขาของ Omni บรรทัดละครั้ง ใหม่สุดอยู่ล่าง เลขาอ่านเพื่อเรียนรู้นิสัย แล้วเขียนสิ่งที่พบลง Claude รู้จักคุณ.md\n"
-                    // Keep the last 400 taps; older ones have been read by then.
+                    // Keep the last 400 taps; older ones have been read by then. Answers to the secretary always stay.
                     val lines = (old.trimEnd() + "\n" + line).lines()
                     val head = lines.takeWhile { !it.startsWith("- ") }
-                    val taps = lines.filter { it.startsWith("- ") }.takeLast(400)
+                    val all = lines.filter { it.startsWith("- ") }
+                    fun answer(l: String) = DESK_ANSWERS.any { l.substringAfter(' ').substringAfter(' ').substringAfter(' ').startsWith(it) }
+                    val recent = all.filterNot(::answer).takeLast(400).toHashSet()
+                    val taps = all.filter { answer(it) || it in recent }
                     repo.writePath(vault, DESK_STATS, (head + taps).joinToString("\n") + "\n")
                 }
+            }
+            result.exceptionOrNull()?.let { e ->
+                if (tell) _state.update { it.copy(message = tr("บันทึกให้เลขาไม่ได้: ${e.message}", "Cannot tell the secretary: ${e.message}")) }
             }
         }
     }
@@ -1433,6 +1469,65 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         CalendarEvent.distinct(now + other)
     }.getOrDefault(emptyList())
 
+    /**
+     * The look-ahead's calendar (Settings "เลขามองไกล 8 สัปดาห์"): the shifts of the two months before estimate a month
+     * not posted yet, and the eight weeks ahead are counted day by day. Read only while the switch is on.
+     */
+    private fun loadLookEvents(app: Application): List<CalendarEvent>? {
+        if (!LookAheadMode.on) return null
+        val today = LocalDate.now()
+        val read = runCatching {
+            CalendarEvent.distinct(CalendarReader.events(app, today.minusDays(LookAhead.PAST_WEEKS * 7L + 7).atStartOfDay(), today.plusDays(LookAhead.DAYS + 7).atStartOfDay()))
+        }.getOrElse { e ->
+            android.util.Log.w("Omni", "look-ahead calendar not read", e)
+            return null
+        }
+        // The reader gives an empty list when the phone's calendar cannot be read: then the plan's own events stand in,
+        // rather than sixteen weeks that look free.
+        if (read.isEmpty()) android.util.Log.w("Omni", "look-ahead calendar read empty; using the plan's events")
+        return read.takeIf { it.isNotEmpty() }
+    }
+
+    /** Reads the look-ahead's calendar now (the switch was turned on, or the today page opened). */
+    fun lookLoad() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
+            val own = withContext(Dispatchers.IO) { if (LookAheadMode.on) OwnTimeLog.load(app) else emptyMap() }
+            _state.update { it.copy(lookEvents = look, ownTime = own) }
+        }
+    }
+
+    /** Days off over the planner's reach (the assistant plans up to about three months ahead). */
+    private fun loadDaysOff(app: Application): Map<LocalDate, String> = runCatching {
+        val today = LocalDate.now()
+        CalendarReader.daysOff(app, today.minusDays(1), today.plusDays(100))
+    }.getOrElse { e ->
+        // Without the holidays the planner keeps the day job on them, so the owner is told instead of left guessing.
+        android.util.Log.w("Omni", "days off not read", e)
+        _state.update {
+            it.copy(message = tr(
+                "อ่านวันหยุดจากปฏิทินไม่ได้ ตัวจัดตารางจะนับงานประจำทุกวันจันทร์ถึงศุกร์",
+                "Could not read the holidays from the calendar, so the planner counts the day job every weekday.",
+            ))
+        }
+        _state.value.daysOff
+    }
+
+    /**
+     * What the planner knows beyond the events (owner, 2026-10-29): the day job Monday to Friday 08:30 to 16:30, the
+     * days it is off, the calendars whose every event is a shift ("SiRxShift"), and the calendars labelled as someone
+     * else's, whose events take none of the owner's time (as in the secretary's free days).
+     */
+    private fun planFacts(s: UiState = _state.value) = RealDay.Facts(
+        job = RealDay.Job.WEEKDAYS,
+        daysOff = s.daysOff,
+        shiftCalendars = s.calendars.filter { RealDay.isShiftCalendar(it.name, s.profile) }.map { it.id }.toSet(),
+        holidayCalendars = s.calendars.filter { it.holiday }.map { it.id }.toSet(),
+        othersCalendars = s.calendars.filter { CalendarStyles.label(it.id) != null }.map { it.id }.toSet(),
+        calendarNames = s.calendars.associate { it.id to it.name },
+    )
+
     /** The pinned countdown events over the year ahead, by their ids on this phone. */
     private fun loadPinned(app: Application, pins: List<Countdown.Pin>): List<CalendarEvent> = runCatching {
         val ids = pins.filterIsInstance<Countdown.EventPin>().map { it.id }.filter { it != 0L }.toSet()
@@ -1449,7 +1544,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val app = getApplication<Application>()
             val (events, calendars) = withContext(Dispatchers.IO) { loadEvents(app) to CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
-            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned) }
+            val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
+            val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
+            _state.update { it.copy(events = events, calendars = calendars, pinnedEvents = pinned, daysOff = daysOff, lookEvents = look) }
             // A sync that changed nothing leaves the widgets as they are.
             runCatching { withContext<Unit>(Dispatchers.IO) { CalendarPrint.refreshIfChanged(app, "app saw the calendar") } }
         }
@@ -1587,6 +1684,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             checkWithGoogle()
             val calendars = withContext(Dispatchers.IO) { CalendarReader.calendars(app) }
             val pinned = withContext(Dispatchers.IO) { loadPinned(app, _state.value.countdowns) }
+            val daysOff = withContext(Dispatchers.IO) { loadDaysOff(app) }
+            val look = withContext(Dispatchers.IO) { loadLookEvents(app) }
+            val own = withContext(Dispatchers.IO) { if (LookAheadMode.on) OwnTimeLog.load(app) else emptyMap() }
             val timeWords = withContext(Dispatchers.IO) { runCatching { TimeWords.parse(repo.readPath(vault, TimeWords.PATH)) }.getOrDefault(_state.value.timeWords) }
             val profile = withContext(Dispatchers.IO) { runCatching { Profile.parse(repo.readPath(vault, Profile.PATH) ?: repo.readPath(vault, Profile.LEGACY_PATH)) }.getOrDefault(_state.value.profile) }
             result.getOrNull()?.lists?.let { ls -> ignoreTags(ls, _state.value.customKinds) }
@@ -1631,6 +1731,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     pinnedEvents = pinned,
                     calendarAccess = CalendarReader.hasPermission(app),
                     calendars = calendars,
+                    daysOff = daysOff,
+                    lookEvents = look,
+                    ownTime = own,
                     loading = false,
                     today = LocalDate.now(),
                     tasks = result.getOrNull()?.tasks?.filter { t -> t.list == null && !Branches.isParked(t, it.branchStates) } ?: it.tasks,
@@ -1966,6 +2069,33 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Reads and encodes a photo picked for a task that is not written yet; [onReady] gets it on the main thread.
+     * Nothing is saved until the task is added, so a sheet closed without adding leaves no stray file.
+     */
+    fun prepareImage(uri: Uri, onReady: (ImageAttach.Prepared?) -> Unit) {
+        viewModelScope.launch {
+            val prepared = withContext(Dispatchers.IO) { runCatching { ImageAttach.prepare(getApplication(), uri) } }
+            prepared.onFailure { e -> _state.update { it.copy(message = tr("แนบรูปไม่ได้: ${e.message}", "Cannot attach image: ${e.message}")) } }
+            onReady(prepared.getOrNull())
+        }
+    }
+
+    /**
+     * Saves the images picked for a new task, then [write]s the task naming them. If anything fails, the files
+     * saved so far are deleted again, so a task that was not written leaves no image behind.
+     */
+    private fun withNewImages(vault: Uri, images: List<ByteArray>, write: (List<String>) -> String): String {
+        val saved = mutableListOf<String>()
+        try {
+            images.forEach { saved += repo.saveAttachment(vault, ImageAttach.fileName(), "image/webp", it) }
+            return write(saved)
+        } catch (e: Exception) {
+            saved.forEach { runCatching { repo.deleteAttachment(vault, it) } }
+            throw e
+        }
+    }
+
     fun resolvePendingImage(reduced: Boolean?) {
         val pending = _state.value.pendingImage ?: return
         _state.update { it.copy(pendingImage = null) }
@@ -2175,6 +2305,507 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- The secretary fills today's free time (step 2, the owner's picks of 2026-10-29; Settings switch, off at first) ----
+
+    private val fillPrefs = app.getSharedPreferences(DayFillMode.PREFS, Context.MODE_PRIVATE)
+    private var fillLoaded = false
+
+    /** Reads what the day plan keeps on this phone, once. */
+    fun fillLoad() {
+        if (fillLoaded) return
+        fillLoaded = true
+        val read = DayFill.decode(fillPrefs.getString(FILL_MEMORY, null))
+        if (read == null) _state.update { it.copy(message = tr("อ่านความจำของตารางวันนี้ไม่ได้ เริ่มจำใหม่จากวันนี้", "Could not read the day plan's memory, starting afresh today")) }
+        _state.update { it.copy(dayFill = (read ?: DayFill.Memory()).on(LocalDate.now())) }
+        // Today's lines only ("day<TAB>HH:mm<TAB>text"); older days are dropped on the next write.
+        val today = LocalDate.now().toString()
+        val log = fillPrefs.getString(FILL_LOG, null).orEmpty().lines().mapNotNull { l ->
+            l.split('\t', limit = 3).takeIf { it.size == 3 && it[0] == today }?.let { it[1] to it[2] }
+        }
+        _state.update { it.copy(fillLog = log, fillLogDay = today) }
+    }
+
+    /** Writes today's lines only: lines of another day are left out. */
+    private fun saveFillLog(log: List<Pair<String, String>>) {
+        val today = LocalDate.now().toString()
+        fillPrefs.edit().putString(FILL_LOG, log.joinToString("\n") { "$today\t${it.first}\t${it.second.replace('\n', ' ').replace('\t', ' ')}" }).apply()
+        _state.update { it.copy(fillLog = log, fillLogDay = today) }
+    }
+
+    private fun saveFill(m: DayFill.Memory) {
+        fillPrefs.edit().putString(FILL_MEMORY, DayFill.encode(m)).apply()
+        _state.update { it.copy(dayFill = m) }
+    }
+
+    /**
+     * Changes only the plan's memory; the bar's "เลิกทำ" puts back what it was, and the news line too. What the plan
+     * knows of the lines it wrote stays as it is now, so a reminder that followed the change follows the undo back.
+     */
+    private fun changeFill(label: String, title: String, news: String? = null, change: (DayFill.Memory) -> DayFill.Memory) {
+        val before = _state.value.dayFill
+        val newsBefore = _state.value.fillNews
+        saveFill(change(before.on(LocalDate.now())))
+        val told = news?.let { fillNews(it) }
+        remember(
+            UndoStep(UndoStep.Kind.PLAN, title, label = label, local = {
+                saveFill(before.copy(lines = _state.value.dayFill.lines))
+                if (told != null) {
+                    _state.update { it.copy(fillNews = newsBefore) }
+                    // Takes out only the line this change added; lines told after it stay.
+                    val s = _state.value
+                    val at = s.fillLog.lastIndexOf(told)
+                    if (at >= 0 && s.fillLogDay == LocalDate.now().toString()) saveFillLog(s.fillLog.filterIndexed { i, _ -> i != at })
+                }
+            }),
+            inTree = false,
+        )
+    }
+
+    /**
+     * Takes back a taken slot: the memory goes back to [before] (keeping what it knows of other lines), and the line
+     * the plan wrote for [card] goes back as it was, unless the owner changed it since (then it stays, and they are told).
+     */
+    private fun fillPutBack(before: DayFill.Memory, card: String, ident: String) {
+        val cur = _state.value.dayFill
+        val line = cur.lines[card]
+        saveFill(before.copy(lines = cur.lines - card))
+        val task = line?.let { l -> _state.value.tasks.firstOrNull { DayFill.ident(it) == ident && DayFill.marks(it) == DayFill.marks(l.after) } }
+            ?: return _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
+        val was = DayFill.marks(line.before) ?: return
+        // Not written back: the plan keeps the slot as taken, as the note still says (the message says why).
+        fillWrite(task, onFailed = { saveFill(cur) }) { DayFill.withMarks(it, was) }
+    }
+
+    /**
+     * The day plan's own line writes. While one is on its way the today page may still show the line from before it,
+     * so the plan neither follows nor lets go of that task until the write has ended ([UiState.fillWrites]).
+     */
+    private val fillPending = HashMap<String, Int>()
+
+    private fun fillWrite(task: Task, onSaved: (() -> Unit)? = null, onFailed: (() -> Unit)? = null, transform: (String) -> String) {
+        val id = DayFill.ident(task)
+        fillPending[id] = (fillPending[id] ?: 0) + 1
+        fun ended() {
+            val left = (fillPending[id] ?: 1) - 1
+            if (left <= 0) fillPending.remove(id) else fillPending[id] = left
+            _state.update { it.copy(fillWrites = it.fillWrites + 1) }
+        }
+        edit(task, onSaved = { ended(); onSaved?.invoke() }, onFailed = { ended(); onFailed?.invoke() }, transform = transform)
+    }
+
+    fun fillInput(s: UiState, now: LocalDateTime): DayFill.Input {
+        val behavior = behaviorNow()
+        return DayFill.Input(
+            s.tasks, s.events, s.profile, planFacts(s), now, s.dayFill.on(now.date), { Learned.movesLater(it.title, behavior, s.today) }, SleepMode.forPlan, SleepMode.problem,
+            ahead = LookAheadMode.on, far = s.lookEvents?.takeIf { LookAheadMode.on }, own = s.ownTime.takeIf { LookAheadMode.on },
+        )
+    }
+
+    /**
+     * Keeps today's own time as [plan] shows it (look-ahead rule 4, switch on): the most the plan offered today, and
+     * that much done once the owner took the slot, ticked a want or wrote progress on one. On this phone only.
+     */
+    fun ownSeen(plan: DayFill.Plan, input: DayFill.Input) {
+        if (!LookAheadMode.on || plan.day != input.now.date) return
+        // From what the phone kept, not the page's copy: on a cold start the page plans before that copy is read in.
+        val app = getApplication<Application>()
+        val kept = OwnTimeLog.load(app)
+        val before = kept[plan.day]
+        val seen = LookAhead.ownToday(plan, input, before)
+        if (seen == before) {
+            if (_state.value.ownTime != kept) _state.update { it.copy(ownTime = kept) }
+            return
+        }
+        val days = kept + (plan.day to seen)
+        OwnTimeLog.save(app, days, plan.day)
+        _state.update { it.copy(ownTime = days) }
+    }
+
+    fun fillPlan(s: UiState, now: LocalDateTime): DayFill.Plan = DayFill.plan(fillInput(s, now))
+
+    /**
+     * What a change did ("มีธุระ 2 ชม. เลขาจัดใหม่ให้แล้ว: ..."), added to today's lines that the strip on top of the plan
+     * shows; returns the line added, so an undo can take out that one.
+     */
+    fun fillNews(text: String?): Pair<String, String>? {
+        _state.update { it.copy(fillNews = text?.let { t -> LocalDate.now().toString() to t }) }
+        if (text == null) return null
+        val now = LocalDateTime.now()
+        val s = _state.value
+        val log = s.fillLog.takeIf { s.fillLogDay == now.date.toString() }.orEmpty()
+        val line = DayFill.hm(now.hour * 60 + now.minute) to text
+        saveFillLog(log + line)
+        return line
+    }
+
+    /** What [change] would move, told as the news line. */
+    private fun reflowNews(what: String, change: (DayFill.Memory) -> DayFill.Memory): String {
+        val s = _state.value
+        val now = LocalDateTime.now()
+        val before = DayFill.plan(fillInput(s, now))
+        val after = DayFill.plan(fillInput(s.copy(dayFill = change(s.dayFill.on(now.date))), now))
+        return DayFill.news(what, before, after)
+    }
+
+    /**
+     * "รับ" or "เริ่ม 15 นาที": the task gets ⏳ today and a reminder at its slot. A task with a reminder of its own keeps
+     * it and gets only ⏳. Not a move in the behaviour log. A taken net, myspace or sprint slot is used up for today.
+     */
+    fun fillTake(p: DayFill.Placed) {
+        val task = p.item.task ?: return
+        val today = LocalDate.now()
+        val id0 = DayFill.ident(task)
+        val mem0 = _state.value.dayFill
+        // A reminder the plan set on an earlier day is the plan's, not the task's own: it is set again.
+        val planned = mem0.accepted[id0]?.timed == true && mem0.lines[id0]?.let { DayFill.marks(it.after) } == DayFill.marks(task)
+        val timed = task.reminderTime == null || planned
+        val at = p.at
+        val after = TaskLine.setDate(task.raw, DateField.SCHEDULED, today).let {
+            if (timed) TaskLine.setReminder(it, DayFill.clock(at), ReminderOn.SCHEDULED) else it
+        }
+        val before = _state.value.dayFill
+        val id = DayFill.ident(task)
+        saveFill(
+            before.on(today).let { m ->
+                m.copy(
+                    picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
+                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed, len = p.len)),
+                    lines = m.lines + (p.item.id to DayFill.Line(task.raw, after)),
+                    slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
+                )
+            },
+        )
+        // Its reminder may follow the plan later, so the undo puts back the line from what the plan wrote last.
+        fillWrite(
+            task,
+            onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ลงเป็นงานแล้ว", "Planned"), local = { fillPutBack(before, p.item.id, id) }), inTree = false) },
+            onFailed = { saveFill(before) },
+        ) { after }
+    }
+
+    /**
+     * The owner puts a task at [at] themselves (the owner's mix, mock plan-catchup, 2026-10-30): a time offered after
+     * "ยังไม่ได้ทำ", or a drag. It gets ⏳ today and its reminder at [at] (even one it had of its own: it reminds where it
+     * is put), stays there even on top of something else, and nothing else is pushed for it. Not a move in the
+     * behaviour log. The undo puts back the line and the plan's memory as they were just before.
+     */
+    fun fillPlace(p: DayFill.Placed, at: Int) {
+        val task = p.item.task ?: return
+        val today = LocalDate.now()
+        val id = DayFill.ident(task)
+        val before = _state.value.dayFill
+        val after = TaskLine.setReminder(TaskLine.setDate(task.raw, DateField.SCHEDULED, today), DayFill.clock(at), ReminderOn.SCHEDULED)
+        if (after == task.raw && before.accepted[id]?.let { it.pinned && it.at == at && it.day == today.toString() } == true) return
+        val was = DayFill.marks(task)
+        saveFill(
+            before.on(today).let { m ->
+                m.copy(
+                    picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
+                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed = true, pinned = true, len = p.item.len)),
+                    // What the line was before the plan first wrote it stays, so "แตะเพื่อเปลี่ยนใจ" still puts that back.
+                    lines = m.lines + (p.item.id to DayFill.Line(m.lines[p.item.id]?.before ?: task.raw, after)),
+                    slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
+                    notBefore = m.notBefore - p.item.id,
+                )
+            },
+        )
+        fillWrite(
+            task,
+            onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("วางที่ ${DayFill.hm(at)} แล้ว", "Put at ${DayFill.hm(at)}"), local = { fillPlaceBack(before, p.item.id, id, was) }), inTree = false) },
+            onFailed = { saveFill(before) },
+        ) { after }
+    }
+
+    /** Undoes [fillPlace]: the memory as it was just before, and the line's ⏳ and reminder as [was], unless changed since. */
+    private fun fillPlaceBack(before: DayFill.Memory, card: String, ident: String, was: DayFill.Marks) {
+        val cur = _state.value.dayFill
+        val wrote = cur.lines[card]?.after
+        saveFill(before.copy(lines = (cur.lines - card) + listOfNotNull(before.lines[card]?.let { card to it })))
+        val task = wrote?.let { w -> _state.value.tasks.firstOrNull { DayFill.ident(it) == ident && DayFill.marks(it) == DayFill.marks(w) } }
+            ?: return _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
+        fillWrite(task, onFailed = { saveFill(cur) }) { DayFill.withMarks(it, was) }
+    }
+
+    /**
+     * "ยังไม่ได้ทำ" on a taken slot gone by: kept for today with where the slot started, so the look-ahead's own-time
+     * record does not count it as done. Nothing is written to the note.
+     */
+    fun fillNotYet(p: DayFill.Placed) {
+        if (!fillLoaded) return
+        val task = p.item.task ?: return
+        val m = _state.value.dayFill.on(LocalDate.now())
+        val id = DayFill.ident(task)
+        if (m.notYet[id] != p.at) saveFill(m.copy(notYet = m.notYet + (id to p.at)))
+    }
+
+    /** Keeps when today's plan stops, for the reminder at a taken slot ("เหลืออีก N ถึงจะทำทันวันนี้"). */
+    fun fillStop(end: Int) {
+        // Before the memory is read there is nothing to add it to: writing then would wipe what the phone keeps.
+        if (!fillLoaded) return
+        val today = LocalDate.now()
+        val m = _state.value.dayFill.on(today)
+        if (m.stop != end) saveFill(m.copy(stop = end))
+    }
+
+    /** "วันนี้หมดแรง": out of today's plan, not counted as skipped; tomorrow it comes first for 15 minutes (not after a night shift). */
+    fun fillTired(item: DayFill.Item, mode: DayFill.Mode) {
+        val today = LocalDate.now().toString()
+        changeFill(tr("วันนี้หมดแรง ไม่นับว่าข้าม", "Out of energy, not counted"), item.title) { m ->
+            m.copy(
+                picks = m.picks + (item.id to DayFill.Pick.TIRED),
+                tired = item.task?.takeIf { mode != DayFill.Mode.AFTER_NIGHT }?.let { m.tired + (DayFill.ident(it) to today) } ?: m.tired,
+            )
+        }
+    }
+
+    /**
+     * "ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่น": the card moves to after this slot plus half an hour, the rest flows around it. It
+     * counts as a move (once a day a task, never after a night shift) and never touches 📅: work due today that no
+     * longer fits says so in the list below.
+     */
+    fun fillBusy(p: DayFill.Placed, mode: DayFill.Mode) {
+        val today = LocalDate.now()
+        val change = { m: DayFill.Memory ->
+            val pushed = p.item.task?.takeIf { mode != DayFill.Mode.AFTER_NIGHT }?.let { m.withPush(DayFill.ident(it), today) } ?: m
+            pushed.copy(notBefore = pushed.notBefore + (p.item.id to p.at + p.len + 30))
+        }
+        changeFill(tr("ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่นแล้ว", "Busy now, moved later"), p.item.title, reflowNews(tr("ช่วงนี้ไม่ว่าง: ", "Busy now: ") + p.item.title, change), change)
+    }
+
+    /** "ไม่ใช่ เปลี่ยนให้": the next task for this slot; with none left the card is put aside for today. */
+    fun fillSwap(item: DayFill.Item) {
+        val slot = item.slot
+        if (slot != null && item.more > 0) {
+            changeFill(tr("เปลี่ยนเรื่องให้แล้ว", "Swapped"), item.title) { m -> m.copy(swaps = m.swaps + (slot to (m.swaps[slot] ?: 0) + 1)) }
+        } else {
+            fillSkip(item)
+        }
+    }
+
+    /** "ไว้ก่อน": out of today's plan, nothing written. */
+    fun fillSkip(item: DayFill.Item) =
+        changeFill(tr("ไว้ก่อน ยังไม่ลงตาราง", "Later, not in the plan"), item.title) { m -> m.copy(picks = m.picks + (item.id to DayFill.Pick.SKIP)) }
+
+    /** The answers to "เลื่อนมา 3 ครั้งแล้ว": split (asks the secretary), keep for later (a day with room), let go (cancelled, archived). */
+    fun fillAsk(item: DayFill.Item, pick: DayFill.Pick, inp: DayFill.Input) {
+        val task = item.task ?: return
+        val today = LocalDate.now()
+        val id = DayFill.ident(task)
+        val before = _state.value.dayFill
+        fun answered(m: DayFill.Memory) = m.copy(picks = m.picks + (item.id to pick), asked = m.asked + (id to today.toString()))
+        when (pick) {
+            DayFill.Pick.SPLIT -> {
+                deskNote("ขอให้เลขาแบ่งงาน: " + task.title, tell = true)
+                saveFill(answered(before.on(today)))
+                remember(
+                    UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ขอให้เลขาแบ่งงานแล้ว", "Asked to split"), local = {
+                        saveFill(before)
+                        deskNote("ยกเลิกขอแบ่งงาน: " + task.title, tell = true)
+                    }),
+                    inTree = false,
+                )
+            }
+            DayFill.Pick.LATER -> {
+                val day = DayFill.laterDay(inp, 30, task.due)
+                val after = TaskLine.setDate(task.raw, DateField.SCHEDULED, day)
+                saveFill(answered(before.on(today)).let { m -> m.copy(lines = m.lines + (item.id to DayFill.Line(task.raw, after))) })
+                editRecorded(
+                    task, UndoStep.Kind.PLAN, inTree = false, label = tr("เก็บไว้ก่อน ย้ายไป ", "Kept for later: ") + DayFill.shortDay(day),
+                    local = { saveFill(before) }, onFailed = { saveFill(before) },
+                ) { after }
+            }
+            DayFill.Pick.DROP -> fillDrop(task, item, before, answered(before.on(today)))
+            else -> Unit
+        }
+    }
+
+    /** "ปล่อยไป": the task is cancelled (❌ today) and moved with its block to the archive note; nothing is deleted. */
+    private fun fillDrop(task: Task, item: DayFill.Item, before: DayFill.Memory, next: DayFill.Memory) {
+        val vault = _state.value.vault ?: return
+        val today = LocalDate.now()
+        val cancelled = TaskLine.setStatus(task.raw, Status.CANCELLED, today).trimEnd() + " ❌ " + today
+        saveFill(next)
+        viewModelScope.launch {
+            val result = writeLock.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val block = repo.rewriteLineRecorded(task) { cancelled }
+                        val cut = runCatching { repo.archiveTask(vault, task.copy(raw = cancelled), today) }
+                            .getOrElse { e -> repo.swapBlock(block, undo = true); throw e }
+                        block to cut
+                    }
+                }
+            }
+            result.onSuccess { (block, cut) ->
+                remember(
+                    UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("ปล่อยไปแล้ว ย้ายไปที่เก็บงาน", "Let go, archived"), local = {
+                        saveFill(before)
+                        viewModelScope.launch {
+                            val back = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.unarchive(vault, cut); repo.swapBlock(block, undo = true) } } }
+                            back.exceptionOrNull()?.let { e -> _state.update { it.copy(message = tr("เอากลับไม่ได้: ${e.message}", "Cannot undo: ${e.message}")) } }
+                            reload()
+                        }
+                    }),
+                    inTree = false,
+                )
+            }
+            result.exceptionOrNull()?.let { e ->
+                saveFill(before)
+                _state.update { it.copy(message = tr("ปล่อยไปไม่ได้: ${e.message}", "Could not let it go: ${e.message}")) }
+            }
+            reload()
+        }
+    }
+
+    /**
+     * Tapping a card answered earlier: the answer is taken back, and the line the plan wrote for it too, unless the line
+     * was changed since (then it stays, and the owner is told).
+     */
+    fun fillUnpick(item: DayFill.Item) {
+        val today = LocalDate.now()
+        val before = _state.value.dayFill
+        val m = before.on(today)
+        val pick = m.picks[item.id] ?: return
+        val task = item.task
+        val id = task?.let(DayFill::ident)
+        val line = m.lines[item.id]
+        val next = m.copy(
+            picks = m.picks - item.id,
+            lines = m.lines - item.id,
+            accepted = if (pick == DayFill.Pick.TAKE && id != null) m.accepted - id else m.accepted,
+            slots = if (pick == DayFill.Pick.TAKE && id != null) m.slots.filterValues { it != id } else m.slots,
+            asked = if (item.kind == DayFill.Kind.ASK && id != null) m.asked - id else m.asked,
+            tired = if (pick == DayFill.Pick.TIRED && id != null) m.tired - id else m.tired,
+        )
+        if (pick == DayFill.Pick.SPLIT && task != null) deskNote("ยกเลิกขอแบ่งงาน: " + task.title, tell = true)
+        if (task != null && line != null) {
+            // Only ⏳ and the reminder are the plan's: a change to the rest of the line since is kept.
+            val was = DayFill.marks(line.before)
+            if (DayFill.marks(task) != DayFill.marks(line.after) || was == null) {
+                saveFill(next)
+                _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนบรรทัดงาน", "The task was changed elsewhere, so its line was left as it is")) }
+                return
+            }
+            saveFill(next)
+            editRecorded(
+                task, UndoStep.Kind.PLAN, inTree = false, label = tr("เปลี่ยนใจแล้ว", "Changed your mind"),
+                local = { saveFill(before) }, onFailed = { saveFill(before) },
+            ) { DayFill.withMarks(it, was) }
+        } else {
+            changeFill(tr("เปลี่ยนใจแล้ว", "Changed your mind"), item.title) { next }
+        }
+    }
+
+    /** "มีธุระ": nothing is planned from now for [minutes] (null: the rest of the evening). */
+    fun fillErrand(from: Int, minutes: Int?, label: String) {
+        val change = { m: DayFill.Memory -> m.copy(errand = DayFill.Errand(from, minutes?.let { from + it })) }
+        changeFill(tr("มีธุระ", "Errand"), label, reflowNews(tr("มีธุระ ", "Errand ") + label, change), change)
+    }
+
+    /**
+     * "ว่าง ทำงานได้ วันนี้" on a calendar event (owner's pick ก+ข, 2026-10-31): its hours take no time from today's plan, so
+     * the work moved away for it comes back. [free] false counts it as busy again. Today only; the bar's "เลิกทำ" undoes it.
+     */
+    fun fillFreeEvent(e: CalendarEvent, free: Boolean) {
+        val key = DayFill.freeKey(e)
+        val change = { m: DayFill.Memory -> m.copy(freeEvents = if (free) m.freeEvents + key else m.freeEvents - key) }
+        val what = if (free) tr("ว่าง ทำงานได้ วันนี้: ", "Free to work today: ") + e.title else tr("นับว่าไม่ว่างตามปฏิทิน: ", "Busy as the calendar says: ") + e.title
+        changeFill(
+            if (free) tr("ว่าง ทำงานได้ วันนี้", "Free to work today") else tr("นับว่าไม่ว่างตามปฏิทิน", "Busy as the calendar says"),
+            e.title, reflowNews(what, change), change,
+        )
+    }
+
+    /** "ธุระเสร็จแล้ว จัดคืนให้". */
+    fun fillErrandEnd() {
+        val change = { m: DayFill.Memory -> m.copy(errand = null) }
+        changeFill(tr("ธุระเสร็จแล้ว", "Errand over"), tr("จัดคืนให้แล้ว", "planned again"), reflowNews(tr("ธุระเสร็จแล้ว", "Errand over"), change), change)
+    }
+
+    /** The week's sprint: "รับ" ([take] true) or "เปลี่ยน" the second project; "รับแล้ว" tapped opens it again. */
+    fun fillSprint(projects: List<String>, take: Boolean?, swap: Boolean) {
+        val week = DayFill.weekOf(LocalDate.now()).toString()
+        changeFill(
+            when {
+                swap -> tr("เปลี่ยนโปรเจกต์ในสปรินต์แล้ว", "Sprint project swapped")
+                take == true -> tr("รับสปรินต์แล้ว", "Sprint taken")
+                else -> tr("เปิดสปรินต์ให้เลือกใหม่", "Sprint reopened")
+            },
+            projects.joinToString(", "),
+        ) { m ->
+            val cur = m.sprint?.takeIf { it.week == week }
+            m.copy(
+                sprint = DayFill.SprintPick(
+                    week, projects, taken = take == true, swap = (cur?.swap ?: 0) + if (swap) 1 else 0,
+                    takenOn = if (take == true) LocalDate.now().toString() else null,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Taken slots whose line no longer matches the plan (an event landed on one, an errand, "ช่วงนี้ไม่ว่าง", or the undo
+     * of one of these): their 🎯 follows, or, with no room left today, ⏳ goes to tomorrow at the same time. A line the
+     * owner changed since the plan wrote it ([letGo]) is left as it is and the slot let go of. Run from the today page;
+     * the memory is changed first, so each line is written once.
+     */
+    fun fillFollow(moves: List<DayFill.Move>, letGo: List<String>) {
+        if (moves.isEmpty() && letGo.isEmpty()) return
+        val today = LocalDate.now()
+        var m = _state.value.dayFill.on(today)
+        letGo.filter { it !in fillPending }.forEach { id ->
+            m = m.copy(accepted = m.accepted - id, lines = m.lines - id, slots = m.slots.filterValues { it != id }, picks = m.picks - id)
+        }
+        class Write(val task: Task, val after: String, val id: String, val card: String, val acc: DayFill.Accepted, val line: DayFill.Line)
+        val writes = moves.mapNotNull { mv ->
+            val id = DayFill.ident(mv.task)
+            if (id in fillPending) return@mapNotNull null
+            val acc = m.accepted[id] ?: return@mapNotNull null
+            val line = m.lines[mv.card] ?: return@mapNotNull null
+            val at = mv.at ?: return@mapNotNull null
+            val after = TaskLine.setDate(mv.task.raw, DateField.SCHEDULED, mv.day).let {
+                if (acc.timed) TaskLine.setReminder(it, DayFill.clock(at), ReminderOn.SCHEDULED) else it
+            }
+            // A write that failed once this session is not tried again on its own (the message already said why).
+            if (mv.card + "\u0001" + after in followFailed) return@mapNotNull null
+            m = m.copy(accepted = m.accepted + (id to acc.copy(day = mv.day.toString(), at = at)), lines = m.lines + (mv.card to line.copy(after = after)))
+            Write(mv.task, after, id, mv.card, acc, line)
+        }
+        saveFill(m)
+        writes.forEach { w ->
+            // Not written: the plan keeps knowing the line as it still reads, so the slot is not let go of.
+            fillWrite(w.task, onFailed = {
+                followFailed += w.card + "\u0001" + w.after
+                val cur = _state.value.dayFill
+                saveFill(cur.copy(accepted = cur.accepted + (w.id to w.acc), lines = cur.lines + (w.card to w.line)))
+            }) { w.after }
+        }
+    }
+
+    private val followFailed = HashSet<String>()
+
+    /** "รับวันส่งนี้" in the secretary's questions: the task gets the 📅 the secretary proposed. Not a move: it had none. */
+    fun askDue(task: Task, day: LocalDate) {
+        val after = TaskLine.setDate(task.raw, DateField.DUE, day)
+        editRecorded(task, UndoStep.Kind.PLAN, inTree = false, label = tr("ลงวันส่งแล้ว", "Due date set")) { after }
+    }
+
+    /** Tapping the answer again: the line goes back as it was, unless it was changed since. */
+    fun askDueBack(task: Task, day: LocalDate) {
+        val now = visibleTask(task.fileUri, TaskLine.setDate(task.raw, DateField.DUE, day))
+            ?: return _state.update { it.copy(message = tr("งานนี้ถูกแก้จากที่อื่นแล้ว จึงไม่ได้ย้อนวันส่ง", "The task was changed elsewhere, so the due date stays")) }
+        editRecorded(now, UndoStep.Kind.PLAN, inTree = false, label = tr("ย้อนวันส่งแล้ว", "Due date taken back")) { task.raw }
+    }
+
+    /** "ไม่มีวันส่ง": told to the secretary in สถิติเลขา.md, so it stops proposing one ([back] takes that back). */
+    fun askNoDue(task: Task, back: Boolean) {
+        deskNote((if (back) "ยกเลิกไม่มีวันส่ง: " else "ไม่มีวันส่ง: ") + task.title, tell = true)
+        if (!back) remember(
+            UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("จำไว้ว่างานนี้ไม่มีวันส่ง", "No due date, noted"), local = { deskNote("ยกเลิกไม่มีวันส่ง: " + task.title, tell = true) }),
+            inTree = false,
+        )
+    }
+
     // ---- Review mode (โหมดทบทวนงาน), on the secretary page ----
 
     /** How often the task was moved to a later day lately, for the review card's warning. */
@@ -2226,6 +2857,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             reload()
         }
     }
+
+    /**
+     * A review opened from a day plan card closes once it is saved, so its own "ย้อน" is out of reach: the bar's
+     * "เลิกทำ" puts it back instead.
+     */
+    fun reviewFromPlan(saved: ReviewSaved) = remember(
+        UndoStep(UndoStep.Kind.PLAN, saved.task.title, label = tr("ทบทวนแล้ว", "Reviewed"), local = { reviewUndo(saved) {} }),
+        inTree = false,
+    )
 
     /** Puts back what [saved] changed: the task's block as it was, and the asking task it added. */
     fun reviewUndo(saved: ReviewSaved, onDone: (Boolean) -> Unit) {
@@ -3085,14 +3725,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun setCalendarSpan(span: CalendarSpan) = _state.update { it.copy(calendarSpan = span) }
 
     /** Adds a task typed in the quick-add sheet to the TaskForge file. */
-    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null) {
+    fun quickAdd(draft: QuickAdd.Draft, status: Status = Status.TODO, link: String? = null, links: List<String> = emptyList(), images: List<ByteArray> = emptyList()) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val today = LocalDate.now()
-                val line = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) } +
-                    (link?.let { "\n    - $it" } ?: "")
-                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, line) }.map { line }
+                runCatching {
+                    // Images picked while adding are saved first, so the line can name the files as written.
+                    withNewImages(vault, images) { names ->
+                        val first = draft.line(today).let { if (status == Status.TODO) it else TaskLine.setStatus(it, status, today) }
+                        val block = (listOf(first) + listOfNotNull(link?.let { "    - $it" }) + QuickAdd.attachLines(links, names)).joinToString("\n")
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, block)
+                        first
+                    }
+                }
             }
             result.getOrNull()?.let { noteCreated(it) }
             val text = result.fold(
@@ -3105,15 +3751,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** A task from the detailed add page: the line, its description and its subtasks go in together. */
-    fun addDetailedTask(detail: QuickAdd.Detail, status: Status = Status.TODO, link: String? = null) {
+    fun addDetailedTask(detail: QuickAdd.Detail, status: Status = Status.TODO, link: String? = null, images: List<ByteArray> = emptyList()) {
         val vault = _state.value.vault ?: return
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val today = LocalDate.now()
-                val lines = detail.block(today).split("\n").toMutableList()
-                if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
-                if (link != null) lines.add(1, "    - $link")
-                runCatching { repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n")) }.map { lines[0] }
+                runCatching {
+                    // Images picked while adding are saved first, so the block can name the files as written.
+                    withNewImages(vault, images) { names ->
+                        val lines = detail.copy(images = detail.images + names).block(today).split("\n").toMutableList()
+                        if (status != Status.TODO) lines[0] = TaskLine.setStatus(lines[0], status, today)
+                        if (link != null) lines.add(1, "    - $link")
+                        repo.appendLine(vault, VaultRepository.TASK_FILE, lines.joinToString("\n"))
+                        lines[0]
+                    }
+                }
             }
             result.getOrNull()?.let { noteCreated(it) }
             val text = result.fold(
@@ -3277,7 +3929,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             Planner.Ask.RANK -> rankAll(text)
             Planner.Ask.SLOTS -> {
                 val s = _state.value
-                val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now())
+                val plan = Planner.plan(text, s.tasks, s.events, s.profile, LocalDateTime.now(), facts = planFacts(s))
                 _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Slots(plan)) }
             }
             Planner.Ask.DURATION -> _state.update { it.copy(chat = it.chat + Chat.Asked(text) + Chat.Duration(text)) }
@@ -3289,7 +3941,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val item = _state.value.chat.getOrNull(index) as? Chat.Duration ?: return
         if (item.answered != null) return
         val s = _state.value
-        val plan = Planner.plan(item.request, s.tasks, s.events, s.profile, LocalDateTime.now(), minutes.takeIf { it > 0 })
+        val plan = Planner.plan(item.request, s.tasks, s.events, s.profile, LocalDateTime.now(), minutes.takeIf { it > 0 }, planFacts(s))
         _state.update {
             it.copy(chat = it.chat.toMutableList().also { list -> list[index] = item.copy(answered = minutes) } + Chat.Slots(plan))
         }
@@ -3335,14 +3987,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val today = now.toLocalDate()
         viewModelScope.launch {
             val events = withContext(Dispatchers.IO) {
-                runCatching { CalendarReader.events(getApplication(), from.atStartOfDay(), to.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
+                // One day past the range, so a shift after midnight just after it still shortens the last evening.
+                runCatching { CalendarReader.events(getApplication(), from.atStartOfDay(), to.plusDays(2).atStartOfDay()) }.getOrDefault(emptyList())
             }
             val s = _state.value
             val candidates = Focus.rank(s.tasks, today).map { it.first }.filter { t ->
                 t.scheduled.let { it == null || it < today } && t.due.let { it == null || it >= from } && t.reminderTime == null
             }.take(12)
             val days = generateSequence(maxOf(from, today)) { it.plusDays(1) }.takeWhile { it <= to }.toList()
-            val proposals = withContext(Dispatchers.Default) { Planner.planRange(candidates, days, s.tasks, events, s.profile, now) }
+            val proposals = withContext(Dispatchers.Default) { Planner.planRange(candidates, days, s.tasks, events, s.profile, now, planFacts(s)) }
             _state.update { it.copy(chat = it.chat + Chat.Asked(asked) + Chat.RangePlan(rangeTitle(from, to), proposals)) }
         }
     }
@@ -3839,8 +4492,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val retag: Pair<String, String>? = null,
         val moved: VaultRepository.Moved? = null,
         val group: GroupUndo? = null,
+        /** What the bar says instead of "เสร็จแล้ว" (the day plan's answers). */
+        val label: String? = null,
+        /** Put back on undo, before the blocks: what the day plan keeps on this phone. */
+        val local: (() -> Unit)? = null,
     ) {
-        enum class Kind { DONE, OPENED, MOVED }
+        enum class Kind { DONE, OPENED, MOVED, PLAN }
     }
 
     /**
@@ -3855,15 +4512,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Like [edit], keeping the line's block before and after so the change can be undone. */
     private fun editRecorded(
         task: Task, kind: UndoStep.Kind, inTree: Boolean, events: List<BehaviorEvent> = emptyList(),
-        onSaved: (() -> Unit)? = null, transform: (String) -> String,
+        onSaved: (() -> Unit)? = null, label: String? = null, local: (() -> Unit)? = null, onFailed: (() -> Unit)? = null,
+        transform: (String) -> String,
     ) {
         runCatching { transform(task.raw) }.getOrNull()?.let { showEdited(task, it) }
         viewModelScope.launch {
             val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.rewriteLineRecorded(task, transform) } } }
             result.onSuccess { block ->
-                remember(UndoStep(kind, task.title, listOf(block), events), inTree)
+                remember(UndoStep(kind, task.title, listOf(block), events, label = label, local = local), inTree)
                 onSaved?.invoke()
             }
+            if (result.isFailure) onFailed?.invoke()
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
                     tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
@@ -3905,6 +4564,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * since) is not written over: the step is dropped and the owner told. [done] gets whether it all went through.
      */
     private fun applyStep(step: UndoStep, undo: Boolean, done: (Boolean) -> Unit) {
+        if (undo) step.local?.invoke()
+        // Only the day plan's memory changed: nothing to write.
+        if (step.local != null && step.blocks.isEmpty() && step.retag == null && step.group == null && step.moved == null) return done(true)
         step.retag?.let { (from, to) ->
             if (undo) retagAll(to, from, done) else retagAll(from, to, done)
             return
@@ -4287,11 +4949,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(tasks = it.tasks.swap(), parked = it.parked.swap(), listItems = it.listItems.swap()) }
     }
 
-    private fun edit(task: Task, onSaved: (() -> Unit)? = null, transform: (String) -> String) {
+    private fun edit(task: Task, onSaved: (() -> Unit)? = null, onFailed: (() -> Unit)? = null, transform: (String) -> String) {
         runCatching { transform(task.raw) }.getOrNull()?.let { showEdited(task, it) }
         viewModelScope.launch {
             val result = writeLock.withLock { withContext(Dispatchers.IO) { runCatching { repo.rewriteLine(task, transform) } } }
-            if (result.isSuccess) onSaved?.invoke()
+            if (result.isSuccess) onSaved?.invoke() else onFailed?.invoke()
             result.exceptionOrNull()?.let { e ->
                 val text = if (e is VaultRepository.ConflictException) {
                     tr("ไฟล์ถูกแก้จากที่อื่น โหลดใหม่แล้ว ลองอีกครั้ง", "The file changed elsewhere and was reloaded. Try again.")
@@ -4320,6 +4982,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_DECLINED = "declinedInsights"
         const val KEY_DONE_LOG = "doneLog"
         const val KEY_REVIEWED = "reviewedTasks"
+        const val FILL_MEMORY = DayFillMode.MEMORY
+        const val FILL_LOG = "log"
         const val KEY_PROJECT_ORDER = "projectOrder"
         const val KEY_STARRED = "starredProjects"
         const val KEY_PICKED_FOLDERS = "pickedFolders"

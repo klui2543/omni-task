@@ -116,6 +116,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
     CalendarStyles.load(LocalContext.current)
     NewLook.load(LocalContext.current)
     ReviewMode.load(LocalContext.current)
+    DayFillMode.load(LocalContext.current)
+    LookAheadMode.load(LocalContext.current)
     val pickVault = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setVault(uri)
     }
@@ -490,7 +492,7 @@ private fun TickBar(step: TaskViewModel.UndoStep, more: Int, vm: TaskViewModel, 
         left.animateTo(0f, androidx.compose.animation.core.tween(UNDO_BAR_MS.toInt(), easing = androidx.compose.animation.core.LinearEasing))
         vm.clearTicked()
     }
-    val what = if (step.kind == TaskViewModel.UndoStep.Kind.OPENED) tr("เปิดงานอีกครั้ง", "Opened again") else tr("เสร็จแล้ว", "Done")
+    val what = step.label ?: if (step.kind == TaskViewModel.UndoStep.Kind.OPENED) tr("เปิดงานอีกครั้ง", "Opened again") else tr("เสร็จแล้ว", "Done")
     Column(
         modifier.padding(horizontal = 12.dp).widthIn(max = 520.dp).fillMaxWidth()
             .clip(RoundedCornerShape(14.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(14.dp)),

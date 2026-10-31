@@ -648,8 +648,11 @@ private fun ImageViewer(name: String, vm: TaskViewModel, onDismiss: () -> Unit) 
 
 /** Shown when a photo is large: keep it full size as WebP, or shrink it to 2048 px first. */
 @Composable
-fun AttachChoiceDialog(pending: PendingImage, onChoose: (Boolean?) -> Unit) {
-    val p = pending.prepared
+fun AttachChoiceDialog(pending: PendingImage, onChoose: (Boolean?) -> Unit) = AttachChoiceDialog(pending.prepared, onChoose)
+
+/** The same choice for a photo picked before the task exists. */
+@Composable
+fun AttachChoiceDialog(p: ImageAttach.Prepared, onChoose: (Boolean?) -> Unit) {
     AlertDialog(
         onDismissRequest = { onChoose(null) },
         containerColor = C.raised,
@@ -762,7 +765,7 @@ private fun RepeatDialog(task: Task, onSet: (String?) -> Unit, onDismiss: () -> 
 }
 
 @Composable
-private fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun NotePicker(notes: List<String>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     val matches = NoteLinks.search(text, notes)
     AlertDialog(

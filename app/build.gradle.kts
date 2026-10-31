@@ -94,6 +94,8 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     // The month widget keeps which month and day it shows in its Glance state (Preferences keys).
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    // Sleep from the watch (Samsung Health writes it into Health Connect), for the day plan's wake and bed times.
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha12")
     // Google sign-in for Drive, and HTTP for Drive's API (the Omni folder, see DriveLink).
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     // The wake alarm goes to the watch app (see WatchAlarm and the wear module).

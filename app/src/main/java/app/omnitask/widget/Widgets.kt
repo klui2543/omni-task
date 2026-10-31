@@ -27,6 +27,14 @@ import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.LocalSize
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.currentState
+import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -79,6 +87,8 @@ object OmniWidgets {
         }
         // The month widget keeps its data in its composition; a new stamp makes it load again.
         runCatching { MonthWidget.refresh(context) }
+        // The lock-screen card follows the same refreshes (it does nothing with its switch off).
+        runCatching { LockCardNotifier.refresh(context) }
     }
 }
 
@@ -181,174 +191,239 @@ class TickAction : ActionCallback {
 }
 
 /**
- * Today as a timeline, as on the Focus screen: one header line (what is left, add), then events and
- * timed tasks in time order with a line at the current time, then the tasks without a time. It scrolls
- * when the day is longer than the widget; tap a ring to tick a task.
+ * Today and the days after it, Google Calendar's schedule widget in the app's colours (owner, 2026-10-30, mock round 4):
+ * a narrow date column (today in a circle), events as soft bars in their calendar's colour, tasks with a ring to tick,
+ * the now line on today. It never scrolls (in a launcher stack a swipe changes the widget), so each page holds as many
+ * whole days as fit its height; ‹ › page through three weeks, "วันนี้" comes back, and after ten minutes left alone it
+ * opens on today again. Overdue work is one red "ค้าง N" in the header.
  */
 class TodayWidget : GlanceAppWidget() {
+    override val sizeMode = SizeMode.Exact
+    override val stateDefinition = PreferencesGlanceStateDefinition
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent {
             val now = LocalDateTime.now()
+            val state = currentState<Preferences>()
+            val fresh = System.currentTimeMillis() - (state[TOUCHED] ?: 0L) < IDLE_MS
+            val size = LocalSize.current
+            val space = (size.height.value - CHROME).toInt().coerceAtLeast(TodayWeek.ROW)
+            val pages = TodayWeek.pages(data.days(now), space)
+            val index = (if (fresh) state[PAGE] ?: 0 else 0).coerceIn(0, pages.lastIndex)
+            val page = pages[index]
             val left = data.todayTasks.size
+            val late = DayPlan.lateCount(data.plan)
+            val hasToday = page.days.first().date == data.today
             Column(
-                GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 6.dp),
+                GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 10.dp, end = 10.dp, top = TOP.dp, bottom = 8.dp),
             ) {
-                Row(GlanceModifier.fillMaxWidth().clickable(open(context)), verticalAlignment = Alignment.CenterVertically) {
-                    Column(GlanceModifier.defaultWeight()) {
-                        Label(tr("วันนี้", "Today"), cp { it.text }, 16.sp, bold = true)
-                        Label(
-                            data.today.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", app.omnitask.ui.TH)) + ", " +
-                                if (left == 0) tr("ไม่มีงานค้าง", "all done") else tr("เหลือ $left งาน", "$left left"),
-                            cp { it.muted }, 12.sp,
-                        )
+                Row(GlanceModifier.fillMaxWidth().height(HEADER.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(GlanceModifier.defaultWeight().padding(start = 4.dp).clickable(open(context))) {
+                        Label(span(page.days.first().date, page.days.last().date), cp { it.text }, 15.sp, bold = true)
+                        if (hasToday) Row {
+                            Label(if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งานวันนี้", "$left left today"), cp { it.muted }, 11.5.sp)
+                            if (late > 0) Label(tr(", ค้าง $late ›", ", $late overdue ›"), cp { it.red }, 11.5.sp, bold = true, modifier = GlanceModifier.clickable(open(context)))
+                        } else Label(tr("${page.days.size} วัน", "${page.days.size} days"), cp { it.muted }, 11.5.sp)
                     }
-                    Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 34)
-                }
-                Spacer(GlanceModifier.height(6.dp))
-                val rows = timeline(data, now)
-                if (rows.isEmpty()) {
-                    Label(tr("วันนี้ว่าง ไม่มีงานหรือนัด", "Nothing due or booked today"), cp { it.muted }, 13.sp, modifier = GlanceModifier.padding(top = 8.dp))
-                }
-                LazyColumn(GlanceModifier.fillMaxSize()) {
-                    rows.forEach { r ->
-                        item {
-                            when (r) {
-                                is Line.Now -> NowLine(r.time)
-                                is Line.Head -> Label(r.text, if (r.overdue) cp { it.red } else cp { it.faint }, 11.5.sp, bold = r.overdue, modifier = GlanceModifier.padding(top = 8.dp, bottom = 2.dp))
-                                is Line.Event -> EventLine(context, r)
-                                is Line.Todo -> TodoLine(context, r, data.today)
-                            }
-                        }
+                    if (index > 0) {
+                        Box(
+                            GlanceModifier.height(26.dp).cornerRadius(13.dp).background(cp { it.accent }).padding(horizontal = 9.dp)
+                                .clickable(actionRunCallback<PageAction>(actionParametersOf(GO to 0))),
+                            contentAlignment = Alignment.Center,
+                        ) { Label(tr("วันนี้", "Today"), cp { it.onAccent }, 11.5.sp) }
+                        Spacer(GlanceModifier.width(4.dp))
                     }
+                    PageButton("‹", tr("ก่อนหน้า", "Previous"), (index - 1).coerceAtLeast(0))
+                    Spacer(GlanceModifier.width(2.dp))
+                    PageButton("›", tr("ถัดไป", "Next"), (index + 1).coerceAtMost(pages.lastIndex))
+                    Spacer(GlanceModifier.width(6.dp))
+                    Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 26)
+                }
+                Spacer(GlanceModifier.height(UNDER.dp))
+                page.days.forEachIndexed { i, day ->
+                    if (i > 0) Spacer(GlanceModifier.height(TodayWeek.DAY_GAP.dp))
+                    DayBlock(context, day, data.today, cap = page.cap)
+                }
+            }
+        }
+    }
+
+    companion object {
+        internal val PAGE = intPreferencesKey("page")
+        internal val TOUCHED = longPreferencesKey("touched")
+        internal val GO = ActionParameters.Key<Int>("go")
+        private const val IDLE_MS = 10 * 60 * 1000L
+        /** Header room (owner picked "ข" on 31 Oct: more air above and under it, lighter buttons). */
+        private const val TOP = 14
+        private const val HEADER = 40
+        private const val UNDER = 12
+        /** Padding, header and the gap under it, in dp: what the days cannot use. */
+        private const val CHROME = TOP + 8 + HEADER + UNDER
+    }
+}
+
+/** Moves a Today widget to another page and remembers when, so it comes back to today after a while. */
+class PageAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val go = parameters[TodayWidget.GO] ?: 0
+        updateAppWidgetState(context, glanceId) {
+            it[TodayWidget.PAGE] = go
+            it[TodayWidget.TOUCHED] = System.currentTimeMillis()
+        }
+        TodayWidget().update(context, glanceId)
+    }
+}
+
+@Composable
+private fun PageButton(text: String, label: String, go: Int) {
+    Box(
+        GlanceModifier.width(28.dp).height(34.dp).cornerRadius(10.dp)
+            .clickable(actionRunCallback<PageAction>(actionParametersOf(TodayWidget.GO to go))),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, style = TextStyle(color = cp { it.text2 }, fontSize = 18.sp)) }
+}
+
+/** "30 ต.ค. ถึง 1 พ.ย.", or one date for a page of one day. */
+private fun span(from: LocalDate, to: LocalDate): String {
+    val f = java.time.format.DateTimeFormatter.ofPattern("d MMM", app.omnitask.ui.TH)
+    return if (from == to) from.format(f) else tr("${from.format(f)} ถึง ${to.format(f)}", "${from.format(f)} to ${to.format(f)}")
+}
+
+/** One day: the date column (40 dp, today in a circle, the month under the first of a month; the header names the rest) and its rows. */
+@Composable
+private fun DayBlock(context: Context, day: TodayWeek.Day, today: LocalDate, cap: Int?) {
+    val isToday = day.date == today
+    Row(GlanceModifier.fillMaxWidth()) {
+        Column(GlanceModifier.width(40.dp).clickable(open(context)), horizontalAlignment = Alignment.CenterHorizontally) {
+            val wd = day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEE", app.omnitask.ui.TH))
+            if (isToday) {
+                Column(
+                    GlanceModifier.size(36.dp).cornerRadius(18.dp).background(cp { it.accent }),
+                    verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Label(wd, cp { it.onAccent }, 10.sp)
+                    Label("${day.date.dayOfMonth}", cp { it.onAccent }, 14.5.sp, bold = true)
+                }
+            } else {
+                Label(wd, cp { it.muted }, 11.sp)
+                Label("${day.date.dayOfMonth}", cp { it.text }, 16.sp)
+                if (day.date.dayOfMonth == 1) {
+                    Label(day.date.format(java.time.format.DateTimeFormatter.ofPattern("MMM", app.omnitask.ui.TH)), cp { it.accent }, 9.sp, bold = true)
+                }
+            }
+        }
+        Spacer(GlanceModifier.width(7.dp))
+        Column(GlanceModifier.defaultWeight()) {
+            if (day.count == 0) {
+                Box(GlanceModifier.height(TodayWeek.EMPTY.dp).padding(start = 9.dp), contentAlignment = Alignment.CenterStart) {
+                    Label(tr("ว่าง", "Free"), cp { it.faint }, 12.5.sp)
+                }
+                return@Column
+            }
+            var shown = 0
+            var first = true
+            day.rows.forEach { r ->
+                if (r !is TodayWeek.Row.Now && cap != null && shown >= cap) return@forEach
+                if (!first) Spacer(GlanceModifier.height(TodayWeek.ROW_GAP.dp))
+                first = false
+                when (r) {
+                    is TodayWeek.Row.Now -> NowRow(r.time)
+                    is TodayWeek.Row.Event -> { EventRow(context, r); shown++ }
+                    is TodayWeek.Row.Todo -> { TodoRow(context, r, today); shown++ }
+                }
+            }
+            if (cap != null && day.count > cap) {
+                Spacer(GlanceModifier.height(TodayWeek.ROW_GAP.dp))
+                Box(GlanceModifier.height(TodayWeek.MORE.dp).padding(start = 9.dp).clickable(open(context)), contentAlignment = Alignment.CenterStart) {
+                    Label(tr("+ อีก ${day.count - cap}", "+ ${day.count - cap} more"), cp { it.accent }, 11.5.sp)
                 }
             }
         }
     }
 }
 
-private sealed interface Line {
-    data class Now(val time: LocalTime) : Line
-    data class Head(val text: String, val overdue: Boolean = false) : Line
-    data class Event(val title: String, val range: String, val phase: DayPlan.Phase, val minutesLeft: Long, val progress: Float, val color: Int? = null) : Line
-    data class Todo(val time: String, val task: Task, val sub: String) : Line
-}
-
-/**
- * The rows: timed items with the now line among them, then untimed tasks, then overdue work under a heading of its own. Finished
- * tasks and events that are over stay in the list, greyed; the now line runs through the event that is on.
- */
-private fun timeline(data: WidgetData, now: LocalDateTime): List<Line> {
-    val out = ArrayList<Line>()
-    val plan = data.plan
-    // All-day events and ones running over several days lead, under a heading of their own, apart from the tasks.
-    val allDay = plan.filter { it.part == DayPlan.Part.ALL_DAY }.flatMap { it.items }
-    if (allDay.isNotEmpty()) {
-        out += Line.Head(DayPlan.Part.ALL_DAY.label)
-        allDay.forEach { out += line(it, "", now, data.today) }
-    }
-    val timed = plan.filter { it.part != DayPlan.Part.LATE && it.part != DayPlan.Part.ANYTIME && it.part != DayPlan.Part.ALL_DAY }.flatMap { it.items }
-    val inEvent = timed.any { it is DayPlan.Item.EventItem && DayPlan.phase(it.event, now) == DayPlan.Phase.ACTIVE }
-    var nowShown = timed.isEmpty() || inEvent
-    timed.forEach { item ->
-        val time = item.time
-        if (!nowShown && time != null && time > now.toLocalTime()) { out += Line.Now(now.toLocalTime()); nowShown = true }
-        out += line(item, time?.let(::hm) ?: "", now, data.today)
-    }
-    if (!nowShown) out += Line.Now(now.toLocalTime())
-    // Untimed work follows the day; overdue work is not part of it and sits last, under a heading of its own, as on the Focus screen.
-    val untimed = plan.filter { it.part == DayPlan.Part.ANYTIME }.flatMap { it.items }
-    if (untimed.isNotEmpty()) {
-        out += Line.Head(tr("ไม่ระบุเวลา", "Any time"))
-        untimed.forEach { out += line(it, "", now, data.today) }
-    }
-    val overdue = plan.filter { it.part == DayPlan.Part.LATE }.flatMap { it.items }
-    if (overdue.isNotEmpty()) {
-        out += Line.Head(tr("ค้างอยู่", "Overdue"), overdue = true)
-        overdue.forEach { out += line(it, "", now, data.today) }
-    }
-    return out
-}
-
-private fun line(item: DayPlan.Item, time: String, now: LocalDateTime, today: LocalDate): Line = when (item) {
-    is DayPlan.Item.EventItem -> {
-        val e = item.event
-        val range = DayPlan.range(e, item.time != null, today, ::hm)
-        Line.Event(e.title, range, DayPlan.phase(e, now), ChronoUnit.MINUTES.between(now, e.end), DayPlan.progress(e, now), calendarArgb(e.calendarId))
-    }
-    is DayPlan.Item.TaskItem -> Line.Todo(time, item.task, listOfNotNull(Projects.projectOf(item.task)?.let { "#$it" }, Focus.waitingFor(item.task)?.let { tr("รอ $it", "waiting on $it") }).joinToString(", "))
-}
-
 @Composable
-private fun NowLine(time: LocalTime) {
-    Row(GlanceModifier.fillMaxWidth().height(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(GlanceModifier.size(6.dp).cornerRadius(3.dp).background(cp { it.red })) {}
-        Label(hm(time), cp { it.red }, 10.5.sp, bold = true, modifier = GlanceModifier.padding(horizontal = 5.dp))
+private fun NowRow(time: LocalTime) {
+    Row(GlanceModifier.fillMaxWidth().height(TodayWeek.NOW.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(GlanceModifier.size(5.dp).cornerRadius(3.dp).background(cp { it.red })) {}
+        Label(hm(time), cp { it.red }, 10.sp, bold = true, modifier = GlanceModifier.padding(horizontal = 4.dp))
         Box(GlanceModifier.defaultWeight().height(1.5.dp).background(cp { it.red })) {}
     }
 }
 
+/** The calendar's colour softened into the card, as the soft bars of the mock. */
+private fun soft(argb: Int?, p: Palette): Color {
+    val c = argb?.let { Color(it) } ?: p.teal
+    return androidx.compose.ui.graphics.lerp(p.card, c, if (p.dark) 0.26f else 0.20f)
+}
+
+@Composable
+private fun EventRow(context: Context, e: TodayWeek.Row.Event) {
+    e.run?.let { return RunningRow(context, e, it) }
+    Row(
+        GlanceModifier.fillMaxWidth().height(TodayWeek.ROW.dp).cornerRadius(9.dp)
+            .background(if (e.past) cp { it.raised } else cp { soft(e.color, it) }).padding(horizontal = 9.dp).clickable(open(context)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(GlanceModifier.width(3.dp).height(15.dp).cornerRadius(2.dp).background(if (e.past) cp { it.faint } else e.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
+        Label(e.title, if (e.past) cp { it.faint } else cp { it.text }, 14.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp))
+        if (e.time.isNotEmpty()) Label(e.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.padding(start = 6.dp))
+    }
+}
+
 /**
- * An event: one line (title left, hours right) like the Focus screen; the one that is on keeps a second line with the
- * minutes left, and the now line crosses it at how far in the clock is. Nothing on it says "Google Calendar" or "ended".
+ * An event happening now: a taller row the red now line crosses at [run] (how far into it the clock is), with the
+ * time gone by tinted above the line (owner, 2026-10-31, mock widget-now, way ข).
  */
 @Composable
-private fun EventLine(context: Context, e: Line.Event) {
-    val past = e.phase == DayPlan.Phase.PAST
-    val active = e.phase == DayPlan.Phase.ACTIVE
-    Box(GlanceModifier.fillMaxWidth().height(if (active) 40.dp else 30.dp).padding(vertical = 2.dp).clickable(open(context))) {
-        Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            Box(GlanceModifier.width(3.dp).height(if (active) 30.dp else 20.dp).cornerRadius(2.dp).background(if (past) cp { it.faint } else e.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
-            if (active) {
-                Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
-                    Label(e.title, cp { it.text }, 14.sp)
-                    Label(e.range + tr(", เหลือ ${e.minutesLeft} นาที", ", ${e.minutesLeft} min left"), cp { it.tealText }, 11.5.sp)
-                }
-            } else {
-                Label(e.title, if (past) cp { it.faint } else cp { it.text }, 14.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp))
-                Label(e.range, if (past) cp { it.faint } else cp { it.tealText }, 11.5.sp)
-            }
+private fun RunningRow(context: Context, e: TodayWeek.Row.Event, run: Float) {
+    val h = TodayWeek.RUN.toFloat()
+    val y = (run.coerceIn(0f, 1f) * h).coerceIn(3f, h - 3f)
+    Box(
+        GlanceModifier.fillMaxWidth().height(TodayWeek.RUN.dp).cornerRadius(9.dp)
+            .background(cp { soft(e.color, it) }).clickable(open(context)),
+    ) {
+        Box(GlanceModifier.fillMaxWidth().height(y.dp).background(cp { it.red.copy(alpha = 0.12f) })) {}
+        Row(
+            GlanceModifier.fillMaxWidth().height((TodayWeek.ROW + 6).dp).padding(start = 9.dp, end = 9.dp, top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(GlanceModifier.width(3.dp).height(15.dp).cornerRadius(2.dp).background(e.color?.let { ColorProvider(Color(it)) } ?: cp { it.teal })) {}
+            Label(e.title, cp { it.text }, 14.sp, modifier = GlanceModifier.defaultWeight().padding(start = 8.dp))
+            if (e.time.isNotEmpty()) Label(e.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.padding(start = 6.dp))
         }
-        if (active) {
-            Column(GlanceModifier.fillMaxSize()) {
-                Spacer(GlanceModifier.height((e.progress * 34f).dp))
-                Row(GlanceModifier.fillMaxWidth().height(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(GlanceModifier.size(6.dp).cornerRadius(3.dp).background(cp { it.red })) {}
-                    Box(GlanceModifier.defaultWeight().height(1.5.dp).background(cp { it.red })) {}
-                }
+        Column(GlanceModifier.fillMaxWidth()) {
+            Spacer(GlanceModifier.height((y - 3f).dp))
+            Row(GlanceModifier.fillMaxWidth().height(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(GlanceModifier.size(6.dp).cornerRadius(3.dp).background(cp { it.red })) {}
+                Box(GlanceModifier.defaultWeight().height(1.5.dp).background(cp { it.red })) {}
             }
         }
     }
 }
 
-/**
- * A task: the ring flush left (no time column, so untimed work sits where timed work does) and the title; a second
- * line only when it says something (the time, how many days late, the project, who waits). A finished task is one line.
- */
+/** A task on one line: the ring (a grey dot once done), the title, and its time or project on the right. */
 @Composable
-private fun TodoLine(context: Context, r: Line.Todo, today: LocalDate) {
+private fun TodoRow(context: Context, r: TodayWeek.Row.Todo, today: LocalDate) {
     val t = r.task
     val done = t.status == Status.DONE
     val late = !done && t.due?.let { it < today } == true
-    val lateText = if (late) t.due?.let { tr("เลย ${ChronoUnit.DAYS.between(it, today)} วัน", "${ChronoUnit.DAYS.between(it, today)} days late") } else null
-    val sub = if (done) "" else listOfNotNull(r.time.ifEmpty { null }, lateText, r.sub.ifEmpty { null }).joinToString(", ")
-    Row(GlanceModifier.fillMaxWidth().height(if (sub.isEmpty()) 34.dp else 40.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(GlanceModifier.fillMaxWidth().height(TodayWeek.ROW.dp).padding(start = 4.dp, end = 9.dp), verticalAlignment = Alignment.CenterVertically) {
         if (done) {
-            // Ticked already: a filled grey dot in place of the ring, nothing to tap.
             Box(GlanceModifier.size(20.dp), contentAlignment = Alignment.Center) {
-                Box(GlanceModifier.size(12.dp).cornerRadius(6.dp).background(cp { it.faint })) {}
+                Box(GlanceModifier.size(10.dp).cornerRadius(5.dp).background(cp { it.faint })) {}
             }
         } else Box(
             GlanceModifier.size(20.dp).clickable(actionRunCallback<TickAction>(actionParametersOf(RAW to t.raw))),
             contentAlignment = Alignment.Center,
         ) {
-            Image(ImageProvider(R.drawable.ic_w_ring), tr("ติ๊กเสร็จ", "Mark done"), GlanceModifier.size(19.dp),
+            Image(ImageProvider(R.drawable.ic_w_ring), tr("ติ๊กเสร็จ", "Mark done"), GlanceModifier.size(17.dp),
                 colorFilter = ColorFilter.tint(if (late) cp { it.red } else cp { it.faint }))
         }
-        Column(GlanceModifier.defaultWeight().padding(start = 8.dp).clickable(open(context))) {
-            Label(t.title, if (done) cp { it.faint } else cp { it.text }, 14.sp, strike = done)
-            if (sub.isNotEmpty()) Label(sub, if (late) cp { it.red } else cp { it.muted }, 11.5.sp)
-        }
+        Label(t.title, if (done) cp { it.faint } else cp { it.text }, 14.sp, strike = done,
+            modifier = GlanceModifier.defaultWeight().padding(start = 6.dp).clickable(open(context)))
+        if (!done && r.time.isNotEmpty()) Label(r.time, cp { it.muted }, 12.sp, modifier = GlanceModifier.padding(start = 6.dp))
     }
 }
 

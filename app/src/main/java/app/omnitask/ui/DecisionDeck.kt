@@ -42,10 +42,10 @@ import app.omnitask.model.tr
  * nothing left the deck is gone.
  */
 @Composable
-fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, reviewCount: Int = 0, onReview: () -> Unit = {}) {
+fun DecisionDeck(
+    state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, reviewCount: Int = 0, onReview: () -> Unit = {}, onAsks: () -> Unit = {},
+) {
     val asks = SecretaryAsk.open(state.secretaryAsks, state.tasks, state.today)
-    var asking by remember { mutableStateOf(false) }
-    if (asking) SecretaryAskSheet(asks, vm, onOpen) { asking = false }
     var waitingOpen by remember { mutableStateOf(false) }
     if (waitingOpen) WaitingSheet(state, vm, onOpen) { waitingOpen = false }
     var picking by remember { mutableStateOf(false) }
@@ -79,9 +79,9 @@ fun DecisionDeck(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, revi
                         color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                     DeckButtons {
-                        // Owner, 2026-10-28: done first, then "see all"; the sheet still takes the reason a task is not done.
+                        // Owner, 2026-10-28: done first, then "see all"; "ดูทั้งหมด" opens the questions on the review card.
                         DeckButton(tr("เสร็จแล้ว", "Done"), true) { vm.toggleDone(first.task) }
-                        DeckButton(tr("ดูทั้งหมด", "See all"), false) { asking = true }
+                        DeckButton(tr("ดูทั้งหมด", "See all"), false, onAsks)
                     }
                 },
             )

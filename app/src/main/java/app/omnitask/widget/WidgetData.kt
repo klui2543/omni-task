@@ -25,7 +25,13 @@ class WidgetData(
     val tasks: List<Task>,
     val events: List<CalendarEvent>,
     val urgentRule: UrgentRule,
+    /** Events from today for [DAYS_AHEAD] days, for the Today widget's pages. */
+    val eventsAhead: List<CalendarEvent> = events,
 ) {
+    /** The Today widget's days, today first. */
+    internal fun days(now: LocalDateTime): List<TodayWeek.Day> =
+        TodayWeek.days(today, now, tasks, eventsAhead, DAYS_AHEAD) { calendarArgb(it.calendarId) }
+
     val brief by lazy { Focus.build(tasks, today, futureCount = 1) }
 
     /** Today's plan as on the Focus screen: late work, then the parts of the day, then work without a time; finished work stays, for the widget to grey. */
@@ -55,14 +61,18 @@ class WidgetData(
         tasks.filter { it.isOpen && !Focus.isSomeday(it) }.groupingBy { it.quadrant(today, urgentRule) }.eachCount()
 
     companion object {
+        const val DAYS_AHEAD = 21
+
         suspend fun load(context: Context): WidgetData = withContext(Dispatchers.IO) {
             Lang.load(context)
             app.omnitask.model.Appearance.load(context)
             val today = LocalDate.now()
             val rule = context.getSharedPreferences("omnitask", Context.MODE_PRIVATE).getString("urgentRule", null)
                 ?.let { name -> UrgentRule.entries.firstOrNull { it.name == name } } ?: UrgentRule.THIS_WEEK
-            val events = runCatching { CalendarReader.events(context, today.atStartOfDay(), today.plusDays(1).atStartOfDay()) }.getOrDefault(emptyList())
-            WidgetData(today, Scheduler.loadVaultTasks(context), events, rule)
+            // Three weeks of events: the Today widget pages through the days ahead; the other widgets keep to today.
+            val ahead = runCatching { CalendarReader.events(context, today.atStartOfDay(), today.plusDays(DAYS_AHEAD.toLong()).atStartOfDay()) }.getOrDefault(emptyList())
+            val events = ahead.filter { it.begin < today.plusDays(1).atStartOfDay() && it.end > today.atStartOfDay() || it.begin.toLocalDate() == today }
+            WidgetData(today, Scheduler.loadVaultTasks(context), events, rule, ahead)
         }
     }
 }

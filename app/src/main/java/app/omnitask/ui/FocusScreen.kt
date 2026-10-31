@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -42,9 +46,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
+import app.omnitask.model.LookAhead
 import app.omnitask.model.NextUp
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
+import app.omnitask.model.WeekEvents
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -56,7 +62,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import app.omnitask.model.Countdown
 import app.omnitask.model.StuckLog
 import kotlinx.datetime.LocalDate
@@ -69,11 +77,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private val LONG_DATE get() = DateTimeFormatter.ofPattern("EEEE d MMMM", TH)
 
+/** The today page's title: "ศุกร์ที่ 30 ตุลาคม" in Thai, "Friday 30 October" in English. */
+private fun titleDate(day: LocalDate): String =
+    day.format(DateTimeFormatter.ofPattern("EEEE", TH)).removePrefix("วัน") + tr("ที่ ", " ") + day.format(DateTimeFormatter.ofPattern("d MMMM", TH))
+
 @Composable
 fun FocusScreen(
     state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit, menu: @Composable () -> Unit,
     onSettings: () -> Unit = {}, onAsk: (String) -> Unit = {}, onSecretary: () -> Unit = {},
 ) {
+    // A day plan card's "ทบทวน" opens the review card on that one task. The list's place is kept above it, so closing
+    // the review comes back to where the owner was.
+    var reviewingTask by remember { mutableStateOf<Task?>(null) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    reviewingTask?.let { t -> ReviewScreen(state, vm, only = t) { reviewingTask = null }; return }
     // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
     val nl = NewLook.on
     var lateOpen by rememberSaveable { mutableStateOf(false) }
@@ -89,7 +106,8 @@ fun FocusScreen(
     }
     val today = state.today
     val asks = SecretaryAsk.open(state.secretaryAsks, state.tasks, today)
-    if (asking) SecretaryAskSheet(asks, vm, onOpen) { asking = false }
+    // "เลขาถาม" opens the review card on the secretary's questions only (Klui's pick ข, 2026-10-30).
+    if (asking) { ReviewScreen(state, vm, asks = asks, onOpen = onOpen) { asking = false }; return }
     val brief = state.brief
     val events = state.todayEvents
     // Tasks already ticked today stay in the day's timeline, greyed, so the day reads as a whole.
@@ -141,18 +159,27 @@ fun FocusScreen(
     val daySections = plan.filter { it.part != DayPlan.Part.LATE }
     if (nl && lateOpen && overdueSection != null) LateSheet(overdueSection, state, vm, onOpen, blocked) { lateOpen = false }
 
+    // The look-ahead (with today's plan): the next week's tag and what a free day ahead will hold (mock v2, board ก), for
+    // the week card. Each free day ahead is planned as it would be then, tens of milliseconds, so off the main thread;
+    // kept here, not in the card, so scrolling the card away and back does not plan again.
+    val lookOn = nl && DayFillMode.on && LookAheadMode.on
+    val look by produceState<LookAheadView?>(null, lookOn, state.tasks, state.events, state.lookEvents, state.dayFill, state.profile, state.calendars, state.daysOff, today) {
+        value = if (lookOn) {
+            val input = vm.fillInput(state, now)
+            withContext(Dispatchers.Default) { lookAheadView(input, Week.sunday(today).plusDays(7)) }
+        } else null
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(start = if (nl) 16.dp else 14.dp, end = if (nl) 16.dp else 14.dp, top = 14.dp, bottom = NavClearance + FabClearance),
         verticalArrangement = Arrangement.spacedBy(if (nl) 20.dp else 10.dp),
     ) {
-        // The new look's card of what to do next, left over and to decide: built with the rest of the top, shown last.
-        var deckCards = emptyList<DeckCard>()
         if (nl) item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(tr("วันนี้", "Today"), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
-                    Text(today.format(LONG_DATE), color = C.muted, fontSize = TS.body)
+                    // The day and date as the title, "ศุกร์ที่ 30 ตุลาคม" (owner's pick ค แบบ 1 and wording, 2026-10-30), so the date is not said twice.
+                    Text(titleDate(today), style = MaterialTheme.typography.headlineSmall, color = C.text, fontWeight = FontWeight.SemiBold)
                     // The day in one line (owner's pick, 2026-10-27), in place of the old ring and numbers.
                     val left = if (night != null && isNight) tr("ก่อนนอน ${hm(night.toBed)}", "${hm(night.toBed)} to bed") else tr("ว่างเหลือ ${hours(free)}", "${hours(free)} free")
                     Text(
@@ -265,11 +292,14 @@ fun FocusScreen(
                     },
                 )
             }
-            deckCards = cards
+            // The card of what to do next, left over and to decide: right under the day's title and any fixes
+            // (owner's pick, mock focus-order, 2026-10-30; it sat last on the page before).
+            if (cards.isNotEmpty()) item(key = "deck") { CardDeck(cards) }
         }
 
         // The secretary's questions: one line however many, the answers in a sheet (owner's pick, 2026-10-26).
-        if (!nl && asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
+        // With the day plan on, its own "เลขาถาม N ข้อ" button opens the same sheet, so the line is not shown twice.
+        if (!nl && !DayFillMode.on && asks.isNotEmpty()) item(key = "secretary-asks") { SecretaryAskStrip(asks.size) { asking = true } }
 
         // Recordings not written down yet (no network, or the check was closed): try again or throw away.
         if (!nl && voice.waiting.isNotEmpty() && voice.recording == null && !voice.busy && voice.review == null) {
@@ -340,7 +370,19 @@ fun FocusScreen(
         // The new look leaves out the nudges ("3 days without touching..."): the secretary brings them up in its chat.
         if (!nl) brief.warnings.filter { it !in hidden }.forEach { w -> item { Notice(w) { hidden = hidden + w } } }
 
-        if (daySections.isNotEmpty() || overdueSection == null) item {
+        // The secretary's plan for the rest of today (Settings switch, off at first) takes the timeline's place.
+        if (DayFillMode.on) item(key = "dayfill") {
+            LaunchedEffect(Unit) {
+                vm.fillLoad()
+                SleepMode.refresh(context)
+            }
+            // The look-ahead's own calendar read, as soon as its switch is on.
+            LaunchedEffect(LookAheadMode.on) { if (LookAheadMode.on && state.lookEvents == null) vm.lookLoad() }
+            val sleeps = SleepMode.forPlan
+            val sleepStatus = SleepMode.status
+            val plan = remember(state.tasks, state.events, state.dayFill, state.profile, state.calendars, state.daysOff, now, sleeps, sleepStatus, LookAheadMode.on, state.lookEvents) { vm.fillPlan(state, now) }
+            DayFillCard(state, vm, plan, now, { vm.fillInput(state, now) }, asks.size, { asking = true }, onOpen) { reviewingTask = it }
+        } else if (daySections.isNotEmpty() || overdueSection == null) item {
             Card {
                 Box(Modifier.height(6.dp))
                 if (daySections.isEmpty()) {
@@ -422,12 +464,15 @@ fun FocusScreen(
         }
 
         // The new look: the next week (owner's pick, 2026-10-28), the pinned countdowns and then the open tasks due (📅)
-        // or scheduled (⏳) in the 7 days from tomorrow, by day. Then, last on the page, the card of what to do next.
+        // or scheduled (⏳) in the 7 days from tomorrow, by day.
         if (nl) {
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
-            item(key = "ahead") { WeekCard(countdowns, week, today, onOpen) { pickingCountdown = true } }
-            if (deckCards.isNotEmpty()) item(key = "deck") { CardDeck(deckCards) }
+            // The same calendars as today's timeline (the chooser at the foot of the page decides them).
+            val weekEvents = WeekEvents.byDay(state.events, today.plusDays(1), Week.sunday(today).plusDays(7))
+            item(key = "ahead") {
+                WeekCard(countdowns, week, today, onOpen, look, weekEvents, now, { calendarsFrom = it; calendarsOpen = true }) { pickingCountdown = true }
+            }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
         val showFuture = !nl && TaskKind.FUTURE !in state.hiddenKinds
@@ -686,20 +731,20 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
 /**
  * A calendar event on the timeline against the clock: greyed once it has ended, and while it runs the red now line
  * crosses the card at how far into the event it is, with the part already gone tinted darker. Tapping it opens the
- * calendar choice with its calendar pointed out.
+ * calendar choice with its calendar pointed out. On a day ahead (the week block) it is [ahead]: plain, never past or running.
  */
 @Composable
-private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onClick: () -> Unit) {
+private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, day: LocalDate = now.toLocalDate(), ahead: Boolean = false, onClick: () -> Unit) {
     val e = item.event
-    val phase = DayPlan.phase(e, now)
+    val phase = if (ahead) DayPlan.Phase.UPCOMING else DayPlan.phase(e, now)
     val past = phase == DayPlan.Phase.PAST
     val running = phase == DayPlan.Phase.ACTIVE
     val fraction = if (running) DayPlan.progress(e, now) else 0f
     val bg = if (past && !C.calm) C.raised else C.tealSoft
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
-    // Every event here is from the phone's calendar and on today's page, so neither needs saying.
-    val range = DayPlan.range(e, item.time != null, now.toLocalDate()) { it.format(HM) }
+    // Every event here is from the phone's calendar and on the page of its day, so neither needs saying.
+    val range = DayPlan.range(e, item.time != null, day) { it.format(HM) }
     val left = ChronoUnit.MINUTES.between(now, e.end)
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(
@@ -973,15 +1018,24 @@ internal object Week {
 
 private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d MMM", TH)
 private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d", TH)
+private val WEEK_FREE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d", TH)
 
 /**
  * The new look's two weeks (owner's picks, 2026-10-28): the pinned countdowns, then "สัปดาห์นี้" (tomorrow to Sunday)
  * and "สัปดาห์หน้า" (Monday to Sunday after), each with its tasks under a line for each day. Six tasks show;
  * "ดูอีก N งาน" opens the rest in place. On a Sunday this week has no days left and only next week shows.
+ * The calendar's events sit above the tasks of their day, in today's timeline look (owner's pick ก, 2026-10-31); a day
+ * with only events is listed too.
  */
 @Composable
-private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, onPick: () -> Unit) {
+private fun WeekCard(
+    countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, look: LookAheadView? = null,
+    events: Map<LocalDate, List<DayPlan.Item.EventItem>>, now: LocalDateTime, onEvent: (CalendarEvent) -> Unit, onPick: () -> Unit,
+) {
     var all by rememberSaveable { mutableStateOf(false) }
+    var tagOpen by remember { mutableStateOf(false) }
+    var openFirst by rememberSaveable { mutableStateOf(true) }
+    var openNext by rememberSaveable { mutableStateOf(false) }
     val shown = if (all) week else week.take(6)
     val sunday = Week.sunday(today)
     val spans = buildList {
@@ -995,31 +1049,76 @@ private fun WeekCard(countdowns: List<Countdown.Shown>, week: List<Week.Item>, t
         }
         spans.forEachIndexed { n, (name, from, to) ->
             if (n > 0 || countdowns.isNotEmpty()) Box(Modifier.padding(top = 4.dp).fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
-            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+            // The look-ahead's tag on next week (mock look-ahead v2): tight or the lightest; a tap shows why.
+            val tag = look?.takeIf { from == sunday.plusDays(1) }?.let { LookAhead.weekHint(it.weeks, 1) }
+            val inSpan = week.filter { it.day >= from && it.day <= to }
+            val booked = look?.booked.orEmpty().filterKeys { it >= from && it <= to }
+            val dayEvents = events.filterKeys { it >= from && it <= to }
+            val busyDays = (inSpan.map { it.day } + booked.keys + dayEvents.keys).toSet()
+            // Folds like a list header (owner, 2026-10-31, mock week-toggle round 3): this week open, next week folded,
+            // unless next week is the only one (a Sunday).
+            val first = n == 0
+            val open = if (first) openFirst else openNext
+            // One slim line (owner, 2026-10-31, mock week-head way ก3): name, dates, the tag, a faint V on the right.
+            Row(
+                Modifier.fillMaxWidth().clickable { if (first) openFirst = !openFirst else openNext = !openNext }
+                    .padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(name, color = C.text, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
                 Text(
-                    from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' '),
-                    Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption,
+                    if (from == to) Countdown.day(from).substringAfter(' ')
+                    else "${from.dayOfMonth}" + tr(" ถึง ", " to ") + "${to.dayOfMonth} " + Countdown.monthShort(to),
+                    Modifier.padding(start = 8.dp).weight(1f), color = C.muted, fontSize = TS.caption, maxLines = 1,
+                )
+                if (tag != null) HintPill(tag.label, tag.tone, Modifier.padding(start = 8.dp)) { tagOpen = !tagOpen }
+                Icon(
+                    Icons.Default.KeyboardArrowDown, if (open) tr("ซ่อน", "Hide") else tr("ดู", "Show"),
+                    Modifier.padding(start = 6.dp).size(18.dp).rotate(if (open) 180f else 0f), tint = C.faint.copy(alpha = 0.7f),
                 )
             }
-            val inSpan = week.filter { it.day >= from && it.day <= to }
-            if (inSpan.isEmpty()) {
+            if (tag != null && tagOpen) Text(tag.why, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
+            if (!open) return@forEachIndexed
+            if (busyDays.isEmpty()) {
                 Text(tr("ยังไม่มีงาน", "Nothing yet"), Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = C.faint, fontSize = TS.caption)
             }
-            shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }.forEach { (day, items) ->
-                PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
-                items.forEach { w ->
-                    val days = ChronoUnit.DAYS.between(today, day)
-                    AheadRow(
-                        false, w.task.title,
-                        if (w.due) tr("📅 กำหนดจริง", "📅 Due") else tr("⏳ นัดทำ", "⏳ Scheduled"),
-                        tr("อีก $days วัน", "in $days days"),
-                        C.amber,
-                    ) { onOpen(w.task) }
+            val byDay = shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }
+            (byDay.keys + booked.keys + dayEvents.keys).distinct().sorted().forEachIndexed { i, day ->
+                val items = byDay[day].orEmpty()
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+                // The date on the left, as the Today widget draws it (owner's pick ก, mock week-toggle round 3).
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
+                    // Small, as the text around it (owner, 2026-10-31: the number was too big).
+                    Column(Modifier.width(40.dp).padding(start = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(Countdown.weekdayShort(day), color = C.muted, fontSize = TS.micro)
+                        Text("${day.dayOfMonth}", color = C.text, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        // A whole free day ahead: what today's plan would put on it then (nothing is written).
+                        booked[day]?.let { Text(bookedText(it), Modifier.padding(start = 4.dp, end = 14.dp, top = 2.dp, bottom = 4.dp), color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        dayEvents[day].orEmpty().forEach { ev -> TimelineEvent(ev, now, day = day, ahead = true) { onEvent(ev.event) } }
+                        items.forEach { w ->
+                            val days = ChronoUnit.DAYS.between(today, day)
+                            AheadRow(
+                                false, w.task.title,
+                                if (w.due) tr("📅 กำหนดจริง", "📅 Due") else tr("⏳ นัดทำ", "⏳ Scheduled"),
+                                tr("อีก $days วัน", "in $days days"),
+                                C.amber,
+                            ) { onOpen(w.task) }
+                        }
+                    }
                 }
             }
+            // The days with nothing on them, in one line at the end.
+            val free = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= to }.filter { it !in busyDays }.toList()
+            if (busyDays.isNotEmpty() && free.isNotEmpty()) {
+                Text(
+                    free.joinToString(", ") { it.format(WEEK_FREE) } + tr(" ว่าง", " free"),
+                    Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = C.faint, fontSize = TS.caption,
+                )
+            }
         }
-        if (week.size > 6) FooterRow(onClick = { all = !all }) {
+        if (week.size > 6) FooterRow(onClick = { all = !all; if (all) { openFirst = true; openNext = true } }) {
             Text(
                 if (all) tr("ย่อ", "Show less") else tr("ดูอีก ${week.size - 6} งาน", "${week.size - 6} more"),
                 color = C.accentText, fontSize = TS.caption,

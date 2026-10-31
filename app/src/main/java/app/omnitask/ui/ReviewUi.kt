@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +43,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +59,7 @@ import app.omnitask.model.Folders
 import app.omnitask.model.Priority
 import app.omnitask.model.Review
 import app.omnitask.model.ReviewWrite
+import app.omnitask.model.SecretaryAsk
 import app.omnitask.model.StuckLog
 import app.omnitask.model.Task
 import app.omnitask.model.tr
@@ -63,15 +68,22 @@ import kotlinx.datetime.LocalDate
 import app.omnitask.time.*
 
 /**
- * The review mode's two switches, kept on this phone (Klui, 2026-10-27: off until tried). [on] shows the review on
- * the secretary page; [writes] lets "บันทึก" write into the notes. With [writes] off a card is answered and moved on,
- * and "ดูต้นฉบับ" shows what would be written, but nothing is.
+ * The review mode's two switches, kept on this phone. [on] shows the review on the secretary page; [writes] lets
+ * "บันทึก" write into the notes. With [writes] off a card is answered and moved on, and "ดูต้นฉบับ" shows what would
+ * be written, but nothing is. [writes] starts on (Klui, 2026-10-29, after the check that every app keeps the review
+ * lines when a description is edited); it is kept under a new key so an earlier "off" from the trial does not stick.
+ * [full] lets the review take the whole screen (the bottom bar steps aside); it starts off, so the bottom bar stays and
+ * the answer bar sits above it (Klui, 2026-10-29: "ตั้งค่าให้เปลี่ยนกันเต็มจอหรือไม่เต็มจอก็ได้").
  */
 object ReviewMode {
     private const val PREFS = "omni-review"
     var on by mutableStateOf(false)
         private set
-    var writes by mutableStateOf(false)
+    private const val WRITES = "writes-v2"
+    var writes by mutableStateOf(true)
+        private set
+    private const val FULL = "full"
+    var full by mutableStateOf(false)
         private set
     private var loaded = false
 
@@ -80,7 +92,8 @@ object ReviewMode {
         loaded = true
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         on = p.getBoolean("on", false)
-        writes = p.getBoolean("writes", false)
+        writes = p.getBoolean(WRITES, true)
+        full = p.getBoolean(FULL, false)
     }
 
     fun setOn(context: Context, value: Boolean) {
@@ -90,7 +103,12 @@ object ReviewMode {
 
     fun setWrites(context: Context, value: Boolean) {
         writes = value
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("writes", value).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(WRITES, value).apply()
+    }
+
+    fun setFull(context: Context, value: Boolean) {
+        full = value
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(FULL, value).apply()
     }
 }
 
@@ -105,11 +123,16 @@ fun ReviewSetting(context: Context) {
             tr("ปิดไว้: ตอบได้ ดูต้นฉบับได้ แต่ยังไม่จดอะไรลงโน้ต", "Off: you can answer and see the note, nothing is written"),
             ReviewMode.writes,
         ) { ReviewMode.setWrites(context, it) }
+        SettingSwitch(
+            tr("ทบทวนแบบเต็มจอ", "Full screen review"),
+            tr("เปิด: ซ่อนแถบเมนูด้านล่างตอนทบทวน  ปิด: แถบเมนูยังอยู่ ปุ่มตอบอยู่เหนือแถบ", "On: the bottom bar hides while you review. Off: the bar stays, the answer buttons sit above it"),
+            ReviewMode.full,
+        ) { ReviewMode.setFull(context, it) }
     }
 }
 
 @Composable
-private fun SettingSwitch(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SettingSwitch(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, color = C.text, fontSize = TS.body)
@@ -149,6 +172,15 @@ private data class Ans(val v: String, val l: String, val typed: Boolean = false)
 
 private const val UNSURE = "?"
 
+/** "เลือกวันเอง": opens the phone's date picker (Klui, 2026-10-30: the review must let you pick your own day). */
+private const val OWN = "own"
+
+/** "เลือกโฟลเดอร์อื่น": opens the folder picker, searchable, instead of a row of folder chips (Klui, 2026-10-30). */
+private const val PICK = "pick"
+
+/** "ไม่มีวันส่ง" for the due date the secretary proposed: the secretary is told, so it stops proposing one. */
+private const val NODUE = "nodue"
+
 private fun short(d: LocalDate) = Countdown.day(d).substringAfter(' ')
 
 /** The days offered for "when": today, tomorrow, this Saturday, next Monday. */
@@ -164,7 +196,7 @@ private fun dateOf(a: Ans?): LocalDate? = a?.takeIf { it.v != UNSURE }?.let { ru
 private val CLOSED = setOf(ReviewWrite.Progress.DONE.name, ReviewWrite.Progress.PARK.name, ReviewWrite.Progress.DROP.name)
 
 /** The questions for [task] given the answers so far; later ones depend on earlier answers (the mock Klui picked). */
-private fun questions(task: Task, a: Map<String, Ans>, today: LocalDate, folders: List<String>): List<Q> {
+private fun questions(task: Task, a: Map<String, Ans>, today: LocalDate, ask: SecretaryAsk.Ask?): List<Q> {
     val status = Q(
         "status", tr("สถานะ", "Status"), tr("ตอนนี้งานนี้เป็นยังไง", "How is this task now"), null,
         ReviewWrite.Progress.entries.map {
@@ -207,7 +239,7 @@ private fun questions(task: Task, a: Map<String, Ans>, today: LocalDate, folders
                 "when", tr("จะหยิบมาทำ", "When to do it"),
                 if (late) tr("เลยวันส่งแล้ว จะทำใหม่เมื่อไร", "Past due, when will you do it") else tr("จะหยิบมาทำเมื่อไร", "When will you pick it up"),
                 if (late) tr("เลื่อนได้ ไม่ผิด", "Moving it is fine") else tr("งานนี้ยังไม่มีวัน", "This task has no date yet"),
-                whenDays(today).map { (l, d) -> Opt(d.toString(), "$l ${short(d)}") } + Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure")),
+                whenDays(today).map { (l, d) -> Opt(d.toString(), "$l ${short(d)}") } + Opt(OWN, tr("เลือกวันเอง", "Pick a day")) + Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure")),
             ),
         )
         val waiting = Focus.isWaiting(task)
@@ -224,22 +256,38 @@ private fun questions(task: Task, a: Map<String, Ans>, today: LocalDate, folders
             ),
         )
         val w = a["wait"]?.v
-        if (w != null && w != "no" && task.due == null) add(
+        // The due date the secretary proposed (in เลขาถาม, behind the day plan's switch, as the old sheet had it): take
+        // it, pick another day, or say there is none. It stands in for "เขาต้องการเมื่อไร", which writes the same date.
+        val proposed = ask?.due?.takeIf { task.due == null && DayFillMode.on }
+        if (proposed != null) add(
             Q(
-                "wdate", tr("เขาต้องการ", "They need it"), tr("เขาต้องการเมื่อไร", "When do they need it"), null,
-                whenDays(today).drop(1).map { (l, d) -> Opt(d.toString(), "$l ${short(d)}") } + Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure")),
+                "due", tr("วันส่ง", "Due date"), tr("เลขาเสนอวันส่ง ${Countdown.day(proposed)}", "Proposed due date ${Countdown.day(proposed)}"), null,
+                listOf(
+                    Opt(proposed.toString(), tr("รับ ${Countdown.day(proposed)}", "Take ${Countdown.day(proposed)}")),
+                    Opt(OWN, tr("เลือกวันเอง", "Pick a day")),
+                    Opt(NODUE, tr("ไม่มีวันส่ง", "No due date"), Tone.QUIET),
+                ) + (if (w != null && w != "no") listOf(Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure"))) else emptyList()),
             ),
         )
+        else if (w != null && w != "no" && task.due == null) add(
+            Q(
+                "wdate", tr("เขาต้องการ", "They need it"), tr("เขาต้องการเมื่อไร", "When do they need it"), null,
+                whenDays(today).drop(1).map { (l, d) -> Opt(d.toString(), "$l ${short(d)}") } + Opt(OWN, tr("เลือกวันเอง", "Pick a day")) + Opt(UNSURE, tr("ไม่แน่ใจ", "Not sure")),
+            ),
+        )
+        // Where the task is shows on the first button, so there is no looking up at the card (Klui, 2026-10-30); any
+        // other folder is found in the folder picker, by search or one level at a time.
         val here = Folders.of(task)
         add(
             Q(
-                "folder", tr("อยู่ที่", "Is in"), tr("งานนี้อยู่ถูกโปรเจกต์หรือโฟลเดอร์ไหม", "Is this in the right project or folder"),
-                tr("ตอนนี้อยู่: ", "Now in: ") + (here ?: tr("ยังไม่มีบ้าน", "No home yet")),
-                listOf(Opt("=", tr("ถูกแล้ว", "Right"))) + folders.filter { it != here }.map { Opt("to:$it", it.replace("/", " / ")) } +
-                    (if (here != null) listOf(Opt("to:", tr("ยังไม่มีบ้าน", "No home yet"))) else emptyList()),
+                "folder", tr("อยู่ที่", "Is in"), tr("งานนี้อยู่ถูกโปรเจกต์หรือโฟลเดอร์ไหม", "Is this in the right project or folder"), null,
+                listOf(
+                    Opt("=", here?.let { tr("ถูกแล้ว อยู่ที่ ", "Right, in ") + folderTrail(it) } ?: tr("ถูกแล้ว ยังไม่มีบ้าน", "Right, no home yet")),
+                    Opt(PICK, tr("เลือกโฟลเดอร์อื่น", "Another folder")),
+                ) + (if (here != null) listOf(Opt("to:", tr("ยังไม่มีบ้าน", "No home yet"), Tone.QUIET)) else emptyList()),
             ),
         )
-        if (task.due == null && dateOf(a["wdate"]) == null) add(
+        if (task.due == null && dateOf(a["wdate"]) == null && dateOf(a["due"]) == null) add(
             Q(
                 "delay", tr("ถ้าเลื่อน 1 สัปดาห์", "A week later"), tr("ถ้าเลื่อนไปอีก 1 สัปดาห์ จะเป็นยังไง", "If it waits a week, what happens"),
                 tr("ใช้คิดว่าด่วนแค่ไหน", "Used for urgency"),
@@ -268,8 +316,8 @@ private fun toAnswers(a: Map<String, Ans>): ReviewWrite.Answers {
         scheduled = dateOf(a["when"]),
         waiting = w?.let { it != "no" },
         waitName = w?.takeIf { it.startsWith("name:") }?.removePrefix("name:"),
-        due = dateOf(a["wdate"]),
-        askWhen = a["wdate"]?.v == UNSURE,
+        due = dateOf(a["due"]) ?: dateOf(a["wdate"]),
+        askWhen = a["wdate"]?.v == UNSURE || a["due"]?.v == UNSURE,
         folder = a["folder"]?.v?.takeIf { it.startsWith("to:") }?.removePrefix("to:"),
         delay = a["delay"]?.v?.takeIf { it != UNSURE }?.let { Review.Delay.valueOf(it) },
         impact = a["pri"]?.let { Review.Impact.valueOf(it.v) },
@@ -297,7 +345,7 @@ private fun importanceName(p: Priority) = (p.emoji?.let { "$it " } ?: "") + when
 }
 
 /** One card in the pile: where its line is, so the task is found again after a reload. */
-private data class Entry(val task: Task, val group: Review.Group)
+private data class Entry(val task: Task, val group: Review.Group, val ask: SecretaryAsk.Ask? = null)
 
 /** What "↶ ย้อน" goes back to: the pile, the answers and the count before a move, and what that move wrote. */
 private data class Step(val deck: List<Entry>, val answers: Map<String, Ans>, val count: Int, val saved: TaskViewModel.ReviewSaved?)
@@ -309,12 +357,27 @@ private data class Step(val deck: List<Entry>, val answers: Map<String, Ans>, va
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
+fun ReviewScreen(
+    state: UiState, vm: TaskViewModel, only: Task? = null,
+    asks: List<SecretaryAsk.Open>? = null, onOpen: ((Task) -> Unit)? = null, onClose: () -> Unit,
+) {
     BackHandler(onBack = onClose)
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { ReviewMode.load(context) }
     val today = state.today
-    val deck = remember { mutableStateListOf<Entry>().apply { addAll(Review.deck(state.tasks, today).map { Entry(it.task, it.group) }) } }
+    // A card of the day plan opens one task ([only]): the same review card, closed once it is answered or skipped.
+    // "เลขาถาม" opens only the secretary's questions ([asks], Klui's pick ข, 2026-10-30): the same card, and a card
+    // saved leaves the pile, since the question is answered for today.
+    val deck = remember {
+        mutableStateListOf<Entry>().apply {
+            when {
+                only != null -> add(Entry(only, Review.groupOf(only, today)))
+                asks != null -> addAll(asks.map { Entry(it.task, Review.groupOf(it.task, today), it.ask) })
+                else -> addAll(Review.deck(state.tasks, today).map { Entry(it.task, it.group) })
+            }
+        }
+    }
+    val asking = asks != null
     var answers by remember { mutableStateOf(mapOf<String, Ans>()) }
     var cur by remember { mutableStateOf<String?>(null) }
     var count by remember { mutableStateOf(0) }
@@ -326,26 +389,37 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
     var whyOpen by remember { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
     var typing by remember { mutableStateOf("") }
+    var folderPicking by remember { mutableStateOf(false) }
 
     val entry = deck.firstOrNull()
     // The task as loaded now (its notes may have changed since the pile was made).
     val task = entry?.let { e -> state.tasks.firstOrNull { it.filePath == e.task.filePath && it.raw == e.task.raw } ?: e.task }
-    // Folders the owner picked lately first (Folders.recent went with the folders fix), then every folder in use.
-    val folders = remember(state.tasks, state.pickedFolders) {
-        val all = state.tasks.filter { it.isOpen && it.list == null }.mapNotNull { Folders.of(it) }.distinct()
-        val recent = state.pickedFolders.mapNotNull { p -> all.firstOrNull { it.equals(app.omnitask.model.ProjectNames.canonical(p), ignoreCase = true) } }
-        (recent + all).distinct()
-    }
     val moves = remember(task?.title) { task?.let(vm::reviewMoves) ?: 0 }
 
-    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 14.dp).padding(top = 8.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The answer bar ("↶ ย้อน", "บันทึก ใบถัดไป") must never sit under the floating bottom bar (Klui, 2026-10-29:
+    // answered all, could not go on or back). Full screen (a Settings switch, off at first): the bar steps aside.
+    // Otherwise the page ends above the bar; with the keyboard up the bar is under the keyboard, so only the keyboard counts.
+    if (ReviewMode.full) FullPage()
+    val dock = LocalDockClearance.current
+    val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    Column(
+        Modifier.fillMaxSize().padding(bottom = if (keyboard) 0.dp else dock)
+            .then(if (dock == 0.dp) Modifier.navigationBarsPadding() else Modifier).imePadding()
+            .padding(horizontal = 14.dp).padding(top = 8.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
                 Icon(Ic.back, tr("กลับ", "Back"), tint = C.text, modifier = Modifier.size(22.dp))
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(tr("ทบทวนงาน", "Review"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
-                Text(tr("ทบทวนแล้ว $count ใบ  เหลือในกอง ${deck.size} ใบ", "$count reviewed, ${deck.size} in the pile"), color = C.muted, fontSize = TS.caption)
+                if (asking) {
+                    Text(tr("เลขาถาม", "The secretary asks"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+                    Text(tr("ตอบแล้ว $count ข้อ  เหลือ ${deck.size} ข้อ", "$count answered, ${deck.size} left"), color = C.muted, fontSize = TS.caption)
+                } else {
+                    Text(tr("ทบทวนงาน", "Review"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+                    Text(tr("ทบทวนแล้ว $count ใบ  เหลือในกอง ${deck.size} ใบ", "$count reviewed, ${deck.size} in the pile"), color = C.muted, fontSize = TS.caption)
+                }
             }
             Text(
                 tr("ดูต้นฉบับ", "See the note"),
@@ -361,20 +435,25 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
         )
         if (task == null || entry == null) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text(tr("ไม่มีงานให้ทบทวนแล้ว", "Nothing left to review"), color = C.muted, fontSize = TS.body)
+                Text(
+                    if (asking) tr("ตอบครบทุกข้อแล้ว ข้อที่ยังไม่เสร็จ เลขาถามอีกพรุ่งนี้", "All answered. Tasks not done are asked again tomorrow")
+                    else tr("ไม่มีงานให้ทบทวนแล้ว", "Nothing left to review"),
+                    color = C.muted, fontSize = TS.body, textAlign = TextAlign.Center,
+                )
             }
             return@Column
         }
-        val qs = questions(task, answers, today, folders)
+        val qs = questions(task, answers, today, entry.ask)
         val open = cur?.let { k -> qs.firstOrNull { it.k == k } } ?: qs.firstOrNull { answers[it.k] == null }
         val allDone = qs.all { answers[it.k] != null }
         val closed = answers["status"]?.v in CLOSED
         val weight = if (answers["status"] != null && !closed) weigh(task, state.tasks, answers, today, moves) else null
 
         fun move(save: Boolean) {
-            val leaving = save && answers["status"]?.v.let { it == ReviewWrite.Progress.DONE.name || it == ReviewWrite.Progress.DROP.name }
+            val leaving = save && ((asking && ReviewMode.writes) || answers["status"]?.v.let { it == ReviewWrite.Progress.DONE.name || it == ReviewWrite.Progress.DROP.name })
             val before = Step(deck.toList(), answers, count, null)
             fun advance(saved: TaskViewModel.ReviewSaved?, written: Entry?) {
+                if (only != null) { saved?.let(vm::reviewFromPlan); return onClose() }
                 history.add(before.copy(saved = saved))
                 deck.removeAt(0)
                 if (!leaving) deck.add(written ?: entry)
@@ -383,15 +462,28 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
                 toast = when {
                     !save -> tr("ข้ามไว้ท้ายกอง ไม่จดอะไร", "Skipped to the end, nothing written")
                     !ReviewMode.writes -> tr("ยังไม่จดจริง ใบนี้ไปท้ายกอง", "Not written (switched off), card to the end")
+                    leaving && asking -> tr("จดแล้ว ข้อนี้ตอบแล้ววันนี้", "Written, answered for today")
                     leaving -> tr("จดแล้ว ออกจากกอง", "Written, out of the pile")
                     else -> tr("จดแล้ว ใบนี้ไปท้ายกอง", "Written, card to the end")
                 }
             }
             if (!save || !ReviewMode.writes) { advance(null, null); return }
+            // A repeating task ticked done takes the usual tick, which sets up its next round (a plain tick would end it).
+            // Its undo is the app's undo bar, so "↶ ย้อน" does not step back over it.
+            if (answers["status"]?.v == ReviewWrite.Progress.DONE.name && task.recurrence != null) {
+                vm.toggleDone(task)
+                if (only != null) return onClose()
+                deck.removeAt(0); count++
+                answers = emptyMap(); cur = null; typing = ""
+                toast = tr("ติ๊กว่าเสร็จแล้ว งานซ้ำตั้งรอบถัดไปให้แล้ว", "Ticked done, the next round is set")
+                return
+            }
             busy = true
+            val noDue = answers["due"]?.v == NODUE
             vm.reviewSave(task, toAnswers(answers), weight?.priority) { saved ->
                 busy = false
                 if (saved == null) return@reviewSave
+                if (noDue) vm.askNoDue(task, back = false)
                 val after = TaskLine.parse(saved.after)?.copy(filePath = task.filePath, fileUri = task.fileUri, lineIndex = task.lineIndex, notes = task.notes)
                 advance(saved, after?.let { Entry(it, entry.group) })
             }
@@ -405,17 +497,28 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
             }
             val saved = step.saved ?: return back()
             busy = true
-            vm.reviewUndo(saved) { ok -> busy = false; if (ok) back() else history.add(step) }
+            vm.reviewUndo(saved) { ok ->
+                busy = false
+                if (!ok) { history.add(step); return@reviewUndo }
+                if (step.answers["due"]?.v == NODUE) vm.askNoDue(saved.task, back = true)
+                back()
+            }
         }
 
         // The task's index card.
         Card {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(entry.group.label, Modifier.clip(RoundedCornerShape(999.dp)).background(C.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), color = C.accentText, fontSize = TS.caption)
+                    Text(if (entry.ask != null) tr("เลขาถาม", "Asked") else entry.group.label, Modifier.clip(RoundedCornerShape(999.dp)).background(C.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp), color = C.accentText, fontSize = TS.caption)
                     Text(Folders.of(task)?.replace("/", " / ") ?: tr("ยังไม่มีบ้าน", "No home yet"), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text(task.title, color = C.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(
+                    task.title,
+                    // As in the old เลขาถาม sheet, a question's title opens the task.
+                    if (entry.ask != null && onOpen != null) Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(task) } else Modifier,
+                    color = C.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                )
+                entry.ask?.why?.let { Text(tr("เลขาถามเพราะ ", "Asked because ") + it, color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 Row(verticalAlignment = Alignment.Bottom) {
                     FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Focus.ageDays(task, today)?.let { Text(tr("อายุ $it วัน", "$it days old"), color = C.text2, fontSize = TS.caption) }
@@ -499,7 +602,10 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
                 ) {
                     open.opts.forEach { o ->
                         val ans = answers[open.k]
-                        val sel = ans != null && !ans.typed && ans.v == o.v
+                        // "เลือกวันเอง" is lit for a day no other button names; "เลือกโฟลเดอร์อื่น" for a folder picked there.
+                        val own = o.v == OWN && ans != null && dateOf(ans) != null && open.opts.none { it.v == ans.v }
+                        val picked = o.v == PICK && ans != null && ans.v.startsWith("to:") && ans.v != "to:"
+                        val sel = own || picked || (ans != null && !ans.typed && ans.v == o.v)
                         val fg = when {
                             sel -> C.onAccent
                             o.tone == Tone.GOOD -> C.lime
@@ -508,14 +614,27 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
                             else -> C.text
                         }
                         Text(
-                            o.l,
+                            when {
+                                own -> tr("เลือกวันเอง: ", "Picked: ") + ans!!.l
+                                picked -> ans!!.l
+                                else -> o.l
+                            },
                             Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) C.accent else C.raised)
                                 .border(1.dp, if (sel) C.accent else C.control, RoundedCornerShape(10.dp))
                                 .clickable {
-                                    // "ถูกแล้ว" shows where the task stays, as the mock does.
-                                    val shown = if (open.k == "folder" && o.v == "=") Folders.of(task)?.replace("/", " / ") ?: tr("ยังไม่มีบ้าน", "No home yet")
-                                    else o.l.removeSuffix(tr(" (ระบบเดา)", " (guess)"))
-                                    answers = pick(answers, open.k, Ans(o.v, shown)); cur = null; typing = ""
+                                    val k = open.k
+                                    when (o.v) {
+                                        OWN -> pickSystemDate(context, dateOf(ans) ?: today.plusDays(1)) { d ->
+                                            answers = pick(answers, k, Ans(d.toString(), Countdown.day(d))); cur = null; typing = ""
+                                        }
+                                        PICK -> folderPicking = true
+                                        else -> {
+                                            // "ถูกแล้ว" shows where the task stays, as the mock does.
+                                            val shown = if (k == "folder" && o.v == "=") Folders.of(task)?.let(::folderTrail) ?: tr("ยังไม่มีบ้าน", "No home yet")
+                                            else o.l.removeSuffix(tr(" (ระบบเดา)", " (guess)"))
+                                            answers = pick(answers, k, Ans(o.v, shown)); cur = null; typing = ""
+                                        }
+                                    }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             color = fg, fontSize = TS.body, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
@@ -567,6 +686,21 @@ fun ReviewScreen(state: UiState, vm: TaskViewModel, onClose: () -> Unit) {
 
         if (whyOpen && weight != null) SheetFrame({ whyOpen = false }) { WhySheet(weight, moves) }
         if (noteOpen) SheetFrame({ noteOpen = false }) { NoteSheet(task, answers, weight?.priority, today) }
+        if (folderPicking) {
+            val here = Folders.of(task)
+            FolderPicker(
+                state, here, labels = null, onLabel = null,
+                onPick = { p ->
+                    vm.notePickedFolder(p)
+                    val ans = when {
+                        p == null -> Ans("to:", tr("ยังไม่มีบ้าน", "No home yet"))
+                        p == here -> Ans("=", folderTrail(p))
+                        else -> Ans("to:$p", tr("ย้ายไป ", "Move to ") + folderTrail(p))
+                    }
+                    answers = pick(answers, "folder", ans); cur = null; typing = ""; folderPicking = false
+                },
+            ) { folderPicking = false }
+        }
     }
     toast?.let { t ->
         Box(Modifier.fillMaxWidth().padding(top = 70.dp), contentAlignment = Alignment.TopCenter) {
@@ -581,6 +715,7 @@ private fun pick(a: Map<String, Ans>, k: String, ans: Ans): Map<String, Ans> {
     if (k == "status" && ans.v in CLOSED) out = mapOf(k to ans)
     if (k == "status" && ans.v != ReviewWrite.Progress.STUCK.name) out = out - "why"
     if (k == "wait" && ans.v == "no") out = out - "wdate"
+    if (k == "wait" && ans.v == "no" && out["due"]?.v == UNSURE) out = out - "due"
     return out
 }
 

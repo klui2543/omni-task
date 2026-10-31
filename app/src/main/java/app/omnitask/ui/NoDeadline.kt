@@ -167,7 +167,7 @@ private fun SmallField(value: String, hint: String, modifier: Modifier, onChange
 }
 
 @Composable
-private fun TextDialog(
+internal fun TextDialog(
     title: String, initial: String, placeholder: String, suggestions: List<String>,
     confirm: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit,
 ) {

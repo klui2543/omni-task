@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text of the lock-screen card: the system's notification text, so it reads in light and dark. -->
+<resources>
+    <style name="LockText" parent="@android:style/TextAppearance.Material.Notification.Title" />
+    <style name="LockSub" parent="@android:style/TextAppearance.Material.Notification.Line2" />
+    <style name="LockLink" parent="@android:style/TextAppearance.Material.Notification">
+        <item name="android:textColor">#9DB4D3</item>
+    </style>
+</resources>

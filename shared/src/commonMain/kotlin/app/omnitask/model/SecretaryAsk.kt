@@ -14,6 +14,12 @@ import kotlinx.datetime.LocalDate
  *     - เหตุ: เลยกำหนดมา 12 วัน และเวอร์ชัน 5.39.5 ขึ้นระบบแล้ว
  * ```
  *
+ * The secretary may add a due date it proposes, with the reason in `เหตุ:` (step 2, owner's pick of 2026-10-29):
+ *
+ * ```
+ *     - วันส่ง: 2026-11-04
+ * ```
+ *
  * The today page shows the open ones in one line, and the owner answers each: done ticks the task, not done writes
  * why on a [StuckLog] line under it. A task answered today is not asked again until the next day; nothing is hushed or
  * put off beyond that (owner, 2026-10-26: "ไม่ควรให้เงียบหรือเลื่อน").
@@ -22,9 +28,15 @@ object SecretaryAsk {
     const val PATH = "📁 Folder/หลังบ้าน/Claude/เลขาถาม.md"
     const val FILE = "ไฟล์:"
     const val WHY = "เหตุ:"
+    const val DUE = "วันส่ง:"
 
-    /** One question: the task's title as its line reads, the file it lives in (when given), and why the secretary asks. */
-    data class Ask(val title: String, val file: String?, val why: String?)
+    /**
+     * One question: the task's title as its line reads, the file it lives in (when given), why the secretary asks, and
+     * the due date it proposes (a `วันส่ง:` line that holds no date is left out).
+     */
+    data class Ask(val title: String, val file: String?, val why: String?, val due: LocalDate? = null)
+
+    private val DATE = Regex("""\d{4}-\d{2}-\d{2}""")
 
     /** A question with the open task it asks about. */
     data class Open(val ask: Ask, val task: Task)
@@ -42,9 +54,10 @@ object SecretaryAsk {
         var title: String? = null
         var file: String? = null
         var why: String? = null
+        var due: LocalDate? = null
         fun flush() {
-            title?.let { asks += Ask(it, file, why) }
-            title = null; file = null; why = null
+            title?.let { asks += Ask(it, file, why, due) }
+            title = null; file = null; why = null; due = null
         }
         for (line in text.lines()) {
             val sub = SUB.matchEntire(line)
@@ -54,6 +67,7 @@ object SecretaryAsk {
                 when {
                     v.startsWith(FILE) -> file = v.removePrefix(FILE).trim().ifEmpty { null }
                     v.startsWith(WHY) -> why = v.removePrefix(WHY).trim().ifEmpty { null }
+                    v.startsWith(DUE) -> due = DATE.find(v)?.let { runCatching { LocalDate.parse(it.value) }.getOrNull() }
                 }
                 continue
             }
@@ -72,7 +86,8 @@ object SecretaryAsk {
     }
 
     /**
-     * The questions whose task is still open and was not answered today (a [StuckLog] line dated [today]), each with
+     * The questions whose task is still open and was not answered today (a [StuckLog] line or a [ReviewLog] line dated
+     * [today]), each with
      * that task, in the file's order. A question whose task cannot be found is left out: there is nothing to tick or
      * note on.
      */
@@ -84,6 +99,8 @@ object SecretaryAsk {
                     (a.file == null || t.filePath.substringAfterLast('/') == a.file.substringAfterLast('/'))
             } ?: return@mapNotNull null
             if (StuckLog.entries(task).any { it.day == today }) return@mapNotNull null
+            // Answered on the review card (Klui's pick ข, 2026-10-30): a card saved today writes `ทบทวน <today>`.
+            if (ReviewLog.last(task) == today) return@mapNotNull null
             if (!seen.add(task.key)) return@mapNotNull null
             Open(a, task)
         }
