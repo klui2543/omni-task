@@ -74,7 +74,7 @@ class TodayWeekTest {
         // The night shift that ended at 08:30 is over, not crossed.
         check(sat.rows.filterIsInstance<TodayWeek.Row.Event>().single { it.title == "O11 รอบ 3" }.let { it.past && it.run == null })
         // The crossed row is drawn taller, and the page maths knows it.
-        check(TodayWeek.height(sat) == TodayWeek.height(sat.copy(rows = sat.rows.map { if (it == shop) it.copy(run = null) else it })) + TodayWeek.RUN - TodayWeek.ROW)
+        check(TodayWeek.height(sat) == TodayWeek.height(sat.copy(rows = sat.rows.map { if (it == shop) shop.copy(run = null) else it })) + TodayWeek.RUN - TodayWeek.ROW)
         // After it ends, the line stands on its own again.
         val night = TodayWeek.days(d(10, 31), at(10, 31, 20, 30), tasks, events, 1) { null }[0]
         check(night.rows.any { it is TodayWeek.Row.Now } && night.rows.filterIsInstance<TodayWeek.Row.Event>().all { it.run == null }) { night.rows.toString() }
