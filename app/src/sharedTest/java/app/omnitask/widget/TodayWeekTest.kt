@@ -56,6 +56,14 @@ class TodayWeekTest {
     }
 
     @Test
+    fun noSeparateNowLineWhileAnEventIsOn() {
+        // Written without the new field on purpose, so it also runs on the old code, where it fails: the line stood
+        // after ร้านยาโลตัส (11:00 to 20:00) at 13:23, as if the shop were over.
+        val sat = TodayWeek.days(d(10, 31), at(10, 31, 13, 23), tasks, events, 1) { null }[0]
+        check(sat.rows.none { it is TodayWeek.Row.Now }) { "a separate now line: ${sat.rows}" }
+    }
+
+    @Test
     fun anEventHappeningNowCarriesTheNowLine() {
         // The owner's screenshot, Sat 31 Oct 13:23: ร้านยาโลตัส 11:00 to 20:00 is still on.
         val sat = TodayWeek.days(d(10, 31), at(10, 31, 13, 23), tasks, events, 1) { null }[0]

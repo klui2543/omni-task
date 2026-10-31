@@ -39,6 +39,7 @@ class LockCardTest {
         assertEquals(1, c.more)
     }
 
+    // CONTROL: LockCard.card did not change; this only pins that a running event is kept like any other.
     @Test fun anEventHappeningNowStaysWithItsLine() {
         val shop = TodayWeek.Row.Event("ร้านยาโลตัส", "11:00 ถึง 20:00", null, past = false, run = 0.26f)
         val c = LockCard.card(TodayWeek.Day(day, listOf(ev("เวร", past = true), shop, todo("ไปรับบัตร"))))
