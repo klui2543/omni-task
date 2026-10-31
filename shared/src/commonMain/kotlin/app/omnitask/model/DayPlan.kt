@@ -199,7 +199,8 @@ object DayPlan {
         return if (this > wake) wake else this
     }
 
-    private fun overlaps(e: CalendarEvent, day: LocalDate): Boolean =
+    /** Whether [e] is on [day] at all: an event ending at midnight does not take the day it ends on. */
+    fun overlaps(e: CalendarEvent, day: LocalDate): Boolean =
         e.begin < day.plusDays(1).atStartOfDay() && e.end > day.atStartOfDay()
 
     private fun partOf(time: LocalTime?): Part = when {

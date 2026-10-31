@@ -47,6 +47,7 @@ import app.omnitask.model.LookAhead
 import app.omnitask.model.NextUp
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
+import app.omnitask.model.WeekEvents
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
 import app.omnitask.model.Task
@@ -464,8 +465,10 @@ fun FocusScreen(
         if (nl) {
             val pinned = countdowns.mapNotNull { it.taskKey }.toSet()
             val week = Week.ahead(state.tasks.filter { it.isOpen && it.list == null && it.key !in pinned }, today)
+            // The same calendars as today's timeline (the chooser at the foot of the page decides them).
+            val weekEvents = WeekEvents.byDay(state.events, today.plusDays(1), Week.sunday(today).plusDays(7))
             item(key = "ahead") {
-                WeekCard(countdowns, week, today, onOpen, look) { pickingCountdown = true }
+                WeekCard(countdowns, week, today, onOpen, look, weekEvents, now, { calendarsFrom = it; calendarsOpen = true }) { pickingCountdown = true }
             }
         }
         val showWaiting = !nl && TaskKind.WAITING !in state.hiddenKinds
@@ -725,20 +728,20 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
 /**
  * A calendar event on the timeline against the clock: greyed once it has ended, and while it runs the red now line
  * crosses the card at how far into the event it is, with the part already gone tinted darker. Tapping it opens the
- * calendar choice with its calendar pointed out.
+ * calendar choice with its calendar pointed out. On a day ahead (the week block) it is [ahead]: plain, never past or running.
  */
 @Composable
-private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onClick: () -> Unit) {
+private fun TimelineEvent(item: DayPlan.Item.EventItem, now: LocalDateTime, onClick: () -> Unit, day: LocalDate = now.toLocalDate(), ahead: Boolean = false) {
     val e = item.event
-    val phase = DayPlan.phase(e, now)
+    val phase = if (ahead) DayPlan.Phase.UPCOMING else DayPlan.phase(e, now)
     val past = phase == DayPlan.Phase.PAST
     val running = phase == DayPlan.Phase.ACTIVE
     val fraction = if (running) DayPlan.progress(e, now) else 0f
     val bg = if (past && !C.calm) C.raised else C.tealSoft
     val spent = C.teal.copy(alpha = 0.16f)
     val red = C.red
-    // Every event here is from the phone's calendar and on today's page, so neither needs saying.
-    val range = DayPlan.range(e, item.time != null, now.toLocalDate()) { it.format(HM) }
+    // Every event here is from the phone's calendar and on the page of its day, so neither needs saying.
+    val range = DayPlan.range(e, item.time != null, day) { it.format(HM) }
     val left = ChronoUnit.MINUTES.between(now, e.end)
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = if (running) 4.dp else 2.dp, bottom = if (running) 4.dp else 2.dp), verticalAlignment = Alignment.Top) {
         Row(
@@ -1017,10 +1020,13 @@ private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EE
  * The new look's two weeks (owner's picks, 2026-10-28): the pinned countdowns, then "สัปดาห์นี้" (tomorrow to Sunday)
  * and "สัปดาห์หน้า" (Monday to Sunday after), each with its tasks under a line for each day. Six tasks show;
  * "ดูอีก N งาน" opens the rest in place. On a Sunday this week has no days left and only next week shows.
+ * The calendar's events sit above the tasks of their day, in today's timeline look (owner's pick ก, 2026-10-31); a day
+ * with only events is listed too, and the number at the end of a day's line still counts tasks only.
  */
 @Composable
 private fun WeekCard(
-    countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, look: LookAheadView? = null, onPick: () -> Unit,
+    countdowns: List<Countdown.Shown>, week: List<Week.Item>, today: LocalDate, onOpen: (Task) -> Unit, look: LookAheadView? = null,
+    events: Map<LocalDate, List<DayPlan.Item.EventItem>>, now: LocalDateTime, onEvent: (CalendarEvent) -> Unit, onPick: () -> Unit,
 ) {
     var all by rememberSaveable { mutableStateOf(false) }
     var tagOpen by remember { mutableStateOf(false) }
@@ -1050,15 +1056,17 @@ private fun WeekCard(
             if (tag != null && tagOpen) Text(tag.why, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
             val inSpan = week.filter { it.day >= from && it.day <= to }
             val booked = look?.booked.orEmpty().filterKeys { it >= from && it <= to }
-            if (inSpan.isEmpty() && booked.isEmpty()) {
+            val dayEvents = events.filterKeys { it >= from && it <= to }
+            if (inSpan.isEmpty() && booked.isEmpty() && dayEvents.isEmpty()) {
                 Text(tr("ยังไม่มีงาน", "Nothing yet"), Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = C.faint, fontSize = TS.caption)
             }
             val byDay = shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }
-            (byDay.keys + booked.keys).distinct().sorted().forEach { day ->
+            (byDay.keys + booked.keys + dayEvents.keys).distinct().sorted().forEach { day ->
                 val items = byDay[day].orEmpty()
                 PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
                 // A whole free day ahead: what today's plan would put on it then (nothing is written).
                 booked[day]?.let { Text(bookedText(it), Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp), color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                dayEvents[day].orEmpty().forEach { ev -> TimelineEvent(ev, now, { onEvent(ev.event) }, day = day, ahead = true) }
                 items.forEach { w ->
                     val days = ChronoUnit.DAYS.between(today, day)
                     AheadRow(
