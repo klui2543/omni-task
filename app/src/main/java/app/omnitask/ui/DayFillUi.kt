@@ -520,8 +520,11 @@ fun DayFillCard(
                             } else null
                             BlockRow(
                                 name, range, row.why.takeIf { reasonOf == rk && range != it },
-                                faded = row.past || (at != null && at <= viewNow && !row.free), bar = if (row.past) C.faint else if (row.free) C.lime else C.teal,
-                                tag = if (row.free) tr("ว่าง ทำงานได้", "Free to work") else null,
+                                // Another person's calendar (way ข): faint, with that calendar's name; it takes none of the owner's time.
+                                faded = row.past || row.from != null || (at != null && at <= viewNow && !row.free),
+                                bar = if (row.past || row.from != null) C.faint else if (row.free) C.lime else C.teal,
+                                tag = row.from ?: if (row.free) tr("ว่าง ทำงานได้", "Free to work") else null,
+                                tagColor = if (row.from != null) C.muted else C.lime,
                                 extra = freeAction,
                             ) { reasonOf = if (reasonOf == rk) null else rk }
                         }
@@ -695,7 +698,7 @@ private fun DoneRow(task: Task, onTick: () -> Unit, onClick: () -> Unit) {
 /** A block the plan works around (an event, the day job, sleep, an errand, a meal): a bar, its name, its time. */
 @Composable
 private fun BlockRow(
-    title: String, right: String, reason: String?, faded: Boolean, bar: Color, tag: String? = null, extra: (@Composable () -> Unit)? = null, onClick: () -> Unit,
+    title: String, right: String, reason: String?, faded: Boolean, bar: Color, tag: String? = null, tagColor: Color = C.lime, extra: (@Composable () -> Unit)? = null, onClick: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
@@ -704,7 +707,7 @@ private fun BlockRow(
                 title, Modifier.weight(1f).padding(start = 10.dp), color = if (faded) C.faint else C.text,
                 style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
-            if (tag != null) Text(tag, Modifier.padding(start = 8.dp), color = C.lime, fontSize = TS.caption, maxLines = 1)
+            if (tag != null) Text(tag, Modifier.padding(start = 8.dp), color = tagColor, fontSize = TS.caption, maxLines = 1)
             Text(right, Modifier.padding(start = 8.dp), color = if (faded) C.faint else C.muted, fontSize = TS.caption, maxLines = 1)
         }
         if (reason != null) Text(reason, Modifier.padding(start = 13.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)

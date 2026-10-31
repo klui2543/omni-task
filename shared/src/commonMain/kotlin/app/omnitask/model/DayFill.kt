@@ -208,7 +208,8 @@ object DayFill {
         abstract val at: Int?
 
         /** A block the plan works around: the day job, an event, a shift, sleep, an errand. */
-        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false, val until: Int? = null, val free: Boolean = false) : Row()
+        /** [from] names another person's calendar: shown faint, never counted as the owner's time (owner, 2026-10-31, way ข). */
+        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false, val until: Int? = null, val free: Boolean = false, val from: String? = null) : Row()
 
         /** Free time left clear on purpose. */
         data class Gap(override val at: Int, val len: Int) : Row()
@@ -330,6 +331,8 @@ object DayFill {
         val tired: Fatigue.Read? = null,
         /** [Memory.freeEvents] of the day: events in [timed] that do not take the owner's time. */
         val freed: Set<String> = emptySet(),
+        /** All-day events of calendars that are not the owner's, shown at the top only (owner, 2026-10-31, way ข). */
+        val othersAllDay: List<CalendarEvent> = emptyList(),
     )
 
     fun frame(day: LocalDate, inp: Input, from: LocalDateTime? = null): Frame {
@@ -405,7 +408,8 @@ object DayFill {
         // An event the owner called "ว่าง ทำงานได้" today stays on the plan but takes no time from it.
         val freed = inp.memory.on(day).freeEvents
         val busy = timed.filter { freeKey(it) !in freed }.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
-        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tiredRead, freed)
+        val othersAllDay = inp.events.filter { f.isOthers(it) && it.allDay && it.begin < day.plusDays(1).atStartOfDay() && it.end > day.atStartOfDay() }
+        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tiredRead, freed, othersAllDay)
     }
 
     private fun roundUp(m: Int) = if (m % STEP == 0) m else m + STEP - m % STEP
@@ -847,6 +851,7 @@ object DayFill {
         val rows = ArrayList<Row>()
         // Before the plan: the day so far (all-day events, what already happened, what is done).
         fr.allDay.forEach { rows += Row.Locked(null, it.title, tr("ทั้งวัน", "All day"), it) }
+        fr.othersAllDay.forEach { rows += Row.Locked(null, it.title, tr("ทั้งวัน", "All day"), it, from = inp.facts.calendarNames[it.calendarId] ?: tr("ปฏิทินอื่น", "Other calendar")) }
         val before = ArrayList<Row.Locked>()
         // With the watch switch on, the day starts at the owner's wake (real, usual, or the profile's).
         val nowMin = minutesOf(inp.now, today)
