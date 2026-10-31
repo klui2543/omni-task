@@ -354,7 +354,8 @@ fun DayFillCard(
             // where it starts is its own time).
             fun timeAt(y: Float, len: Int): Int {
                 val pl = drag?.plan ?: planNow
-                val lo = maxOf(drag?.now ?: nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
+                // Never earlier than the clock now, even while the timeline holds still.
+                val lo = maxOf(nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
                 val hi = maxOf(lo, (pl.bed - len) - (pl.bed - len) % 5)
                 val pts = times.mapNotNull { (k, t) -> tops[k]?.let { t to it } }.sortedBy { it.second }
                 if (pts.isEmpty()) return lo
@@ -392,7 +393,8 @@ fun DayFillCard(
                     onDragEnd = {
                         val d = drag
                         if (d != null && d.key == rowKey) {
-                            val p = cur.value
+                            // The task as the plan has it now (its line may have changed during the drag).
+                            val p = cur.value?.let { held -> planNow.placed.firstOrNull { it.item.id == held.item.id } ?: held }
                             // A press let go where it began puts nothing.
                             if (p != null && abs(dragDy) >= slop) {
                                 vm.fillPlace(p, timeAt(d.from + dragDy, p.len))
