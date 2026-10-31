@@ -216,7 +216,8 @@ fun DayFillCard(
         seen = plan
         if (before == null || before.day != plan.day) return@LaunchedEffect
         val events = before.rows.mapNotNull { (it as? DayFill.Row.Locked)?.event?.id }.toSet()
-        val newEvent = plan.rows.mapNotNull { (it as? DayFill.Row.Locked)?.event }.firstOrNull { it.id !in events && it.id > 0 }
+        // Another person's calendar moves nothing in the owner's plan, so it is no news.
+        val newEvent = plan.rows.mapNotNull { (it as? DayFill.Row.Locked)?.takeIf { r -> r.from == null }?.event }.firstOrNull { it.id !in events && it.id > 0 }
         val urgent = before.placed.map { it.item.id }.toSet() + before.later.map { it.item.id }
         val newUrgent = (plan.placed.map { it.item } + plan.later.map { it.item }).firstOrNull { it.kind == DayFill.Kind.URGENT && it.id !in urgent }
         val what = when {
