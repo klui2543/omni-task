@@ -53,6 +53,7 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -64,10 +65,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
+import app.omnitask.model.RealDay
 import app.omnitask.model.Task
 import app.omnitask.model.tr
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import app.omnitask.time.*
 import java.text.BreakIterator
 import java.util.Locale
@@ -179,6 +182,9 @@ fun DayFillCard(
     var sprintDetail by remember { mutableStateOf(false) }
     var doneOpen by remember { mutableStateOf(false) }
     var laterOpen by remember { mutableStateOf(false) }
+    // The moved task whose "ทำวันนี้" is open to choose a time (owner's pick ก+ข, 2026-10-31).
+    var putting by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     var logOpen by remember { mutableStateOf(false) }
     // A block's reason shows when it is tapped, one at a time.
     var reasonOf by remember { mutableStateOf<String?>(null) }
@@ -261,12 +267,24 @@ fun DayFillCard(
             if (laterOpen && later.isNotEmpty()) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("ไม่นับว่าข้าม", "Not counted as skipped"), color = C.muted, fontSize = TS.caption)
                 later.forEach { l ->
-                    Column(
-                        // An answer given today can be taken back by tapping it, as a card can.
-                        if (l.picked != null) Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(l.item) } else Modifier.fillMaxWidth(),
-                    ) {
-                        Text(l.item.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(l.why, color = if (l.risk) C.red else C.muted, fontSize = TS.caption)
+                    // A task moved by the plan (not one the owner answered) can be put back today, at a time of the owner's own.
+                    val canPut = l.picked == null && l.item.task != null
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(
+                            // An answer given today can be taken back by tapping it, as a card can.
+                            (if (l.picked != null) Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.fillUnpick(l.item) } else Modifier).weight(1f),
+                        ) {
+                            Text(l.item.title, color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(l.why, color = if (l.risk) C.red else C.muted, fontSize = TS.caption)
+                        }
+                        if (canPut) SmallAction(tr("ทำวันนี้", "Do today"), putting == l.item.id) { putting = if (putting == l.item.id) null else l.item.id }
+                    }
+                    if (canPut && putting == l.item.id) {
+                        val put = { at: Int -> vm.fillPlace(DayFill.Placed(l.item, at, l.item.len, short = false, running = false), at); putting = null }
+                        PutTimes(plan, l.item.len, nowMin, put) {
+                            val from = maxOf(nowMin, plan.start)
+                            pickSystemTime(context, LocalTime.of((from / 60) % 24, from % 60)) { t -> put(maxOf(t.hour * 60 + t.minute, from)) }
+                        }
                     }
                 }
             }
@@ -488,9 +506,19 @@ fun DayFillCard(
                         is DayFill.Row.Locked -> Track(rk, at) {
                             val (name, range) = blockText(row)
                             val rk = "block:" + row.at + ":" + row.title
+                            // A calendar event can be called "ว่าง ทำงานได้" for today (owner's pick ก+ข, 2026-10-31).
+                            val ev = row.event?.takeIf { !it.allDay && !row.past && it.title != RealDay.jobTitle }
+                            val freeAction: (@Composable () -> Unit)? = if (ev != null && reasonOf == rk) {
+                                {
+                                    if (row.free) SmallAction(tr("นับว่าไม่ว่างตามปฏิทิน", "Busy as the calendar says"), false) { vm.fillFreeEvent(ev, false) }
+                                    else SmallAction(tr("ว่าง ทำงานได้ วันนี้", "Free to work today"), true) { vm.fillFreeEvent(ev, true) }
+                                }
+                            } else null
                             BlockRow(
                                 name, range, row.why.takeIf { reasonOf == rk && range != it },
-                                faded = row.past || (at != null && at <= viewNow), bar = if (row.past) C.faint else C.teal,
+                                faded = row.past || (at != null && at <= viewNow && !row.free), bar = if (row.past) C.faint else if (row.free) C.lime else C.teal,
+                                tag = if (row.free) tr("ว่าง ทำงานได้", "Free to work") else null,
+                                extra = freeAction,
                             ) { reasonOf = if (reasonOf == rk) null else rk }
                         }
                         is DayFill.Row.Gap -> Track(rk, at) {
@@ -662,7 +690,9 @@ private fun DoneRow(task: Task, onTick: () -> Unit, onClick: () -> Unit) {
 
 /** A block the plan works around (an event, the day job, sleep, an errand, a meal): a bar, its name, its time. */
 @Composable
-private fun BlockRow(title: String, right: String, reason: String?, faded: Boolean, bar: Color, onClick: () -> Unit) {
+private fun BlockRow(
+    title: String, right: String, reason: String?, faded: Boolean, bar: Color, tag: String? = null, extra: (@Composable () -> Unit)? = null, onClick: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 10.dp, end = 12.dp, top = 2.dp, bottom = 2.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(bar))
@@ -670,9 +700,33 @@ private fun BlockRow(title: String, right: String, reason: String?, faded: Boole
                 title, Modifier.weight(1f).padding(start = 10.dp), color = if (faded) C.faint else C.text,
                 style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
+            if (tag != null) Text(tag, Modifier.padding(start = 8.dp), color = C.lime, fontSize = TS.caption, maxLines = 1)
             Text(right, Modifier.padding(start = 8.dp), color = if (faded) C.faint else C.muted, fontSize = TS.caption, maxLines = 1)
         }
         if (reason != null) Text(reason, Modifier.padding(start = 13.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)
+        if (extra != null) Box(Modifier.padding(start = 13.dp, top = 2.dp, bottom = 6.dp)) { extra() }
+    }
+}
+
+/**
+ * Where to put a moved task back today ("ทำวันนี้"): now, the free times the plan has (the first recommended), or a time
+ * of the owner's own. A time on top of something is allowed: the task then says what it overlaps.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PutTimes(plan: DayFill.Plan, len: Int, nowMin: Int, put: (Int) -> Unit, own: () -> Unit) {
+    // Now, to the next quarter hour; then the plan's free times that are not the same time.
+    val now = (maxOf(nowMin, plan.start) + 14) / 15 * 15
+    val offers = (listOf(now) + DayFill.suggest(plan, len, nowMin)).distinct()
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(tr("ลงเวลาไหน ถ้าซ้อนกับนัดหรืองานอื่น จะบอกไว้ที่งาน", "Which time? If it overlaps an event or other work, the task says so"), color = C.muted, fontSize = TS.caption)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            offers.forEach { at ->
+                val label = if (at == now) tr("ตอนนี้ ", "Now ") + DayFill.hm(at) else DayFill.hm(at) + tr(" ว่าง", " free")
+                PlaceChip(label, rec = at == now) { put(at) }
+            }
+            PlaceChip(tr("เลือกเวลาเอง", "Pick a time"), rec = false, onClick = own)
+        }
     }
 }
 

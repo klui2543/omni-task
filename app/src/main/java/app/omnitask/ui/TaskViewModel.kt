@@ -2702,6 +2702,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         changeFill(tr("มีธุระ", "Errand"), label, reflowNews(tr("มีธุระ ", "Errand ") + label, change), change)
     }
 
+    /**
+     * "ว่าง ทำงานได้ วันนี้" on a calendar event (owner's pick ก+ข, 2026-10-31): its hours take no time from today's plan, so
+     * the work moved away for it comes back. [free] false counts it as busy again. Today only; the bar's "เลิกทำ" undoes it.
+     */
+    fun fillFreeEvent(e: CalendarEvent, free: Boolean) {
+        val key = DayFill.freeKey(e)
+        val change = { m: DayFill.Memory -> m.copy(freeEvents = if (free) m.freeEvents + key else m.freeEvents - key) }
+        val what = if (free) tr("ว่าง ทำงานได้ วันนี้: ", "Free to work today: ") + e.title else tr("นับว่าไม่ว่างตามปฏิทิน: ", "Busy as the calendar says: ") + e.title
+        changeFill(
+            if (free) tr("ว่าง ทำงานได้ วันนี้", "Free to work today") else tr("นับว่าไม่ว่างตามปฏิทิน", "Busy as the calendar says"),
+            e.title, reflowNews(what, change), change,
+        )
+    }
+
     /** "ธุระเสร็จแล้ว จัดคืนให้". */
     fun fillErrandEnd() {
         val change = { m: DayFill.Memory -> m.copy(errand = null) }

@@ -83,6 +83,11 @@ object DayFill {
          * The look-ahead's own-time record reads it; a slot put at a new time is judged afresh there.
          */
         val notYet: Map<String, Int> = emptyMap(),
+        /**
+         * Today's events the owner called "ว่าง ทำงานได้" ([freeKey]s, owner's pick ก+ข, 2026-10-31): the plan does not count
+         * their hours as busy. Today only: it is gone on a new day.
+         */
+        val freeEvents: Set<String> = emptySet(),
     ) {
         /** The same memory on [today]: yesterday's taps go, what lasts stays (put-off days for 30 days). */
         fun on(today: LocalDate): Memory {
@@ -108,6 +113,9 @@ object DayFill {
             return if (day.toString() in days) this else copy(pushed = pushed + (ident to days + day.toString()))
         }
     }
+
+    /** How an event is known to [Memory.freeEvents]: a repeating event shares its id, so its start is part of it. */
+    fun freeKey(e: CalendarEvent): String = "${e.id}@${e.begin}"
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
@@ -200,7 +208,7 @@ object DayFill {
         abstract val at: Int?
 
         /** A block the plan works around: the day job, an event, a shift, sleep, an errand. */
-        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false, val until: Int? = null) : Row()
+        data class Locked(override val at: Int?, val title: String, val why: String, val event: CalendarEvent? = null, val past: Boolean = false, val until: Int? = null, val free: Boolean = false) : Row()
 
         /** Free time left clear on purpose. */
         data class Gap(override val at: Int, val len: Int) : Row()
@@ -320,6 +328,8 @@ object DayFill {
         val bedWhy: String? = null,
         /** How tired the owner likely is (today's plan, watch switch on); null: not read, the plan is as before. */
         val tired: Fatigue.Read? = null,
+        /** [Memory.freeEvents] of the day: events in [timed] that do not take the owner's time. */
+        val freed: Set<String> = emptySet(),
     )
 
     fun frame(day: LocalDate, inp: Input, from: LocalDateTime? = null): Frame {
@@ -392,8 +402,10 @@ object DayFill {
         val wake = wakeAt + 30
         val start = maxOf(wake, from?.let { roundUp(minutesOf(it, day)) } ?: wake)
         val timed = todays.filter { !it.allDay }.sortedBy { it.begin }
-        val busy = timed.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
-        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tiredRead)
+        // An event the owner called "ว่าง ทำงานได้" today stays on the plan but takes no time from it.
+        val freed = inp.memory.on(day).freeEvents
+        val busy = timed.filter { freeKey(it) !in freed }.map { e -> (minutesOf(e.begin, day) - CLEAR) to (minutesOf(e.end, day) + CLEAR) }
+        return Frame(day, start, end, bed, mode, nightAt, jobBlocks.isNotEmpty(), timed, todays.filter { it.allDay }, busy, wakeAt, wakeWhy, bedWhy, tiredRead, freed)
     }
 
     private fun roundUp(m: Int) = if (m % STEP == 0) m else m + STEP - m % STEP
@@ -849,7 +861,11 @@ object DayFill {
         val blocks = ArrayList<Row.Locked>()
         mem.errand?.let { e -> blocks += Row.Locked(e.from, tr("ธุระ ถึง ${hm(e.to ?: fr.end)}", "Errand until ${hm(e.to ?: fr.end)}"), tr("คุณกดมีธุระไว้ งานช่วงนี้ย้ายออกหมด", "You said you have an errand: work moved out of it"), until = e.to ?: fr.end) }
         fr.timed.filter { minutesOf(it.end, today) > fr.start && minutesOf(it.begin, today) < fr.end }.forEach { e ->
-            blocks += Row.Locked(minutesOf(e.begin, today), lockedTitle(e, today, inp), lockedWhy(e, inp, today), e)
+            val free = freeKey(e) in fr.freed
+            blocks += Row.Locked(
+                minutesOf(e.begin, today), lockedTitle(e, today, inp),
+                if (free) tr("ว่าง ทำงานได้ วันนี้ เลขาไม่นับช่วงนี้ว่าไม่ว่าง", "Free to work today: the plan does not count this time as busy") else lockedWhy(e, inp, today), e, free = free,
+            )
         }
         val timeline = (pl.placed.map { it.at to (it as Any) } + blocks.map { it.at!! to (it as Any) }).sortedBy { it.first }
         var cursor = fr.start
@@ -863,10 +879,12 @@ object DayFill {
         timeline.forEach { (at, x) ->
             when (x) {
                 is Row.Locked -> {
-                    gap(cursor, at, if (x.event != null) at - CLEAR else at)
+                    gap(cursor, at, if (x.event != null && !x.free) at - CLEAR else at)
                     rows += x
                     val e = x.event
                     val stop = when {
+                        // An event called free takes no time: the free stretches run on through it.
+                        x.free -> cursor
                         e != null -> minutesOf(e.end, today) + CLEAR
                         else -> mem.errand?.let { it.to ?: fr.end } ?: at
                     }
@@ -1041,7 +1059,8 @@ object DayFill {
             is Row.Card -> r.placed.takeIf { it.item.id != skip }?.let { Triple(it.at, it.at + it.len, it.item.title) }
             is Row.Locked -> {
                 val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { minutesOf(it.end, plan.day) }
-                if (r.at != null && end != null) Triple(r.at, end, r.title) else null
+                // Work put on an event called free is on no one's time.
+                if (r.at != null && end != null && !r.free) Triple(r.at, end, r.title) else null
             }
             else -> null
         }
