@@ -222,7 +222,8 @@ object LookAhead {
     fun weekHint(ws: List<Week>, i: Int): DayFill.Hint? {
         val w = ws.getOrNull(i) ?: return null
         return when {
-            w.heavy -> DayFill.Hint(tr("แน่น ${w.hours} ชม.", "Tight, ${w.hours} h"), tightWhy(w), DayFill.Tone.HEAVY)
+            // Owner, 2026-10-31: "ว่างประมาณ 13 ชม." says what the number is ("แน่น 13 ชม." read as 13 h of work).
+            w.heavy -> DayFill.Hint(tr("ว่างประมาณ ${w.hours} ชม.", "About ${w.hours} h free"), tightWhy(w), DayFill.Tone.HEAVY)
             lightest(ws, i) -> {
                 // As mock v2: "ไม่มีเวรดึกทั้งสัปดาห์ สัปดาห์ถัดไปเวรดึก 3 คืน".
                 val next = ws.getOrNull(i + 1)?.takeIf { it.heavy }

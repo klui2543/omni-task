@@ -1179,7 +1179,7 @@ object Sprint {
         if (fr.mode == DayFill.Mode.AFTER_NIGHT) return null
         val chosen = propose(inp, pick?.swap ?: 0, ws)
         if (chosen.isEmpty()) return null
-        // With the look-ahead, rounded as its tags are ("แน่น 12 ชม." and "ราว 12 ชม." under it).
+        // With the look-ahead, rounded as its tags are ("ว่างประมาณ 12 ชม." and "ราว 12 ชม." under it).
         val hours = ws?.firstOrNull()?.hours ?: (weekLeft(inp, ws) / 60)
         val late = chosen.firstOrNull { it.rank == 0 }
         // The look-ahead's rule 5: a far deadline with the time nearly not enough needs a start this week.

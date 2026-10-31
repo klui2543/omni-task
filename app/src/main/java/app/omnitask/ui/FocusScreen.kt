@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -1015,6 +1016,8 @@ internal object Week {
 
 private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d MMM", TH)
 private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d", TH)
+private val WEEK_DOW: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE", TH)
+private val WEEK_FREE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d", TH)
 
 /**
  * The new look's two weeks (owner's picks, 2026-10-28): the pinned countdowns, then "สัปดาห์นี้" (tomorrow to Sunday)
@@ -1030,6 +1033,8 @@ private fun WeekCard(
 ) {
     var all by rememberSaveable { mutableStateOf(false) }
     var tagOpen by remember { mutableStateOf(false) }
+    var openFirst by rememberSaveable { mutableStateOf(true) }
+    var openNext by rememberSaveable { mutableStateOf(false) }
     val shown = if (all) week else week.take(6)
     val sunday = Week.sunday(today)
     val spans = buildList {
@@ -1045,37 +1050,68 @@ private fun WeekCard(
             if (n > 0 || countdowns.isNotEmpty()) Box(Modifier.padding(top = 4.dp).fillMaxWidth().padding(horizontal = 14.dp).height(1.dp).background(C.divider))
             // The look-ahead's tag on next week (mock look-ahead v2): tight or the lightest; a tap shows why.
             val tag = look?.takeIf { from == sunday.plusDays(1) }?.let { LookAhead.weekHint(it.weeks, 1) }
-            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, color = C.accentText, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
-                Text(
-                    from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' '),
-                    Modifier.padding(start = 8.dp).weight(1f), color = C.muted, fontSize = TS.caption,
-                )
-                if (tag != null) HintPill(tag.label, tag.tone, Modifier.padding(start = 8.dp)) { tagOpen = !tagOpen }
-            }
-            if (tag != null && tagOpen) Text(tag.why, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
             val inSpan = week.filter { it.day >= from && it.day <= to }
             val booked = look?.booked.orEmpty().filterKeys { it >= from && it <= to }
             val dayEvents = events.filterKeys { it >= from && it <= to }
-            if (inSpan.isEmpty() && booked.isEmpty() && dayEvents.isEmpty()) {
+            val busyDays = (inSpan.map { it.day } + booked.keys + dayEvents.keys).toSet()
+            // Folds like a list header (owner, 2026-10-31, mock week-toggle round 3): this week open, next week folded,
+            // unless next week is the only one (a Sunday).
+            val first = n == 0
+            val open = if (first) openFirst else openNext
+            Row(
+                Modifier.fillMaxWidth().clickable { if (first) openFirst = !openFirst else openNext = !openNext }
+                    .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("⌄", Modifier.width(16.dp).rotate(if (open) 0f else -90f), color = if (open) C.accentText else C.muted, fontSize = TS.body)
+                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                    Text(name, color = if (open) C.accentText else C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' ') +
+                            if (busyDays.isEmpty()) "" else tr(", ${busyDays.size} วันมีของ", ", ${busyDays.size} days with plans"),
+                        color = C.muted, fontSize = TS.caption,
+                    )
+                }
+                if (tag != null) HintPill(tag.label, tag.tone, Modifier.padding(start = 8.dp)) { tagOpen = !tagOpen }
+            }
+            if (tag != null && tagOpen) Text(tag.why, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
+            if (!open) return@forEachIndexed
+            if (busyDays.isEmpty()) {
                 Text(tr("ยังไม่มีงาน", "Nothing yet"), Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = C.faint, fontSize = TS.caption)
             }
             val byDay = shown.filter { it.day >= from && it.day <= to }.groupBy { it.day }
-            (byDay.keys + booked.keys + dayEvents.keys).distinct().sorted().forEach { day ->
+            (byDay.keys + booked.keys + dayEvents.keys).distinct().sorted().forEachIndexed { i, day ->
                 val items = byDay[day].orEmpty()
-                PlanHead(day.format(WEEK_DAY), C.muted, week.count { it.day == day })
-                // A whole free day ahead: what today's plan would put on it then (nothing is written).
-                booked[day]?.let { Text(bookedText(it), Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp), color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                dayEvents[day].orEmpty().forEach { ev -> TimelineEvent(ev, now, day = day, ahead = true) { onEvent(ev.event) } }
-                items.forEach { w ->
-                    val days = ChronoUnit.DAYS.between(today, day)
-                    AheadRow(
-                        false, w.task.title,
-                        if (w.due) tr("📅 กำหนดจริง", "📅 Due") else tr("⏳ นัดทำ", "⏳ Scheduled"),
-                        tr("อีก $days วัน", "in $days days"),
-                        C.amber,
-                    ) { onOpen(w.task) }
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+                // The date on the left, as the Today widget draws it (owner's pick ก, mock week-toggle round 3).
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
+                    Column(Modifier.width(48.dp).padding(start = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(day.format(WEEK_DOW), color = C.muted, fontSize = TS.caption)
+                        Text("${day.dayOfMonth}", color = C.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        // A whole free day ahead: what today's plan would put on it then (nothing is written).
+                        booked[day]?.let { Text(bookedText(it), Modifier.padding(start = 4.dp, end = 14.dp, top = 2.dp, bottom = 4.dp), color = C.text2, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        dayEvents[day].orEmpty().forEach { ev -> TimelineEvent(ev, now, day = day, ahead = true) { onEvent(ev.event) } }
+                        items.forEach { w ->
+                            val days = ChronoUnit.DAYS.between(today, day)
+                            AheadRow(
+                                false, w.task.title,
+                                if (w.due) tr("📅 กำหนดจริง", "📅 Due") else tr("⏳ นัดทำ", "⏳ Scheduled"),
+                                tr("อีก $days วัน", "in $days days"),
+                                C.amber,
+                            ) { onOpen(w.task) }
+                        }
+                    }
                 }
+            }
+            // The days with nothing on them, in one line at the end.
+            val free = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= to }.filter { it !in busyDays }.toList()
+            if (busyDays.isNotEmpty() && free.isNotEmpty()) {
+                Text(
+                    free.joinToString(", ") { it.format(WEEK_FREE) } + tr(" ว่าง", " free"),
+                    Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = C.faint, fontSize = TS.caption,
+                )
             }
         }
         if (week.size > 6) FooterRow(onClick = { all = !all }) {

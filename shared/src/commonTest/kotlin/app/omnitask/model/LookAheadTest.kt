@@ -429,7 +429,7 @@ class LookAheadTest {
     fun theSprintLineTagsATightWeekAndTheLightestWeek() {
         val tight = assertNotNull(DayFill.plan(input("2026-11-02T08:00")).sprint)
         val hint = assertNotNull(tight.hint)
-        assertEquals("แน่น 12 ชม.", hint.label)
+        assertEquals("ว่างประมาณ 12 ชม.", hint.label)
         assertEquals(DayFill.Tone.HEAVY, hint.tone)
         assertEquals("เวรดึก 3 คืน ปกติว่างราว 28 ชม.", hint.why, "as mock v2")
         // The hours under the tag are the tag's.
@@ -504,6 +504,6 @@ class LookAheadTest {
         assertTrue(LookAhead.booked(inp, d("2026-11-02")).isEmpty(), "the day job")
         // The week card's tag for the week of 2 Nov.
         val next = assertNotNull(LookAhead.weekHint(LookAhead.weeks(inp), 1))
-        assertEquals("แน่น 12 ชม.", next.label)
+        assertEquals("ว่างประมาณ 12 ชม.", next.label)
     }
 }
