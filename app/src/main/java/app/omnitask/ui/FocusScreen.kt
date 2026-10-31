@@ -1024,7 +1024,7 @@ private val WEEK_FREE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EE
  * and "สัปดาห์หน้า" (Monday to Sunday after), each with its tasks under a line for each day. Six tasks show;
  * "ดูอีก N งาน" opens the rest in place. On a Sunday this week has no days left and only next week shows.
  * The calendar's events sit above the tasks of their day, in today's timeline look (owner's pick ก, 2026-10-31); a day
- * with only events is listed too, and the number at the end of a day's line still counts tasks only.
+ * with only events is listed too.
  */
 @Composable
 private fun WeekCard(
@@ -1114,7 +1114,7 @@ private fun WeekCard(
                 )
             }
         }
-        if (week.size > 6) FooterRow(onClick = { all = !all }) {
+        if (week.size > 6) FooterRow(onClick = { all = !all; if (all) { openFirst = true; openNext = true } }) {
             Text(
                 if (all) tr("ย่อ", "Show less") else tr("ดูอีก ${week.size - 6} งาน", "${week.size - 6} more"),
                 color = C.accentText, fontSize = TS.caption,
