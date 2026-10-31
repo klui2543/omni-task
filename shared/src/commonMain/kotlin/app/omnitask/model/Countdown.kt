@@ -177,6 +177,9 @@ object Countdown {
         return tr("${TH_DAYS[w]} ${d.dayOfMonth} ${TH_MONTHS[m]}", "${EN_DAYS[w]} ${d.dayOfMonth} ${EN_MONTHS[m]}")
     }
 
+    /** The weekday's short name ("พฤ."). */
+    fun weekdayShort(d: LocalDate): String = tr(TH_DAYS[d.dayOfWeek.ordinal], EN_DAYS[d.dayOfWeek.ordinal])
+
     /** The month's short name ("พ.ย."). */
     fun monthShort(d: LocalDate): String = tr(TH_MONTHS[d.monthNumber - 1], EN_MONTHS[d.monthNumber - 1])
 

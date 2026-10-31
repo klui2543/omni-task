@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -1016,7 +1018,6 @@ internal object Week {
 
 private val WEEK_DAY: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d MMM", TH)
 private val WEEK_EDGE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE d", TH)
-private val WEEK_DOW: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEE", TH)
 private val WEEK_FREE: DateTimeFormatter get() = DateTimeFormatter.ofPattern("EEEE d", TH)
 
 /**
@@ -1058,21 +1059,23 @@ private fun WeekCard(
             // unless next week is the only one (a Sunday).
             val first = n == 0
             val open = if (first) openFirst else openNext
+            // One slim line (owner, 2026-10-31, mock week-head way ก3): name, dates, the tag, a faint V on the right.
             Row(
                 Modifier.fillMaxWidth().clickable { if (first) openFirst = !openFirst else openNext = !openNext }
-                    .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 10.dp),
+                    .padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("⌄", Modifier.width(16.dp).rotate(if (open) 0f else -90f), color = if (open) C.accentText else C.muted, fontSize = TS.body)
-                Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                    Text(name, color = if (open) C.accentText else C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        from.format(WEEK_EDGE) + tr(" ถึง ", " to ") + to.format(WEEK_EDGE) + " " + to.format(SHORT_DATE).substringAfter(' ') +
-                            if (busyDays.isEmpty()) "" else tr(", ${busyDays.size} วันมีของ", ", ${busyDays.size} days with plans"),
-                        color = C.muted, fontSize = TS.caption,
-                    )
-                }
+                Text(name, color = C.text, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (from == to) Countdown.day(from).substringAfter(' ')
+                    else "${from.dayOfMonth}" + tr(" ถึง ", " to ") + "${to.dayOfMonth} " + Countdown.monthShort(to),
+                    Modifier.padding(start = 8.dp).weight(1f), color = C.muted, fontSize = TS.caption, maxLines = 1,
+                )
                 if (tag != null) HintPill(tag.label, tag.tone, Modifier.padding(start = 8.dp)) { tagOpen = !tagOpen }
+                Icon(
+                    Icons.Default.KeyboardArrowDown, if (open) tr("ซ่อน", "Hide") else tr("ดู", "Show"),
+                    Modifier.padding(start = 6.dp).size(18.dp).rotate(if (open) 180f else 0f), tint = C.faint.copy(alpha = 0.7f),
+                )
             }
             if (tag != null && tagOpen) Text(tag.why, Modifier.padding(horizontal = 14.dp, vertical = 2.dp), color = C.muted, fontSize = TS.caption)
             if (!open) return@forEachIndexed
@@ -1085,9 +1088,10 @@ private fun WeekCard(
                 if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
                 // The date on the left, as the Today widget draws it (owner's pick ก, mock week-toggle round 3).
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
-                    Column(Modifier.width(48.dp).padding(start = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(day.format(WEEK_DOW), color = C.muted, fontSize = TS.caption)
-                        Text("${day.dayOfMonth}", color = C.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    // Small, as the text around it (owner, 2026-10-31: the number was too big).
+                    Column(Modifier.width(40.dp).padding(start = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(Countdown.weekdayShort(day), color = C.muted, fontSize = TS.micro)
+                        Text("${day.dayOfMonth}", color = C.text, fontSize = TS.caption, fontWeight = FontWeight.SemiBold)
                     }
                     Column(Modifier.weight(1f)) {
                         // A whole free day ahead: what today's plan would put on it then (nothing is written).
