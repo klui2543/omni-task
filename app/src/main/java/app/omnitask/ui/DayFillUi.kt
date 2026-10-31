@@ -520,7 +520,7 @@ fun DayFillCard(
                                 if (c.from != null && e != null) events.open(e) else reasonOf = if (reasonOf == keyOf(c)) null else keyOf(c)
                             }
                             cells.firstOrNull { it.from == null && reasonOf == keyOf(it) }?.let { c ->
-                                Text(c.why, Modifier.padding(start = 23.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)
+                                if (blockText(c).second != c.why) Text(c.why, Modifier.padding(start = 23.dp, bottom = 4.dp), color = C.muted, fontSize = TS.caption)
                                 freeActionOf(c, plan.end, vm)?.let { a -> Box(Modifier.padding(start = 23.dp, top = 2.dp, bottom = 6.dp)) { a() } }
                             }
                         } else Track(rk, at) {

@@ -926,7 +926,7 @@ object DayFill {
             .sortedBy { it.begin }
             .forEach { e ->
                 val name = inp.facts.calendarNames[e.calendarId] ?: tr("ปฏิทินอื่น", "Other calendar")
-                val at = maxOf(0, minutesOf(e.begin, today))
+                val at = minutesOf(e.begin, today)
                 val end = minutesOf(e.end, today)
                 val row = Row.Locked(at, e.title + tr(" ถึง ${hm(end)}", " until ${hm(end)}"), tr("จากปฏิทิน $name", "From the calendar $name"), e, past = end <= nowMin, from = name)
                 val lastBefore = rows.indexOfLast { it.at != null && it.at!! <= at }
