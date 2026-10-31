@@ -87,6 +87,8 @@ object OmniWidgets {
         }
         // The month widget keeps its data in its composition; a new stamp makes it load again.
         runCatching { MonthWidget.refresh(context) }
+        // The lock-screen card follows the same refreshes (it does nothing with its switch off).
+        runCatching { LockCardNotifier.refresh(context) }
     }
 }
 

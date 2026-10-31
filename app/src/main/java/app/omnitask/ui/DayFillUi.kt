@@ -34,7 +34,11 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import app.omnitask.widget.LockCardMode
+import app.omnitask.widget.LockCardNotifier
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,6 +122,7 @@ fun DayFillSetting(context: Context) {
         ) { DayFillMode.setOn(context, it) }
         SleepSetting(context)
         LookAheadSetting(context)
+        LockCardSetting(context)
     }
 }
 
@@ -982,4 +987,23 @@ private fun FootButton(text: String, onClick: () -> Unit) {
             .clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = C.text, fontSize = TS.body) }
+}
+
+/** The switch for the lock-screen card (the Today widget's look, for today only). Off by default. */
+@Composable
+fun LockCardSetting(context: Context) {
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(LockCardMode.isOn(context)) }
+    SettingSwitch(
+        tr("การ์ดวันนี้บนหน้าล็อคจอ", "Today card on the lock screen"),
+        tr(
+            "การ์ดเงียบที่ค้างอยู่ หน้าตาเหมือนวิดเจ็ตวันนี้ เห็นเฉพาะวันนี้ไม่เกิน 4 แถว  ปิด: ไม่มีการ์ด (บน OPPO ต้องเปิด “แสดงเนื้อหาบนหน้าล็อคจอ” ให้แอปด้วย)",
+            "A silent card that stays, looking like the Today widget, today only, up to 4 rows. Off: no card (on OPPO also allow the app to show content on the lock screen)",
+        ),
+        on,
+    ) { v ->
+        on = v
+        LockCardMode.setOn(context, v)
+        scope.launch { runCatching { LockCardNotifier.refresh(context) } }
+    }
 }
