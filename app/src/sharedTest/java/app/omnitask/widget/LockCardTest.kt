@@ -51,4 +51,26 @@ class LockCardTest {
         val c = LockCard.card(TodayWeek.Day(day, listOf(ev("จบแล้ว", past = true), now)))
         assertEquals(listOf("NOW"), titles(c))
     }
+
+    /**
+     * Real case (owner, 2026-10-31 19:58): the folded card's headline was "ไปรับบัตรเปนเพื่อนพี่กาน", an all-day
+     * event of the calendar "เบบี้รักยิ้ม". With way ค the card holds only the owner's own.
+     */
+    @Test fun anotherPersonsCalendarIsLeftOffTheCard() {
+        val partner = 5L
+        fun e(id: Long, t: String, a: String, b: String, cal: Long, allDay: Boolean = false) = app.omnitask.notify.CalendarEvent(
+            id, t, kotlinx.datetime.LocalDateTime.parse(a), kotlinx.datetime.LocalDateTime.parse(b), allDay = allDay, calendarId = cal,
+        )
+        val events = listOf(
+            e(1, "ไปรับบัตรเปนเพื่อนพี่กาน", "2026-10-31T00:00", "2026-11-01T00:00", partner, allDay = true),
+            e(2, "กินข้าวกับที่บ้าน", "2026-10-31T21:00", "2026-10-31T21:30", partner),
+            e(3, "ร้านยาโลตัส", "2026-10-31T11:00", "2026-10-31T21:00", 1),
+        )
+        val now = kotlinx.datetime.LocalDateTime.parse("2026-10-31T19:58")
+        val c = LockCard.card(LockCard.today(day, now, emptyList(), events, { it == partner }) { null })
+        assertEquals(listOf("ร้านยาโลตัส"), titles(c).filter { it != "NOW" })
+        // As before the change (nothing counted as another person's): their all-day event led the card.
+        val before = LockCard.card(LockCard.today(day, now, emptyList(), events, { false }) { null })
+        assertEquals("ไปรับบัตรเปนเพื่อนพี่กาน", titles(before).first())
+    }
 }

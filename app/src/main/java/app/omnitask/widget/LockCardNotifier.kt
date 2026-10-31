@@ -63,7 +63,9 @@ object LockCardNotifier {
         ) return
         val data = WidgetData.load(context)
         val now = LocalDateTime.now()
-        val day = data.days(now).first()
+        // Only the owner's own: another person's calendar is never the card's headline (owner, 2026-10-31, way ค).
+        app.omnitask.ui.CalendarStyles.load(context)
+        val day = LockCard.today(data.today, now, data.tasks, data.eventsAhead, { app.omnitask.ui.CalendarStyles.label(it) != null }) { calendarArgb(it.calendarId) }
         val card = LockCard.card(day)
 
         val nmSys = context.getSystemService(NotificationManager::class.java)
