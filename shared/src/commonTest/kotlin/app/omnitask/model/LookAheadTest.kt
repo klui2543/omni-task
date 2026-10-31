@@ -376,6 +376,43 @@ class LookAheadTest {
     }
 
     @Test
+    fun ownTimeAnsweredNotYetIsNotDone() {
+        val first = DayFill.plan(input("2026-11-16T17:00"))
+        val slot = first.placed.first { it.item.kind == DayFill.Kind.MINE }.len
+        val id = DayFill.ident(first.placed.first { it.item.kind == DayFill.Kind.MINE }.item.task!!)
+        // A task put at a new time is pinned there, as the today page puts it.
+        fun taken(now: String, at: Int, notYet: Map<String, Int>, lines: List<String> = note, pinned: Boolean = false) = input(
+            now, lines,
+            memory = DayFill.Memory(day = "2026-11-16", slots = mapOf("mine" to id), accepted = mapOf(id to DayFill.Accepted("2026-11-16", at, pinned = pinned)), notYet = notYet),
+        )
+        fun own(inp: DayFill.Input, before: LookAhead.OwnDay?) = LookAhead.ownToday(DayFill.plan(inp), inp, before)
+        val counted = LookAhead.OwnDay(slot, slot)
+        // The slot at 19:00 went by and the owner said "ยังไม่ได้ทำ" there: not done, and what was kept is taken back.
+        assertEquals(LookAhead.OwnDay(slot, 0), own(taken("2026-11-16T21:00", 19 * 60, mapOf(id to 19 * 60)), counted))
+        // CONTROL: no answer, or one about another task, leaves the guess as it was.
+        assertEquals(counted, own(taken("2026-11-16T21:00", 19 * 60, emptyMap()), LookAhead.OwnDay(slot, 0)))
+        assertEquals(counted, own(taken("2026-11-16T21:00", 19 * 60, mapOf("อื่น\u0001งาน" to 19 * 60)), LookAhead.OwnDay(slot, 0)))
+        // Put at a new time after the answer: waits for it (what was kept is taken back), then counts once it went by.
+        assertEquals(0, own(taken("2026-11-16T19:10", 19 * 60, mapOf(id to 18 * 60), pinned = true), counted).done, "put at 19:00, not gone by yet")
+        // CONTROL (passes before the fix too): the new time went by.
+        assertEquals(slot, own(taken("2026-11-16T21:00", 19 * 60, mapOf(id to 18 * 60), pinned = true), LookAhead.OwnDay(slot, 0)).done, "the new time went by")
+        // Counted there, then the card left today's plan (here its title was changed): what was seen stays.
+        val title = first.placed.first { it.item.kind == DayFill.Kind.MINE }.item.task!!.title
+        val renamed = note.map { if (it.startsWith("- [ ] $title")) it.replace("- [ ] $title", "- [ ] $title ใหม่") else it }
+        val left = taken("2026-11-16T21:00", 19 * 60, mapOf(id to 18 * 60), renamed, pinned = true)
+        assertTrue(DayFill.plan(left).placed.none { p -> p.item.task?.let { DayFill.ident(it) } == id }, "the card left")
+        assertEquals(slot, own(left, counted).done)
+        // CONTROL (passes before the fix too): a want ticked today still says done.
+        val ticked = note.map { if (it.startsWith("- [ ] เรียนวาดรูปสีน้ำ")) it.replace("- [ ]", "- [x]") + " ✅ 2026-11-16" else it }
+        assertEquals(slot, own(taken("2026-11-16T21:00", 19 * 60, mapOf(id to 19 * 60), ticked), LookAhead.OwnDay(slot, 0)).done)
+        // Progress written today, with the card still where "ยังไม่ได้ทำ" was said: done.
+        val progress = note.flatMap { if (it.startsWith("    - ค้าง 2026-10-14")) listOf(it, "    - ค้าง 2026-11-16 อ่านงบการเงินไปหนึ่งบริษัท") else listOf(it) }
+        val wrote = taken("2026-11-16T21:00", 19 * 60, mapOf(id to 19 * 60), progress)
+        assertTrue(DayFill.plan(wrote).placed.any { p -> p.at == 19 * 60 && p.item.task?.let { DayFill.ident(it) } == id }, "still at 19:00")
+        assertEquals(slot, own(wrote, LookAhead.OwnDay(slot, 0)).done)
+    }
+
+    @Test
     fun ownTimeIsKeptAsShortTextOnThePhone() {
         val days = mapOf(d("2026-10-30") to LookAhead.OwnDay(60, 45), d("2026-09-01") to LookAhead.OwnDay(60, 0), d("2026-10-29") to LookAhead.OwnDay(0, 0))
         val text = LookAhead.ownText(days, d("2026-10-30"))

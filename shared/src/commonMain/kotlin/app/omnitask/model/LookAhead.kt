@@ -314,18 +314,24 @@ object LookAhead {
     /**
      * Today's own time as [plan] shows it now, kept with what was seen earlier today ([before]): the most the plan
      * offered, and that much done once the owner took the slot, ticked a want, or wrote progress on one today (not a
-     * note of why it got stuck).
+     * note of why it got stuck). "ยังไม่ได้ทำ" on the taken slot ([DayFill.Memory.notYet]) says it was not.
      */
     fun ownToday(plan: DayFill.Plan, inp: DayFill.Input, before: OwnDay?): OwnDay {
         val today = inp.now.date
         val mine = plan.placed.filter { it.item.kind == DayFill.Kind.MINE }
         val offered = maxOf(before?.offered ?: 0, mine.sumOf { it.len })
+        val mem = inp.memory.takeIf { it.day == today.toString() }
+        val taker = mem?.slots?.get("mine")
+        // The minute the owner said "ยังไม่ได้ทำ" at, today; a slot put at a new time is judged again there.
+        val notYet = taker?.let { mem.notYet[it] }
         // Taking the slot is a promise: it counts once the slot's time has gone by with it still taken.
         val nowMin = inp.now.hour * 60 + inp.now.minute
-        val took = inp.memory.takeIf { it.day == today.toString() }?.slots?.get("mine") != null &&
-            mine.isNotEmpty() && mine.all { it.at + it.len <= nowMin }
+        val took = taker != null && mine.isNotEmpty() && mine.all { it.at + it.len <= nowMin && it.at != notYet }
         val did = took || ownSign(inp.tasks, today)
-        return OwnDay(offered, if (did) maxOf(before?.done ?: 0, offered) else before?.done ?: 0)
+        // After "ยังไม่ได้ทำ", a done kept earlier from the slot's time going by is taken back, while that task's card is
+        // still in today's plan (one that left it later keeps what was seen).
+        val waits = notYet != null && mine.any { p -> p.item.task?.let { DayFill.ident(it) } == taker }
+        return OwnDay(offered, if (did) maxOf(before?.done ?: 0, offered) else if (waits) 0 else before?.done ?: 0)
     }
 
     /**
