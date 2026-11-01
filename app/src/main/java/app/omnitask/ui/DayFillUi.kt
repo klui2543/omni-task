@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import app.omnitask.widget.LockCardMode
 import app.omnitask.widget.LockCardNotifier
+import app.omnitask.widget.LockPlanStore
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
+import app.omnitask.model.LockPlan
 import app.omnitask.model.RealDay
 import app.omnitask.model.Task
 import app.omnitask.model.tr
@@ -227,6 +229,13 @@ fun DayFillCard(
     val nowNow by rememberUpdatedState(now.hour * 60 + now.minute)
     // The reminder at a taken slot counts to when the plan stops: kept on the phone for it, once its memory is read.
     LaunchedEffect(plan.day, plan.end, state.dayFill) { if (plan.day == now.date) vm.fillStop(plan.end) }
+    // The lock-screen card says what is on now and next from this same plan (owner's pick ก, 2026-11-01): a copy is
+    // kept each time the plan changes, and the card is redrawn when it does.
+    LaunchedEffect(plan) {
+        if (plan.day == now.date && LockCardMode.isOn(context) && LockPlanStore.save(context, LockPlan.of(plan))) {
+            runCatching { LockCardNotifier.refresh(context) }
+        }
+    }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
     // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
     LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }

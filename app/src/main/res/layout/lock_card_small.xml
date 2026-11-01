@@ -3,6 +3,8 @@
     android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
     <TextView android:id="@+id/small" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
+    <TextView android:id="@+id/smallnext" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:visibility="gone" />
     <TextView android:id="@+id/smallfoot" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:singleLine="true" android:textSize="12sp" />
 </LinearLayout>

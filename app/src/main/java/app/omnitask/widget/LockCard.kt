@@ -1,9 +1,13 @@
 package app.omnitask.widget
 
+import app.omnitask.model.DayFill
+import app.omnitask.model.LockPlan
 import app.omnitask.model.Task
+import app.omnitask.model.tr
 import app.omnitask.notify.CalendarEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 
 /**
  * What the lock-screen card shows of today: the Today widget's rows without what is already over (events that ended,
@@ -23,6 +27,32 @@ internal object LockCard {
         date: LocalDate, now: LocalDateTime, tasks: List<Task>, events: List<CalendarEvent>, others: (Long) -> Boolean,
         color: (CalendarEvent) -> Int?,
     ): TodayWeek.Day = TodayWeek.days(date, now, tasks, events.filterNot { others(it.calendarId) }, 1, color).first()
+
+    /**
+     * Today for the card from the today page's plan (owner's pick ก, 2026-11-01, mock lock-now-next): all-day blocks
+     * first, then what is not over yet in order, the red line at [now] (or crossing the block on now), work in [done]
+     * left out. Planned work takes [accent]; other blocks the slate bar.
+     */
+    fun fromPlan(copy: LockPlan.Copy, now: LocalDateTime, done: Set<String>, accent: Int): TodayWeek.Day {
+        val min = now.hour * 60 + now.minute
+        val clock = LocalTime(now.hour, now.minute)
+        val out = ArrayList<TodayWeek.Row>()
+        val live = copy.slots.filter { it.ident == null || it.ident !in done }
+        live.filter { it.at == null }.forEach { out += TodayWeek.Row.Event(it.title, tr("ทั้งวัน", "All day"), if (it.card) accent else null, past = false) }
+        var nowShown = false
+        live.filter { it.at != null }.sortedBy { it.at }.forEach { s ->
+            val at = s.at!!
+            val end = s.end
+            if (end != null && end <= min || end == null && at < min) return@forEach
+            val running = end != null && at <= min
+            if (!nowShown && !running && at > min) { out += TodayWeek.Row.Now(clock); nowShown = true }
+            val time = DayFill.hm(at) + (end?.let { tr(" ถึง ", " to ") + DayFill.hm(it) } ?: "")
+            out += TodayWeek.Row.Event(s.title, time, if (s.card) accent else null, past = false, run = if (running) (min - at).toFloat() / (end!! - at) else null)
+            if (running) nowShown = true
+        }
+        if (!nowShown) out += TodayWeek.Row.Now(clock)
+        return TodayWeek.Day(copy.day, out)
+    }
 
     fun card(day: TodayWeek.Day, max: Int = MAX): Card {
         val out = ArrayList<TodayWeek.Row>()

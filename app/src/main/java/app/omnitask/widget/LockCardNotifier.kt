@@ -14,12 +14,34 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import app.omnitask.MainActivity
 import app.omnitask.R
+import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
+import app.omnitask.model.LockPlan
 import app.omnitask.model.tr
 import app.omnitask.time.*
 import kotlinx.datetime.LocalDateTime
 
 /** The switch for the lock-screen card, on the phone only; off by default, read from here alone. */
+/**
+ * The copy of the today page's plan the card reads (owner's pick ก, 2026-11-01): written by the page each time its plan
+ * changes, kept on the phone only.
+ */
+object LockPlanStore {
+    private const val PREFS = "omni-lockplan"
+    private const val COPY = "copy"
+
+    /** Keeps [copy]; false when it is the one already kept, so the card is not redrawn for nothing. */
+    fun save(context: Context, copy: LockPlan.Copy): Boolean {
+        val text = LockPlan.encode(copy)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getString(COPY, null) == text) return false
+        prefs.edit().putString(COPY, text).apply()
+        return true
+    }
+
+    fun load(context: Context): LockPlan.Copy? = LockPlan.decode(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(COPY, null))
+}
+
 object LockCardMode {
     private const val PREFS = "omni-lockcard"
     private const val ON = "on"
@@ -40,6 +62,8 @@ object LockCardNotifier {
     private const val CHANNEL = "lockcard"
     private const val ID = 0x10C4
     private const val SLATE = 0xFF7C8696.toInt()
+    /** Planned work on the card: the app's accent. */
+    private const val ACCENT = 0xFF9DB4D3.toInt()
 
     private val PILL = intArrayOf(R.id.p0, R.id.p1, R.id.p2, R.id.p3, R.id.p4)
     private val NOW = intArrayOf(R.id.n0, R.id.n1, R.id.n2, R.id.n3, R.id.n4)
@@ -65,7 +89,11 @@ object LockCardNotifier {
         val now = LocalDateTime.now()
         // Only the owner's own: another person's calendar is never the card's headline (owner, 2026-10-31, way ค).
         app.omnitask.ui.CalendarStyles.load(context)
-        val day = LockCard.today(data.today, now, data.tasks, data.eventsAhead, { app.omnitask.ui.CalendarStyles.label(it) != null }) { calendarArgb(it.calendarId) }
+        // The today page's plan when it has kept one for today (owner's pick ก, 2026-11-01); the widget's rows before that.
+        val copy = LockPlanStore.load(context)?.takeIf { it.day == data.today }
+        val done = data.tasks.filter { !it.isOpen }.map { DayFill.ident(it) }.toSet()
+        val day = if (copy != null) LockCard.fromPlan(copy, now, done, ACCENT)
+        else LockCard.today(data.today, now, data.tasks, data.eventsAhead, { app.omnitask.ui.CalendarStyles.label(it) != null }) { calendarArgb(it.calendarId) }
         val card = LockCard.card(day)
 
         val nmSys = context.getSystemService(NotificationManager::class.java)
@@ -111,15 +139,20 @@ object LockCardNotifier {
         } else big.setViewVisibility(R.id.more, android.view.View.GONE)
         big.setTextViewText(R.id.foot, foot)
 
-        // Folded (some phones show only this line on the lock screen): what is next.
+        // Folded (some phones show only this on the lock screen): what is on now and what is next with its start, from
+        // the plan; before the page has kept one, what is next on the widget's rows.
         val first = card.rows.firstOrNull { it !is TodayWeek.Row.Now }
-        val line = when (first) {
+        val planned = copy?.let { LockPlan.lines(it, now.hour * 60 + now.minute, done) }
+        val line = planned?.first ?: when (first) {
             is TodayWeek.Row.Event -> first.title + if (first.time.isNotEmpty()) "  " + first.time else ""
             is TodayWeek.Row.Todo -> first.task.title
             else -> tr("ไม่มีอะไรเหลือวันนี้", "Nothing left today")
         }
         val small = RemoteViews(context.packageName, R.layout.lock_card_small)
         small.setTextViewText(R.id.small, line)
+        val nextLine = planned?.second
+        small.setViewVisibility(R.id.smallnext, if (nextLine != null) android.view.View.VISIBLE else android.view.View.GONE)
+        small.setTextViewText(R.id.smallnext, nextLine ?: "")
         small.setTextViewText(R.id.smallfoot, foot)
 
         val open = PendingIntent.getActivity(
