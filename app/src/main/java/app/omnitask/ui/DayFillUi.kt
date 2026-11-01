@@ -48,7 +48,12 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -812,7 +817,14 @@ private fun DragRuler(plan: DayFill.Plan, p: DayFill.Placed, t: Int, top: Float,
             else -> Unit
         }
     }
-    Popup(alignment = Alignment.Center, properties = PopupProperties(focusable = false, clippingEnabled = false)) {
+    // Centred on the screen, not on the timeline (which can be taller than the screen).
+    val centre = remember {
+        object : PopupPositionProvider {
+            override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize) =
+                IntOffset((windowSize.width - popupContentSize.width) / 2, (windowSize.height - popupContentSize.height) / 2)
+        }
+    }
+    Popup(popupPositionProvider = centre, properties = PopupProperties(focusable = false, clippingEnabled = false)) {
         Column(Modifier.width(width).clip(shape).background(C.card).border(1.dp, C.cardBorder, shape).padding(12.dp)) {
             Text(p.item.title, color = C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Box(Modifier.fillMaxWidth().height((RULER_WINDOW * RULER_DP).dp).clipToBounds()) {

@@ -2495,13 +2495,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val id = DayFill.ident(task)
         val before = _state.value.dayFill
         val after = TaskLine.setReminder(TaskLine.setDate(task.raw, DateField.SCHEDULED, today), DayFill.clock(at), ReminderOn.SCHEDULED)
-        if (after == task.raw && before.accepted[id]?.let { it.pinned && it.at == at && it.day == today.toString() && it.ownLen == len } == true) return
+        if (after == task.raw && before.accepted[id]?.let { it.pinned && it.at == at && it.day == today.toString() && len == p.len } == true) return
         val was = DayFill.marks(task)
         saveFill(
             before.on(today).let { m ->
                 m.copy(
                     picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
-                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed = true, pinned = true, len = len, ownLen = len)),
+                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed = true, pinned = true, len = if (len != p.len) len else p.item.len, ownLen = if (len != p.len) len else before.accepted[id]?.ownLen ?: 0)),
                     // What the line was before the plan first wrote it stays, so "แตะเพื่อเปลี่ยนใจ" still puts that back.
                     lines = m.lines + (p.item.id to DayFill.Line(m.lines[p.item.id]?.before ?: task.raw, after)),
                     slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
