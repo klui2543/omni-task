@@ -199,6 +199,6 @@
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
         <TextView android:id="@+id/more" style="@style/LockLink" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" android:layout_marginStart="52dp" android:textSize="12sp" android:visibility="gone" />
+            android:layout_marginTop="4dp" android:layout_marginStart="63dp" android:textSize="12sp" android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>

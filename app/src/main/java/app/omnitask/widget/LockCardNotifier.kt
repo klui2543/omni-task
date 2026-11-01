@@ -128,7 +128,9 @@ object LockCardNotifier {
 
         val big = RemoteViews(context.packageName, R.layout.lock_card)
         // The day as a list (owner's pick ข2, 2026-11-01): the date, how many are left, and overdue as a red chip.
-        big.setTextViewText(R.id.dateline, day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMM", app.omnitask.ui.TH)))
+        // "อาทิตย์ 1 พ.ย." as the mock: the Thai long weekday comes as "วันอาทิตย์".
+        val weekday = day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEEE", app.omnitask.ui.TH)).removePrefix("วัน")
+        big.setTextViewText(R.id.dateline, weekday + " " + day.date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM", app.omnitask.ui.TH)))
         big.setTextViewText(R.id.datesub, if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งาน", "$left left"))
         if (late > 0) {
             big.setViewVisibility(R.id.latechip, android.view.View.VISIBLE)
