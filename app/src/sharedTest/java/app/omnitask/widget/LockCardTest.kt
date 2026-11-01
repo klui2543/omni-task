@@ -97,6 +97,8 @@ class LockCardTest {
         val run = day.rows.first() as TodayWeek.Row.Event
         assertEquals("18:35 ถึง 19:20", run.time)
         assertEquals(5f / 45f, run.run!!, 0.001f)
+        // Work shows when it starts, as the mock; bed has no end.
+        assertEquals(listOf("20:15", "21:30", "22:45"), day.rows.drop(1).filterIsInstance<TodayWeek.Row.Event>().map { it.time })
         // Between blocks the red line stands before what is next; ticked work is gone.
         val later = LockCard.fromPlan(copy, kotlinx.datetime.LocalDateTime.parse("2026-11-01T19:40"), setOf("a"), 7)
         assertEquals(listOf("NOW", "ปรับระบบ", "นอน"), titles(LockCard.card(later)))

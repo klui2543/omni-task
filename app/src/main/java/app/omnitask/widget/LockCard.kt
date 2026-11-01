@@ -33,12 +33,13 @@ internal object LockCard {
      * first, then what is not over yet in order, the red line at [now] (or crossing the block on now), work in [done]
      * left out. Planned work takes [accent]; other blocks the slate bar.
      */
-    fun fromPlan(copy: LockPlan.Copy, now: LocalDateTime, done: Set<String>, accent: Int): TodayWeek.Day {
+    fun fromPlan(copy: LockPlan.Copy, now: LocalDateTime, done: Set<String>, accent: Int, color: (Long) -> Int? = { null }): TodayWeek.Day {
         val min = now.hour * 60 + now.minute
         val clock = LocalTime(now.hour, now.minute)
         val out = ArrayList<TodayWeek.Row>()
         val live = copy.slots.filter { it.ident == null || it.ident !in done }
-        live.filter { it.at == null }.forEach { out += TodayWeek.Row.Event(it.title, tr("ทั้งวัน", "All day"), if (it.card) accent else null, past = false) }
+        fun tint(s: LockPlan.Slot) = if (s.card) accent else s.calendar?.let(color)
+        live.filter { it.at == null }.forEach { out += TodayWeek.Row.Event(it.title, tr("ทั้งวัน", "All day"), tint(it), past = false) }
         var nowShown = false
         live.filter { it.at != null }.sortedBy { it.at }.forEach { s ->
             val at = s.at!!
@@ -46,8 +47,9 @@ internal object LockCard {
             if (end != null && end <= min || end == null && at < min) return@forEach
             val running = end != null && at <= min
             if (!nowShown && !running && at > min) { out += TodayWeek.Row.Now(clock); nowShown = true }
-            val time = DayFill.hm(at) + (end?.let { tr(" ถึง ", " to ") + DayFill.hm(it) } ?: "")
-            out += TodayWeek.Row.Event(s.title, time, if (s.card) accent else null, past = false, run = if (running) (min - at).toFloat() / (end!! - at) else null)
+            // As the mock: work shows when it starts, a block its hours, the one on now always its hours.
+            val time = DayFill.hm(at) + (end?.takeIf { running || !s.card }?.let { tr(" ถึง ", " to ") + DayFill.hm(it) } ?: "")
+            out += TodayWeek.Row.Event(s.title, time, tint(s), past = false, run = if (running) (min - at).toFloat() / (end!! - at) else null)
             if (running) nowShown = true
         }
         if (!nowShown) out += TodayWeek.Row.Now(clock)

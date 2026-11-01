@@ -43,6 +43,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import app.omnitask.widget.LockCardMode
 import app.omnitask.widget.LockCardNotifier
 import app.omnitask.widget.LockPlanStore
+import app.omnitask.widget.WidgetLog
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -233,7 +234,9 @@ fun DayFillCard(
     // kept each time the plan changes, and the card is redrawn when it does.
     LaunchedEffect(plan) {
         if (plan.day == now.date && LockCardMode.isOn(context) && LockPlanStore.save(context, LockPlan.of(plan))) {
-            runCatching { LockCardNotifier.refresh(context) }
+            // Redrawn now, and again when the next block starts or ends.
+            runCatching { LockCardNotifier.refresh(context) }.onFailure { WidgetLog.add("lockcard: redraw failed: $it") }
+            runCatching { app.omnitask.notify.Scheduler.widgetTick(context) }.onFailure { WidgetLog.add("lockcard: tick failed: $it") }
         }
     }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the

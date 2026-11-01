@@ -21,7 +21,6 @@ import app.omnitask.model.tr
 import app.omnitask.time.*
 import kotlinx.datetime.LocalDateTime
 
-/** The switch for the lock-screen card, on the phone only; off by default, read from here alone. */
 /**
  * The copy of the today page's plan the card reads (owner's pick ก, 2026-11-01): written by the page each time its plan
  * changes, kept on the phone only.
@@ -42,6 +41,7 @@ object LockPlanStore {
     fun load(context: Context): LockPlan.Copy? = LockPlan.decode(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(COPY, null))
 }
 
+/** The switch for the lock-screen card, on the phone only; off by default, read from here alone. */
 object LockCardMode {
     private const val PREFS = "omni-lockcard"
     private const val ON = "on"
@@ -90,10 +90,25 @@ object LockCardNotifier {
         // Only the owner's own: another person's calendar is never the card's headline (owner, 2026-10-31, way ค).
         app.omnitask.ui.CalendarStyles.load(context)
         // The today page's plan when it has kept one for today (owner's pick ก, 2026-11-01); the widget's rows before that.
-        val copy = LockPlanStore.load(context)?.takeIf { it.day == data.today }
-        val done = data.tasks.filter { !it.isOpen }.map { DayFill.ident(it) }.toSet()
-        val day = if (copy != null) LockCard.fromPlan(copy, now, done, ACCENT)
-        else LockCard.today(data.today, now, data.tasks, data.eventsAhead, { app.omnitask.ui.CalendarStyles.label(it) != null }) { calendarArgb(it.calendarId) }
+        val others: (Long) -> Boolean = { app.omnitask.ui.CalendarStyles.label(it) != null }
+        val kept = LockPlanStore.load(context)
+        if (kept != null && kept.day != data.today) WidgetLog.add("lockcard: plan copy is from ${kept.day}, using the widget rows")
+        val copy = kept?.takeIf { it.day == data.today }?.let { c ->
+            // The owner's events put in the calendar since the page last planned.
+            LockPlan.withEvents(
+                c,
+                data.eventsAhead.filter { !others(it.calendarId) && it.begin.date <= data.today && it.end > data.today.atStartOfDay() }.map { e ->
+                    val timed = !e.allDay && e.begin.date == data.today
+                    LockPlan.Slot(
+                        e.title, if (timed) DayFill.minutesOf(e.begin, data.today) else null,
+                        if (timed) DayFill.minutesOf(e.end, data.today).coerceAtMost(24 * 60) else null, card = false, calendar = e.calendarId,
+                    )
+                },
+            )
+        }
+        val done = copy?.let { LockPlan.done(it, data.tasks, data.today) }.orEmpty()
+        val day = if (copy != null) LockCard.fromPlan(copy, now, done, ACCENT) { calendarArgb(it) }
+        else LockCard.today(data.today, now, data.tasks, data.eventsAhead, others) { calendarArgb(it.calendarId) }
         val card = LockCard.card(day)
 
         val nmSys = context.getSystemService(NotificationManager::class.java)

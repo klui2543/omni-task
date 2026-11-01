@@ -1,5 +1,6 @@
 package app.omnitask.model
 
+import app.omnitask.data.TaskLine
 import app.omnitask.notify.CalendarEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -78,5 +79,37 @@ class LockPlanTest {
         assertEquals(m(11, 0) to m(13, 0), lotus.at to lotus.end)
         assertTrue(copy.slots.none { it.title.startsWith("กินข้าวกับที่บ้าน") })
         assertEquals("ตอนนี้: ร้านยาโลตัส ถึง 13:00", LockPlan.lines(copy, m(11, 30), emptySet())?.first)
+    }
+
+    @Test
+    fun theCardIsRedrawnWhenABlockStartsOrEnds() {
+        // 18:40 inside dinner: every 10 minutes while it runs.
+        assertEquals(m(18, 50), LockPlan.nextChange(evening, m(18, 40)))
+        assertEquals(m(19, 20), LockPlan.nextChange(evening, m(19, 15)))
+        // Between blocks: when the next one starts.
+        assertEquals(m(20, 15), LockPlan.nextChange(evening, m(19, 40)))
+        assertNull(LockPlan.nextChange(evening, m(23, 0)))
+    }
+
+    @Test
+    fun workIsOverOnlyWhenNoOpenLineOfItIsStillForToday() {
+        val copy = LockPlan.Copy(day, listOf(LockPlan.Slot("ประชุมทีม", m(9, 0), m(10, 0), card = true, ident = "Work\u0001ประชุมทีม")))
+        fun t(line: String) = TaskLine.parse(line)!!.copy(filePath = "Work.md")
+        val open = t("- [ ] ประชุมทีม ⏳ 2026-11-01")
+        val oldDone = t("- [x] ประชุมทีม ✅ 2026-10-20")
+        // An old ticked line with the same name does not hide today's open one.
+        assertEquals(emptySet(), LockPlan.done(copy, listOf(oldDone, open), day))
+        // A repeating one ticked today moves to tomorrow and stays open: it is over for today.
+        assertEquals(setOf("Work\u0001ประชุมทีม"), LockPlan.done(copy, listOf(t("- [ ] ประชุมทีม 🔁 every day ⏳ 2026-11-02")), day))
+        assertEquals(setOf("Work\u0001ประชุมทีม"), LockPlan.done(copy, listOf(t("- [x] ประชุมทีม ⏳ 2026-11-01 ✅ 2026-11-01")), day))
+    }
+
+    @Test
+    fun anEventAddedSinceThePagePlannedStillShows() {
+        val added = LockPlan.Slot("โทรหาหมอ", m(19, 30), m(19, 45), card = false, calendar = 1L)
+        val dinnerAgain = LockPlan.Slot("กินข้าว พัก", m(18, 35), m(19, 20), card = false)
+        val copy = LockPlan.withEvents(evening, listOf(added, dinnerAgain))
+        assertEquals(evening.slots + added, copy.slots)
+        assertEquals("ต่อไป 19:30 โทรหาหมอ" to null, LockPlan.lines(copy, m(19, 25), emptySet()))
     }
 }
