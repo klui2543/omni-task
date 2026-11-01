@@ -38,9 +38,11 @@ object DayFill {
      * its own keeps it, so only ⏳ is written). [pinned]: the owner put it at [at] themselves (a suggested time or a
      * drag): it stays there even on top of something else, and nothing else is pushed for it. [len]: its length when
      * taken, for the reminder's "เหลืออีก N ถึงจะทำทันวันนี้" (0 when taken before that was kept: the reminder is as before).
+     * [ownLen]: the length the owner put it at (a drag or the length buttons, owner 2026-11-01): a pinned slot has it in
+     * place of the plan's own estimate; 0 = the plan's estimate, as before.
      */
     @Serializable
-    data class Accepted(val day: String, val at: Int, val timed: Boolean = true, val pinned: Boolean = false, val len: Int = 0)
+    data class Accepted(val day: String, val at: Int, val timed: Boolean = true, val pinned: Boolean = false, val len: Int = 0, val ownLen: Int = 0)
 
     @Serializable
     data class Line(val before: String, val after: String)
@@ -464,7 +466,13 @@ object DayFill {
             val acc = it0.task?.let { mem.accepted[ident(it)] }?.takeIf { it.pinned && it.day == fr.day.toString() && it.at == f } ?: return null
             return acc.at.takeIf { (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= it }
         }
-        val pins = items.mapNotNull { it0 -> pinnedAt(it0)?.let { it0 to it } }
+        // A pinned slot is as long as the owner made it (their length, when they set one).
+        val pins = items.mapNotNull { it0 ->
+            pinnedAt(it0)?.let { at ->
+                val own = it0.task?.let { t -> mem.accepted[ident(t)] }?.ownLen ?: 0
+                (if (own > 0) it0.copy(len = own) else it0) to at
+            }
+        }
         val pinOcc = BooleanArray(span)
         pins.forEach { (it0, at) -> for (i in maxOf(at, start) until minOf(at + it0.len, end)) pinOcc[i - start] = true }
         fun fits(t: Int, len: Int, work: Boolean = false): Boolean {

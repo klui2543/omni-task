@@ -2489,19 +2489,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      * is put), stays there even on top of something else, and nothing else is pushed for it. Not a move in the
      * behaviour log. The undo puts back the line and the plan's memory as they were just before.
      */
-    fun fillPlace(p: DayFill.Placed, at: Int) {
+    fun fillPlace(p: DayFill.Placed, at: Int, len: Int = p.len) {
         val task = p.item.task ?: return
         val today = LocalDate.now()
         val id = DayFill.ident(task)
         val before = _state.value.dayFill
         val after = TaskLine.setReminder(TaskLine.setDate(task.raw, DateField.SCHEDULED, today), DayFill.clock(at), ReminderOn.SCHEDULED)
-        if (after == task.raw && before.accepted[id]?.let { it.pinned && it.at == at && it.day == today.toString() } == true) return
+        if (after == task.raw && before.accepted[id]?.let { it.pinned && it.at == at && it.day == today.toString() && it.ownLen == len } == true) return
         val was = DayFill.marks(task)
         saveFill(
             before.on(today).let { m ->
                 m.copy(
                     picks = m.picks + (p.item.id to DayFill.Pick.TAKE),
-                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed = true, pinned = true, len = p.item.len)),
+                    accepted = m.accepted + (id to DayFill.Accepted(today.toString(), at, timed = true, pinned = true, len = len, ownLen = len)),
                     // What the line was before the plan first wrote it stays, so "แตะเพื่อเปลี่ยนใจ" still puts that back.
                     lines = m.lines + (p.item.id to DayFill.Line(m.lines[p.item.id]?.before ?: task.raw, after)),
                     slots = p.item.slot?.let { m.slots + (it to id) } ?: m.slots,
@@ -2511,7 +2511,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         )
         fillWrite(
             task,
-            onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = tr("วางที่ ${DayFill.hm(at)} แล้ว", "Put at ${DayFill.hm(at)}"), local = { fillPlaceBack(before, p.item.id, id, was) }), inTree = false) },
+            onSaved = { remember(UndoStep(UndoStep.Kind.PLAN, task.title, label = if (len != p.len && at == p.at) tr("ปรับเป็น ${DayFill.lenText(len)} แล้ว", "Set to ${DayFill.lenText(len)}") else tr("วางที่ ${DayFill.hm(at)} แล้ว", "Put at ${DayFill.hm(at)}"), local = { fillPlaceBack(before, p.item.id, id, was) }), inTree = false) },
             onFailed = { saveFill(before) },
         ) { after }
     }

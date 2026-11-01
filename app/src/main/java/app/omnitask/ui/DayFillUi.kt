@@ -44,6 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -196,6 +202,10 @@ fun DayFillCard(
     var replacing by remember { mutableStateOf<String?>(null) }
     var drag by remember { mutableStateOf<Dragged?>(null) }
     var dragDy by remember { mutableFloatStateOf(0f) }
+    // The ruler shown while a finger drags (owner's pick ข, 2026-11-01): the minute at its top edge, kept so that the
+    // slot stays in view; the density turns the finger's pixels into minutes.
+    var rulerTop by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current.density
     val haptic = LocalHapticFeedback.current
     // Where each row sits on screen (its middle) and the time of each timed one, to turn a drag into a time. A row
     // that leaves the page takes its entries with it.
@@ -383,23 +393,13 @@ fun DayFillCard(
             var waitingShown = false
             // A long press drags a task; its time follows the finger between the rows around it (its own row too, so
             // where it starts is its own time).
-            fun timeAt(y: Float, len: Int): Int {
-                val pl = drag?.plan ?: planNow
+            fun timeAt(d: Dragged, len: Int, dy: Float): Int {
+                val pl = d.plan
                 // Never earlier than the clock now, even while the timeline holds still.
-                val lo = maxOf(nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
+                val lo = maxOf(d.now, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
                 val hi = maxOf(lo, (pl.bed - len) - (pl.bed - len) % 5)
-                val pts = times.mapNotNull { (k, t) -> tops[k]?.let { t to it } }.sortedBy { it.second }
-                if (pts.isEmpty()) return lo
-                val raw = when {
-                    y <= pts.first().second -> pts.first().first.toFloat()
-                    y >= pts.last().second -> pts.last().first.toFloat()
-                    else -> {
-                        val i = pts.indexOfLast { it.second <= y }
-                        val a = pts[i]
-                        val b = pts[minOf(i + 1, pts.lastIndex)]
-                        if (b.second <= a.second) a.first.toFloat() else a.first + (y - a.second) / (b.second - a.second) * (b.first - a.first)
-                    }
-                }
+                // The ruler is drawn at RULER_DP dp a minute, so a finger's distance is a time, whatever rows lie under it.
+                val raw = d.p.at + dy / density / RULER_DP
                 return (Math.round(raw / 5f) * 5).coerceIn(lo, hi)
             }
             // The slot is read when the finger lifts, so a plan that changed meanwhile puts the line as it is now.
@@ -409,9 +409,11 @@ fun DayFillCard(
                     onDragStart = {
                         val y = tops[rowKey]
                         // One drag at a time: a second finger's long press leaves the first one be.
-                        if (drag == null && cur.value != null && y != null) {
+                        val held0 = cur.value
+                        if (drag == null && held0 != null && y != null) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            drag = Dragged(rowKey, y, planNow, nowNow)
+                            drag = Dragged(rowKey, y, planNow, nowNow, held0)
+                            rulerTop = (held0.at - RULER_WINDOW / 2f)
                             dragDy = 0f
                         }
                     },
@@ -428,7 +430,7 @@ fun DayFillCard(
                             val p = cur.value?.let { held -> planNow.placed.firstOrNull { it.item.id == held.item.id } ?: held }
                             // A press let go where it began puts nothing.
                             if (p != null && abs(dragDy) >= slop) {
-                                vm.fillPlace(p, timeAt(d.from + dragDy, p.len))
+                                vm.fillPlace(p, timeAt(d, p.len, dragDy))
                                 replacing = null
                                 open = null
                             }
@@ -459,25 +461,20 @@ fun DayFillCard(
                 Box(
                     Modifier.fillMaxWidth()
                         .onGloballyPositioned { c -> if (!moving) tops[rowKey] = c.positionInRoot().y + c.size.height / 2f }
-                        .then(if (moving) Modifier.zIndex(1f).graphicsLayer { translationY = dragDy; shadowElevation = 12f }.background(C.raised) else Modifier)
+                        .then(if (moving) Modifier.alpha(0.35f) else Modifier)
                         .then(if (over && !moving) Modifier.drawBehind { drawRect(amber, size = Size(3.dp.toPx(), size.height)) } else Modifier)
                         .then(if (p != null) Modifier.pointerInput(rowKey) { drags(rowKey, cur) } else Modifier),
                 ) {
                     Column(Modifier.fillMaxWidth()) { content() }
-                    val d = drag
-                    if (moving && p != null && d != null) {
-                        val t = timeAt(d.from + dragDy, p.len)
-                        val o = DayFill.overlapText(DayFill.overlaps(view, t, p.len, p.item.id), ::thaiShort)
-                        Column(
-                            Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 10.dp).clip(RoundedCornerShape(12.dp))
-                                .background(C.accent).padding(horizontal = 10.dp, vertical = 4.dp),
-                            horizontalAlignment = Alignment.End,
-                        ) {
-                            Text(DayFill.hm(t), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
-                            if (o != null) Text(o, color = C.onAccent, fontSize = TS.micro)
-                        }
-                    }
                 }
+            }
+            if (held != null) {
+                // The ruler: a window of the day at a true scale, the slot moving over it (owner's pick ข, 2026-11-01).
+                val t = timeAt(held, held.p.len, dragDy)
+                val top = rulerTop.coerceIn((t - (RULER_WINDOW - 30)).toFloat(), (t - 30).toFloat())
+                    .coerceIn(view.start.toFloat(), maxOf(view.start, view.bed - RULER_WINDOW).toFloat())
+                SideEffect { if (rulerTop != top) rulerTop = top }
+                DragRuler(view, held.p, t, top, DayFill.overlapText(DayFill.overlaps(view, t, held.p.len, held.p.item.id), ::thaiShort))
             }
             val used = HashSet<String>()
             // Events at the same time share one row, side by side (owner, 2026-10-31, mock timeline-lanes).
@@ -790,6 +787,83 @@ private fun PutTimes(plan: DayFill.Plan, len: Int, nowMin: Int, put: (Int) -> Un
     }
 }
 
+/** Dp a minute on the ruler and the minutes it shows at once: 5 hours fit a phone screen. */
+private const val RULER_DP = 1f
+private const val RULER_WINDOW = 300
+
+/**
+ * What shows while a task is dragged (owner's pick ข, 2026-11-01, mock drag-time): a window of the day at a true
+ * scale (an hour is as tall everywhere), the day's events and cards as blocks, the slot where it would land, and its
+ * time big beside it, red with what it sits on when it overlaps. The window moves only to keep the slot in view.
+ */
+@Composable
+private fun DragRuler(plan: DayFill.Plan, p: DayFill.Placed, t: Int, top: Float, over: String?) {
+    val width = LocalConfiguration.current.screenWidthDp.dp * 0.92f
+    val shape = RoundedCornerShape(16.dp)
+    val blocks = ArrayList<Triple<Int, Int, Pair<String, Color>>>()
+    plan.rows.forEach { r ->
+        when (r) {
+            is DayFill.Row.Locked -> {
+                val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { DayFill.minutesOf(it.end, plan.day) }
+                val at = r.at
+                if (at != null && end != null) blocks += Triple(at, end, r.title.substringBefore(tr(" ถึง ", " until ")) to (if (r.from != null) C.faint else C.teal))
+            }
+            is DayFill.Row.Card -> if (r.placed.item.id != p.item.id) blocks += Triple(r.placed.at, r.placed.at + r.placed.len, r.placed.item.title to C.accent)
+            else -> Unit
+        }
+    }
+    Popup(alignment = Alignment.Center, properties = PopupProperties(focusable = false, clippingEnabled = false)) {
+        Column(Modifier.width(width).clip(shape).background(C.card).border(1.dp, C.cardBorder, shape).padding(12.dp)) {
+            Text(p.item.title, color = C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.fillMaxWidth().height((RULER_WINDOW * RULER_DP).dp).clipToBounds()) {
+                var h = (top.toInt() + 59) / 60 * 60
+                while (h <= top + RULER_WINDOW) {
+                    val y = ((h - top) * RULER_DP).dp
+                    Box(Modifier.padding(start = 44.dp).offset(y = y).fillMaxWidth().height(1.dp).background(C.divider))
+                    Text(DayFill.hm(h), Modifier.offset(y = y - 7.dp).width(40.dp), color = C.muted, fontSize = TS.micro, textAlign = TextAlign.End)
+                    h += 60
+                }
+                blocks.forEach { (a, b, named) ->
+                    val from = maxOf(a.toFloat(), top)
+                    val to = minOf(b.toFloat(), top + RULER_WINDOW)
+                    if (to > from) Box(
+                        Modifier.padding(start = 48.dp).offset(y = ((from - top) * RULER_DP).dp).fillMaxWidth().height(maxOf(3f, (to - from) * RULER_DP).dp)
+                            .clip(RoundedCornerShape(6.dp)).background(C.raised),
+                    ) {
+                        Box(Modifier.width(3.dp).fillMaxHeight().background(named.second))
+                        Text(named.first, Modifier.padding(start = 10.dp, top = 2.dp), color = C.text2, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                val tone = if (over != null) C.red else C.accent
+                Box(
+                    Modifier.padding(start = 48.dp).offset(y = ((t - top) * RULER_DP).dp).fillMaxWidth().height(maxOf(6f, p.len * RULER_DP).dp)
+                        .clip(RoundedCornerShape(6.dp)).background(C.accentSoft).border(1.dp, tone, RoundedCornerShape(6.dp)),
+                )
+                Column(
+                    Modifier.align(Alignment.TopEnd).offset(y = ((t - top) * RULER_DP).dp).padding(end = 6.dp)
+                        .clip(RoundedCornerShape(12.dp)).background(tone).padding(horizontal = 12.dp, vertical = 5.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    Text(DayFill.hm(t) + tr(" ถึง ", " to ") + DayFill.hm(t + p.len), color = C.onAccent, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+                    Text(over ?: DayFill.lenText(p.len), color = C.onAccent, fontSize = TS.micro)
+                }
+            }
+        }
+    }
+}
+
+/** How long the slot takes (owner's pick ค, 2026-11-01): the plan's estimate is only where it starts. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LengthChips(p: DayFill.Placed, set: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+        Text(tr("ใช้เวลา", "Takes"), color = C.muted, fontSize = TS.caption)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(30, 45, 60, 90, 120).forEach { m -> PlaceChip(DayFill.lenText(m), rec = m == p.len) { set(m) } }
+        }
+    }
+}
+
 /** Free time left clear on purpose; [hi] while it holds the time offered first for a task not done. */
 @Composable
 private fun GapRow(text: String, hi: Boolean = false) {
@@ -804,7 +878,7 @@ private fun GapRow(text: String, hi: Boolean = false) {
 }
 
 /** The row being dragged, where its middle was when the finger pressed, and the plan and minute held while it lasts. */
-private data class Dragged(val key: String, val from: Float, val plan: DayFill.Plan, val now: Int)
+private data class Dragged(val key: String, val from: Float, val plan: DayFill.Plan, val now: Int, val p: DayFill.Placed)
 
 /**
  * A name cut short for "ซ้อนกับ" at a whole word, about ten letters or more: Thai has no spaces, so the phone's word
@@ -1006,6 +1080,9 @@ private fun NextCard(
                     tr("Klui วางเอง เตือน ${DayFill.hm(p.at)} ", "Put by you, reminder at ${DayFill.hm(p.at)}. ")
                 } else tr("ลงเป็นงานแล้ว เตือน ${DayFill.hm(p.at)} แผนขยับ เวลาเตือนก็ขยับตาม ", "Planned, reminder at ${DayFill.hm(p.at)}; it follows the plan. ")
                 else -> ""
+            }
+            if (picked == DayFill.Pick.TAKE && timed != false && task?.isOpen == true) {
+                Box(indent) { LengthChips(p) { len -> vm.fillPlace(p, p.at, len) } }
             }
             Text(
                 text + tr("แตะเพื่อเปลี่ยนใจ", "Tap to change your mind"),
