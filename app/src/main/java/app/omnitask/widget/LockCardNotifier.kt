@@ -70,6 +70,8 @@ object LockCardNotifier {
     private val BAR = intArrayOf(R.id.b0, R.id.b1, R.id.b2, R.id.b3, R.id.b4)
     private val TITLE = intArrayOf(R.id.t0, R.id.t1, R.id.t2, R.id.t3, R.id.t4)
     private val TIME = intArrayOf(R.id.r0, R.id.r1, R.id.r2, R.id.r3, R.id.r4)
+    private val END = intArrayOf(R.id.e0, R.id.e1, R.id.e2, R.id.e3, R.id.e4)
+    private val RUNEND = intArrayOf(R.id.qe0, R.id.qe1, R.id.qe2, R.id.qe3, R.id.qe4)
     private val NOWTIME = intArrayOf(R.id.m0, R.id.m1, R.id.m2, R.id.m3, R.id.m4)
     // The taller row of an event happening now, which the red line crosses (mock widget-now, way ข).
     private val RUN = intArrayOf(R.id.q0, R.id.q1, R.id.q2, R.id.q3, R.id.q4)
@@ -125,9 +127,13 @@ object LockCardNotifier {
             if (late > 0) tr(", ค้าง $late", ", $late overdue") else ""
 
         val big = RemoteViews(context.packageName, R.layout.lock_card)
-        val dow = day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEE", app.omnitask.ui.TH))
-        big.setTextViewText(R.id.dow, dow)
-        big.setTextViewText(R.id.dom, day.date.dayOfMonth.toString())
+        // The day as a list (owner's pick ข2, 2026-11-01): the date, how many are left, and overdue as a red chip.
+        big.setTextViewText(R.id.dateline, day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMM", app.omnitask.ui.TH)))
+        big.setTextViewText(R.id.datesub, if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งาน", "$left left"))
+        if (late > 0) {
+            big.setViewVisibility(R.id.latechip, android.view.View.VISIBLE)
+            big.setTextViewText(R.id.latechip, tr("ค้าง $late", "$late overdue"))
+        } else big.setViewVisibility(R.id.latechip, android.view.View.GONE)
         var slot = 0
         card.rows.forEach { r ->
             if (slot >= PILL.size) return@forEach
@@ -152,7 +158,6 @@ object LockCardNotifier {
             big.setViewVisibility(R.id.more, android.view.View.VISIBLE)
             big.setTextViewText(R.id.more, tr("อีก ${card.more} อย่าง ›", "${card.more} more ›"))
         } else big.setViewVisibility(R.id.more, android.view.View.GONE)
-        big.setTextViewText(R.id.foot, foot)
 
         // Folded (some phones show only this on the lock screen): what is on now and what is next with its start, from
         // the plan; before the page has kept one, what is next on the widget's rows.
@@ -203,8 +208,19 @@ object LockCardNotifier {
         rv.setViewPadding(RUNSPENT[slot], 0, 0, 0, ((h - y) * dp).toInt())
         rv.setViewPadding(RUNLINE[slot], 0, ((y - 3f) * dp).toInt(), 0, 0)
         rv.setInt(RUNBAR[slot], "setBackgroundColor", (r.color ?: SLATE) or Color.BLACK)
+        val (start, end) = split(r.time)
         rv.setTextViewText(RUNTITLE[slot], r.title)
-        rv.setTextViewText(RUNTIME[slot], r.time)
+        rv.setTextViewText(RUNTIME[slot], start)
+        rv.setTextViewText(RUNEND[slot], end)
+    }
+
+    private val CLOCK = Regex("^\\d{1,2}:\\d{2}")
+
+    /** A row's time text as the list shows it: the start in the left column, and "ถึง 19:20" (or a project, or a day count) after the title. */
+    private fun split(time: String): Pair<String, String> {
+        val m = CLOCK.find(time)
+        if (m != null) return m.value to time.removePrefix(m.value).trim()
+        return if (time == tr("ทั้งวัน", "All day")) time to "" else "" to time
     }
 
     private fun pill(rv: RemoteViews, slot: Int, title: String, time: String, color: Int) {
@@ -212,7 +228,9 @@ object LockCardNotifier {
         rv.setViewVisibility(NOW[slot], android.view.View.GONE)
         rv.setViewVisibility(PILL[slot], android.view.View.VISIBLE)
         rv.setInt(BAR[slot], "setBackgroundColor", color or Color.BLACK)
+        val (start, end) = split(time)
         rv.setTextViewText(TITLE[slot], title)
-        rv.setTextViewText(TIME[slot], time)
+        rv.setTextViewText(TIME[slot], start)
+        rv.setTextViewText(END[slot], end)
     }
 }
