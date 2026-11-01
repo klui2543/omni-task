@@ -444,7 +444,7 @@ fun DayFillCard(
                                 vm.fillPlace(p, t)
                                 replacing = null
                                 open = null
-                                editing = Editing(rowKey, p.item.id, p.item.title, t, p.len)
+                                editing = Editing(rowKey, p.item.id, p.item.title, t, p.len, touched = true)
                             } else if (p != null && p.at + p.len > nowNow) {
                                 editing = Editing(rowKey, p.item.id, p.item.title, p.at, p.len)
                             }
@@ -482,20 +482,35 @@ fun DayFillCard(
                     Column(Modifier.fillMaxWidth()) { content() }
                 }
             }
-            val ed = editing
-            if (held != null) {
-                // The ruler: a window of the day at a true scale, the slot moving over it (owner's pick ข, 2026-11-01).
-                DragRuler(view, held.p.item.id, held.p.item.title, timeAt(held, held.p.len, dragDy), held.p.len, rulerTop, null)
-            } else if (ed != null) {
-                // The slot as the plan has it now: its line changes with each write, and the next write starts from it.
-                val live = view.placed.firstOrNull { it.item.id == ed.id }
-                if (live == null || live.item.task?.isOpen != true) SideEffect { editing = null }
-                else DragRuler(
-                    view, ed.id, ed.title, ed.at, ed.len, rulerTop,
-                    RulerEdit(
+            // The slot left open on the ruler, as the plan has it now: its line changes with each write, and the next
+            // write starts from it.
+            val ed = editing.takeIf { held == null }
+            val live = ed?.let { e -> view.placed.firstOrNull { it.item.id == e.id } }?.takeIf { it.item.task?.isOpen == true }
+            if (ed != null && live == null) SideEffect { editing = null }
+            // A change waits until the write before it has ended, so it never starts from a line the note no longer has.
+            val busy = live?.item?.task?.let { vm.fillBusy(it) } == true
+            LaunchedEffect(ed, busy, state.fillWrites) {
+                if (ed != null && ed.want && !busy && live != null) {
+                    vm.fillPlace(live, ed.at, ed.len)
+                    editing = ed.copy(want = false)
+                }
+            }
+            if (held != null || (ed != null && live != null)) {
+                // The ruler: a window of the day at a true scale, the slot moving over it (owner's pick ข, 2026-11-01);
+                // one call for the drag and after it, so the same window stays on screen when the finger lifts.
+                val edAt = if (ed != null && live != null && !ed.touched) live.at else ed?.at ?: 0
+                val edLen = if (ed != null && live != null && !ed.touched) live.len else ed?.len ?: 0
+                DragRuler(
+                    view,
+                    held?.p?.item?.id ?: ed!!.id,
+                    held?.p?.item?.title ?: ed!!.title,
+                    if (held != null) timeAt(held, held.p.len, dragDy) else edAt,
+                    held?.p?.len ?: edLen,
+                    rulerTop,
+                    if (held != null || ed == null) null else RulerEdit(
                         lo = maxOf(nowMin, view.start), bed = view.bed,
-                        move = { t -> if (t != ed.at) { vm.fillPlace(live, t, ed.len); editing = ed.copy(at = t) } },
-                        resize = { n -> if (n != ed.len) { vm.fillPlace(live, ed.at, n); editing = ed.copy(len = n) } },
+                        move = { t -> if (t != edAt) editing = ed.copy(at = t, len = edLen, want = true, touched = true) },
+                        resize = { n -> if (n != edLen) editing = ed.copy(at = edAt, len = n, want = true, touched = true) },
                         done = { editing = null },
                     ),
                 )
@@ -819,7 +834,13 @@ private const val RULER_WINDOW = 300
 private class RulerEdit(val lo: Int, val bed: Int, val move: (Int) -> Unit, val resize: (Int) -> Unit, val done: () -> Unit)
 
 /** The slot left open on the ruler after a drag: the row it came from, the card, and where and how long it is now. */
-private data class Editing(val key: String, val id: String, val title: String, val at: Int, val len: Int)
+private data class Editing(
+    val key: String, val id: String, val title: String, val at: Int, val len: Int,
+    /** A change the owner made that is not written yet. */
+    val want: Boolean = false,
+    /** Changed by the owner: until then the ruler follows the plan's own time for the slot. */
+    val touched: Boolean = false,
+)
 
 /**
  * What shows while a task is dragged (owner's pick ข, 2026-11-01, mock drag-time): a window of the day at a true
@@ -839,7 +860,7 @@ private fun DragRuler(plan: DayFill.Plan, id: String, title: String, at: Int, le
     var dy by remember { mutableFloatStateOf(0f) }
     var dl by remember { mutableFloatStateOf(0f) }
     val t = if (edit != null && dy != 0f) DayFill.snapAt(at + dy / density / RULER_DP, len, edit.lo, edit.bed) else at
-    val n = if (edit != null && dl != 0f) DayFill.snapLen(len + dl / density / RULER_DP, t, edit.bed) else len
+    val n = if (edit != null && dl != 0f) DayFill.snapLen(len + dl / density / RULER_DP, t, edit.bed, maxOf(DayFill.MAX_OWN_LEN, len)) else len
     val shown by rememberUpdatedState(Triple(t, n, edit))
     val blocks = ArrayList<Triple<Int, Int, Pair<String, Color>>>()
     plan.rows.forEach { r ->
@@ -860,15 +881,20 @@ private fun DragRuler(plan: DayFill.Plan, id: String, title: String, at: Int, le
     SideEffect { if (keep.floatValue != top) keep.floatValue = top }
     val over = DayFill.overlapMinutes(plan, t, n, id)
     val tone = if (over > 0) C.red else C.accent
-    // Centred on the screen, not on the timeline (which can be taller than the screen).
+    // Centred on the screen, not on the timeline (which can be taller than the screen), at the height it first had:
+    // when the finger lifts and the buttons come in below, the ruler stays where it was.
     val centre = remember {
         object : PopupPositionProvider {
-            override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize) =
-                IntOffset((windowSize.width - popupContentSize.width) / 2, (windowSize.height - popupContentSize.height) / 2)
+            var first = 0
+            override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+                if (first == 0 && popupContentSize.height > 0) first = popupContentSize.height
+                val y = ((windowSize.height - maxOf(first, 1)) / 2).coerceAtMost(windowSize.height - popupContentSize.height).coerceAtLeast(0)
+                return IntOffset((windowSize.width - popupContentSize.width) / 2, y)
+            }
         }
     }
     // While a finger drags a row the ruler only shows; once it lifts, the ruler takes touches, back and a tap outside.
-    key(edit != null) {
+    run {
         Popup(
             popupPositionProvider = centre,
             onDismissRequest = { shown.third?.done?.invoke() },
@@ -876,9 +902,11 @@ private fun DragRuler(plan: DayFill.Plan, id: String, title: String, at: Int, le
         ) {
             Column(Modifier.width(width).clip(shape).background(C.card).border(1.dp, C.cardBorder, shape).padding(12.dp)) {
                 Text(title, color = C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (edit != null) {
-                    Text(tr("ลากย้าย จับปุ่มกลมให้ยาวขึ้น หรือแตะความยาว", "Drag to move, pull the dot to stretch, or tap a length"), color = C.muted, fontSize = TS.micro)
-                }
+                Text(
+                    if (edit != null) tr("วางแล้ว: ลากย้าย จับปุ่มกลมให้ยาวขึ้น หรือแตะความยาว", "Placed: drag to move, pull the dot to stretch, or tap a length")
+                    else tr("กำลังลาก: ปล่อยนิ้วเพื่อวาง แล้วปุ่มกลมขาวจะใช้ได้", "Dragging: lift to place, then the white dot works"),
+                    color = C.muted, fontSize = TS.micro,
+                )
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth().height((RULER_WINDOW * RULER_DP).dp).clipToBounds()) {
                     var h = (top.toInt() + 59) / 60 * 60
@@ -925,11 +953,12 @@ private fun DragRuler(plan: DayFill.Plan, id: String, title: String, at: Int, le
                     }
                     // The white dot at the bottom edge: faint and still while the finger drags the row, then it stretches.
                     Box(
-                        Modifier.padding(start = 48.dp).offset(y = ((t + maxOf(22f / RULER_DP, n.toFloat()) - top) * RULER_DP).dp - 20.dp).fillMaxWidth(),
+                        Modifier.padding(start = 48.dp).offset(y = ((t + maxOf(22f / RULER_DP, n.toFloat()) - top) * RULER_DP).dp - 10.dp).fillMaxWidth(),
                         contentAlignment = Alignment.TopCenter,
                     ) {
                         Box(
-                            Modifier.size(40.dp)
+                            // Mostly below the edge, so a short slot keeps room to be dragged by its body.
+                            Modifier.size(width = 48.dp, height = 36.dp)
                                 .then(
                                     if (edit == null) Modifier
                                     else Modifier.pointerInput(Unit) {
@@ -939,7 +968,7 @@ private fun DragRuler(plan: DayFill.Plan, id: String, title: String, at: Int, le
                                         ) { change, amount -> change.consume(); dl += amount }
                                     },
                                 ),
-                            contentAlignment = Alignment.Center,
+                            contentAlignment = Alignment.TopCenter,
                         ) {
                             Box(Modifier.size(20.dp).alpha(if (edit == null) 0.45f else 1f).clip(CircleShape).background(Color.White).border(1.dp, C.cardBorder, CircleShape))
                         }

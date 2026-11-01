@@ -2382,6 +2382,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val fillPending = HashMap<String, Int>()
 
+    /** A write of [task]'s line from the plan has not ended yet (read again when [UiState.fillWrites] changes). */
+    fun fillBusy(task: Task): Boolean = DayFill.ident(task) in fillPending
+
     private fun fillWrite(task: Task, onSaved: (() -> Unit)? = null, onFailed: (() -> Unit)? = null, transform: (String) -> String) {
         val id = DayFill.ident(task)
         fillPending[id] = (fillPending[id] ?: 0) + 1

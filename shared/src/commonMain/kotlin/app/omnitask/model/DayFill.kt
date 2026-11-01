@@ -1148,9 +1148,12 @@ object DayFill {
         return (kotlin.math.round(raw / 5f).toInt() * 5).coerceIn(first, last)
     }
 
-    /** A slot's length pulled by its edge: [raw] to 15 minutes, at least 15, at most 4 hours and ending by [bed]. */
-    fun snapLen(raw: Float, at: Int, bed: Int): Int {
-        val most = maxOf(15, minOf(MAX_OWN_LEN, (bed - at) - (bed - at) % 15))
+    /**
+     * A slot's length pulled by its edge: [raw] to 15 minutes, at least 15, at most [cap] (4 hours, or what the slot
+     * already had) and ending by [bed].
+     */
+    fun snapLen(raw: Float, at: Int, bed: Int, cap: Int = MAX_OWN_LEN): Int {
+        val most = maxOf(15, minOf(cap, (bed - at) - (bed - at) % 15))
         return (kotlin.math.round(raw / 15f).toInt() * 15).coerceIn(15, most)
     }
 
