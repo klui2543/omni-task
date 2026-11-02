@@ -185,8 +185,8 @@ object LockCardNotifier {
         // The round mic (owner's pick ก, 2026-11-02, mock lock-mic): a voice note, as the mic on the quick-add widget.
         val voice = PendingIntent.getActivity(
             context, 1,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(MainActivity.EXTRA_ACTION, MainActivity.ACTION_VOICE)
+            // Over the lock screen, without unlocking (owner, 2 Nov: "Ok then try"); see LockVoiceActivity.
+            Intent(context, LockVoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .setData(android.net.Uri.parse("omnitask://lockcard/voice")),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
