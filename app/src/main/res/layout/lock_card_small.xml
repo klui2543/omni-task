@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The folded lock card: now, next and the counts, with a round mic on the right that opens a voice note (owner's pick ก, 2026-11-02, mock lock-mic). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-    <TextView android:id="@+id/small" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-    <TextView android:id="@+id/smallnext" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:visibility="gone" />
-    <TextView android:id="@+id/smallfoot" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:singleLine="true" android:textSize="12sp" />
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+        <TextView android:id="@+id/small" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
+        <TextView android:id="@+id/smallnext" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:visibility="gone" />
+        <TextView android:id="@+id/smallfoot" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:textSize="12sp" />
+    </LinearLayout>
+    <ImageView android:id="@+id/smallmic" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="10dp"
+        android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
+        android:contentDescription="@string/lock_voice" />
 </LinearLayout>

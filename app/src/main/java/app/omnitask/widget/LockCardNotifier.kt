@@ -182,6 +182,16 @@ object LockCardNotifier {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // The round mic (owner's pick ก, 2026-11-02, mock lock-mic): a voice note, as the mic on the quick-add widget.
+        val voice = PendingIntent.getActivity(
+            context, 1,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_ACTION, MainActivity.ACTION_VOICE)
+                .setData(android.net.Uri.parse("omnitask://lockcard/voice")),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        small.setOnClickPendingIntent(R.id.smallmic, voice)
+        big.setOnClickPendingIntent(R.id.mic, voice)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
