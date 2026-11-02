@@ -14,10 +14,32 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import app.omnitask.MainActivity
 import app.omnitask.R
+import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
+import app.omnitask.model.LockPlan
 import app.omnitask.model.tr
 import app.omnitask.time.*
 import kotlinx.datetime.LocalDateTime
+
+/**
+ * The copy of the today page's plan the card reads (owner's pick ก, 2026-11-01): written by the page each time its plan
+ * changes, kept on the phone only.
+ */
+object LockPlanStore {
+    private const val PREFS = "omni-lockplan"
+    private const val COPY = "copy"
+
+    /** Keeps [copy]; false when it is the one already kept, so the card is not redrawn for nothing. */
+    fun save(context: Context, copy: LockPlan.Copy): Boolean {
+        val text = LockPlan.encode(copy)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getString(COPY, null) == text) return false
+        prefs.edit().putString(COPY, text).apply()
+        return true
+    }
+
+    fun load(context: Context): LockPlan.Copy? = LockPlan.decode(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(COPY, null))
+}
 
 /** The switch for the lock-screen card, on the phone only; off by default, read from here alone. */
 object LockCardMode {
@@ -40,12 +62,16 @@ object LockCardNotifier {
     private const val CHANNEL = "lockcard"
     private const val ID = 0x10C4
     private const val SLATE = 0xFF7C8696.toInt()
+    /** Planned work on the card: the app's accent. */
+    private const val ACCENT = 0xFF9DB4D3.toInt()
 
     private val PILL = intArrayOf(R.id.p0, R.id.p1, R.id.p2, R.id.p3, R.id.p4)
     private val NOW = intArrayOf(R.id.n0, R.id.n1, R.id.n2, R.id.n3, R.id.n4)
     private val BAR = intArrayOf(R.id.b0, R.id.b1, R.id.b2, R.id.b3, R.id.b4)
     private val TITLE = intArrayOf(R.id.t0, R.id.t1, R.id.t2, R.id.t3, R.id.t4)
     private val TIME = intArrayOf(R.id.r0, R.id.r1, R.id.r2, R.id.r3, R.id.r4)
+    private val END = intArrayOf(R.id.e0, R.id.e1, R.id.e2, R.id.e3, R.id.e4)
+    private val RUNEND = intArrayOf(R.id.qe0, R.id.qe1, R.id.qe2, R.id.qe3, R.id.qe4)
     private val NOWTIME = intArrayOf(R.id.m0, R.id.m1, R.id.m2, R.id.m3, R.id.m4)
     // The taller row of an event happening now, which the red line crosses (mock widget-now, way ข).
     private val RUN = intArrayOf(R.id.q0, R.id.q1, R.id.q2, R.id.q3, R.id.q4)
@@ -63,7 +89,28 @@ object LockCardNotifier {
         ) return
         val data = WidgetData.load(context)
         val now = LocalDateTime.now()
-        val day = data.days(now).first()
+        // Only the owner's own: another person's calendar is never the card's headline (owner, 2026-10-31, way ค).
+        app.omnitask.ui.CalendarStyles.load(context)
+        // The today page's plan when it has kept one for today (owner's pick ก, 2026-11-01); the widget's rows before that.
+        val others: (Long) -> Boolean = { app.omnitask.ui.CalendarStyles.label(it) != null }
+        val kept = LockPlanStore.load(context)
+        if (kept != null && kept.day != data.today) WidgetLog.add("lockcard: plan copy is from ${kept.day}, using the widget rows")
+        val copy = kept?.takeIf { it.day == data.today }?.let { c ->
+            // The owner's events put in the calendar since the page last planned.
+            LockPlan.withEvents(
+                c,
+                data.eventsAhead.filter { !others(it.calendarId) && it.begin.date <= data.today && it.end > data.today.atStartOfDay() }.map { e ->
+                    val timed = !e.allDay && e.begin.date == data.today
+                    LockPlan.Slot(
+                        e.title, if (timed) DayFill.minutesOf(e.begin, data.today) else null,
+                        if (timed) DayFill.minutesOf(e.end, data.today).coerceAtMost(24 * 60) else null, card = false, calendar = e.calendarId,
+                    )
+                },
+            )
+        }
+        val done = copy?.let { LockPlan.done(it, data.tasks, data.today) }.orEmpty()
+        val day = if (copy != null) LockCard.fromPlan(copy, now, done, ACCENT) { calendarArgb(it) }
+        else LockCard.today(data.today, now, data.tasks, data.eventsAhead, others) { calendarArgb(it.calendarId) }
         val card = LockCard.card(day)
 
         val nmSys = context.getSystemService(NotificationManager::class.java)
@@ -80,9 +127,15 @@ object LockCardNotifier {
             if (late > 0) tr(", ค้าง $late", ", $late overdue") else ""
 
         val big = RemoteViews(context.packageName, R.layout.lock_card)
-        val dow = day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEE", app.omnitask.ui.TH))
-        big.setTextViewText(R.id.dow, dow)
-        big.setTextViewText(R.id.dom, day.date.dayOfMonth.toString())
+        // The day as a list (owner's pick ข2, 2026-11-01): the date, how many are left, and overdue as a red chip.
+        // "อาทิตย์ 1 พ.ย." as the mock: the Thai long weekday comes as "วันอาทิตย์".
+        val weekday = day.date.format(java.time.format.DateTimeFormatter.ofPattern("EEEE", app.omnitask.ui.TH)).removePrefix("วัน")
+        big.setTextViewText(R.id.dateline, weekday + " " + day.date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM", app.omnitask.ui.TH)))
+        big.setTextViewText(R.id.datesub, if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งาน", "$left left"))
+        if (late > 0) {
+            big.setViewVisibility(R.id.latechip, android.view.View.VISIBLE)
+            big.setTextViewText(R.id.latechip, tr("ค้าง $late", "$late overdue"))
+        } else big.setViewVisibility(R.id.latechip, android.view.View.GONE)
         var slot = 0
         card.rows.forEach { r ->
             if (slot >= PILL.size) return@forEach
@@ -107,17 +160,21 @@ object LockCardNotifier {
             big.setViewVisibility(R.id.more, android.view.View.VISIBLE)
             big.setTextViewText(R.id.more, tr("อีก ${card.more} อย่าง ›", "${card.more} more ›"))
         } else big.setViewVisibility(R.id.more, android.view.View.GONE)
-        big.setTextViewText(R.id.foot, foot)
 
-        // Folded (some phones show only this line on the lock screen): what is next.
+        // Folded (some phones show only this on the lock screen): what is on now and what is next with its start, from
+        // the plan; before the page has kept one, what is next on the widget's rows.
         val first = card.rows.firstOrNull { it !is TodayWeek.Row.Now }
-        val line = when (first) {
+        val planned = copy?.let { LockPlan.lines(it, now.hour * 60 + now.minute, done) }
+        val line = planned?.first ?: when (first) {
             is TodayWeek.Row.Event -> first.title + if (first.time.isNotEmpty()) "  " + first.time else ""
             is TodayWeek.Row.Todo -> first.task.title
             else -> tr("ไม่มีอะไรเหลือวันนี้", "Nothing left today")
         }
         val small = RemoteViews(context.packageName, R.layout.lock_card_small)
         small.setTextViewText(R.id.small, line)
+        val nextLine = planned?.second
+        small.setViewVisibility(R.id.smallnext, if (nextLine != null) android.view.View.VISIBLE else android.view.View.GONE)
+        small.setTextViewText(R.id.smallnext, nextLine ?: "")
         small.setTextViewText(R.id.smallfoot, foot)
 
         val open = PendingIntent.getActivity(
@@ -125,6 +182,25 @@ object LockCardNotifier {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // The round mic (owner's pick ก, 2026-11-02, mock lock-mic): a voice note. With the mic allowed it starts the
+        // recording service straight from the card, which the phone runs without unlocking (owner, 2 Nov: "Can we
+        // bypass lock screen?", "Ok then try"; an activity would ask to unlock first). The recording notification has
+        // the stop button and the recording waits in the app's voice list. Without the permission it opens the app,
+        // which asks for it.
+        val micAllowed = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val voice = if (micAllowed) PendingIntent.getForegroundService(
+            context, 1,
+            Intent(context, app.omnitask.data.VoiceRecordService::class.java).setAction(app.omnitask.data.VoiceRecordService.START),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        ) else PendingIntent.getActivity(
+            context, 1,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_ACTION, MainActivity.ACTION_VOICE)
+                .setData(android.net.Uri.parse("omnitask://lockcard/voice")),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        small.setOnClickPendingIntent(R.id.smallmic, voice)
+        big.setOnClickPendingIntent(R.id.mic, voice)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
@@ -153,8 +229,19 @@ object LockCardNotifier {
         rv.setViewPadding(RUNSPENT[slot], 0, 0, 0, ((h - y) * dp).toInt())
         rv.setViewPadding(RUNLINE[slot], 0, ((y - 3f) * dp).toInt(), 0, 0)
         rv.setInt(RUNBAR[slot], "setBackgroundColor", (r.color ?: SLATE) or Color.BLACK)
+        val (start, end) = split(r.time)
         rv.setTextViewText(RUNTITLE[slot], r.title)
-        rv.setTextViewText(RUNTIME[slot], r.time)
+        rv.setTextViewText(RUNTIME[slot], start)
+        rv.setTextViewText(RUNEND[slot], end)
+    }
+
+    private val CLOCK = Regex("^\\d{1,2}:\\d{2}")
+
+    /** A row's time text as the list shows it: the start in the left column, and "ถึง 19:20" (or a project, or a day count) after the title. */
+    private fun split(time: String): Pair<String, String> {
+        val m = CLOCK.find(time)
+        if (m != null) return m.value to time.removePrefix(m.value).trim()
+        return if (time == tr("ทั้งวัน", "All day")) time to "" else "" to time
     }
 
     private fun pill(rv: RemoteViews, slot: Int, title: String, time: String, color: Int) {
@@ -162,7 +249,9 @@ object LockCardNotifier {
         rv.setViewVisibility(NOW[slot], android.view.View.GONE)
         rv.setViewVisibility(PILL[slot], android.view.View.VISIBLE)
         rv.setInt(BAR[slot], "setBackgroundColor", color or Color.BLACK)
+        val (start, end) = split(time)
         rv.setTextViewText(TITLE[slot], title)
-        rv.setTextViewText(TIME[slot], time)
+        rv.setTextViewText(TIME[slot], start)
+        rv.setTextViewText(END[slot], end)
     }
 }

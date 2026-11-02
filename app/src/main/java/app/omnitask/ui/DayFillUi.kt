@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.text.withStyle
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -38,12 +42,25 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import app.omnitask.widget.LockCardMode
 import app.omnitask.widget.LockCardNotifier
+import app.omnitask.widget.LockPlanStore
+import app.omnitask.widget.WidgetLog
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -65,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
+import app.omnitask.model.LockPlan
 import app.omnitask.model.RealDay
 import app.omnitask.model.Task
 import app.omnitask.model.tr
@@ -196,6 +214,13 @@ fun DayFillCard(
     var replacing by remember { mutableStateOf<String?>(null) }
     var drag by remember { mutableStateOf<Dragged?>(null) }
     var dragDy by remember { mutableFloatStateOf(0f) }
+    // The ruler shown while a finger drags (owner's pick ข, 2026-11-01): the minute at its top edge, kept so that the
+    // slot stays in view; the density turns the finger's pixels into minutes.
+    val rulerTop = remember { mutableFloatStateOf(0f) }
+    // After the finger lifts, the ruler stays to move and stretch the slot until "เสร็จ" (owner's go, 2026-11-01,
+    // mock drag-edit): each change is written at once.
+    var editing by remember { mutableStateOf<Editing?>(null) }
+    val density = LocalDensity.current.density
     val haptic = LocalHapticFeedback.current
     // Where each row sits on screen (its middle) and the time of each timed one, to turn a drag into a time. A row
     // that leaves the page takes its entries with it.
@@ -205,6 +230,15 @@ fun DayFillCard(
     val nowNow by rememberUpdatedState(now.hour * 60 + now.minute)
     // The reminder at a taken slot counts to when the plan stops: kept on the phone for it, once its memory is read.
     LaunchedEffect(plan.day, plan.end, state.dayFill) { if (plan.day == now.date) vm.fillStop(plan.end) }
+    // The lock-screen card says what is on now and next from this same plan (owner's pick ก, 2026-11-01): a copy is
+    // kept each time the plan changes, and the card is redrawn when it does.
+    LaunchedEffect(plan) {
+        if (plan.day == now.date && LockCardMode.isOn(context) && LockPlanStore.save(context, LockPlan.of(plan))) {
+            // Redrawn now, and again when the next block starts or ends.
+            runCatching { LockCardNotifier.refresh(context) }.onFailure { WidgetLog.add("lockcard: redraw failed: $it") }
+            runCatching { app.omnitask.notify.Scheduler.widgetTick(context) }.onFailure { WidgetLog.add("lockcard: tick failed: $it") }
+        }
+    }
     // Taken slots whose line no longer matches the plan: their reminder follows, or the plan lets go of a line the
     // owner changed (written once, see TaskViewModel.fillFollow). Looked at again when one of its writes ends.
     LaunchedEffect(plan.moves, plan.letGo, state.fillWrites) { vm.fillFollow(plan.moves, plan.letGo) }
@@ -383,24 +417,10 @@ fun DayFillCard(
             var waitingShown = false
             // A long press drags a task; its time follows the finger between the rows around it (its own row too, so
             // where it starts is its own time).
-            fun timeAt(y: Float, len: Int): Int {
-                val pl = drag?.plan ?: planNow
-                // Never earlier than the clock now, even while the timeline holds still.
-                val lo = maxOf(nowNow, pl.start).let { if (it % 5 == 0) it else it + 5 - it % 5 }
-                val hi = maxOf(lo, (pl.bed - len) - (pl.bed - len) % 5)
-                val pts = times.mapNotNull { (k, t) -> tops[k]?.let { t to it } }.sortedBy { it.second }
-                if (pts.isEmpty()) return lo
-                val raw = when {
-                    y <= pts.first().second -> pts.first().first.toFloat()
-                    y >= pts.last().second -> pts.last().first.toFloat()
-                    else -> {
-                        val i = pts.indexOfLast { it.second <= y }
-                        val a = pts[i]
-                        val b = pts[minOf(i + 1, pts.lastIndex)]
-                        if (b.second <= a.second) a.first.toFloat() else a.first + (y - a.second) / (b.second - a.second) * (b.first - a.first)
-                    }
-                }
-                return (Math.round(raw / 5f) * 5).coerceIn(lo, hi)
+            fun timeAt(d: Dragged, len: Int, dy: Float): Int {
+                // Never earlier than the clock now, even while the timeline holds still. The ruler is drawn at RULER_DP
+                // dp a minute, so a finger's distance is a time, whatever rows lie under it.
+                return DayFill.snapAt(d.p.at + dy / density / RULER_DP, len, maxOf(d.now, d.plan.start), d.plan.bed)
             }
             // The slot is read when the finger lifts, so a plan that changed meanwhile puts the line as it is now.
             suspend fun PointerInputScope.drags(rowKey: String, cur: State<DayFill.Placed?>) {
@@ -409,9 +429,12 @@ fun DayFillCard(
                     onDragStart = {
                         val y = tops[rowKey]
                         // One drag at a time: a second finger's long press leaves the first one be.
-                        if (drag == null && cur.value != null && y != null) {
+                        val held0 = cur.value
+                        if (drag == null && held0 != null && y != null) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            drag = Dragged(rowKey, y, planNow, nowNow)
+                            editing = null
+                            drag = Dragged(rowKey, y, planNow, nowNow, held0)
+                            rulerTop.floatValue = (held0.at - RULER_WINDOW / 2f)
                             dragDy = 0f
                         }
                     },
@@ -426,11 +449,16 @@ fun DayFillCard(
                         if (d != null && d.key == rowKey) {
                             // The task as the plan has it now (its line may have changed during the drag).
                             val p = cur.value?.let { held -> planNow.placed.firstOrNull { it.item.id == held.item.id } ?: held }
-                            // A press let go where it began puts nothing.
+                            // A press let go where it began puts nothing, but still opens the ruler to stretch the slot
+                            // (not for a slot gone by: it waits for a new place).
                             if (p != null && abs(dragDy) >= slop) {
-                                vm.fillPlace(p, timeAt(d.from + dragDy, p.len))
+                                val t = timeAt(d, p.len, dragDy)
+                                vm.fillPlace(p, t)
                                 replacing = null
                                 open = null
+                                editing = Editing(rowKey, p.item.id, p.item.title, t, p.len, touched = true)
+                            } else if (p != null && p.at + p.len > nowNow) {
+                                editing = Editing(rowKey, p.item.id, p.item.title, p.at, p.len)
                             }
                             drag = null
                             dragDy = 0f
@@ -451,7 +479,7 @@ fun DayFillCard(
              */
             @Composable
             fun Track(rowKey: String, at: Int?, p: DayFill.Placed? = null, over: Boolean = false, content: @Composable () -> Unit) {
-                val moving = p != null && drag?.key == rowKey
+                val moving = p != null && (drag?.key == rowKey || (drag == null && editing?.key == rowKey))
                 val cur = rememberUpdatedState(p)
                 SideEffect { if (at != null) times[rowKey] = at else times.remove(rowKey) }
                 DisposableEffect(rowKey) { onDispose { tops.remove(rowKey); times.remove(rowKey) } }
@@ -459,25 +487,45 @@ fun DayFillCard(
                 Box(
                     Modifier.fillMaxWidth()
                         .onGloballyPositioned { c -> if (!moving) tops[rowKey] = c.positionInRoot().y + c.size.height / 2f }
-                        .then(if (moving) Modifier.zIndex(1f).graphicsLayer { translationY = dragDy; shadowElevation = 12f }.background(C.raised) else Modifier)
+                        .then(if (moving) Modifier.alpha(0.35f) else Modifier)
                         .then(if (over && !moving) Modifier.drawBehind { drawRect(amber, size = Size(3.dp.toPx(), size.height)) } else Modifier)
                         .then(if (p != null) Modifier.pointerInput(rowKey) { drags(rowKey, cur) } else Modifier),
                 ) {
                     Column(Modifier.fillMaxWidth()) { content() }
-                    val d = drag
-                    if (moving && p != null && d != null) {
-                        val t = timeAt(d.from + dragDy, p.len)
-                        val o = DayFill.overlapText(DayFill.overlaps(view, t, p.len, p.item.id), ::thaiShort)
-                        Column(
-                            Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 10.dp).clip(RoundedCornerShape(12.dp))
-                                .background(C.accent).padding(horizontal = 10.dp, vertical = 4.dp),
-                            horizontalAlignment = Alignment.End,
-                        ) {
-                            Text(DayFill.hm(t), color = C.onAccent, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
-                            if (o != null) Text(o, color = C.onAccent, fontSize = TS.micro)
-                        }
-                    }
                 }
+            }
+            // The slot left open on the ruler, as the plan has it now: its line changes with each write, and the next
+            // write starts from it.
+            val ed = editing.takeIf { held == null }
+            val live = ed?.let { e -> view.placed.firstOrNull { it.item.id == e.id } }?.takeIf { it.item.task?.isOpen == true }
+            if (ed != null && live == null) SideEffect { editing = null }
+            // A change waits until the write before it has ended, so it never starts from a line the note no longer has.
+            val busy = live?.item?.task?.let { vm.fillBusy(it) } == true
+            LaunchedEffect(ed, busy, state.fillWrites) {
+                if (ed != null && ed.want && !busy && live != null) {
+                    vm.fillPlace(live, ed.at, ed.len)
+                    editing = ed.copy(want = false)
+                }
+            }
+            if (held != null || (ed != null && live != null)) {
+                // The ruler: a window of the day at a true scale, the slot moving over it (owner's pick ข, 2026-11-01);
+                // one call for the drag and after it, so the same window stays on screen when the finger lifts.
+                val edAt = if (ed != null && live != null && !ed.touched) live.at else ed?.at ?: 0
+                val edLen = if (ed != null && live != null && !ed.touched) live.len else ed?.len ?: 0
+                DragRuler(
+                    view,
+                    held?.p?.item?.id ?: ed!!.id,
+                    held?.p?.item?.title ?: ed!!.title,
+                    if (held != null) timeAt(held, held.p.len, dragDy) else edAt,
+                    held?.p?.len ?: edLen,
+                    rulerTop,
+                    if (held != null || ed == null) null else RulerEdit(
+                        lo = maxOf(nowMin, view.start), bed = view.bed,
+                        move = { t -> if (t != edAt) editing = ed.copy(at = t, len = edLen, want = true, touched = true) },
+                        resize = { n -> if (n != edLen) editing = ed.copy(at = edAt, len = n, want = true, touched = true) },
+                        done = { editing = null },
+                    ),
+                )
             }
             val used = HashSet<String>()
             // Events at the same time share one row, side by side (owner, 2026-10-31, mock timeline-lanes).
@@ -790,6 +838,179 @@ private fun PutTimes(plan: DayFill.Plan, len: Int, nowMin: Int, put: (Int) -> Un
     }
 }
 
+/** Dp a minute on the ruler and the minutes it shows at once: 5 hours fit a phone screen. */
+private const val RULER_DP = 1f
+private const val RULER_WINDOW = 300
+
+/** What the ruler does once the finger has lifted: the slot moves and stretches, each change written at once. */
+private class RulerEdit(val lo: Int, val bed: Int, val move: (Int) -> Unit, val resize: (Int) -> Unit, val done: () -> Unit)
+
+/** The slot left open on the ruler after a drag: the row it came from, the card, and where and how long it is now. */
+private data class Editing(
+    val key: String, val id: String, val title: String, val at: Int, val len: Int,
+    /** A change the owner made that is not written yet. */
+    val want: Boolean = false,
+    /** Changed by the owner: until then the ruler follows the plan's own time for the slot. */
+    val touched: Boolean = false,
+)
+
+/**
+ * What shows while a task is dragged (owner's pick ข, 2026-11-01, mock drag-time): a window of the day at a true
+ * scale (an hour is as tall everywhere), the day's events and cards as blocks, and the slot where it would land with
+ * its time on one line inside it (owner's pick ก, mock drag-oneline), red when it sits on something. The window moves
+ * only to keep the slot in view. With [edit] (after the finger lifts, mock drag-edit) the slot drags to move, the
+ * white dot at its bottom edge stretches it, the length buttons set it, and "เสร็จ" (or back, or a tap outside)
+ * closes the ruler.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DragRuler(plan: DayFill.Plan, id: String, title: String, at: Int, len: Int, keep: MutableFloatState, edit: RulerEdit?) {
+    val width = LocalConfiguration.current.screenWidthDp.dp * 0.92f
+    val shape = RoundedCornerShape(16.dp)
+    val density = LocalDensity.current.density
+    // A drag inside the ruler, in pixels, until the finger lifts: of the slot (to move it) or of its dot (to stretch it).
+    var dy by remember { mutableFloatStateOf(0f) }
+    var dl by remember { mutableFloatStateOf(0f) }
+    val t = if (edit != null && dy != 0f) DayFill.snapAt(at + dy / density / RULER_DP, len, edit.lo, edit.bed) else at
+    val n = if (edit != null && dl != 0f) DayFill.snapLen(len + dl / density / RULER_DP, t, edit.bed, maxOf(DayFill.MAX_OWN_LEN, len)) else len
+    val shown by rememberUpdatedState(Triple(t, n, edit))
+    val blocks = ArrayList<Triple<Int, Int, Pair<String, Color>>>()
+    plan.rows.forEach { r ->
+        when (r) {
+            is DayFill.Row.Locked -> {
+                val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { DayFill.minutesOf(it.end, plan.day) }
+                val a = r.at
+                if (a != null && end != null) blocks += Triple(a, end, r.title.substringBefore(tr(" ถึง ", " until ")) to (if (r.from != null) C.faint else C.teal))
+            }
+            is DayFill.Row.Card -> if (r.placed.item.id != id) blocks += Triple(r.placed.at, r.placed.at + r.placed.len, r.placed.item.title to C.accent)
+            else -> Unit
+        }
+    }
+    // The window keeps the slot's start in view, and its end too while it fits.
+    val hiTop = (t - 30).toFloat()
+    val loTop = minOf(hiTop, maxOf(t + 30 - RULER_WINDOW, t + n + 20 - RULER_WINDOW).toFloat())
+    val top = keep.floatValue.coerceIn(loTop, hiTop).coerceIn(plan.start.toFloat(), maxOf(plan.start, plan.bed - RULER_WINDOW).toFloat())
+    SideEffect { if (keep.floatValue != top) keep.floatValue = top }
+    val over = DayFill.overlapMinutes(plan, t, n, id)
+    val tone = if (over > 0) C.red else C.accent
+    // Centred on the screen, not on the timeline (which can be taller than the screen), at the height it first had:
+    // when the finger lifts and the buttons come in below, the ruler stays where it was.
+    val centre = remember {
+        object : PopupPositionProvider {
+            var first = 0
+            override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+                if (first == 0 && popupContentSize.height > 0) first = popupContentSize.height
+                val y = ((windowSize.height - maxOf(first, 1)) / 2).coerceAtMost(windowSize.height - popupContentSize.height).coerceAtLeast(0)
+                return IntOffset((windowSize.width - popupContentSize.width) / 2, y)
+            }
+        }
+    }
+    // While a finger drags a row the ruler only shows; once it lifts, the ruler takes touches, back and a tap outside.
+    run {
+        Popup(
+            popupPositionProvider = centre,
+            onDismissRequest = { shown.third?.done?.invoke() },
+            properties = PopupProperties(focusable = edit != null, dismissOnBackPress = edit != null, dismissOnClickOutside = edit != null, clippingEnabled = false),
+        ) {
+            Column(Modifier.width(width).clip(shape).background(C.card).border(1.dp, C.cardBorder, shape).padding(12.dp)) {
+                Text(title, color = C.text2, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    if (edit != null) tr("วางแล้ว: ลากย้าย จับปุ่มกลมให้ยาวขึ้น หรือแตะความยาว", "Placed: drag to move, pull the dot to stretch, or tap a length")
+                    else tr("กำลังลาก: ปล่อยนิ้วเพื่อวาง แล้วปุ่มกลมขาวจะใช้ได้", "Dragging: lift to place, then the white dot works"),
+                    color = C.muted, fontSize = TS.micro,
+                )
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth().height((RULER_WINDOW * RULER_DP).dp).clipToBounds()) {
+                    var h = (top.toInt() + 59) / 60 * 60
+                    while (h <= top + RULER_WINDOW) {
+                        val y = ((h - top) * RULER_DP).dp
+                        Box(Modifier.padding(start = 44.dp).offset(y = y).fillMaxWidth().height(1.dp).background(C.divider))
+                        Text(DayFill.hm(h), Modifier.offset(y = y - 7.dp).width(40.dp), color = C.muted, fontSize = TS.micro, textAlign = TextAlign.End)
+                        h += 60
+                    }
+                    blocks.forEach { (a, b, named) ->
+                        val from = maxOf(a.toFloat(), top)
+                        val to = minOf(b.toFloat(), top + RULER_WINDOW)
+                        if (to > from) Box(
+                            Modifier.padding(start = 48.dp).offset(y = ((from - top) * RULER_DP).dp).fillMaxWidth().height(maxOf(3f, (to - from) * RULER_DP).dp)
+                                .clip(RoundedCornerShape(6.dp)).background(C.raised),
+                        ) {
+                            Box(Modifier.width(3.dp).fillMaxHeight().background(named.second))
+                            Text(named.first, Modifier.padding(start = 10.dp, top = 2.dp), color = C.text2, fontSize = TS.micro, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    // The slot, with its time on one line inside it; a short slot is drawn tall enough for the line.
+                    val (time, tail) = DayFill.dragLabel(t, n, over)
+                    val slotShape = RoundedCornerShape(6.dp)
+                    Box(
+                        Modifier.padding(start = 48.dp).offset(y = ((t - top) * RULER_DP).dp).fillMaxWidth().height(maxOf(22f, n * RULER_DP).dp)
+                            .clip(slotShape).background(C.accentSoft).border(1.dp, tone, slotShape)
+                            .then(
+                                if (edit == null) Modifier
+                                else Modifier.pointerInput(Unit) {
+                                    detectVerticalDragGestures(
+                                        onDragEnd = { val (tt, _, e) = shown; dy = 0f; e?.move?.invoke(tt) },
+                                        onDragCancel = { dy = 0f },
+                                    ) { change, amount -> change.consume(); dy += amount }
+                                },
+                            ),
+                    ) {
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(SpanStyle(color = if (over > 0) C.red else C.accentText, fontWeight = FontWeight.SemiBold)) { append(time) }
+                                withStyle(SpanStyle(color = if (over > 0) C.red else C.muted)) { append(" " + tail) }
+                            },
+                            Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    // The white dot at the bottom edge: faint and still while the finger drags the row, then it stretches.
+                    Box(
+                        Modifier.padding(start = 48.dp).offset(y = ((t + maxOf(22f / RULER_DP, n.toFloat()) - top) * RULER_DP).dp - 10.dp).fillMaxWidth(),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        Box(
+                            // Mostly below the edge, so a short slot keeps room to be dragged by its body.
+                            Modifier.size(width = 48.dp, height = 36.dp)
+                                .then(
+                                    if (edit == null) Modifier
+                                    else Modifier.pointerInput(Unit) {
+                                        detectVerticalDragGestures(
+                                            onDragEnd = { val (_, nn, e) = shown; dl = 0f; e?.resize?.invoke(nn) },
+                                            onDragCancel = { dl = 0f },
+                                        ) { change, amount -> change.consume(); dl += amount }
+                                    },
+                                ),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            Box(Modifier.size(20.dp).alpha(if (edit == null) 0.45f else 1f).clip(CircleShape).background(Color.White).border(1.dp, C.cardBorder, CircleShape))
+                        }
+                    }
+                }
+                if (edit != null) {
+                    Spacer(Modifier.height(10.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(30, 45, 60, 90, 120).forEach { m -> PlaceChip(DayFill.lenText(m), rec = m == n) { edit.resize(DayFill.snapLen(m.toFloat(), t, edit.bed)) } }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    BigButton(tr("เสร็จ", "Done"), true, Modifier.fillMaxWidth()) { edit.done() }
+                }
+            }
+        }
+    }
+}
+
+/** How long the slot takes (owner's pick ค, 2026-11-01): the plan's estimate is only where it starts. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LengthChips(p: DayFill.Placed, set: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+        Text(tr("ใช้เวลา", "Takes"), color = C.muted, fontSize = TS.caption)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(30, 45, 60, 90, 120).forEach { m -> PlaceChip(DayFill.lenText(m), rec = m == p.len) { set(m) } }
+        }
+    }
+}
+
 /** Free time left clear on purpose; [hi] while it holds the time offered first for a task not done. */
 @Composable
 private fun GapRow(text: String, hi: Boolean = false) {
@@ -804,7 +1025,7 @@ private fun GapRow(text: String, hi: Boolean = false) {
 }
 
 /** The row being dragged, where its middle was when the finger pressed, and the plan and minute held while it lasts. */
-private data class Dragged(val key: String, val from: Float, val plan: DayFill.Plan, val now: Int)
+private data class Dragged(val key: String, val from: Float, val plan: DayFill.Plan, val now: Int, val p: DayFill.Placed)
 
 /**
  * A name cut short for "ซ้อนกับ" at a whole word, about ten letters or more: Thai has no spaces, so the phone's word
@@ -1006,6 +1227,9 @@ private fun NextCard(
                     tr("Klui วางเอง เตือน ${DayFill.hm(p.at)} ", "Put by you, reminder at ${DayFill.hm(p.at)}. ")
                 } else tr("ลงเป็นงานแล้ว เตือน ${DayFill.hm(p.at)} แผนขยับ เวลาเตือนก็ขยับตาม ", "Planned, reminder at ${DayFill.hm(p.at)}; it follows the plan. ")
                 else -> ""
+            }
+            if (picked == DayFill.Pick.TAKE && timed != false && task?.isOpen == true) {
+                Box(indent) { LengthChips(p) { len -> vm.fillPlace(p, p.at, len) } }
             }
             Text(
                 text + tr("แตะเพื่อเปลี่ยนใจ", "Tap to change your mind"),

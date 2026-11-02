@@ -160,7 +160,8 @@ fun OmniTaskApp(vm: TaskViewModel) {
     LaunchedEffect(state.quickAdd) {
         state.quickAdd?.let { r ->
             leavePages()
-            if (r.assistant) screen = Screen.AI else adding = r
+            // A widget's mic records as holding + does, with the app's own recorder (owner picked ก, 2 Nov).
+            if (r.assistant) screen = Screen.AI else if (r.voice) startVoice() else adding = r
             vm.requestQuickAdd(null)
         }
     }
