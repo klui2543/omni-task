@@ -6,4 +6,5 @@
     <string name="widget_matrix">Eisenhower</string>
     <string name="widget_waiting">คนรอและงานอนาคต</string>
     <string name="widget_month">ปฏิทินเดือน (กรอบและ Emoji)</string>
+    <string name="lock_voice">จดด้วยเสียง</string>
 </resources>

@@ -1,35 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The lock-screen card: today as the Today widget draws it. Bars and lines are ImageView: a plain View is not allowed in a notification layout. Five slots, each a row, a row the now line crosses, or the now line, filled by LockCardNotifier. -->
+<!-- The lock-screen card as a day list (owner's pick ข2, 2026-11-01, mock lock-balance2): the date with how many are left and a red chip for overdue, then rows with the start time in a column on the left. Bars and lines are ImageView: a plain View is not allowed in a notification layout. Five slots, each a row, a row the now line crosses, or the now line, filled by LockCardNotifier. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="4dp">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-        <LinearLayout android:layout_width="40dp" android:layout_height="40dp" android:layout_marginTop="4dp" android:layout_marginEnd="6dp"
-            android:background="@drawable/lock_circle" android:gravity="center" android:orientation="vertical">
-            <TextView android:id="@+id/dow" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#0E1118" android:textSize="10sp" />
-            <TextView android:id="@+id/dom" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#0E1118" android:textSize="15sp" android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
+        android:orientation="horizontal" android:layout_marginBottom="2dp">
+        <!-- The texts take what is left beside the mic, so a large font clips them and never pushes the mic off the card. -->
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:id="@+id/dateline" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:singleLine="true" android:textSize="15sp" android:textStyle="bold" />
+        <TextView android:id="@+id/datesub" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="12sp" />
+        <TextView android:id="@+id/latechip" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:background="@drawable/lock_chip" android:paddingStart="8dp" android:paddingEnd="8dp"
+            android:paddingTop="1dp" android:paddingBottom="1dp" android:singleLine="true" android:textColor="#F0B8B4" android:textSize="11.5sp" android:visibility="gone" />
         </LinearLayout>
-        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-        <LinearLayout android:id="@+id/p0" android:layout_width="match_parent" android:layout_height="28dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:gravity="center_vertical"
-            android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp" android:visibility="gone">
-            <ImageView android:id="@+id/b0" android:layout_width="3dp" android:layout_height="14dp" />
+        <ImageView android:id="@+id/mic" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="8dp"
+        android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
+        android:contentDescription="@string/lock_voice" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+        <LinearLayout android:id="@+id/p0" android:layout_width="match_parent" android:layout_height="30dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/r0" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+            <ImageView android:id="@+id/b0" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
             <TextView android:id="@+id/t0" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-            <TextView android:id="@+id/r0" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            <TextView android:id="@+id/e0" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <FrameLayout android:id="@+id/q0" android:layout_width="match_parent" android:layout_height="44dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:visibility="gone">
+            android:layout_marginTop="2dp" android:background="@drawable/lock_pill" android:visibility="gone">
             <FrameLayout android:id="@+id/qs0" android:layout_width="match_parent" android:layout_height="match_parent">
                 <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/lock_spent" />
             </FrameLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="28dp" android:layout_marginTop="6dp"
-                android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp">
-                <ImageView android:id="@+id/qb0" android:layout_width="3dp" android:layout_height="14dp" />
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/qr0" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                    android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+                <ImageView android:id="@+id/qb0" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
                 <TextView android:id="@+id/qt0" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-                <TextView android:id="@+id/qr0" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
+                <TextView android:id="@+id/qe0" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp" android:layout_marginEnd="9dp" android:singleLine="true" android:textSize="12sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/qx0" android:layout_width="match_parent" android:layout_height="match_parent"
                 android:gravity="top" android:orientation="horizontal">
@@ -37,33 +50,36 @@
                 <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginTop="2.25dp" android:background="#D9726C" />
             </LinearLayout>
         </FrameLayout>
-        <LinearLayout android:id="@+id/n0" android:layout_width="match_parent" android:layout_height="12dp"
-            android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+        <LinearLayout android:id="@+id/n0" android:layout_width="match_parent" android:layout_height="14dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/m0" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/p1" android:layout_width="match_parent" android:layout_height="28dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:gravity="center_vertical"
-            android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp" android:visibility="gone">
-            <ImageView android:id="@+id/b1" android:layout_width="3dp" android:layout_height="14dp" />
+        <LinearLayout android:id="@+id/p1" android:layout_width="match_parent" android:layout_height="30dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/r1" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+            <ImageView android:id="@+id/b1" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
             <TextView android:id="@+id/t1" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-            <TextView android:id="@+id/r1" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            <TextView android:id="@+id/e1" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <FrameLayout android:id="@+id/q1" android:layout_width="match_parent" android:layout_height="44dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:visibility="gone">
+            android:layout_marginTop="2dp" android:background="@drawable/lock_pill" android:visibility="gone">
             <FrameLayout android:id="@+id/qs1" android:layout_width="match_parent" android:layout_height="match_parent">
                 <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/lock_spent" />
             </FrameLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="28dp" android:layout_marginTop="6dp"
-                android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp">
-                <ImageView android:id="@+id/qb1" android:layout_width="3dp" android:layout_height="14dp" />
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/qr1" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                    android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+                <ImageView android:id="@+id/qb1" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
                 <TextView android:id="@+id/qt1" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-                <TextView android:id="@+id/qr1" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
+                <TextView android:id="@+id/qe1" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp" android:layout_marginEnd="9dp" android:singleLine="true" android:textSize="12sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/qx1" android:layout_width="match_parent" android:layout_height="match_parent"
                 android:gravity="top" android:orientation="horizontal">
@@ -71,33 +87,36 @@
                 <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginTop="2.25dp" android:background="#D9726C" />
             </LinearLayout>
         </FrameLayout>
-        <LinearLayout android:id="@+id/n1" android:layout_width="match_parent" android:layout_height="12dp"
-            android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+        <LinearLayout android:id="@+id/n1" android:layout_width="match_parent" android:layout_height="14dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/m1" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/p2" android:layout_width="match_parent" android:layout_height="28dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:gravity="center_vertical"
-            android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp" android:visibility="gone">
-            <ImageView android:id="@+id/b2" android:layout_width="3dp" android:layout_height="14dp" />
+        <LinearLayout android:id="@+id/p2" android:layout_width="match_parent" android:layout_height="30dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/r2" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+            <ImageView android:id="@+id/b2" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
             <TextView android:id="@+id/t2" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-            <TextView android:id="@+id/r2" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            <TextView android:id="@+id/e2" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <FrameLayout android:id="@+id/q2" android:layout_width="match_parent" android:layout_height="44dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:visibility="gone">
+            android:layout_marginTop="2dp" android:background="@drawable/lock_pill" android:visibility="gone">
             <FrameLayout android:id="@+id/qs2" android:layout_width="match_parent" android:layout_height="match_parent">
                 <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/lock_spent" />
             </FrameLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="28dp" android:layout_marginTop="6dp"
-                android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp">
-                <ImageView android:id="@+id/qb2" android:layout_width="3dp" android:layout_height="14dp" />
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/qr2" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                    android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+                <ImageView android:id="@+id/qb2" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
                 <TextView android:id="@+id/qt2" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-                <TextView android:id="@+id/qr2" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
+                <TextView android:id="@+id/qe2" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp" android:layout_marginEnd="9dp" android:singleLine="true" android:textSize="12sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/qx2" android:layout_width="match_parent" android:layout_height="match_parent"
                 android:gravity="top" android:orientation="horizontal">
@@ -105,33 +124,36 @@
                 <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginTop="2.25dp" android:background="#D9726C" />
             </LinearLayout>
         </FrameLayout>
-        <LinearLayout android:id="@+id/n2" android:layout_width="match_parent" android:layout_height="12dp"
-            android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+        <LinearLayout android:id="@+id/n2" android:layout_width="match_parent" android:layout_height="14dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/m2" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/p3" android:layout_width="match_parent" android:layout_height="28dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:gravity="center_vertical"
-            android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp" android:visibility="gone">
-            <ImageView android:id="@+id/b3" android:layout_width="3dp" android:layout_height="14dp" />
+        <LinearLayout android:id="@+id/p3" android:layout_width="match_parent" android:layout_height="30dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/r3" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+            <ImageView android:id="@+id/b3" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
             <TextView android:id="@+id/t3" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-            <TextView android:id="@+id/r3" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            <TextView android:id="@+id/e3" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <FrameLayout android:id="@+id/q3" android:layout_width="match_parent" android:layout_height="44dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:visibility="gone">
+            android:layout_marginTop="2dp" android:background="@drawable/lock_pill" android:visibility="gone">
             <FrameLayout android:id="@+id/qs3" android:layout_width="match_parent" android:layout_height="match_parent">
                 <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/lock_spent" />
             </FrameLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="28dp" android:layout_marginTop="6dp"
-                android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp">
-                <ImageView android:id="@+id/qb3" android:layout_width="3dp" android:layout_height="14dp" />
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/qr3" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                    android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+                <ImageView android:id="@+id/qb3" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
                 <TextView android:id="@+id/qt3" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-                <TextView android:id="@+id/qr3" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
+                <TextView android:id="@+id/qe3" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp" android:layout_marginEnd="9dp" android:singleLine="true" android:textSize="12sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/qx3" android:layout_width="match_parent" android:layout_height="match_parent"
                 android:gravity="top" android:orientation="horizontal">
@@ -139,33 +161,36 @@
                 <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginTop="2.25dp" android:background="#D9726C" />
             </LinearLayout>
         </FrameLayout>
-        <LinearLayout android:id="@+id/n3" android:layout_width="match_parent" android:layout_height="12dp"
-            android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+        <LinearLayout android:id="@+id/n3" android:layout_width="match_parent" android:layout_height="14dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/m3" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/p4" android:layout_width="match_parent" android:layout_height="28dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:gravity="center_vertical"
-            android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp" android:visibility="gone">
-            <ImageView android:id="@+id/b4" android:layout_width="3dp" android:layout_height="14dp" />
+        <LinearLayout android:id="@+id/p4" android:layout_width="match_parent" android:layout_height="30dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/r4" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+            <ImageView android:id="@+id/b4" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
             <TextView android:id="@+id/t4" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-            <TextView android:id="@+id/r4" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            <TextView android:id="@+id/e4" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <FrameLayout android:id="@+id/q4" android:layout_width="match_parent" android:layout_height="44dp"
-            android:layout_marginTop="4dp" android:background="@drawable/lock_pill" android:visibility="gone">
+            android:layout_marginTop="2dp" android:background="@drawable/lock_pill" android:visibility="gone">
             <FrameLayout android:id="@+id/qs4" android:layout_width="match_parent" android:layout_height="match_parent">
                 <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/lock_spent" />
             </FrameLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="28dp" android:layout_marginTop="6dp"
-                android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="9dp" android:paddingEnd="9dp">
-                <ImageView android:id="@+id/qb4" android:layout_width="3dp" android:layout_height="14dp" />
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/qr4" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
+                    android:gravity="end" android:singleLine="true" android:textSize="12sp" />
+                <ImageView android:id="@+id/qb4" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginStart="8dp" />
                 <TextView android:id="@+id/qt4" style="@style/LockText" android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
-                <TextView android:id="@+id/qr4" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:singleLine="true" android:textSize="12sp" />
+                <TextView android:id="@+id/qe4" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp" android:layout_marginEnd="9dp" android:singleLine="true" android:textSize="12sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/qx4" android:layout_width="match_parent" android:layout_height="match_parent"
                 android:gravity="top" android:orientation="horizontal">
@@ -173,16 +198,13 @@
                 <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginTop="2.25dp" android:background="#D9726C" />
             </LinearLayout>
         </FrameLayout>
-        <LinearLayout android:id="@+id/n4" android:layout_width="match_parent" android:layout_height="12dp"
-            android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+        <LinearLayout android:id="@+id/n4" android:layout_width="match_parent" android:layout_height="14dp"
+            android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/m4" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
-            <TextView android:id="@+id/more" style="@style/LockLink" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="6dp" android:layout_marginStart="4dp" android:textSize="12sp" android:visibility="gone" />
-        </LinearLayout>
+        <TextView android:id="@+id/more" style="@style/LockLink" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" android:layout_marginStart="63dp" android:textSize="12sp" android:visibility="gone" />
     </LinearLayout>
-    <TextView android:id="@+id/foot" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginTop="8dp" android:textSize="12sp" />
 </LinearLayout>

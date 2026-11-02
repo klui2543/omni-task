@@ -110,9 +110,21 @@ object Scheduler {
     private fun scheduleWidgetTick(context: Context, am: AlarmManager, now: LocalDateTime) {
         val events = CalendarReader.events(context, now.date.atStartOfDay(), now.date.plusDays(1).atStartOfDay()).filter { !it.allDay }
         val running = events.filter { it.begin <= now && it.end > now }
-        val at = if (running.isNotEmpty()) minOf(now.plusMinutes(10), running.minOf { it.end }) else events.filter { it.begin > now }.minOfOrNull { it.begin }
+        val byEvents = if (running.isNotEmpty()) minOf(now.plusMinutes(10), running.minOf { it.end }) else events.filter { it.begin > now }.minOfOrNull { it.begin }
+        // The lock card says what is on now from the today page's plan (owner's pick ก, 2026-11-01): it is redrawn
+        // when a block of that plan starts or ends, and every 10 minutes while one runs.
+        val byPlan = app.omnitask.widget.LockPlanStore.load(context)
+            ?.takeIf { it.day == now.date && app.omnitask.widget.LockCardMode.isOn(context) }
+            ?.let { app.omnitask.model.LockPlan.nextChange(it, now.hour * 60 + now.minute) }
+            ?.let { now.date.atStartOfDay().plusMinutes(it.toLong()) }
+        val at = listOfNotNull(byEvents, byPlan).minOrNull()
         val tick = PlannedAlarm(AlarmKind.RESCAN, at ?: now, "widget-tick")
         if (at == null) am.cancel(pendingIntent(context, tick)) else set(context, am, tick)
+    }
+
+    /** Sets the redraw tick again, after the today page kept a new plan for the lock card. */
+    fun widgetTick(context: Context) {
+        scheduleWidgetTick(context, context.getSystemService(AlarmManager::class.java), LocalDateTime.now())
     }
 
     /** One-off alarms (snooze, test) live outside the plan so a rescan never cancels them. */
