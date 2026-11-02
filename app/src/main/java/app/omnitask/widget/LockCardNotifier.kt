@@ -182,11 +182,20 @@ object LockCardNotifier {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // The round mic (owner's pick ก, 2026-11-02, mock lock-mic): a voice note, as the mic on the quick-add widget.
-        val voice = PendingIntent.getActivity(
+        // The round mic (owner's pick ก, 2026-11-02, mock lock-mic): a voice note. With the mic allowed it starts the
+        // recording service straight from the card, which the phone runs without unlocking (owner, 2 Nov: "Can we
+        // bypass lock screen?", "Ok then try"; an activity would ask to unlock first). The recording notification has
+        // the stop button and the recording waits in the app's voice list. Without the permission it opens the app,
+        // which asks for it.
+        val micAllowed = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val voice = if (micAllowed) PendingIntent.getForegroundService(
             context, 1,
-            // Over the lock screen, without unlocking (owner, 2 Nov: "Ok then try"); see LockVoiceActivity.
-            Intent(context, LockVoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent(context, app.omnitask.data.VoiceRecordService::class.java).setAction(app.omnitask.data.VoiceRecordService.START),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        ) else PendingIntent.getActivity(
+            context, 1,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_ACTION, MainActivity.ACTION_VOICE)
                 .setData(android.net.Uri.parse("omnitask://lockcard/voice")),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )

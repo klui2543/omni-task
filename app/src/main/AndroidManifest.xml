@@ -102,16 +102,6 @@
             android:excludeFromRecents="true"
             android:noHistory="true" />
 
-        <!-- The lock card's mic: shows over the lock screen for a moment and starts a voice note (see LockVoiceActivity). -->
-        <activity
-            android:name=".widget.LockVoiceActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:showWhenLocked="true"
-            android:taskAffinity="app.omnitask.lockvoice"
-            android:excludeFromRecents="true"
-            android:noHistory="true" />
-
         <!-- The month widget's reload button: a short foreground service while it reads everything again (see MonthTapService). -->
         <service
             android:name=".widget.MonthTapService"
