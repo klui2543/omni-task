@@ -3,15 +3,17 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="4dp">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
-        android:orientation="horizontal" android:layout_marginTop="2dp" android:layout_marginBottom="4dp">
+        android:orientation="horizontal" android:layout_marginBottom="2dp">
+        <!-- The texts take what is left beside the mic, so a large font clips them and never pushes the mic off the card. -->
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center_vertical" android:orientation="horizontal">
         <TextView android:id="@+id/dateline" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:singleLine="true" android:textSize="15sp" android:textStyle="bold" />
         <TextView android:id="@+id/datesub" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp" android:singleLine="true" android:textSize="12sp" />
+            android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="12sp" />
         <TextView android:id="@+id/latechip" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginStart="8dp" android:background="@drawable/lock_chip" android:paddingStart="8dp" android:paddingEnd="8dp"
             android:paddingTop="1dp" android:paddingBottom="1dp" android:singleLine="true" android:textColor="#F0B8B4" android:textSize="11.5sp" android:visibility="gone" />
-        <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:orientation="horizontal" />
+        </LinearLayout>
         <ImageView android:id="@+id/mic" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="8dp"
         android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
         android:contentDescription="@string/lock_voice" />
