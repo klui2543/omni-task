@@ -624,6 +624,7 @@ private fun MonthContent(context: Context, data: MonthData) {
     val showAgenda = withList >= 40f
     val cell = if (showAgenda) withList else (room / rows).coerceIn(24f, 64f)
     val gridHeight = TAG_INSET + rows * cell
+    Box(GlanceModifier.fillMaxSize()) {
     Column(
         GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp),
     ) {
@@ -662,6 +663,11 @@ private fun MonthContent(context: Context, data: MonthData) {
             Spacer(GlanceModifier.height(8.dp))
             Agenda(context, data, room - rows * cell - 8f)
         }
+    }
+    // The mic floats at the bottom right, in the list's free corner (owner picked "ก", 2 Nov).
+    if (showAgenda) Box(GlanceModifier.fillMaxSize().padding(end = 14.dp, bottom = 10.dp), contentAlignment = Alignment.BottomEnd) {
+        Circle(context, R.drawable.ic_w_mic, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_VOICE, size = 44)
+    }
     }
 }
 
