@@ -1,5 +1,5 @@
 ---
-format: secretary/20
+format: secretary/21
 ---
 # Secretary procedure
 
@@ -24,7 +24,7 @@ Files (in ~/vault, folder `📁 Folder/หลังบ้าน/Claude/`):
 - `แผนระยะยาว.md` (same folder as Claude log): Klui's goals per quarter, filled in by Klui (step 6g). You never edit it.
 - Drive folder `Claude rooms`: one small file per room of the Claude app's Projects (step 3f), so you can find rooms that list_sessions does not show.
 - `สถานะห้อง.md` in the Drive folder `Claude rooms`: the coordinator's half of the office board (step 2b). The coordinator is the Claude of the Omni project's main chat. You only read it.
-- `สำนักงาน.md` (same folder as Claude log): the office board, one line per room the coordinator lists and per piece of work from inbox files, with its state, plus your questions to the coordinator (step 5j). You write it; Klui reads it and may add a 💬 line.
+- `สำนักงาน.md` (same folder as Claude log, with a copy `สำนักงาน-เลขา.md` in the Drive folder `Claude rooms` for the coordinator): the office board, one line per room the coordinator lists and per piece of work from inbox files, with its state, plus your questions to the coordinator (step 5j). You write it; Klui reads it and may add a 💬 line.
 - `แผน-<project>.md` in the Drive folder `Claude rooms` (for example `แผน-RxShift.md`): one plan file per project, the roadmap with milestones, subtasks and start-by dates, written by a room the coordinator opens for a deep read (step 2c). You only read them.
 - `เลขาถาม.md` (same folder as Claude log): your questions to Klui, rewritten whole every round (step 5f). The Omni app shows them on its today page as one line, "เลขาถาม N ข้อ", and Klui answers each there: done ticks the task, not done writes why on a `ค้าง` line under the task.
 
@@ -168,6 +168,7 @@ Privacy, always: never write a patient's name, hospital number (HN), national ID
    - A 💬 line Klui writes on the board stays unchanged where it stands. Read it as a correction, as in step 5i: apply it, add under it `🤖 <what you changed, one line> (YYYY-MM-DD)`, and ask the coordinator about it when it concerns a room. A 💬 line that already has a 🤖 reply is done.
    - ผู้ประสานงานตอบ: copy the coordinator's `## ผู้ประสานงานตอบ` unchanged. Each answer to one of your questions is applied in this round (step 5i, the board, the log) and the question is dropped. When an answer says only Klui knows, drop the question too: the coordinator asks Klui in its chat and brings the answer back on the board. Never move such a question into `เลขาถาม.md` or your reply.
    - Count the board lines waiting on Klui, your open questions (not the `Klui ตอบ:` lines) and the answers you applied, for steps 10 and 11.
+   - Drive copy (agreed with Klui 2026-11-03, because the coordinator cannot open the vault, so your questions never reached it): after you write `สำนักงาน.md`, put the same text in the Drive folder `Claude rooms` as `สำนักงาน-เลขา.md` (plain text). Find it by title; when it is there, replace its content with update_file, otherwise create it (contentMimeType text/plain, no conversion to a Google type). You are its only writer. When the Drive write fails, add it to step 7 once ("วางกระดานใน Drive ไม่ได้").
 6. Tidy (only on the first round of the day after 08:00 Bangkok time, or when the main file is over 40 KB; read the whole main file for it):
    a. Move every ไทม์ไลน์ day older than 7 days to its monthly note (create the note and its folders if missing; keep days newest on top; do not duplicate a day already there). Move ticked `[x]` items in งานค้าง whose ✅ date is 2 or more days old (with the lines under them) to `## เสร็จแล้ว` at the end of the monthly note of the month they were done. Moved, never deleted: the monthly notes keep everything for /recall. Do not move a day that still has a 💬 line without a 🤖 reply under it. Move text exactly; do not rewrite it.
    b. Every monthly note starts with this header (add it when missing, keep any other header lines):
