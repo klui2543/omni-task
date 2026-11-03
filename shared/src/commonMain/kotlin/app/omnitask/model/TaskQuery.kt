@@ -203,6 +203,7 @@ data class TaskQuery(
 
         /** A view kept by [encodeView]; parts it cannot read stay as in [DEFAULT]. */
         fun decodeView(line: String): TaskQuery {
+            if (line.isBlank()) return DEFAULT
             val f = line.split(RS) + List(14) { "" }
             val q = decode(f.take(8).joinToString(RS), DEFAULT)
             return q.copy(
