@@ -126,6 +126,8 @@ fun FolderPicker(
     onCreateList: ((String, String, List<String>) -> Unit)? = null,
     listSize: (app.omnitask.model.OmniList) -> Int = { 0 },
     listFolders: (app.omnitask.model.OmniList) -> List<String> = { it.categories },
+    // Picking a folder to filter by (the Tasks tab, owner 2026-11-03): only folders there are, no new ones.
+    forFilter: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val withLists = onPickList != null
@@ -168,7 +170,7 @@ fun FolderPicker(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.raised) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-            Text(tr("เก็บในโฟลเดอร์", "Keep in a folder"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text(if (forFilter) tr("กรองตามโฟลเดอร์", "Filter by folder") else tr("เก็บในโฟลเดอร์", "Keep in a folder"), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
             (current?.let(::folderTrail) ?: currentList?.let { (l, c) -> "List › " + l.name + (c?.let { " › " + folderTrail(it) } ?: "") })
                 ?.let { Text(tr("ตอนนี้อยู่ใน ", "Now in ") + it, Modifier.padding(top = 2.dp), color = C.muted, fontSize = TS.caption) }
             PickerField(
@@ -185,7 +187,7 @@ fun FolderPicker(
                 listHits.forEach { l -> ListRow(l, "List", currentList?.first?.path == l.path && currentList?.second == null) { onPickList!!(l, null) } }
                 hits.forEach { p -> FolderRow(p, p.substringAfterLast('/'), p.substringBeforeLast('/', "").let { if (it.isEmpty()) tr("ชั้นบนสุด", "Top level") else folderTrail(it) }, p == current) { onPick(p) } }
                 val typed = spell(Folders.clean(query))
-                if (typed.isNotEmpty() && all.none { it.equals(typed, ignoreCase = true) }) {
+                if (!forFilter && typed.isNotEmpty() && all.none { it.equals(typed, ignoreCase = true) }) {
                     // A label typed here (#รอ/พี่เอ) is added as a label; the folder stays.
                     val label = Folders.isLabel(typed)
                     NewRow(
@@ -286,7 +288,7 @@ fun FolderPicker(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         FolderGlyph(folderTint(at), 24.dp)
-                        Text(tr("เก็บที่ ", "Keep in ") + at.substringAfterLast('/'), Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text((if (forFilter) tr("ดูงานใน ", "Show ") else tr("เก็บที่ ", "Keep in ")) + at.substringAfterLast('/'), Modifier.weight(1f).padding(start = 10.dp), color = C.text, fontSize = TS.body, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(if (at == current) tr("อยู่ที่นี่", "Here now") else tr("เลือก", "Choose"), color = C.accentText, fontSize = TS.body)
                     }
                 }
@@ -315,7 +317,7 @@ fun FolderPicker(
                     ) { at = p; naming = false }
                 }
                 if (kids.isEmpty()) Text(tr("ไม่มีโฟลเดอร์ย่อย", "No folders inside"), Modifier.padding(vertical = 10.dp, horizontal = 4.dp), color = C.faint, fontSize = TS.body)
-                if (naming) {
+                if (forFilter) Unit else if (naming) {
                     PickerField(newName, tr("ชื่อโฟลเดอร์ใหม่", "New folder name"), Modifier.padding(top = 8.dp), onDone = {
                         val name = Folders.clean(newName)
                         if (name.isNotEmpty()) onPick(if (at.isEmpty()) spell(name) else "$at/$name")

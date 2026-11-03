@@ -440,7 +440,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private var behaviorSend: kotlinx.coroutines.Job? = null
 
     private val _state = MutableStateFlow(
-        fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse), drive = DriveUi(on = DriveLink.isOn(app)))),
+        fromPrefs(UiState(vault = prefs.getString(KEY_VAULT, null)?.let(Uri::parse), drive = DriveUi(on = DriveLink.isOn(app)))).let { s ->
+            // The Tasks tab opens as it was left: its view and its filters (owner, 2026-11-03), on this phone only.
+            s.copy(
+                query = prefs.getString(KEY_TASKS_QUERY, null)?.let(TaskQuery::decodeView) ?: s.query,
+                tasksLayout = prefs.getString(KEY_TASKS_LAYOUT, null)?.let { n -> Mode.entries.firstOrNull { it.name == n } },
+            )
+        },
     )
 
     /** The settings kept in preferences (and synced through the vault file), laid over [base]. */
@@ -2038,7 +2044,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         edit(task, onSaved = { if (status == Status.DONE && task.isOpen) offerFinish(task, next) }) { next }
     }
 
-    fun setQuery(query: TaskQuery) = _state.update { it.copy(query = query) }
+    fun setQuery(query: TaskQuery) {
+        _state.update { it.copy(query = query) }
+        keepTasksView()
+    }
+
+    /** Writes the Tasks tab's view and filters down, so the tab opens as it was left. */
+    private fun keepTasksView() {
+        val s = _state.value
+        prefs.edit().putString(KEY_TASKS_QUERY, s.query.encodeView()).putString(KEY_TASKS_LAYOUT, s.tasksLayout?.name ?: "").apply()
+    }
 
     /** Saves [query] (the task list's own, unless another page passes its filter) under [name]. */
     fun saveFilter(name: String, query: TaskQuery = _state.value.query) {
@@ -2056,6 +2071,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun applyFilter(name: String) {
         val line = _state.value.savedFilters[name] ?: return
         _state.update { it.copy(query = TaskQuery.decode(line, it.query)) }
+        keepTasksView()
     }
 
     /** Reads and encodes the photo off the main thread; small photos are saved straight away. */
@@ -3723,7 +3739,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestCalendar(day: LocalDate?, reveal: Boolean = false) = _state.update { it.copy(calendarDay = day, calendarReveal = reveal) }
 
-    fun setTasksLayout(mode: Mode?) = _state.update { it.copy(tasksLayout = mode) }
+    fun setTasksLayout(mode: Mode?) {
+        _state.update { it.copy(tasksLayout = mode) }
+        keepTasksView()
+    }
 
     fun setCalendarSpan(span: CalendarSpan) = _state.update { it.copy(calendarSpan = span) }
 
@@ -5016,6 +5035,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_ALARM_AT = WatchAlarm.KEY_ALARM_AT
         private val WATCH_KEYS = setOf(KEY_TONIGHT_WAKE, KEY_ALARM_SET, KEY_WAKE_FROM_WATCH, KEY_ALARM_AT)
         const val KEY_SAVED_FILTERS = "savedFilters"
+        const val KEY_TASKS_QUERY = "tasks.query"
+        const val KEY_TASKS_LAYOUT = "tasks.layout"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"
         const val KEY_ARCHIVE_SWEPT = "archive.sweptOn"

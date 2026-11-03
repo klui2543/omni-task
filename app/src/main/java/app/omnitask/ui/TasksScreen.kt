@@ -380,7 +380,7 @@ fun FilterSheet(state: UiState, vm: TaskViewModel, onDismiss: () -> Unit) {
     val shown = state.allTasks.count { q.matches(it, state.today) }
     SheetFrame(onDismiss) {
         FilterHead({ vm.setQuery(q.cleared()) })
-        FilterBody(q, vm::setQuery, state, vm, more, { more = it }, onSave = { naming = true }, shown = shown, onShow = onDismiss, hideDone = true)
+        FilterBody(q, vm::setQuery, state, vm, more, { more = it }, onSave = { naming = true }, shown = shown, onShow = onDismiss, hideDone = true, withFolders = true)
         // The same filter as a bubble in the secretary chat (เลขา คู่มือ.md), one tap away from there.
         if (q.activeFilters > 0 || q.text.isNotBlank()) Row(
             Modifier.padding(top = 12.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp)).background(C.accentDeep)
