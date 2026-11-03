@@ -21,6 +21,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +72,7 @@ fun FilterBody(
     onShow: () -> Unit,
     extraInUse: Int = 0,
     hideDone: Boolean = false,
+    withFolders: Boolean = false,
     extra: (@Composable () -> Unit)? = null,
 ) {
     val open = state.allTasks.filter { it.isOpen && it.parent == null }
@@ -87,6 +92,25 @@ fun FilterBody(
         QuickChip(tr("เลยกำหนด", "Overdue"), null, DateBucket.OVERDUE in q.buckets, quickCount(TaskQuery.DEFAULT.copy(buckets = setOf(DateBucket.OVERDUE))), Modifier.weight(1f)) {
             onChange(q.copy(buckets = q.buckets.flip(DateBucket.OVERDUE)))
         }
+    }
+
+    // Folders, in sight with the quick chips (owner, 2026-11-03: "select folder to not hashtag"): a folder covers
+    // every folder inside it, picked by stepping through them as when keeping a task.
+    if (withFolders) {
+        var picking by remember { mutableStateOf(false) }
+        Text(tr("โฟลเดอร์", "Folders"), Modifier.padding(top = 14.dp, bottom = 8.dp), color = C.muted, fontSize = TS.caption)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            q.folders.sorted().forEach { f ->
+                Chip(folderTrail(f) + "  ✕", true, { onChange(q.copy(folders = q.folders - f)) }, dot = folderTint(f))
+            }
+            Chip(tr("+ เลือกโฟลเดอร์", "+ Choose a folder"), false, { picking = true })
+        }
+        if (picking) FolderPicker(
+            state, current = null, labels = null, onLabel = null,
+            onPick = { f -> if (f != null) onChange(q.copy(folders = q.folders + f)); picking = false },
+            forFilter = true,
+            onDismiss = { picking = false },
+        )
     }
 
     if (state.savedFilters.isNotEmpty()) {
