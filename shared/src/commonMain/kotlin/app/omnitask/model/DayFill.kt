@@ -38,9 +38,11 @@ object DayFill {
      * its own keeps it, so only ⏳ is written). [pinned]: the owner put it at [at] themselves (a suggested time or a
      * drag): it stays there even on top of something else, and nothing else is pushed for it. [len]: its length when
      * taken, for the reminder's "เหลืออีก N ถึงจะทำทันวันนี้" (0 when taken before that was kept: the reminder is as before).
+     * [ownLen]: the length the owner put it at (a drag or the length buttons, owner 2026-11-01): a pinned slot has it in
+     * place of the plan's own estimate; 0 = the plan's estimate, as before.
      */
     @Serializable
-    data class Accepted(val day: String, val at: Int, val timed: Boolean = true, val pinned: Boolean = false, val len: Int = 0)
+    data class Accepted(val day: String, val at: Int, val timed: Boolean = true, val pinned: Boolean = false, val len: Int = 0, val ownLen: Int = 0)
 
     @Serializable
     data class Line(val before: String, val after: String)
@@ -464,7 +466,13 @@ object DayFill {
             val acc = it0.task?.let { mem.accepted[ident(it)] }?.takeIf { it.pinned && it.day == fr.day.toString() && it.at == f } ?: return null
             return acc.at.takeIf { (mem.notBefore[it0.id] ?: Int.MIN_VALUE) <= it }
         }
-        val pins = items.mapNotNull { it0 -> pinnedAt(it0)?.let { it0 to it } }
+        // A pinned slot is as long as the owner made it (their length, when they set one).
+        val pins = items.mapNotNull { it0 ->
+            pinnedAt(it0)?.let { at ->
+                val own = it0.task?.let { t -> mem.accepted[ident(t)] }?.ownLen ?: 0
+                (if (own > 0) it0.copy(len = own) else it0) to at
+            }
+        }
         val pinOcc = BooleanArray(span)
         pins.forEach { (it0, at) -> for (i in maxOf(at, start) until minOf(at + it0.len, end)) pinOcc[i - start] = true }
         fun fits(t: Int, len: Int, work: Boolean = false): Boolean {
@@ -1102,8 +1110,13 @@ object DayFill {
     }
 
     /** What [at] for [len] minutes sits on, besides the card [skip]: each one's name and the minutes they share. */
-    fun overlaps(plan: Plan, at: Int, len: Int, skip: String): List<Pair<String, Int>> = plan.rows.mapNotNull { r ->
-        val span: Triple<Int, Int, String>? = when (r) {
+    fun overlaps(plan: Plan, at: Int, len: Int, skip: String): List<Pair<String, Int>> = spans(plan, skip).mapNotNull { (a, b, name) ->
+        (minOf(at + len, b) - maxOf(at, a)).takeIf { it > 0 }?.let { name to it }
+    }
+
+    /** Everything in [plan] that takes the owner's time, besides the card [skip]: start, end and name. */
+    private fun spans(plan: Plan, skip: String): List<Triple<Int, Int, String>> = plan.rows.mapNotNull { r ->
+        when (r) {
             is Row.Card -> r.placed.takeIf { it.item.id != skip }?.let { Triple(it.at, it.at + it.len, it.item.title) }
             is Row.Locked -> {
                 val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { minutesOf(it.end, plan.day) }
@@ -1112,8 +1125,39 @@ object DayFill {
             }
             else -> null
         }
-        span?.let { (a, b, name) -> (minOf(at + len, b) - maxOf(at, a)).takeIf { it > 0 }?.let { name to it } }
     }
+
+    /** How many minutes of [at] for [len] sit on something else, each minute counted once even under two things. */
+    fun overlapMinutes(plan: Plan, at: Int, len: Int, skip: String): Int {
+        val list = spans(plan, skip)
+        return (at until at + len).count { m -> list.any { (a, b) -> m in a until b } }
+    }
+
+    /**
+     * The one line inside the slot while it is dragged or edited (owner's pick ก, 2026-11-01, mock drag-oneline):
+     * "15:35 - 17:05" and, in brackets, how long it is or how much of it sits on something else.
+     */
+    fun dragLabel(at: Int, len: Int, over: Int): Pair<String, String> =
+        (hm(at) + " - " + hm(at + len)) to
+            "(" + (if (over > 0) tr("ซ้อนทับงานอื่น $over นาที", "overlaps others $over min") else lenText(len)) + ")"
+
+    /** A dragged slot's start: [raw] to 5 minutes, not before [lo] and ending by [bed]. */
+    fun snapAt(raw: Float, len: Int, lo: Int, bed: Int): Int {
+        val first = if (lo % 5 == 0) lo else lo + 5 - lo % 5
+        val last = maxOf(first, (bed - len) - (bed - len) % 5)
+        return (kotlin.math.round(raw / 5f).toInt() * 5).coerceIn(first, last)
+    }
+
+    /**
+     * A slot's length pulled by its edge: [raw] to 15 minutes, at least 15, at most [cap] (4 hours, or what the slot
+     * already had) and ending by [bed].
+     */
+    fun snapLen(raw: Float, at: Int, bed: Int, cap: Int = MAX_OWN_LEN): Int {
+        val most = maxOf(15, minOf(cap, (bed - at) - (bed - at) % 15))
+        return (kotlin.math.round(raw / 15f).toInt() * 15).coerceIn(15, most)
+    }
+
+    const val MAX_OWN_LEN = 240
 
     /**
      * What a card shows as "ซ้อนกับ" (mock plan-catchup board 4): a card the owner put shows all it sits on; any other

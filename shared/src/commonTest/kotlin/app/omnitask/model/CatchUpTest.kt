@@ -169,6 +169,31 @@ class CatchUpTest {
         }
     }
 
+    // ---- 3b. The owner makes a put slot longer (2026-11-01): it keeps that length and flags what it now sits on ----
+
+    @Test
+    fun aSlotTheOwnerMadeLongerKeepsThatLengthAndSaysWhatItSitsOn() {
+        val before = plan("${day}T16:45")
+        val stocks = assertNotNull(before.card("How to ดูหุ้น"))
+        val (lines, mem0) = taken("ปรับ Project Omni", stocks.at, pinned = true)
+        val ident = id(lines, "ปรับ Project Omni")
+        val mem = mem0.copy(accepted = mem0.accepted + (ident to mem0.accepted.getValue(ident).copy(ownLen = 90)))
+        val omni = assertNotNull(plan("${day}T16:45", lines, mem).card("ปรับ Project Omni"))
+        assertEquals(90, omni.len)
+        assertTrue(omni.pinned)
+        assertTrue(DayFill.overlaps(plan("${day}T16:45", lines, mem), omni.at, omni.len, omni.item.id).sumOf { it.second } >= 15)
+    }
+
+    // CONTROL: a slot with no length of the owner's (all memory written before this change) is as long as the plan says.
+    @Test
+    fun aSlotWithNoOwnLengthIsAsLongAsThePlanSays() {
+        val before = plan("${day}T16:45")
+        val stocks = assertNotNull(before.card("How to ดูหุ้น"))
+        val (lines, mem) = taken("ปรับ Project Omni", stocks.at, pinned = true)
+        val unchanged = assertNotNull(plan("${day}T16:45").card("ปรับ Project Omni"))
+        assertEquals(unchanged.len, assertNotNull(plan("${day}T16:45", lines, mem).card("ปรับ Project Omni")).len)
+    }
+
     // ---- 4. Put by the owner: it stays, nothing is pushed, the overlap is said ----
 
     @Test

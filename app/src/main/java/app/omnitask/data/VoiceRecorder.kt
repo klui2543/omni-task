@@ -243,6 +243,8 @@ class VoiceRecordService : Service() {
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(0, tr("หยุด", "Stop"), stop)
+            // Shown whole on the lock screen, so a note started from the lock card can be stopped there.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }

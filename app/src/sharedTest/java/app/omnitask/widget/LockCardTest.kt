@@ -51,4 +51,62 @@ class LockCardTest {
         val c = LockCard.card(TodayWeek.Day(day, listOf(ev("จบแล้ว", past = true), now)))
         assertEquals(listOf("NOW"), titles(c))
     }
+
+    /**
+     * Real case (owner, 2026-10-31 19:58): the folded card's headline was "ไปรับบัตรเปนเพื่อนพี่กาน", an all-day
+     * event of the calendar "เบบี้รักยิ้ม". With way ค the card holds only the owner's own.
+     */
+    @Test fun anotherPersonsCalendarIsLeftOffTheCard() {
+        val partner = 5L
+        fun e(id: Long, t: String, a: String, b: String, cal: Long, allDay: Boolean = false) = app.omnitask.notify.CalendarEvent(
+            id, t, kotlinx.datetime.LocalDateTime.parse(a), kotlinx.datetime.LocalDateTime.parse(b), allDay = allDay, calendarId = cal,
+        )
+        val events = listOf(
+            e(1, "ไปรับบัตรเปนเพื่อนพี่กาน", "2026-10-31T00:00", "2026-11-01T00:00", partner, allDay = true),
+            e(2, "กินข้าวกับที่บ้าน", "2026-10-31T21:00", "2026-10-31T21:30", partner),
+            e(3, "ร้านยาโลตัส", "2026-10-31T11:00", "2026-10-31T21:00", 1),
+        )
+        val now = kotlinx.datetime.LocalDateTime.parse("2026-10-31T19:58")
+        val c = LockCard.card(LockCard.today(day, now, emptyList(), events, { it == partner }) { null })
+        assertEquals(listOf("ร้านยาโลตัส"), titles(c).filter { it != "NOW" })
+        // As before the change (nothing counted as another person's): their all-day event led the card.
+        val before = LockCard.card(LockCard.today(day, now, emptyList(), events, { false }) { null })
+        assertEquals("ไปรับบัตรเปนเพื่อนพี่กาน", titles(before).first())
+    }
+
+    /**
+     * Real case (owner, 2026-11-01 18:35): the card said "ไม่มีอะไรเหลือวันนี้" while the today page had "กินข้าว พัก"
+     * on and two late tasks put at 20:15 and 21:30. From the page's plan (way ก) the card has them.
+     */
+    @Test fun theCardFollowsTheTodayPagesPlan() {
+        val d = LocalDate(2026, 11, 1)
+        fun m(h: Int, mm: Int) = h * 60 + mm
+        val copy = app.omnitask.model.LockPlan.Copy(
+            d,
+            listOf(
+                app.omnitask.model.LockPlan.Slot("ตื่น", m(9, 59), null, card = false),
+                app.omnitask.model.LockPlan.Slot("กินข้าว พัก", m(18, 35), m(19, 20), card = false),
+                app.omnitask.model.LockPlan.Slot("เขียนถ้อยคำ", m(20, 15), m(20, 30), card = true, ident = "a"),
+                app.omnitask.model.LockPlan.Slot("ปรับระบบ", m(21, 30), m(22, 15), card = true, ident = "b"),
+                app.omnitask.model.LockPlan.Slot("นอน", m(22, 45), null, card = false),
+            ),
+        )
+        val at = kotlinx.datetime.LocalDateTime.parse("2026-11-01T18:40")
+        val day = LockCard.fromPlan(copy, at, emptySet(), 7)
+        assertEquals(listOf("กินข้าว พัก", "เขียนถ้อยคำ", "ปรับระบบ", "นอน"), titles(LockCard.card(day)))
+        val run = day.rows.first() as TodayWeek.Row.Event
+        assertEquals("18:35 ถึง 19:20", run.time)
+        assertEquals(5f / 45f, run.run!!, 0.001f)
+        // Work shows when it starts, as the mock; bed has no end.
+        assertEquals(listOf("20:15", "21:30", "22:45"), day.rows.drop(1).filterIsInstance<TodayWeek.Row.Event>().map { it.time })
+        // Between blocks the red line stands before what is next; ticked work is gone.
+        val later = LockCard.fromPlan(copy, kotlinx.datetime.LocalDateTime.parse("2026-11-01T19:40"), setOf("a"), 7)
+        assertEquals(listOf("NOW", "ปรับระบบ", "นอน"), titles(LockCard.card(later)))
+        // CONTROL, the widget's rows the card used before: both tasks are past their due date, so nothing is left.
+        val late = listOf(
+            TaskLine.parse("- [ ] เขียนถ้อยคำ #remind-at-scheduled 🎯 20:15 ⏳ 2026-11-01 📅 2026-10-21")!!,
+            TaskLine.parse("- [ ] ปรับระบบ #remind-at-scheduled 🎯 21:30 ⏳ 2026-11-01 📅 2026-10-14")!!,
+        )
+        assertEquals(listOf("NOW"), titles(LockCard.card(LockCard.today(d, at, late, emptyList(), { false }) { null })))
+    }
 }

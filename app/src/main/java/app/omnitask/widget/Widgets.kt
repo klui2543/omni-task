@@ -215,6 +215,7 @@ class TodayWidget : GlanceAppWidget() {
             val left = data.todayTasks.size
             val late = DayPlan.lateCount(data.plan)
             val hasToday = page.days.first().date == data.today
+            Box(GlanceModifier.fillMaxSize()) {
             Column(
                 GlanceModifier.fillMaxSize().cornerRadius(24.dp).background(cp { it.card }).padding(start = 10.dp, end = 10.dp, top = TOP.dp, bottom = 8.dp),
             ) {
@@ -245,6 +246,11 @@ class TodayWidget : GlanceAppWidget() {
                     if (i > 0) Spacer(GlanceModifier.height(TodayWeek.DAY_GAP.dp))
                     DayBlock(context, day, data.today, cap = page.cap)
                 }
+            }
+            // The mic floats at the bottom right so the header keeps its room (owner picked "ค", 2 Nov).
+            Box(GlanceModifier.fillMaxSize().padding(end = 12.dp, bottom = 12.dp), contentAlignment = Alignment.BottomEnd) {
+                Circle(context, R.drawable.ic_w_mic, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_VOICE, size = 44)
+            }
             }
         }
     }
