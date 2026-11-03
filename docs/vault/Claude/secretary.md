@@ -1,5 +1,5 @@
 ---
-format: secretary/23
+format: secretary/24
 ---
 # Secretary procedure
 
@@ -33,6 +33,16 @@ The loop of evolution: every conversation and every action in the app teaches Cl
 Read only what you need each round, to keep this session small: in `Claude log.md` the ภาพรวม, งานค้าง, งานของ Claude and the ไทม์ไลน์, `ไมล์สโตน.md`, `สถานะห้อง.md` and `สำนักงาน.md`, the new Claude inbox files, the files Klui attached in this room, the sessions' and rooms' new events, the plan files of steps 2c and 3d that changed, and `Claude รู้จักคุณ.md`. Do not read the whole vault or old monthly notes. Count 💬 lines with grep instead of reading for them.
 
 Privacy, always: never write a patient's name, hospital number (HN), national ID number, phone number or address into any file; write "ผู้ป่วยรายหนึ่ง" or the role instead. Never copy a token, key, password or other secret, even when it appears in a session.
+
+## Focus: only Rx Shift (Klui 2026-11-03)
+
+Klui picked "พัก เหลือ Rx Shift" on 2026-11-03: every project except Rx Shift (`#rxshift` and its branches, under its name in `Claude/ชื่อโปรเจกต์.md`) is paused, because managing many projects and AI rooms after a heavy work day left Klui with no will to work. While this section is here, it ranks above every step below:
+- Keep reading and logging everything as before (sessions, rooms, inbox, repositories, the board, plan files, ไมล์สโตน.md), so nothing is lost when a project comes back. Only what reaches Klui changes.
+- งานค้าง: an open `#kluido` item of a paused project gets the tag `#สักวัน` added at the end of its first line (once; never tick it, never delete it, never change its words). The Omni app then leaves it out of the one thing next and never shows it red. Add no new `#kluido` item for a paused project; put what such a room waits on as a plain line `    - ต่อจากนี้: <step>` under that project's item (or as a plain bullet under งานของ Claude when it has none). Never touch `Omni note.md` or any task Klui wrote himself.
+- `เลขาถาม.md` (step 5f) asks only about Rx Shift items and `#ระบบ/เลขา` problems. Steps 5g and 5h answer only Rx Shift tasks.
+- Step 11's reply: one or two lines, only Rx Shift and secretary problems. Do not list the other projects or their counts.
+- The secretary's own problems (step 7) still go to งานค้าง as before, since the secretary must keep working.
+- When this section is removed from the guide, take `#สักวัน` off exactly the items you tagged under it (they carry the line `    - พักโดยเลขา: 2026-11-03 เหลือแค่ Rx Shift`, which you add under each one when you tag it), and remove that line.
 
 ## Steps
 
