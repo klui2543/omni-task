@@ -213,7 +213,7 @@ class TodayWidget : GlanceAppWidget() {
             val index = (if (fresh) state[PAGE] ?: 0 else 0).coerceIn(0, pages.lastIndex)
             val page = pages[index]
             val left = data.todayTasks.size
-            val late = DayPlan.lateCount(data.plan)
+            val late = DayPlan.lateCount(data.plan, data.today)
             val hasToday = page.days.first().date == data.today
             Box(GlanceModifier.fillMaxSize()) {
             Column(
@@ -224,7 +224,7 @@ class TodayWidget : GlanceAppWidget() {
                         Label(span(page.days.first().date, page.days.last().date), cp { it.text }, 15.sp, bold = true)
                         if (hasToday) Row {
                             Label(if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งานวันนี้", "$left left today"), cp { it.muted }, 11.5.sp)
-                            if (late > 0) Label(tr(", ค้าง $late ›", ", $late overdue ›"), cp { it.red }, 11.5.sp, bold = true, modifier = GlanceModifier.clickable(open(context)))
+                            if (late > 0) Label(tr(", ค้าง $late ›", ", $late overdue ›"), cp { it.muted }, 11.5.sp, bold = true, modifier = GlanceModifier.clickable(open(context)))
                         } else Label(tr("${page.days.size} วัน", "${page.days.size} days"), cp { it.muted }, 11.5.sp)
                     }
                     if (index > 0) {

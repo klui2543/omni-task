@@ -176,6 +176,9 @@ private fun blockText(row: DayFill.Row.Locked): Pair<String, String> {
 }
 
 /** Days past the real deadline, for the red word on a task row ("เลย 9 วัน"). */
+/** How "เลย N วัน" reads on the plan: grey, as on the rest of the today page (owner's pick ก, 2026-11-03, mock six-pains screen 1). */
+private val LATE get() = C.muted
+
 private fun lateWord(t: Task?, today: LocalDate): String? {
     val due = t?.due ?: return null
     if (due >= today) return null
@@ -1063,7 +1066,7 @@ private fun WaitingCard(p: DayFill.Placed, offers: List<Int>, today: LocalDate, 
                         append(tr("ยังไม่ได้วาง", "Not placed"))
                         if (late != null) {
                             append(", ")
-                            pushStyle(SpanStyle(color = C.red, fontWeight = FontWeight.Medium))
+                            pushStyle(SpanStyle(color = LATE, fontWeight = FontWeight.Medium))
                             append(late)
                             pop()
                         }
@@ -1116,7 +1119,7 @@ private fun Mark(item: DayFill.Item, vm: TaskViewModel) {
     else Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(6.dp).clip(CircleShape).background(C.faint)) }
 }
 
-/** A task row's second line, led by its time: "16:45, เลย 9 วัน, 15 นาที, สปรินต์". Red only for late. */
+/** A task row's second line, led by its time: "16:45, เลย 9 วัน, 15 นาที, สปรินต์", all grey. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) {
@@ -1139,7 +1142,7 @@ private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) 
                         append(DayFill.hm(p.at))
                         if (late != null) {
                             append(", ")
-                            pushStyle(SpanStyle(color = C.red, fontWeight = FontWeight.Medium))
+                            pushStyle(SpanStyle(color = LATE, fontWeight = FontWeight.Medium))
                             append(late)
                             pop()
                         }
@@ -1164,7 +1167,7 @@ private fun Caption(p: DayFill.Placed, picked: DayFill.Pick?, today: LocalDate) 
             append(DayFill.hm(p.at))
             if (late != null) {
                 append(", ")
-                pushStyle(SpanStyle(color = C.red, fontWeight = FontWeight.Medium))
+                pushStyle(SpanStyle(color = LATE, fontWeight = FontWeight.Medium))
                 append(late)
                 pop()
             }
@@ -1266,9 +1269,12 @@ private fun NextCard(
             }
         }
         if (item.kind != DayFill.Kind.REVIEW && item.kind != DayFill.Kind.ASK) {
+            // Asks how long the owner is busy instead of moving it half an hour on (owner's pick ก, 2026-11-03).
+            var busy by remember { mutableStateOf(false) }
+            if (busy) BusySheet(p, plan, input, vm, onDone = { setOpen(null) }) { busy = false }
             Text(
                 tr("ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่น", "Busy now, move it later"),
-                indent.clip(RoundedCornerShape(6.dp)).clickable { vm.fillBusy(p, plan.mode); setOpen(null) }.padding(vertical = 8.dp),
+                indent.clip(RoundedCornerShape(6.dp)).clickable { busy = true }.padding(vertical = 8.dp),
                 color = C.accentText, fontSize = TS.caption,
             )
         }

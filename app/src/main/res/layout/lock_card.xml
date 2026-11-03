@@ -12,11 +12,44 @@
             android:layout_marginStart="8dp" android:singleLine="true" android:ellipsize="end" android:textSize="12sp" />
         <TextView android:id="@+id/latechip" style="@style/LockSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginStart="8dp" android:background="@drawable/lock_chip" android:paddingStart="8dp" android:paddingEnd="8dp"
-            android:paddingTop="1dp" android:paddingBottom="1dp" android:singleLine="true" android:textColor="#F0B8B4" android:textSize="11.5sp" android:visibility="gone" />
+            android:paddingTop="1dp" android:paddingBottom="1dp" android:singleLine="true" android:textColor="#B9BEC8" android:textSize="11.5sp" android:visibility="gone" />
         </LinearLayout>
         <ImageView android:id="@+id/mic" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="8dp"
         android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
         android:contentDescription="@string/lock_voice" />
+    </LinearLayout>
+    <!-- Mondays: what to prepare in the next four weeks; then the one thing next with its two buttons (owner's pick ก, 2026-11-03, mock six-pains screen 3). Filled by LockCardNotifier. -->
+    <LinearLayout android:id="@+id/aheadbox" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+        android:layout_marginTop="4dp" android:background="@drawable/lock_next_bg" android:paddingStart="11dp" android:paddingEnd="11dp"
+        android:paddingTop="8dp" android:paddingBottom="8dp" android:visibility="gone">
+        <TextView android:id="@+id/aheadk" style="@style/LockLink" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:textSize="11sp" />
+        <TextView android:id="@+id/ahead0" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:ellipsize="end" android:textSize="14sp" />
+        <TextView android:id="@+id/aheadm0" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:ellipsize="end" android:textSize="12sp" />
+        <TextView android:id="@+id/ahead1" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="2dp" android:singleLine="true" android:ellipsize="end" android:textSize="14sp" android:visibility="gone" />
+        <TextView android:id="@+id/aheadm1" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:ellipsize="end" android:textSize="12sp" android:visibility="gone" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/nextbox" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+        android:layout_marginTop="4dp" android:layout_marginBottom="2dp" android:background="@drawable/lock_next_bg" android:paddingStart="11dp"
+        android:paddingEnd="11dp" android:paddingTop="8dp" android:paddingBottom="8dp" android:visibility="gone">
+        <TextView android:id="@+id/nextk" style="@style/LockLink" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:textSize="11sp" />
+        <TextView android:id="@+id/nextt" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:maxLines="2" android:ellipsize="end" android:textSize="14sp" />
+        <TextView android:id="@+id/nextm" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:singleLine="true" android:ellipsize="end" android:textSize="12sp" android:visibility="gone" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
+            <TextView android:id="@+id/nextdone" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="32dp"
+                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:singleLine="true" android:textSize="13sp" />
+            <TextView android:id="@+id/nextskip" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="32dp"
+                android:layout_marginStart="8dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="14dp"
+                android:paddingEnd="14dp" android:singleLine="true" android:textSize="13sp" />
+        </LinearLayout>
     </LinearLayout>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
         <LinearLayout android:id="@+id/p0" android:layout_width="match_parent" android:layout_height="30dp"

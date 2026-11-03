@@ -114,6 +114,11 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- The lock-screen card's buttons on the one thing next (ทำแล้ว, ไม่ใช่ตอนนี้). -->
+        <receiver
+            android:name=".widget.LockNextReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".widget.QuickAddWidgetReceiver"
             android:exported="true"

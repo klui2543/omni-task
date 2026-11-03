@@ -201,7 +201,7 @@ object WebFocus {
         val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
         val doneToday = tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
         // Read off the plan, so the numbers match the overdue card and the timeline, as on Android.
-        val overdue = DayPlan.lateCount(plan)
+        val overdue = DayPlan.lateCount(plan, today)
 
         // The night the sleep card plans, all day long: last night until its wake time, then tonight's (as Android's
         // Focus screen). Bed and wake are the ones picked for that evening, or the usual ones from the profile.

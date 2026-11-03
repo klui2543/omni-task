@@ -33,6 +33,7 @@ import app.omnitask.drive.sameName
 import app.omnitask.model.Countdown
 import app.omnitask.model.DateBucket
 import app.omnitask.model.Focus
+import app.omnitask.model.NextThing
 import app.omnitask.model.Folders
 import app.omnitask.model.GroupMove
 import app.omnitask.model.ListFolders
@@ -198,6 +199,8 @@ data class UiState(
     val vaultName: String? = null,
     /** The secretary's questions (`Claude/เลขาถาม.md`), as last read; the today page matches them to open tasks. */
     val secretaryAsks: List<SecretaryAsk.Ask> = emptyList(),
+    /** The secretary's `ไมล์สโตน.md`, for the Monday look four weeks ahead (owner's pick ก, 2026-11-03). */
+    val milestones: String? = null,
     val profile: Profile = Profile(),
     /** What the day plan keeps on this phone (step 2): today's taps, taken slots, the sprint; see [DayFill.Memory]. */
     val dayFill: DayFill.Memory = DayFill.Memory(),
@@ -1717,6 +1720,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             // The secretary's questions; a file that cannot be read keeps the last ones rather than hiding them.
             val askText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, SecretaryAsk.PATH) } }
             askText.getOrNull().let { t -> if (askText.isSuccess) _state.update { it.copy(secretaryAsks = SecretaryAsk.parse(t)) } }
+            // The big picture's start-by lines, for the Monday look ahead; a file that cannot be read keeps the last one.
+            val mileText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, NextThing.MILESTONES_PATH) } }
+            if (mileText.isSuccess) _state.update { it.copy(milestones = mileText.getOrNull()) }
             if (checkSyncOnLoad) {
                 checkSyncOnLoad = false
                 val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
@@ -2562,17 +2568,29 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * "ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่น": the card moves to after this slot plus half an hour, the rest flows around it. It
-     * counts as a move (once a day a task, never after a night shift) and never touches 📅: work due today that no
-     * longer fits says so in the list below.
+     * "ช่วงนี้ไม่ว่าง" with where it goes (owner's pick ก, 2026-11-03, mock six-pains screen 2): past the busy block
+     * ("จบช่วงนี้"), this evening after the way home ("เย็นนี้"), or out of today to come first tomorrow ("พรุ่งนี้").
+     * It counts as a move (once a day a task, never after a night shift) and never touches 📅. The reason the owner said,
+     * if any, goes to the secretary's tap log, which the secretary reads to learn the owner's days.
      */
-    fun fillBusy(p: DayFill.Placed, mode: DayFill.Mode) {
+    fun fillBusy(p: DayFill.Placed, plan: DayFill.Plan, input: DayFill.Input, to: DayFill.Busy, reason: String?) {
         val today = LocalDate.now()
+        val until = DayFill.busyUntil(plan, input, p, to)
+        val title = p.item.title
         val change = { m: DayFill.Memory ->
-            val pushed = p.item.task?.takeIf { mode != DayFill.Mode.AFTER_NIGHT }?.let { m.withPush(DayFill.ident(it), today) } ?: m
-            pushed.copy(notBefore = pushed.notBefore + (p.item.id to p.at + p.len + 30))
+            val pushed = p.item.task?.takeIf { plan.mode != DayFill.Mode.AFTER_NIGHT }?.let { m.withPush(DayFill.ident(it), today) } ?: m
+            when (val at = until.at) {
+                null -> pushed.copy(picks = pushed.picks + (p.item.id to DayFill.Pick.SKIP))
+                else -> pushed.copy(notBefore = pushed.notBefore + (p.item.id to at))
+            }
         }
-        changeFill(tr("ช่วงนี้ไม่ว่าง ย้ายไปช่วงอื่นแล้ว", "Busy now, moved later"), p.item.title, reflowNews(tr("ช่วงนี้ไม่ว่าง: ", "Busy now: ") + p.item.title, change), change)
+        val news = when (to) {
+            DayFill.Busy.SPAN -> tr("เลื่อนไปหลัง ${DayFill.hm(until.at!!)} แล้ว ไม่เด้งระหว่างนี้", "Moved to after ${DayFill.hm(until.at!!)}, not before")
+            DayFill.Busy.EVENING -> tr("ย้ายไปช่วงเย็นหลังกลับบ้าน", "Moved to this evening, after getting home")
+            DayFill.Busy.TOMORROW -> tr("ย้ายไปช่วงว่างแรกของพรุ่งนี้", "Moved to tomorrow's first free time")
+        }
+        changeFill(news, title, reflowNews(tr("ช่วงนี้ไม่ว่าง: ", "Busy now: ") + title, change), change)
+        reason?.trim()?.takeIf { it.isNotEmpty() }?.let { deskNote("ไม่ว่าง: $title เพราะ $it") }
     }
 
     /** "ไม่ใช่ เปลี่ยนให้": the next task for this slot; with none left the card is put aside for today. */

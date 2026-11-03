@@ -705,4 +705,30 @@ class DayFillTest {
         assertEquals("Siriraj", ranked.first().project)
         assertEquals(0, ranked.first().rank, "about 12 hours of work by Wednesday, with less free time than that")
     }
+
+    /** "ช่วงนี้ไม่ว่าง" (owner's pick ก, 2026-11-03, mock six-pains screen 2): the card waits past the whole busy block. */
+    @Test
+    fun busyWaitsPastTheWholeBlock() {
+        val meeting = timed(90, ownCal, "ประชุม", "2026-11-04T14:00", "2026-11-04T17:30")
+        val inp = input("2026-11-04T14:02", extra = listOf(meeting))
+        val plan = DayFill.plan(inp)
+        val card = assertNotNull(plan.placed.firstOrNull { it.item.task != null })
+        // Inside the meeting: after it, by the calendar (before, only half an hour after the slot, so it came back).
+        assertEquals(DayFill.Until(m(17, 30), true), DayFill.busyUntil(plan, inp, card.copy(at = m(14), len = 60), DayFill.Busy.SPAN))
+        // In free time before an event: that stretch is gone, so until the event starts.
+        val film = timed(92, ownCal, "ดูหนัง", "2026-11-04T20:00", "2026-11-04T21:00")
+        val inp3 = input("2026-11-04T18:00", extra = listOf(film))
+        val plan3 = DayFill.plan(inp3)
+        assertEquals(DayFill.Until(m(20), true), DayFill.busyUntil(plan3, inp3, card.copy(at = m(18), len = 30), DayFill.Busy.SPAN))
+        // Nothing busy around it or after it: an hour after the slot.
+        val free = card.copy(at = m(19), len = 30)
+        assertEquals(DayFill.Until(m(20, 30), false), DayFill.busyUntil(plan, inp, free, DayFill.Busy.SPAN))
+        // This evening: an hour after the day job ends, past what is on then.
+        assertEquals(DayFill.Until(m(17, 30), false), DayFill.busyUntil(plan, inp, card, DayFill.Busy.EVENING))
+        val gym = timed(91, ownCal, "ยิม", "2026-11-04T17:00", "2026-11-04T19:00")
+        val inp2 = input("2026-11-04T14:02", extra = listOf(meeting, gym))
+        val plan2 = DayFill.plan(inp2)
+        assertEquals(DayFill.Until(m(19), true), DayFill.busyUntil(plan2, inp2, card, DayFill.Busy.EVENING))
+        assertEquals(DayFill.Until(null, false), DayFill.busyUntil(plan, inp, card, DayFill.Busy.TOMORROW))
+    }
 }

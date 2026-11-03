@@ -450,8 +450,9 @@ object DayFill {
         mem.errand?.let { e -> busy += e.from to (e.to ?: end) }
         busy.forEach { (a, b) -> for (t in maxOf(a, start) until minOf(b, end)) occ[t - start] = true }
         val free = occ.count { !it }
-        // The buffer: a third of the free time; half when tired; all of it when very tired, so only what must be done
-        // is placed (the owner's own time and meals keep their place).
+        // The buffer: a third of the free time, so work takes about 70% of it at most (mock six-pains screen 2,
+        // "ไม่ยัดเต็มวัน"); half when tired; all of it when very tired, so only what must be done is placed (the owner's
+        // own time and meals keep their place).
         val target = when (fr.tired?.level) {
             Fatigue.Level.VERY_TIRED -> free
             Fatigue.Level.TIRED -> maxOf(30, free / 2)
@@ -523,8 +524,9 @@ object DayFill {
             if (t < 0 && it0.min != null && len != it0.min) { len = it0.min; t = firstFit(from, to, len, work) }
             // A slot the owner put counts as used, so the buffer stays what it should be.
             val leftNow = (0 until span).count { !occ[it] && !pinOcc[it] }
+            // What was put off yesterday keeps the buffer too; only real deadlines may use it.
             var capped = false
-            if (t >= 0 && !it0.must && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
+            if (t >= 0 && (!it0.must || it0.kind == Kind.AGAIN) && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
             if (t < 0) {
                 if (it0.kind == Kind.LIFE) return@forEach
                 val why = when {
@@ -552,6 +554,68 @@ object DayFill {
         Pick.SPLIT -> tr("ขอให้เลขาแบ่งงานแล้ว จะเสนองานย่อยในเลขาถาม", "The secretary will propose smaller steps")
         Pick.SKIP -> tr("ไว้ก่อน ยังไม่ลงตาราง", "Later, not in the plan")
         Pick.TAKE -> ""
+    }
+
+    /** Where "ช่วงนี้ไม่ว่าง" sends a card (owner's pick ก, 2026-11-03, mock six-pains screen 2). */
+    enum class Busy { SPAN, EVENING, TOMORROW }
+
+    /** How long "จบช่วงนี้" waits when no block of the plan covers the card's time. */
+    const val BUSY_HOUR = 60
+
+    /** The evening starts this long after the day job ends (the way home), or at [EVENING_AT] on a day without it. */
+    private const val HOME_AFTER = 60
+    private const val EVENING_AT = 18 * 60
+
+    /** The busy blocks of [plan] (events, the day job, errands): where each starts and ends, in minutes. */
+    private fun blocks(plan: Plan): List<Pair<Int, Int>> = plan.rows.filterIsInstance<Row.Locked>().mapNotNull { r ->
+        val at = r.at ?: return@mapNotNull null
+        if (r.free) return@mapNotNull null
+        val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { minutesOf(it.end, plan.day) } ?: return@mapNotNull null
+        (at to end).takeIf { end > at }
+    }
+
+    /** From [x], past every busy block that covers it and the ones right after it; [x] when none covers it. */
+    private fun pastBlocks(plan: Plan, x0: Int): Int {
+        val bs = blocks(plan)
+        var x = x0
+        while (true) {
+            val next = bs.filter { (a, b) -> a <= x && x < b }.maxOfOrNull { it.second } ?: return x
+            x = next
+        }
+    }
+
+    /** Where a busy card goes: the minute it may come back today (null: tomorrow), and whether the plan's blocks set it. */
+    data class Until(val at: Int?, val byBlock: Boolean)
+
+    /**
+     * The minute a busy card may come back today, or null for [Busy.TOMORROW] (it leaves today's plan and comes first
+     * tomorrow). [Busy.SPAN]: after the busy blocks that cover the card now (an event, the day job), else until the next
+     * block starts (the free stretch it sat in is gone), else an hour after the card; never just half an hour on, which
+     * brought it straight back. [Busy.EVENING]: after the way home from the
+     * day job, or 18:00, past any block then. With [Until.byBlock] true the plan's own blocks decided it ("ตามปฏิทิน").
+     */
+    fun busyUntil(plan: Plan, inp: Input, p: Placed, to: Busy): Until {
+        val now = minutesOf(inp.now, plan.day)
+        return when (to) {
+            Busy.TOMORROW -> Until(null, false)
+            Busy.SPAN -> {
+                val from = maxOf(p.at, now)
+                val past = pastBlocks(plan, from)
+                // Busy in a block now: after it. In free time: this free stretch is gone, until the next block starts.
+                val nextBlock = blocks(plan).map { it.first }.filter { it > from }.minOrNull()
+                when {
+                    past > from -> Until(past, true)
+                    nextBlock != null -> Until(nextBlock, true)
+                    else -> Until(maxOf(p.at + p.len, now) + BUSY_HOUR, false)
+                }
+            }
+            Busy.EVENING -> {
+                val job = RealDay.jobBlocks(listOf(plan.day), inp.events, inp.facts).maxOfOrNull { minutesOf(it.end, plan.day) }
+                val home = maxOf(job?.plus(HOME_AFTER) ?: EVENING_AT, now)
+                val past = pastBlocks(plan, home)
+                Until(past, past > home)
+            }
+        }
     }
 
     /** "2 ชม.", "1 ชม. 30 นาที", "45 นาที". */

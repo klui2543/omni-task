@@ -17,6 +17,8 @@ import app.omnitask.R
 import app.omnitask.model.DayFill
 import app.omnitask.model.DayPlan
 import app.omnitask.model.LockPlan
+import app.omnitask.model.NextThing
+import app.omnitask.notify.Scheduler
 import app.omnitask.model.tr
 import app.omnitask.time.*
 import kotlinx.datetime.LocalDateTime
@@ -122,7 +124,7 @@ object LockCardNotifier {
         )
 
         val left = data.todayTasks.size
-        val late = DayPlan.lateCount(data.plan)
+        val late = DayPlan.lateCount(data.plan, data.today)
         val foot = (if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งานวันนี้", "$left left today")) +
             if (late > 0) tr(", ค้าง $late", ", $late overdue") else ""
 
@@ -177,6 +179,10 @@ object LockCardNotifier {
         small.setTextViewText(R.id.smallnext, nextLine ?: "")
         small.setTextViewText(R.id.smallfoot, foot)
 
+        // The one thing next across the projects, and on Mondays what to prepare in four weeks (owner's pick ก,
+        // 2026-11-03, mock six-pains screen 3). Never red: put off, it simply waits.
+        nextThing(context, big, data)
+
         val open = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -215,6 +221,43 @@ object LockCardNotifier {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
         nm.notify(ID, n)
+    }
+
+    private fun nextThing(context: Context, big: RemoteViews, data: WidgetData) {
+        val pick = NextThingSkips.ranked(context, data.tasks, data.today).firstOrNull()
+        if (pick == null) big.setViewVisibility(R.id.nextbox, android.view.View.GONE) else {
+            big.setViewVisibility(R.id.nextbox, android.view.View.VISIBLE)
+            big.setTextViewText(R.id.nextk, tr("ถัดไป", "Next"))
+            big.setTextViewText(R.id.nextt, pick.task.title)
+            big.setViewVisibility(R.id.nextm, if (pick.meta != null) android.view.View.VISIBLE else android.view.View.GONE)
+            big.setTextViewText(R.id.nextm, pick.meta ?: "")
+            big.setTextViewText(R.id.nextdone, tr("ทำแล้ว", "Done"))
+            big.setTextViewText(R.id.nextskip, tr("ไม่ใช่ตอนนี้", "Not now"))
+            fun button(action: String, code: Int) = PendingIntent.getBroadcast(
+                context, code,
+                Intent(context, LockNextReceiver::class.java).setAction(action)
+                    .putExtra(LockNextReceiver.EXTRA_KEY, pick.task.key).putExtra(LockNextReceiver.EXTRA_RAW, pick.task.raw),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            big.setOnClickPendingIntent(R.id.nextdone, button(LockNextReceiver.DONE, 21))
+            big.setOnClickPendingIntent(R.id.nextskip, button(LockNextReceiver.SKIP, 22))
+        }
+        val ahead = if (NextThing.monday(data.today)) {
+            val text = runCatching { Scheduler.readVaultFile(context, NextThing.MILESTONES_PATH) }
+                .onFailure { WidgetLog.add("lockcard: could not read the milestones: ${it.message}") }.getOrNull()
+            NextThing.ahead(text, data.today)
+        } else emptyList()
+        if (ahead.isEmpty()) return big.setViewVisibility(R.id.aheadbox, android.view.View.GONE)
+        big.setViewVisibility(R.id.aheadbox, android.view.View.VISIBLE)
+        big.setTextViewText(R.id.aheadk, tr("4 สัปดาห์ข้างหน้า เตรียม ${ahead.size} เรื่อง", "Next 4 weeks: ${ahead.size} to prepare"))
+        listOf(R.id.ahead0 to R.id.aheadm0, R.id.ahead1 to R.id.aheadm1).forEachIndexed { i, (t, m) ->
+            val a = ahead.getOrNull(i)
+            val shown = if (a != null) android.view.View.VISIBLE else android.view.View.GONE
+            big.setViewVisibility(t, shown)
+            big.setViewVisibility(m, shown)
+            big.setTextViewText(t, a?.title ?: "")
+            big.setTextViewText(m, a?.let { tr("ต้องเริ่มภายใน ", "Start by ") + it.by } ?: "")
+        }
     }
 
     /** An event happening now: the red line and the tint of the time gone sit [run] of the way down the row. */
