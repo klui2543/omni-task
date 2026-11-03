@@ -195,7 +195,9 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
 
     val sel = spans.firstOrNull { it.task.key == selKey }?.task
     // The project's roadmap from the secretary's ไมล์สโตน.md, only while the filter names that project's tag.
-    val plan = if (embed != null) emptyList() else remember(state.milestones, state.query.tags) { PlanSpans.shown(PlanSpans.parse(state.milestones), state.query.tags) }
+    // A folder filter names no tag, so the tags of the tasks it leaves stand in for it (owner, 2026-11-03: filtered by folder, saw no plan).
+    val planTags = state.query.tags + if (state.query.folders.isEmpty()) emptySet() else tasks.flatMap { it.tags }.toSet()
+    val plan = if (embed != null) emptyList() else remember(state.milestones, planTags) { PlanSpans.shown(PlanSpans.parse(state.milestones), planTags) }
     val planPick = selPlan?.takeIf { it in plan && sel == null }
     val related = sel?.let { s -> setOfNotNull(s.key, blockerOf(s)?.key) + pool.filter { t -> t.dependsOn.any { byId[it] === s } }.map { it.key } }.orEmpty()
 
