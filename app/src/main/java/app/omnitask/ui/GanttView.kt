@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.omnitask.data.CalendarReader
+import app.omnitask.model.PlanSpans
 import app.omnitask.model.Projects
 import app.omnitask.model.StuckLog
 import app.omnitask.model.Status
@@ -143,6 +144,8 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
     val staleOnly = embed?.staleOnly ?: staleOnlyOwn
     val selKey = if (embed != null) embed.selKey else selKeyOwn
     var noting by remember { mutableStateOf<Task?>(null) }
+    // The picked roadmap bar (owner's pick ก, mock rx-roadmap-timeline v1): its card says when and the next step only.
+    var selPlan by remember { mutableStateOf<PlanSpans.Span?>(null) }
     val today = state.today
     val whole = kotlin.math.floor(start).toLong()
     val frac = start - whole
@@ -191,6 +194,9 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
         .sortedBy { (_, list) -> list.minOf { it.begin } }
 
     val sel = spans.firstOrNull { it.task.key == selKey }?.task
+    // The project's roadmap from the secretary's ไมล์สโตน.md, only while the filter names that project's tag.
+    val plan = if (embed != null) emptyList() else remember(state.milestones, state.query.tags) { PlanSpans.shown(PlanSpans.parse(state.milestones), state.query.tags) }
+    val planPick = selPlan?.takeIf { it in plan && sel == null }
     val related = sel?.let { s -> setOfNotNull(s.key, blockerOf(s)?.key) + pool.filter { t -> t.dependsOn.any { byId[it] === s } }.map { it.key } }.orEmpty()
 
     noting?.let { t -> StuckDialog(t, state.subtasksOf(t), today, { vm.noteStuck(t, it) }) { noting = null } }
@@ -255,7 +261,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                     val todayAt = ChronoUnit.DAYS.between(first, today).toInt()
                     Column(
                         Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                            .padding(top = 2.dp, bottom = if (embed != null) 8.dp else NavClearance + if (sel != null) 160.dp else 0.dp)
+                            .padding(top = 2.dp, bottom = if (embed != null) 8.dp else NavClearance + if (sel != null || planPick != null) 160.dp else 0.dp)
                             .drawBehind {
                                 // Week starts as faint guides, and today as an accent line, behind the bars.
                                 val stroke = 1.dp.toPx()
@@ -294,6 +300,26 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                                 onLongClick = { events.inspect(next) },
                             )
                         }
+                        plan.groupBy { it.project ?: it.tag }.forEach { (name, list) ->
+                            GanttCaption(tr("แผน $name (จากเลขา)", "$name plan (from the secretary)"), PLAN_TINT)
+                            val colors = planColors()
+                            list.forEach { p ->
+                                val from = ChronoUnit.DAYS.between(first, p.start)
+                                val to = ChronoUnit.DAYS.between(first, p.end)
+                                val date = ganttRange(p.start, p.end, today) + if (p.guess) tr(" (เดา)", " (guess)") else ""
+                                val pick = { selPlan = if (selPlan == p) null else p; selKeyOwn = null }
+                                Box(Modifier.alpha(if (planPick != null && planPick != p) 0.3f else 1f)) {
+                                    when {
+                                        to < 0 -> GanttEdgeLane(p.title, date, colors, before = true, onClick = pick)
+                                        from >= days -> GanttEdgeLane(p.title, date, colors, before = false, onClick = pick)
+                                        else -> GanttLane(
+                                            p.title, listOf(GanttBar(from.coerceAtLeast(0L).toInt(), to.coerceAtMost(days - 1L).toInt(), date, onClick = pick)),
+                                            colors, dayW, laneW, pick, dashed = p.guess, picked = planPick == p,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         groups.forEach { (project, list) ->
                             GanttCaption(project, C.accentText)
                             list.sortedBy { it.start }.forEach { s ->
@@ -317,11 +343,12 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                                     aiPick = embed?.picks?.contains(t.key) == true,
                                 ) {
                                     val next = if (selKey == t.key) null else t.key
+                                    selPlan = null
                                     if (embed != null) embed.onSelect(if (next == null) null else t) else selKeyOwn = next
                                 }
                             }
                         }
-                        if (groups.isEmpty() && eventRows.isEmpty()) {
+                        if (groups.isEmpty() && eventRows.isEmpty() && plan.isEmpty()) {
                             Text(
                                 if (staleOnly) tr("ไม่มีงานค้างนาน", "Nothing has sat too long") else tr("ยังไม่มีงานที่มีวันที่", "No dated tasks yet"),
                                 Modifier.padding(16.dp), color = C.muted, fontSize = TS.body,
@@ -329,6 +356,25 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                         }
                     }
                 }
+            }
+        }
+
+        // The picked roadmap bar: its days and the next step, nothing to press but close.
+        if (planPick != null) {
+            Column(
+                Modifier.align(Alignment.BottomCenter).padding(start = 10.dp, end = 10.dp, bottom = NavClearance + 8.dp).fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp)).background(C.raised).border(1.dp, C.cardBorder, RoundedCornerShape(18.dp))
+                    .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(planPick.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Box(Modifier.size(44.dp).clip(CircleShape).clickable { selPlan = null }, contentAlignment = Alignment.Center) {
+                        Icon(Ic.close, tr("ปิด", "Close"), tint = C.muted, modifier = Modifier.size(18.dp))
+                    }
+                }
+                val g = if (planPick.guess) tr(" (เดา)", " (guess)") else ""
+                Text(tr("เริ่มภายใน ", "Start by ") + ganttRange(planPick.start, planPick.start, today) + g + tr("  เสร็จราว ", "  done by ") + ganttRange(planPick.end, planPick.end, today) + g, color = C.text2, fontSize = TS.caption)
+                planPick.next?.let { Text(tr("ขั้นถัดไป: ", "Next step: ") + it, Modifier.padding(top = 4.dp, end = 8.dp), color = C.text, fontSize = TS.caption) }
             }
         }
 
@@ -371,6 +417,11 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
         }
     }
 }
+
+/** The roadmap's own colour, apart from mine (teal) and Claude's (accent), the same in both themes. */
+private val PLAN_TINT = Color(0xFFB794E0)
+
+private fun planColors() = GanttColors(PLAN_TINT, PLAN_TINT.copy(alpha = 0.16f), C.text, C.muted)
 
 /** "เห็น 14 วัน", or about how many months when it is long. */
 private fun spanText(span: Float): String {
