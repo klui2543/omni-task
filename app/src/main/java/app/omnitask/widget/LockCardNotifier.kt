@@ -122,7 +122,11 @@ object LockCardNotifier {
         // The one thing next across the projects (owner's pick ก, 2026-11-03): a row of the list, never twice.
         val pick = NextThingSkips.ranked(context, data.tasks, data.today).firstOrNull()
         val (card, nextAt) = LockCard.card(day).let { c ->
-            if (pick == null) c to -1 else LockCard.placeNext(c, pick.task.title, pick.task.key)
+            if (pick == null) c to -1 else {
+                val ident = DayFill.ident(pick.task)
+                val titles = setOf(pick.task.title) + copy?.slots?.filter { it.ident == ident }?.map { it.title }.orEmpty()
+                LockCard.placeNext(c, day.rows, titles, pick.task.key)
+            }
         }
 
         val nmSys = context.getSystemService(NotificationManager::class.java)
@@ -246,7 +250,8 @@ object LockCardNotifier {
         fun blue(text: String) = android.text.SpannableString(text).apply {
             setSpan(android.text.style.ForegroundColorSpan(NEXT), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        val label = blue(tr("ถัดไป: ", "Next: ") + pick.task.title)
+        // As the mock: the time and the bar in the lighter blue, the name in the card's own colour.
+        val label = tr("ถัดไป: ", "Next: ") + pick.task.title
         if (r is TodayWeek.Row.Event && r.run != null) {
             big.setTextViewText(RUNTITLE[slot], label)
             big.setInt(RUNBAR[slot], "setBackgroundColor", NEXT)

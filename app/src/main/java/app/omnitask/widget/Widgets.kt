@@ -265,11 +265,11 @@ class TodayWidget : GlanceAppWidget() {
         private const val TOP = 14
         private const val HEADER = 40
         private const val UNDER = 12
-        /** Padding, header and the gap under it, in dp: what the days cannot use. */
-        private const val CHROME = TOP + 8 + HEADER + UNDER + MIC_ROOM
         /** The mic and the room kept for it under the last day. */
         private const val MIC = 38
         private const val MIC_ROOM = MIC + 4
+        /** Padding, header, the gap under it and the mic's room, in dp: what the days cannot use. */
+        private const val CHROME = TOP + 8 + HEADER + UNDER + MIC_ROOM
     }
 }
 

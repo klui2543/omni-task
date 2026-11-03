@@ -248,7 +248,7 @@ fun FocusScreen(
             val cards = buildList {
                 if (pick != null) add(
                     // First on the one "ทำต่อไป" card, so it is not said twice (owner's pick ก, 2026-11-03, mock six-pains-fix).
-                    DeckCard("next", tr("ทำต่อไป", "Do next")) {
+                    DeckCard("pick", tr("ทำต่อไป", "Do next")) {
                         Text(
                             pick.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(pick.task) },
                             color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -274,7 +274,9 @@ fun FocusScreen(
                             }
                         }
                     },
-                ) else if (next != null) add(
+                )
+                // The usual "ทำต่อไป" stays as the next card in the deck, buttons and all (mock six-pains-fix ก: "1/4").
+                if (next != null) add(
                     DeckCard("next", tr("ทำต่อไป", "Do next")) {
                         val doing = next.task.status == Status.IN_PROGRESS
                         // A deadline today is still red; one gone by is not (owner's pick ก, 2026-11-03).

@@ -15,7 +15,7 @@
             android:paddingTop="1dp" android:paddingBottom="1dp" android:singleLine="true" android:textColor="#B9BEC8" android:textSize="11.5sp" android:visibility="gone" />
         </LinearLayout>
         <ImageView android:id="@+id/mic" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="8dp"
-        android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
+        android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#E8EAEE"
         android:contentDescription="@string/lock_voice" />
     </LinearLayout>
     <!-- Mondays: what to prepare in the next four weeks (owner's pick ก, 2026-11-03, mock six-pains screen 3). The one thing next is a row of the list below with its two buttons under it (owner's pick ก, 2026-11-03, mock six-pains-fix). Filled by LockCardNotifier. -->
