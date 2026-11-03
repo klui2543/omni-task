@@ -607,8 +607,8 @@ private object Pictures {
     fun get(key: Key, draw: () -> Bitmap): Bitmap = kept.getOrPut(key, draw)
 }
 
-/** The least room the list under the grid needs: a day's heading, one row and the "more" line. */
-private const val MIN_LIST = 86f
+/** The least room the list under the grid needs: a day's heading, one row, and the mic's band that holds the "more" line. */
+private const val MIN_LIST = 102f
 
 @Composable
 private fun MonthContent(context: Context, data: MonthData) {
@@ -661,11 +661,12 @@ private fun MonthContent(context: Context, data: MonthData) {
         }
         if (showAgenda) {
             Spacer(GlanceModifier.height(8.dp))
-            Box(GlanceModifier.fillMaxSize().padding(end = 44.dp)) { Agenda(context, data, room - rows * cell - 8f) }
+            Agenda(context, data, room - rows * cell - 8f)
         }
     }
     // The mic floats at the bottom right, in the list's free corner (owner picked "ก", 2 Nov); grey and smaller, and
-    // the list keeps its right edge free so no time sits under it (owner picked ก, 3 Nov).
+    // the list keeps a band at its foot for it, as the week widget does, so rows keep their full width and no time sits
+    // under it (owner picked ก, 3 Nov; "manage space like weekly").
     if (showAgenda) Box(GlanceModifier.fillMaxSize().padding(end = 14.dp, bottom = 10.dp), contentAlignment = Alignment.BottomEnd) {
         Circle(context, R.drawable.ic_w_mic, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_VOICE, size = 38)
     }
@@ -716,7 +717,8 @@ private fun Agenda(context: Context, data: MonthData, heightDp: Float) {
         items.forEach { entry -> lines += Line(30f, true) { AgendaLine(context, day, entry) } }
     }
     // Everything fits, or as much as fits above the "more" line.
-    val budget = if (lines.sumOf { it.height.toDouble() } <= heightDp) heightDp else heightDp - 28f
+    // The foot band is the mic's: the rows stop above it, and the "more" line sits in it, left of the mic.
+    val budget = heightDp - MIC_BAND
     var used = 0f
     var shownLines = lines.takeWhile { used += it.height; used <= budget }
     // A day's heading with nothing shown under it goes too; the "more" line covers it.
@@ -725,7 +727,7 @@ private fun Agenda(context: Context, data: MonthData, heightDp: Float) {
     LazyColumn(GlanceModifier.fillMaxSize()) {
         shownLines.forEach { line -> item { line.content() } }
         if (left > 0) item {
-            Row(GlanceModifier.fillMaxWidth().height(28.dp).padding(horizontal = 4.dp).clickable(openCalendar(context, data.selected ?: data.today)), verticalAlignment = Alignment.CenterVertically) {
+            Row(GlanceModifier.fillMaxWidth().height(MIC_BAND.dp).padding(start = 4.dp, end = 48.dp).clickable(openCalendar(context, data.selected ?: data.today)), verticalAlignment = Alignment.CenterVertically) {
                 Label(tr("อีก $left รายการ, เปิดในแอป", "$left more, open the app"), cp { it.accentText }, 12.5.sp)
             }
         }
@@ -971,3 +973,6 @@ internal class MonthPainter(
 
 /** The colour the owner gave a calendar in the app (see CalendarStyles), as ARGB for the widget's drawing. */
 internal fun calendarArgb(calendarId: Long): Int? = app.omnitask.ui.CalendarStyles.color(calendarId)?.toArgb()
+
+/** The foot band of the month widget's list, kept for the mic (38 dp and its margin). */
+private const val MIC_BAND = 44f
