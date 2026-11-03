@@ -1,5 +1,5 @@
 ---
-format: secretary/24
+format: secretary/25
 ---
 # Secretary procedure
 
@@ -41,6 +41,7 @@ Klui picked "พัก เหลือ Rx Shift" on 2026-11-03: every project ex
 - งานค้าง: an open `#kluido` item of a paused project gets the tag `#สักวัน` added at the end of its first line (once; never tick it, never delete it, never change its words). The Omni app then leaves it out of the one thing next and never shows it red. Add no new `#kluido` item for a paused project; put what such a room waits on as a plain line `    - ต่อจากนี้: <step>` under that project's item (or as a plain bullet under งานของ Claude when it has none). Never touch `Omni note.md` or any task Klui wrote himself.
 - `เลขาถาม.md` (step 5f) asks only about Rx Shift items and `#ระบบ/เลขา` problems. Steps 5g and 5h answer only Rx Shift tasks.
 - Step 11's reply: one or two lines, only Rx Shift and secretary problems. Do not list the other projects or their counts.
+- Follow the Rx Shift roadmap (Klui 2026-11-03: "ให้เลขาติดตาม Roadmap sirxshift และอัพเดทให้ผมหากมีการเปลี่ยนแปลงด้วยครับ"). Every round, compare `แผน-RxShift.md` (step 2c) and what step 3d found in its repository with the Rx Shift block of `ไมล์สโตน.md` as it was before this round. Only when something Klui would care about changed (a deadline, a milestone done, added, dropped or reordered, a start-by date, a new step that waits on Klui), add one ไทม์ไลน์ bullet today: `- Rx Shift: แผนเปลี่ยน: <what changed, one line in plain words> [ที่มา: <แผน-RxShift.md or the repository>]`, and give the same line first in step 11's reply. Nothing changed: write nothing about it. When the repository shows the plan file is out of date, ask the coordinator to re-read it as in step 2c.
 - The secretary's own problems (step 7) still go to งานค้าง as before, since the secretary must keep working.
 - When this section is removed from the guide, take `#สักวัน` off exactly the items you tagged under it (they carry the line `    - พักโดยเลขา: 2026-11-03 เหลือแค่ Rx Shift`, which you add under each one when you tag it), and remove that line.
 
