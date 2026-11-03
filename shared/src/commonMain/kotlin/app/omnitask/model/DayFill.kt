@@ -524,9 +524,8 @@ object DayFill {
             if (t < 0 && it0.min != null && len != it0.min) { len = it0.min; t = firstFit(from, to, len, work) }
             // A slot the owner put counts as used, so the buffer stays what it should be.
             val leftNow = (0 until span).count { !occ[it] && !pinOcc[it] }
-            // What was put off yesterday keeps the buffer too; only real deadlines may use it.
             var capped = false
-            if (t >= 0 && (!it0.must || it0.kind == Kind.AGAIN) && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
+            if (t >= 0 && !it0.must && it0.kind != Kind.LIFE && it0.kind != Kind.MINE && leftNow - len < target) { t = -1; capped = true }
             if (t < 0) {
                 if (it0.kind == Kind.LIFE) return@forEach
                 val why = when {
@@ -569,7 +568,8 @@ object DayFill {
     /** The busy blocks of [plan] (events, the day job, errands): where each starts and ends, in minutes. */
     private fun blocks(plan: Plan): List<Pair<Int, Int>> = plan.rows.filterIsInstance<Row.Locked>().mapNotNull { r ->
         val at = r.at ?: return@mapNotNull null
-        if (r.free) return@mapNotNull null
+        // Free events and other people's take none of the owner's time.
+        if (r.free || r.from != null) return@mapNotNull null
         val end = r.until ?: r.event?.takeIf { !it.allDay }?.let { minutesOf(it.end, plan.day) } ?: return@mapNotNull null
         (at to end).takeIf { end > at }
     }
@@ -590,7 +590,7 @@ object DayFill {
     /**
      * The minute a busy card may come back today, or null for [Busy.TOMORROW] (it leaves today's plan and comes first
      * tomorrow). [Busy.SPAN]: after the busy blocks that cover the card now (an event, the day job), else until the next
-     * block starts (the free stretch it sat in is gone), else an hour after the card; never just half an hour on, which
+     * block starts when that is within the hour after the card, else an hour after the card; never just half an hour on, which
      * brought it straight back. [Busy.EVENING]: after the way home from the
      * day job, or 18:00, past any block then. With [Until.byBlock] true the plan's own blocks decided it ("ตามปฏิทิน").
      */
@@ -605,7 +605,8 @@ object DayFill {
                 val nextBlock = blocks(plan).map { it.first }.filter { it > from }.minOrNull()
                 when {
                     past > from -> Until(past, true)
-                    nextBlock != null -> Until(nextBlock, true)
+                    // The next block when it is close; never hiding the card for a whole free afternoon.
+                    nextBlock != null && nextBlock <= maxOf(p.at + p.len, now) + BUSY_HOUR -> Until(nextBlock, true)
                     else -> Until(maxOf(p.at + p.len, now) + BUSY_HOUR, false)
                 }
             }

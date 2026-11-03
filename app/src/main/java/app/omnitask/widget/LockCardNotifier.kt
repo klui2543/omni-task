@@ -223,7 +223,7 @@ object LockCardNotifier {
         nm.notify(ID, n)
     }
 
-    private fun nextThing(context: Context, big: RemoteViews, data: WidgetData) {
+    private suspend fun nextThing(context: Context, big: RemoteViews, data: WidgetData) {
         val pick = NextThingSkips.ranked(context, data.tasks, data.today).firstOrNull()
         if (pick == null) big.setViewVisibility(R.id.nextbox, android.view.View.GONE) else {
             big.setViewVisibility(R.id.nextbox, android.view.View.VISIBLE)
@@ -243,7 +243,7 @@ object LockCardNotifier {
             big.setOnClickPendingIntent(R.id.nextskip, button(LockNextReceiver.SKIP, 22))
         }
         val ahead = if (NextThing.monday(data.today)) {
-            val text = runCatching { Scheduler.readVaultFile(context, NextThing.MILESTONES_PATH) }
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { Scheduler.readVaultFile(context, NextThing.MILESTONES_PATH) } }
                 .onFailure { WidgetLog.add("lockcard: could not read the milestones: ${it.message}") }.getOrNull()
             NextThing.ahead(text, data.today)
         } else emptyList()

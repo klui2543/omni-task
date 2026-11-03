@@ -4,6 +4,7 @@ import app.omnitask.data.VaultText
 import app.omnitask.model.Countdown
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
+import app.omnitask.model.Resting
 import app.omnitask.model.Profile
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
@@ -332,7 +333,11 @@ object WebFocus {
         }
         if (!nowShown && out.isNotEmpty()) out.last().second += PlanItem("now", hm(nowTime))
         return out.map { (section, items) ->
-            Section(section.part.label, section.part == DayPlan.Part.LATE, section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }, items)
+            Section(
+                section.part.label, section.part == DayPlan.Part.LATE,
+                // Work under way or paused is not overdue (as the ring's number and Android).
+                section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen && (section.part != DayPlan.Part.LATE || !Resting.of(it.task, today)) }, items,
+            )
         }
     }
 

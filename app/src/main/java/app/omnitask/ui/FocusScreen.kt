@@ -306,8 +306,8 @@ fun FocusScreen(
                         if (resting.isNotEmpty()) RestingFold(resting, due.isEmpty(), onOpen)
                         DeckButtons {
                             DeckButton(tr("ดูทั้งหมด", "See all"), false) { lateOpen = true }
-                            if (due.isNotEmpty()) DeckButton(tr("ให้เลขาจัดวันใหม่", "Ask for new dates"), true) {
-                                val n = due.size
+                            DeckButton(tr("ให้เลขาจัดวันใหม่", "Ask for new dates"), true) {
+                                val n = lateTasks.size
                                 onAsk(tr("ช่วยดูงานที่ค้าง $n งาน แล้วเสนอวันใหม่ตามเวลาว่างจริง ไม่ต้องทำทั้งหมดในวันเดียว", "Look at the $n overdue tasks and suggest new dates from my real free time, not all on one day"))
                             }
                         }
@@ -461,7 +461,7 @@ fun FocusScreen(
         if (!nl && overdueSection != null) item {
             Card {
                 Box(Modifier.height(6.dp))
-                PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
+                PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdue)
                 overdueSection.items.forEach { item ->
                     if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
                 }
@@ -991,7 +991,7 @@ private fun NextThingCard(pick: NextThing.Pick?, ahead: List<NextThing.Ahead>, o
         ) {
             Text(tr("ถัดไป", "Next"), color = C.accentText, fontSize = TS.caption)
             Text(
-                pick.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(pick.task) },
+                pick.task.title + (Projects.projectOf(pick.task)?.let { " ($it)" } ?: ""), Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(pick.task) },
                 color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
             pick.meta?.let { Text(it, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -1020,7 +1020,8 @@ private fun LateRow(t: Task, why: String, onOpen: (Task) -> Unit) {
 private fun RestingFold(tasks: List<Task>, alone: Boolean, onOpen: (Task) -> Unit) {
     var open by rememberSaveable { mutableStateOf(alone) }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 10.dp, vertical = 8.dp)) {
-        Text(
+        // Alone on the card, its name is already the card's: the line is not said twice.
+        if (!alone) Text(
             tr("กำลังเดินหรือพักไว้ ${tasks.size} งาน ไม่นับว่าค้าง", "${tasks.size} under way or paused, not overdue") + if (open) "" else tr(" (แตะดู)", " (tap to see)"),
             Modifier.fillMaxWidth().clickable { open = !open }, color = C.muted, fontSize = TS.caption,
         )
@@ -1033,6 +1034,33 @@ private fun RestingFold(tasks: List<Task>, alone: Boolean, onOpen: (Task) -> Uni
     }
 }
 
+/**
+ * The new look's "ต้องแก้ N เรื่อง": everything that is broken (a recording not written down, the secretary not
+ * logging, a sync copy, the calendar not connected) in one amber line that opens to the cards as they were.
+ */
+@Composable
+private fun FixCard(fixes: List<Pair<String, @Composable () -> Unit>>) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.amberSoft)
+            .border(1.dp, C.amber.copy(alpha = 0.35f), RoundedCornerShape(14.dp)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open }.heightIn(min = 52.dp).padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(tr("ต้องแก้ ${fixes.size} เรื่อง", "${fixes.size} things to fix"), color = C.amber, fontSize = TS.body, fontWeight = FontWeight.SemiBold)
+                Text(fixes.joinToString(", ") { it.first }, color = C.muted, fontSize = TS.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(if (open) Ic.up else Ic.down, if (open) tr("พับ", "Fold") else tr("เปิดดู", "Open"), tint = C.muted, modifier = Modifier.size(16.dp))
+        }
+        if (open) Column(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            fixes.forEach { it.second() }
+        }
+    }
+}
+
 /** Every left-over task, as on the timeline, opened from "ดูทั้ง N" on the deck's left-over card. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -1040,7 +1068,7 @@ private fun LateSheet(section: DayPlan.Section, state: UiState, vm: TaskViewMode
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.raised) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             val n = section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
-            Text(tr("งานที่เลยวันแล้ว $n งาน", "$n past their day"), Modifier.padding(start = 18.dp, bottom = 6.dp), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
+            Text(tr("ค้าง $n งาน", "$n left over"), Modifier.padding(start = 18.dp, bottom = 6.dp), color = C.text, fontSize = TS.title, fontWeight = FontWeight.SemiBold)
             LazyColumn(Modifier.heightIn(max = 520.dp)) {
                 items(section.items.size) { i ->
                     val item = section.items[i]

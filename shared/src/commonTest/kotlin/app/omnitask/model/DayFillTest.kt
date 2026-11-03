@@ -715,11 +715,11 @@ class DayFillTest {
         val card = assertNotNull(plan.placed.firstOrNull { it.item.task != null })
         // Inside the meeting: after it, by the calendar (before, only half an hour after the slot, so it came back).
         assertEquals(DayFill.Until(m(17, 30), true), DayFill.busyUntil(plan, inp, card.copy(at = m(14), len = 60), DayFill.Busy.SPAN))
-        // In free time before an event: that stretch is gone, so until the event starts.
-        val film = timed(92, ownCal, "ดูหนัง", "2026-11-04T20:00", "2026-11-04T21:00")
+        // In free time with an event soon: until the event starts.
+        val film = timed(92, ownCal, "ดูหนัง", "2026-11-04T19:00", "2026-11-04T20:00")
         val inp3 = input("2026-11-04T18:00", extra = listOf(film))
         val plan3 = DayFill.plan(inp3)
-        assertEquals(DayFill.Until(m(20), true), DayFill.busyUntil(plan3, inp3, card.copy(at = m(18), len = 30), DayFill.Busy.SPAN))
+        assertEquals(DayFill.Until(m(19), true), DayFill.busyUntil(plan3, inp3, card.copy(at = m(18), len = 30), DayFill.Busy.SPAN))
         // Nothing busy around it or after it: an hour after the slot.
         val free = card.copy(at = m(19), len = 30)
         assertEquals(DayFill.Until(m(20, 30), false), DayFill.busyUntil(plan, inp, free, DayFill.Busy.SPAN))
