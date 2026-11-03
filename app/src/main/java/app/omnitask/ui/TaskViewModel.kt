@@ -229,6 +229,8 @@ data class UiState(
     val calendarReveal: Boolean = false,
     /** The Tasks tab's view (null: the list) and the calendar's span, kept while the app is open, not saved. */
     val tasksLayout: Mode? = null,
+    /** Whether the Timeline shows Google Calendar events; kept on this phone. */
+    val timelineEvents: Boolean = true,
     val calendarSpan: CalendarSpan = CalendarSpan.MONTH,
     /** The owner's own project order, and the starred ones that always sit on top. */
     val projectOrder: List<String> = emptyList(),
@@ -445,6 +447,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(
                 query = prefs.getString(KEY_TASKS_QUERY, null)?.let(TaskQuery::decodeView) ?: s.query,
                 tasksLayout = prefs.getString(KEY_TASKS_LAYOUT, null)?.let { n -> Mode.entries.firstOrNull { it.name == n } },
+                timelineEvents = prefs.getBoolean(KEY_TIMELINE_EVENTS, true),
             )
         },
     )
@@ -3742,6 +3745,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestCalendar(day: LocalDate?, reveal: Boolean = false) = _state.update { it.copy(calendarDay = day, calendarReveal = reveal) }
 
+    fun setTimelineEvents(on: Boolean) {
+        _state.update { it.copy(timelineEvents = on) }
+        prefs.edit().putBoolean(KEY_TIMELINE_EVENTS, on).apply()
+    }
+
     fun setTasksLayout(mode: Mode?, keep: Boolean = true) {
         _state.update { it.copy(tasksLayout = mode) }
         if (keep) {
@@ -5043,6 +5051,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_SAVED_FILTERS = "savedFilters"
         const val KEY_TASKS_QUERY = "tasks.query"
         const val KEY_TASKS_LAYOUT = "tasks.layout"
+        const val KEY_TIMELINE_EVENTS = "timeline.events"
         const val KEY_LISTS_SEEDED = "lists.seeded"
         const val KEY_ARCHIVE_DAYS = "archive.days"
         const val KEY_ARCHIVE_SWEPT = "archive.sweptOn"

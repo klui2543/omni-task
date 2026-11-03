@@ -133,12 +133,12 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
     var span by rememberSaveable { mutableFloatStateOf(14f) }
     // The first day shown, in days from today (fractions while sliding).
     var start by rememberSaveable { mutableFloatStateOf(-1f) }
-    var showEventsOwn by rememberSaveable { mutableStateOf(true) }
     var whoOwn by rememberSaveable { mutableStateOf(TimelineWho.ALL) }
     var staleOnlyOwn by rememberSaveable { mutableStateOf(false) }
     var selKeyOwn by rememberSaveable { mutableStateOf<String?>(null) }
     // Inside the assistant's page that page owns these; the Timeline tab keeps its own.
-    val showEvents = embed == null && showEventsOwn
+    // The "Events" chip stays as the owner left it, also after the app closes (owner, 2026-11-03).
+    val showEvents = embed == null && state.timelineEvents
     val who = embed?.who ?: whoOwn
     val staleOnly = embed?.staleOnly ?: staleOnlyOwn
     val selKey = if (embed != null) embed.selKey else selKeyOwn
@@ -216,7 +216,7 @@ fun GanttView(state: UiState, tasks: List<Task>, vm: TaskViewModel, onOpen: (Tas
                 Chip(tr("ฉัน", "Me"), who == TimelineWho.ME && !staleOnly, { whoOwn = TimelineWho.ME; staleOnlyOwn = false }, dot = C.tealChip)
                 Chip("Claude", who == TimelineWho.CLAUDE && !staleOnly, { whoOwn = TimelineWho.CLAUDE; staleOnlyOwn = false }, dot = C.accentText)
                 Chip(tr("ค้างนาน ${pool.count { needs(it) }}", "Stuck ${pool.count { needs(it) }}"), staleOnly, { staleOnlyOwn = !staleOnlyOwn }, dot = C.amber)
-                if (state.calendarAccess == true) Chip(tr("นัดหมาย", "Events"), showEvents, { showEventsOwn = !showEventsOwn }, dot = C.teal)
+                if (state.calendarAccess == true) Chip(tr("นัดหมาย", "Events"), showEvents, { vm.setTimelineEvents(!state.timelineEvents) }, dot = C.teal)
             }
 
             Box(
