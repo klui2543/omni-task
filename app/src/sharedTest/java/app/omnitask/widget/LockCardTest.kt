@@ -109,4 +109,33 @@ class LockCardTest {
         )
         assertEquals(listOf("NOW"), titles(LockCard.card(LockCard.today(d, at, late, emptyList(), { false }) { null })))
     }
+
+    /**
+     * Real case (owner, 2026-11-03 13:17, APK 0.2.456): the card showed "ถัดไป: เขียนถ้อยคำ..." in its own box and again
+     * at 16:45 in the list. With pick ก the next thing is its own row in the list, once.
+     */
+    @Test fun theNextThingIsItsOwnRowNotASecondCopy() {
+        val words = TodayWeek.Row.Event("เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)", "16:45", null, past = false)
+        val c = LockCard.card(TodayWeek.Day(day, listOf(ev("งานประจำ"), ev("ไปวิ่งเก็บแต้ม"), words, ev("How to ดูหุ้น"))))
+        val (placed, at) = LockCard.placeNext(c, "เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)", "vault#7")
+        assertEquals(2, at)
+        assertEquals(titles(c), titles(placed))
+        assertEquals(1, titles(placed).count { it.startsWith("เขียนถ้อยคำ") })
+    }
+
+    @Test fun aNextThingWithNoTimeTodayComesFirstAndTheLastRowFolds() {
+        val c = LockCard.card(TodayWeek.Day(day, listOf(now) + (1..4).map { ev("งาน$it") }))
+        val (placed, at) = LockCard.placeNext(c, "เขียนถ้อยคำ", "vault#7")
+        assertEquals(0, at)
+        assertEquals(listOf("เขียนถ้อยคำ", "NOW", "งาน1", "งาน2", "งาน3"), titles(placed))
+        assertEquals(c.more + 1, placed.more)
+    }
+
+    @Test fun aTaskRowIsMatchedByItsKey() {
+        val t = todo("ส่งรายงาน")
+        val c = LockCard.card(TodayWeek.Day(day, listOf(now, t)))
+        val (placed, at) = LockCard.placeNext(c, "ชื่ออื่น", t.task.key)
+        assertEquals(1, at)
+        assertEquals(titles(c), titles(placed))
+    }
 }

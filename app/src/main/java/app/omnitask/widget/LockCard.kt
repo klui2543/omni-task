@@ -71,4 +71,22 @@ internal object LockCard {
         }
         return Card(out, more)
     }
+
+    /**
+     * Where the one thing next sits on the card (owner's pick ก, 2026-11-03, mock six-pains-fix): its own row when today
+     * already has it, so it is not shown twice; otherwise a new first row, and the last row then joins "อีก N".
+     * Returns the card and the index of the next row in it.
+     */
+    fun placeNext(card: Card, title: String, key: String, max: Int = MAX): Pair<Card, Int> {
+        val at = card.rows.indexOfFirst { it is TodayWeek.Row.Todo && it.task.key == key || it is TodayWeek.Row.Event && it.title == title }
+        if (at >= 0) return card to at
+        val rows = ArrayList<TodayWeek.Row>(card.rows)
+        rows.add(0, TodayWeek.Row.Event(title, "", null, past = false))
+        var more = card.more
+        if (rows.count { it !is TodayWeek.Row.Now } > max) {
+            rows.removeAt(rows.indexOfLast { it !is TodayWeek.Row.Now })
+            more++
+        }
+        return Card(rows, more) to 0
+    }
 }

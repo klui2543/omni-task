@@ -82,6 +82,12 @@ object LockCardNotifier {
     private val RUNBAR = intArrayOf(R.id.qb0, R.id.qb1, R.id.qb2, R.id.qb3, R.id.qb4)
     private val RUNTITLE = intArrayOf(R.id.qt0, R.id.qt1, R.id.qt2, R.id.qt3, R.id.qt4)
     private val RUNTIME = intArrayOf(R.id.qr0, R.id.qr1, R.id.qr2, R.id.qr3, R.id.qr4)
+    // The two buttons under the one thing next.
+    private val NEXTROW = intArrayOf(R.id.x0, R.id.x1, R.id.x2, R.id.x3, R.id.x4)
+    private val NEXTDONE = intArrayOf(R.id.xd0, R.id.xd1, R.id.xd2, R.id.xd3, R.id.xd4)
+    private val NEXTSKIP = intArrayOf(R.id.xs0, R.id.xs1, R.id.xs2, R.id.xs3, R.id.xs4)
+    /** The one thing next: a lighter blue than the planned work, so it reads first. */
+    private const val NEXT = 0xFFB9CBE4.toInt()
 
     suspend fun refresh(context: Context) {
         val nm = NotificationManagerCompat.from(context)
@@ -113,7 +119,11 @@ object LockCardNotifier {
         val done = copy?.let { LockPlan.done(it, data.tasks, data.today) }.orEmpty()
         val day = if (copy != null) LockCard.fromPlan(copy, now, done, ACCENT) { calendarArgb(it) }
         else LockCard.today(data.today, now, data.tasks, data.eventsAhead, others) { calendarArgb(it.calendarId) }
-        val card = LockCard.card(day)
+        // The one thing next across the projects (owner's pick ก, 2026-11-03): a row of the list, never twice.
+        val pick = NextThingSkips.ranked(context, data.tasks, data.today).firstOrNull()
+        val (card, nextAt) = LockCard.card(day).let { c ->
+            if (pick == null) c to -1 else LockCard.placeNext(c, pick.task.title, pick.task.key)
+        }
 
         val nmSys = context.getSystemService(NotificationManager::class.java)
         nmSys.createNotificationChannel(
@@ -139,8 +149,9 @@ object LockCardNotifier {
             big.setTextViewText(R.id.latechip, tr("ค้าง $late", "$late overdue"))
         } else big.setViewVisibility(R.id.latechip, android.view.View.GONE)
         var slot = 0
-        card.rows.forEach { r ->
-            if (slot >= PILL.size) return@forEach
+        card.rows.forEachIndexed { index, r ->
+            if (slot >= PILL.size) return@forEachIndexed
+            big.setViewVisibility(NEXTROW[slot], android.view.View.GONE)
             when (r) {
                 is TodayWeek.Row.Now -> {
                     big.setViewVisibility(RUN[slot], android.view.View.GONE)
@@ -151,9 +162,11 @@ object LockCardNotifier {
                 is TodayWeek.Row.Event -> r.run?.let { running(context, big, slot, r, it) } ?: pill(big, slot, r.title, r.time, r.color ?: SLATE)
                 is TodayWeek.Row.Todo -> pill(big, slot, r.task.title, r.time, SLATE)
             }
+            if (index == nextAt && pick != null) next(context, big, slot, r, pick)
             slot++
         }
         for (i in slot until PILL.size) {
+            big.setViewVisibility(NEXTROW[i], android.view.View.GONE)
             big.setViewVisibility(PILL[i], android.view.View.GONE)
             big.setViewVisibility(NOW[i], android.view.View.GONE)
             big.setViewVisibility(RUN[i], android.view.View.GONE)
@@ -179,9 +192,8 @@ object LockCardNotifier {
         small.setTextViewText(R.id.smallnext, nextLine ?: "")
         small.setTextViewText(R.id.smallfoot, foot)
 
-        // The one thing next across the projects, and on Mondays what to prepare in four weeks (owner's pick ก,
-        // 2026-11-03, mock six-pains screen 3). Never red: put off, it simply waits.
-        nextThing(context, big, data)
+        // On Mondays what to prepare in four weeks (owner's pick ก, 2026-11-03, mock six-pains screen 3).
+        ahead(context, big, data)
 
         val open = PendingIntent.getActivity(
             context, 0,
@@ -223,25 +235,41 @@ object LockCardNotifier {
         nm.notify(ID, n)
     }
 
-    private suspend fun nextThing(context: Context, big: RemoteViews, data: WidgetData) {
-        val pick = NextThingSkips.ranked(context, data.tasks, data.today).firstOrNull()
-        if (pick == null) big.setViewVisibility(R.id.nextbox, android.view.View.GONE) else {
-            big.setViewVisibility(R.id.nextbox, android.view.View.VISIBLE)
-            big.setTextViewText(R.id.nextk, tr("ถัดไป", "Next"))
-            big.setTextViewText(R.id.nextt, pick.task.title)
-            big.setViewVisibility(R.id.nextm, if (pick.meta != null) android.view.View.VISIBLE else android.view.View.GONE)
-            big.setTextViewText(R.id.nextm, pick.meta ?: "")
-            big.setTextViewText(R.id.nextdone, tr("ทำแล้ว", "Done"))
-            big.setTextViewText(R.id.nextskip, tr("ไม่ใช่ตอนนี้", "Not now"))
-            fun button(action: String, code: Int) = PendingIntent.getBroadcast(
-                context, code,
-                Intent(context, LockNextReceiver::class.java).setAction(action)
-                    .putExtra(LockNextReceiver.EXTRA_KEY, pick.task.key).putExtra(LockNextReceiver.EXTRA_RAW, pick.task.raw),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            big.setOnClickPendingIntent(R.id.nextdone, button(LockNextReceiver.DONE, 21))
-            big.setOnClickPendingIntent(R.id.nextskip, button(LockNextReceiver.SKIP, 22))
+    /**
+     * The row of the one thing next: "ถัดไป: <title>" in a lighter blue, "ถัดไป" in the time column when today has no time
+     * for it, and its two buttons under it in line with the titles (owner's pick ก, 2026-11-03, mock six-pains-fix).
+     * Never red: put off, it simply waits.
+     */
+    private fun next(context: Context, big: RemoteViews, slot: Int, r: TodayWeek.Row, pick: NextThing.Pick) {
+        // The colour goes in the text itself: a refreshed card can reuse the old views, and a text colour set on a
+        // view would stay on whatever row sits there next time.
+        fun blue(text: String) = android.text.SpannableString(text).apply {
+            setSpan(android.text.style.ForegroundColorSpan(NEXT), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
+        val label = blue(tr("ถัดไป: ", "Next: ") + pick.task.title)
+        if (r is TodayWeek.Row.Event && r.run != null) {
+            big.setTextViewText(RUNTITLE[slot], label)
+            big.setInt(RUNBAR[slot], "setBackgroundColor", NEXT)
+        } else {
+            big.setTextViewText(TITLE[slot], label)
+            big.setInt(BAR[slot], "setBackgroundColor", NEXT)
+            val time = when (r) { is TodayWeek.Row.Event -> r.time; is TodayWeek.Row.Todo -> r.time; else -> "" }
+            big.setTextViewText(TIME[slot], blue(split(time).first.ifEmpty { tr("ถัดไป", "Next") }))
+        }
+        big.setViewVisibility(NEXTROW[slot], android.view.View.VISIBLE)
+        big.setTextViewText(NEXTDONE[slot], tr("ทำแล้ว", "Done"))
+        big.setTextViewText(NEXTSKIP[slot], tr("ไม่ใช่ตอนนี้", "Not now"))
+        fun button(action: String, code: Int) = PendingIntent.getBroadcast(
+            context, code,
+            Intent(context, LockNextReceiver::class.java).setAction(action)
+                .putExtra(LockNextReceiver.EXTRA_KEY, pick.task.key).putExtra(LockNextReceiver.EXTRA_RAW, pick.task.raw),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        big.setOnClickPendingIntent(NEXTDONE[slot], button(LockNextReceiver.DONE, 21))
+        big.setOnClickPendingIntent(NEXTSKIP[slot], button(LockNextReceiver.SKIP, 22))
+    }
+
+    private suspend fun ahead(context: Context, big: RemoteViews, data: WidgetData) {
         val ahead = if (NextThing.monday(data.today)) {
             val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { Scheduler.readVaultFile(context, NextThing.MILESTONES_PATH) } }
                 .onFailure { WidgetLog.add("lockcard: could not read the milestones: ${it.message}") }.getOrNull()

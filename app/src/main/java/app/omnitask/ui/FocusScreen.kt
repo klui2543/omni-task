@@ -100,6 +100,7 @@ fun FocusScreen(
     val nl = NewLook.on
     var lateOpen by rememberSaveable { mutableStateOf(false) }
     var nextTick by remember { mutableStateOf(0) }
+    val nextScope = rememberCoroutineScope()
     var picking by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
     val voice by vm.voice.collectAsStateWithLifecycle()
@@ -230,22 +231,10 @@ fun FocusScreen(
                 )
                 if (calendarConnectShows(state)) add(tr("ยังไม่ได้เชื่อม Google ปฏิทิน", "Google Calendar not connected") to @Composable { CalendarConnect(state, vm) })
             }
-            // The one thing next across the projects, first on the page, and on Mondays what to prepare in four weeks
-            // (owner's pick ก, 2026-11-03, mock six-pains screen 3). The lock-screen card shows the same.
-            item(key = "nextthing") {
-                val skips = remember(nextTick, today) { NextThingSkips.of(context, today) }
-                val pick = NextThing.ranked(state.tasks, today, skips).firstOrNull()
-                val ahead = if (NextThing.monday(today)) NextThing.ahead(state.milestones, today) else emptyList()
-                val scope = rememberCoroutineScope()
-                NextThingCard(pick, ahead, onOpen, onDone = { t ->
-                    vm.toggleDone(t)
-                    NextThingSkips.add(context, t.key, today)
-                    nextTick++
-                }) { t ->
-                    NextThingSkips.add(context, t.key, today)
-                    nextTick++
-                    scope.launch { app.omnitask.widget.OmniWidgets.refresh(context) }
-                }
+            // On Mondays what to prepare in four weeks, first on the page (owner's pick ก, 2026-11-03, mock six-pains
+            // screen 3). The one thing next is the first of the "ทำต่อไป" card below (owner's pick ก, mock six-pains-fix).
+            if (NextThing.monday(today)) item(key = "ahead") {
+                NextThingCard(null, NextThing.ahead(state.milestones, today), onOpen, onDone = {}, onSkip = {})
             }
             if (fixes.isNotEmpty()) item(key = "fixes") { FixCard(fixes) }
 
@@ -254,8 +243,38 @@ fun FocusScreen(
             val next = ranked.firstOrNull()
             val lateTasks = overdueSection?.items.orEmpty().mapNotNull { (it as? DayPlan.Item.TaskItem)?.task }.filter { it.isOpen }
             val decide = Decisions.counts(state, asks.size)
+            // The one thing next across the projects (the lock-screen card shows the same); read again after a tap.
+            val pick = nextTick.let { NextThing.ranked(state.tasks, today, NextThingSkips.of(context, today)).firstOrNull() }
             val cards = buildList {
-                if (next != null) add(
+                if (pick != null) add(
+                    // First on the one "ทำต่อไป" card, so it is not said twice (owner's pick ก, 2026-11-03, mock six-pains-fix).
+                    DeckCard("next", tr("ทำต่อไป", "Do next")) {
+                        Text(
+                            pick.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(pick.task) },
+                            color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                        val project = Projects.projectOf(pick.task)
+                        Text(
+                            listOfNotNull(project, pick.meta ?: tr("ขั้นถัดไปของโปรเจกต์", "the project's next step")).joinToString(", "),
+                            color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        next?.task?.takeIf { it.key != pick.task.key }?.let { after ->
+                            Text(tr("หลังจากนี้: ", "After this: ") + after.title, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        DeckButtons {
+                            DeckButton(tr("ไม่ใช่ตอนนี้", "Not now"), false) {
+                                NextThingSkips.add(context, pick.task.key, today)
+                                nextTick++
+                                nextScope.launch { app.omnitask.widget.OmniWidgets.refresh(context) }
+                            }
+                            DeckButton(tr("เสร็จแล้ว", "Done"), true) {
+                                vm.toggleDone(pick.task)
+                                NextThingSkips.add(context, pick.task.key, today)
+                                nextTick++
+                            }
+                        }
+                    },
+                ) else if (next != null) add(
                     DeckCard("next", tr("ทำต่อไป", "Do next")) {
                         val doing = next.task.status == Status.IN_PROGRESS
                         // A deadline today is still red; one gone by is not (owner's pick ก, 2026-11-03).

@@ -18,7 +18,7 @@
         android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
         android:contentDescription="@string/lock_voice" />
     </LinearLayout>
-    <!-- Mondays: what to prepare in the next four weeks; then the one thing next with its two buttons (owner's pick ก, 2026-11-03, mock six-pains screen 3). Filled by LockCardNotifier. -->
+    <!-- Mondays: what to prepare in the next four weeks (owner's pick ก, 2026-11-03, mock six-pains screen 3). The one thing next is a row of the list below with its two buttons under it (owner's pick ก, 2026-11-03, mock six-pains-fix). Filled by LockCardNotifier. -->
     <LinearLayout android:id="@+id/aheadbox" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
         android:layout_marginTop="4dp" android:background="@drawable/lock_next_bg" android:paddingStart="11dp" android:paddingEnd="11dp"
         android:paddingTop="8dp" android:paddingBottom="8dp" android:visibility="gone">
@@ -33,25 +33,7 @@
         <TextView android:id="@+id/aheadm1" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:singleLine="true" android:ellipsize="end" android:textSize="12sp" android:visibility="gone" />
     </LinearLayout>
-    <LinearLayout android:id="@+id/nextbox" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
-        android:layout_marginTop="4dp" android:layout_marginBottom="2dp" android:background="@drawable/lock_next_bg" android:paddingStart="11dp"
-        android:paddingEnd="11dp" android:paddingTop="8dp" android:paddingBottom="8dp" android:visibility="gone">
-        <TextView android:id="@+id/nextk" style="@style/LockLink" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:singleLine="true" android:textSize="11sp" />
-        <TextView android:id="@+id/nextt" style="@style/LockText" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:maxLines="2" android:ellipsize="end" android:textSize="14sp" />
-        <TextView android:id="@+id/nextm" style="@style/LockSub" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:singleLine="true" android:ellipsize="end" android:textSize="12sp" android:visibility="gone" />
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
-            <TextView android:id="@+id/nextdone" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="32dp"
-                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
-                android:singleLine="true" android:textSize="13sp" />
-            <TextView android:id="@+id/nextskip" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="32dp"
-                android:layout_marginStart="8dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="14dp"
-                android:paddingEnd="14dp" android:singleLine="true" android:textSize="13sp" />
-        </LinearLayout>
-    </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
         <LinearLayout android:id="@+id/p0" android:layout_width="match_parent" android:layout_height="30dp"
             android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/r0" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
@@ -88,6 +70,15 @@
             <TextView android:id="@+id/m0" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/x0" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginStart="63dp" android:layout_marginBottom="2dp" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/xd0" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp" android:paddingEnd="11dp"
+                android:singleLine="true" android:textSize="12sp" />
+            <TextView android:id="@+id/xs0" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:layout_marginStart="6dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp"
+                android:paddingEnd="11dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <LinearLayout android:id="@+id/p1" android:layout_width="match_parent" android:layout_height="30dp"
             android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
@@ -126,6 +117,15 @@
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
+        <LinearLayout android:id="@+id/x1" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginStart="63dp" android:layout_marginBottom="2dp" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/xd1" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp" android:paddingEnd="11dp"
+                android:singleLine="true" android:textSize="12sp" />
+            <TextView android:id="@+id/xs1" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:layout_marginStart="6dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp"
+                android:paddingEnd="11dp" android:singleLine="true" android:textSize="12sp" />
+        </LinearLayout>
         <LinearLayout android:id="@+id/p2" android:layout_width="match_parent" android:layout_height="30dp"
             android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/r2" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
@@ -162,6 +162,15 @@
             <TextView android:id="@+id/m2" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/x2" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginStart="63dp" android:layout_marginBottom="2dp" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/xd2" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp" android:paddingEnd="11dp"
+                android:singleLine="true" android:textSize="12sp" />
+            <TextView android:id="@+id/xs2" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:layout_marginStart="6dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp"
+                android:paddingEnd="11dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <LinearLayout android:id="@+id/p3" android:layout_width="match_parent" android:layout_height="30dp"
             android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
@@ -200,6 +209,15 @@
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
         </LinearLayout>
+        <LinearLayout android:id="@+id/x3" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginStart="63dp" android:layout_marginBottom="2dp" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/xd3" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp" android:paddingEnd="11dp"
+                android:singleLine="true" android:textSize="12sp" />
+            <TextView android:id="@+id/xs3" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:layout_marginStart="6dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp"
+                android:paddingEnd="11dp" android:singleLine="true" android:textSize="12sp" />
+        </LinearLayout>
         <LinearLayout android:id="@+id/p4" android:layout_width="match_parent" android:layout_height="30dp"
             android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
             <TextView android:id="@+id/r4" style="@style/LockSub" android:layout_width="44dp" android:layout_height="wrap_content"
@@ -236,6 +254,15 @@
             <TextView android:id="@+id/m4" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:textColor="#D9726C" android:textSize="10sp" android:textStyle="bold" />
             <ImageView android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D9726C" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/x4" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginStart="63dp" android:layout_marginBottom="2dp" android:orientation="horizontal" android:visibility="gone">
+            <TextView android:id="@+id/xd4" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp" android:paddingEnd="11dp"
+                android:singleLine="true" android:textSize="12sp" />
+            <TextView android:id="@+id/xs4" style="@style/LockText" android:layout_width="wrap_content" android:layout_height="26dp"
+                android:layout_marginStart="6dp" android:background="@drawable/lock_btn" android:gravity="center" android:paddingStart="11dp"
+                android:paddingEnd="11dp" android:singleLine="true" android:textSize="12sp" />
         </LinearLayout>
         <TextView android:id="@+id/more" style="@style/LockLink" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginTop="4dp" android:layout_marginStart="63dp" android:textSize="12sp" android:visibility="gone" />

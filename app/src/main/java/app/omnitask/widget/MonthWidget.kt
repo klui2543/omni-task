@@ -661,12 +661,13 @@ private fun MonthContent(context: Context, data: MonthData) {
         }
         if (showAgenda) {
             Spacer(GlanceModifier.height(8.dp))
-            Agenda(context, data, room - rows * cell - 8f)
+            Box(GlanceModifier.fillMaxSize().padding(end = 44.dp)) { Agenda(context, data, room - rows * cell - 8f) }
         }
     }
-    // The mic floats at the bottom right, in the list's free corner (owner picked "ก", 2 Nov).
+    // The mic floats at the bottom right, in the list's free corner (owner picked "ก", 2 Nov); grey and smaller, and
+    // the list keeps its right edge free so no time sits under it (owner picked ก, 3 Nov).
     if (showAgenda) Box(GlanceModifier.fillMaxSize().padding(end = 14.dp, bottom = 10.dp), contentAlignment = Alignment.BottomEnd) {
-        Circle(context, R.drawable.ic_w_mic, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_VOICE, size = 44)
+        Circle(context, R.drawable.ic_w_mic, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_VOICE, size = 38)
     }
     }
 }
@@ -689,7 +690,7 @@ private fun Header(context: Context, data: MonthData) {
             // The pencil is the way into frames and emoji; a day picked on the widget comes along chosen.
             data.selected?.let { openMonth(context, it, pick = true) } ?: openMonth(context, data.month, pick = false))
         Spacer(GlanceModifier.width(4.dp))
-        Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 30)
+        Circle(context, R.drawable.ic_w_plus, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_ADD, size = 30)
     }
 }
 
