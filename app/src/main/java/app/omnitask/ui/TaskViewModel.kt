@@ -2052,8 +2052,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     /** Writes the Tasks tab's view and filters down, so the tab opens as it was left. */
     private fun keepTasksView() {
         val s = _state.value
-        prefs.edit().putString(KEY_TASKS_QUERY, s.query.encodeView()).putString(KEY_TASKS_LAYOUT, s.tasksLayout?.name ?: "").apply()
+        prefs.edit().putString(KEY_TASKS_QUERY, s.query.encodeView()).putString(KEY_TASKS_LAYOUT, keptLayout?.name ?: "").apply()
     }
+
+    /** The view the owner chose last; a calendar opened only to show a date (keep = false) does not replace it. */
+    private var keptLayout: Mode? = _state.value.tasksLayout
 
     /** Saves [query] (the task list's own, unless another page passes its filter) under [name]. */
     fun saveFilter(name: String, query: TaskQuery = _state.value.query) {
@@ -3739,9 +3742,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestCalendar(day: LocalDate?, reveal: Boolean = false) = _state.update { it.copy(calendarDay = day, calendarReveal = reveal) }
 
-    fun setTasksLayout(mode: Mode?) {
+    fun setTasksLayout(mode: Mode?, keep: Boolean = true) {
         _state.update { it.copy(tasksLayout = mode) }
-        keepTasksView()
+        if (keep) {
+            keptLayout = mode
+            keepTasksView()
+        }
     }
 
     fun setCalendarSpan(span: CalendarSpan) = _state.update { it.copy(calendarSpan = span) }

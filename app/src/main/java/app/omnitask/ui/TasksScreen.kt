@@ -82,7 +82,8 @@ fun TasksScreen(state: UiState, vm: TaskViewModel, onOpen: (Task) -> Unit) {
     val q = state.query
     // The view last used stays while the app is open, kept by the view model as the tab comes and goes.
     val layout = state.tasksLayout
-    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) vm.setTasksLayout(Mode.CALENDAR) }
+    // A date opened from the widget or a reminder shows the calendar for now; the view kept for next time stays.
+    LaunchedEffect(state.calendarDay) { if (state.calendarDay != null) vm.setTasksLayout(Mode.CALENDAR, keep = false) }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var searching by remember { mutableStateOf(q.text.isNotEmpty()) }
     // Opening search puts the cursor in the field, so finding a task is one tap and then typing.
