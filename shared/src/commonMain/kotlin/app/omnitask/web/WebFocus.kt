@@ -4,6 +4,7 @@ import app.omnitask.data.VaultText
 import app.omnitask.model.Countdown
 import app.omnitask.model.DayPlan
 import app.omnitask.model.Focus
+import app.omnitask.model.Resting
 import app.omnitask.model.Profile
 import app.omnitask.model.Projects
 import app.omnitask.model.Status
@@ -201,7 +202,7 @@ object WebFocus {
         val openToday = plan.flatMap { it.items }.count { it is DayPlan.Item.TaskItem && it.task.isOpen }
         val doneToday = tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
         // Read off the plan, so the numbers match the overdue card and the timeline, as on Android.
-        val overdue = DayPlan.lateCount(plan)
+        val overdue = DayPlan.lateCount(plan, today)
 
         // The night the sleep card plans, all day long: last night until its wake time, then tonight's (as Android's
         // Focus screen). Bed and wake are the ones picked for that evening, or the usual ones from the profile.
@@ -332,7 +333,11 @@ object WebFocus {
         }
         if (!nowShown && out.isNotEmpty()) out.last().second += PlanItem("now", hm(nowTime))
         return out.map { (section, items) ->
-            Section(section.part.label, section.part == DayPlan.Part.LATE, section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen }, items)
+            Section(
+                section.part.label, section.part == DayPlan.Part.LATE,
+                // Work under way or paused is not overdue (as the ring's number and Android).
+                section.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen && (section.part != DayPlan.Part.LATE || !Resting.of(it.task, today)) }, items,
+            )
         }
     }
 

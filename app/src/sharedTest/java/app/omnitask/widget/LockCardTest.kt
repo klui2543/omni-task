@@ -109,4 +109,53 @@ class LockCardTest {
         )
         assertEquals(listOf("NOW"), titles(LockCard.card(LockCard.today(d, at, late, emptyList(), { false }) { null })))
     }
+
+    /**
+     * Real case (owner, 2026-11-03 13:17, APK 0.2.456): the card showed "ถัดไป: เขียนถ้อยคำ..." in its own box and again
+     * at 16:45 in the list. With pick ก the next thing is its own row in the list, once.
+     */
+    @Test fun theNextThingIsItsOwnRowNotASecondCopy() {
+        val words = TodayWeek.Row.Event("เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)", "16:45", null, past = false)
+        val c = LockCard.card(TodayWeek.Day(day, listOf(ev("งานประจำ"), ev("ไปวิ่งเก็บแต้ม"), words, ev("How to ดูหุ้น"))))
+        val (placed, at) = LockCard.placeNext(c, emptyList(), setOf("เขียนถ้อยคำให้ครบ 25 ข้อ (เหลือ 22)"), "vault#7")
+        assertEquals(2, at)
+        assertEquals(titles(c), titles(placed))
+        assertEquals(1, titles(placed).count { it.startsWith("เขียนถ้อยคำ") })
+    }
+
+    @Test fun aNextThingWithNoTimeTodayComesFirstAndTheLastRowFolds() {
+        val c = LockCard.card(TodayWeek.Day(day, listOf(now) + (1..4).map { ev("งาน$it") }))
+        val (placed, at) = LockCard.placeNext(c, emptyList(), setOf("เขียนถ้อยคำ"), "vault#7")
+        assertEquals(0, at)
+        assertEquals(listOf("เขียนถ้อยคำ", "NOW", "งาน1", "งาน2", "งาน3"), titles(placed))
+        assertEquals(c.more + 1, placed.more)
+    }
+
+    @Test fun aTaskRowIsMatchedByItsKey() {
+        val t = todo("ส่งรายงาน")
+        val c = LockCard.card(TodayWeek.Day(day, listOf(now, t)))
+        val (placed, at) = LockCard.placeNext(c, emptyList(), setOf("ชื่ออื่น"), t.task.key)
+        assertEquals(1, at)
+        assertEquals(titles(c), titles(placed))
+    }
+
+    /** The plan's copy can name the task differently: any name the plan gave it counts, so it is still shown once. */
+    @Test fun aRenamedTaskInThePlanCopyIsStillOneRow() {
+        val words = TodayWeek.Row.Event("เขียนถ้อยคำ (เก่า)", "16:45", null, past = false)
+        val c = LockCard.card(TodayWeek.Day(day, listOf(ev("ไปวิ่ง"), words)))
+        val (placed, at) = LockCard.placeNext(c, emptyList(), setOf("เขียนถ้อยคำ", "เขียนถ้อยคำ (เก่า)"), "vault#7")
+        assertEquals(1, at)
+        assertEquals(titles(c), titles(placed))
+    }
+
+    /** A row folded into "อีก N" comes up first with its own time, and the now line goes when the cut is before it. */
+    @Test fun aFoldedNextRowComesFirstAndTheNowLineFollowsTheCut() {
+        val rows = (1..4).map { ev("ทั้งวัน$it") } + now + ev("เขียนถ้อยคำ")
+        val c = LockCard.card(TodayWeek.Day(day, rows))
+        assertEquals(listOf("ทั้งวัน1", "ทั้งวัน2", "ทั้งวัน3", "ทั้งวัน4", "NOW"), titles(c))
+        val (placed, at) = LockCard.placeNext(c, rows, setOf("เขียนถ้อยคำ"), "vault#7")
+        assertEquals(0, at)
+        assertEquals(listOf("เขียนถ้อยคำ", "ทั้งวัน1", "ทั้งวัน2", "ทั้งวัน3"), titles(placed))
+        assertEquals(c.more, placed.more)
+    }
 }

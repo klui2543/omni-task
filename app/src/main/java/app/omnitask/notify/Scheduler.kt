@@ -85,6 +85,12 @@ object Scheduler {
             .filterNot { app.omnitask.model.Branches.isParked(it, parked) }
     }
 
+    /** One vault file's text by its path, for the lock card's Monday look ahead; null when there is no vault or no such file. */
+    fun readVaultFile(context: Context, path: String): String? {
+        val vault = prefs(context).getString(KEY_VAULT, null)?.let(Uri::parse) ?: return null
+        return VaultRepository(context).readPath(vault, path)
+    }
+
     /** Replaces every planned alarm with a fresh plan. Safe to call often. */
     fun reschedule(context: Context, tasks: List<Task>) {
         val now = LocalDateTime.now()

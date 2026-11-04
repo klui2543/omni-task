@@ -64,9 +64,12 @@ object DayPlan {
         }.filter { it.items.isNotEmpty() }
     }
 
-    /** Open tasks in the overdue card of [plan]: the Focus card's overdue number, so the two always agree. */
-    fun lateCount(plan: List<Section>): Int =
-        plan.filter { it.part == Part.LATE }.sumOf { s -> s.items.count { it is Item.TaskItem && it.task.isOpen } }
+    /**
+     * Open tasks in the overdue card of [plan]: the Focus card's overdue number, so the two always agree. Work under way
+     * or paused on purpose ([Resting]) is left out of the count (owner's pick ก, 2026-11-03): it is not overdue.
+     */
+    fun lateCount(plan: List<Section>, today: LocalDate): Int =
+        plan.filter { it.part == Part.LATE }.sumOf { s -> s.items.count { it is Item.TaskItem && it.task.isOpen && !Resting.of(it.task, today) } }
 
     /** Events on [plan]'s day, all-day ones included: the Focus card's events number, as many as the timeline shows. */
     fun eventCount(plan: List<Section>): Int = plan.sumOf { s -> s.items.count { it is Item.EventItem } }

@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +49,9 @@ import app.omnitask.data.CalendarReader
 import app.omnitask.model.DayPlan
 import app.omnitask.model.LookAhead
 import app.omnitask.model.NextUp
+import app.omnitask.model.NextThing
+import app.omnitask.model.Resting
+import app.omnitask.widget.NextThingSkips
 import app.omnitask.model.Focus
 import app.omnitask.model.TaskKind
 import app.omnitask.model.WeekEvents
@@ -64,6 +68,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.omnitask.model.Countdown
 import app.omnitask.model.StuckLog
@@ -94,6 +99,8 @@ fun FocusScreen(
     // The new look (Settings switch): a calmer Today with one task to do next, and no scores or nagging.
     val nl = NewLook.on
     var lateOpen by rememberSaveable { mutableStateOf(false) }
+    var nextTick by remember { mutableStateOf(0) }
+    val nextScope = rememberCoroutineScope()
     var picking by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
     val voice by vm.voice.collectAsStateWithLifecycle()
@@ -117,7 +124,7 @@ fun FocusScreen(
     val doneToday = state.tasks.count { t -> t.done == today && (t.due ?: t.scheduled)?.let { it <= today } == true }
     val total = openToday + doneToday
     // Read off the plan, so the numbers match the overdue card and the timeline below.
-    val overdue = DayPlan.lateCount(plan)
+    val overdue = DayPlan.lateCount(plan, today)
     // The new look keeps red for real deadlines (📅) gone by; a slipped own target (⏳) alone is not red.
     val realLate = state.tasks.any { it.isOpen && it.due.let { d -> d != null && d < today } }
     val eventCount = DayPlan.eventCount(plan)
@@ -224,6 +231,11 @@ fun FocusScreen(
                 )
                 if (calendarConnectShows(state)) add(tr("ยังไม่ได้เชื่อม Google ปฏิทิน", "Google Calendar not connected") to @Composable { CalendarConnect(state, vm) })
             }
+            // On Mondays what to prepare in four weeks, first on the page (owner's pick ก, 2026-11-03, mock six-pains
+            // screen 3). The one thing next is the first of the "ทำต่อไป" card below (owner's pick ก, mock six-pains-fix).
+            if (NextThing.monday(today)) item(key = "ahead") {
+                NextThingCard(null, NextThing.ahead(state.milestones, today), onOpen, onDone = {}, onSkip = {})
+            }
             if (fixes.isNotEmpty()) item(key = "fixes") { FixCard(fixes) }
 
             val skippedToday = NewLook.skippedFor(today)
@@ -231,11 +243,44 @@ fun FocusScreen(
             val next = ranked.firstOrNull()
             val lateTasks = overdueSection?.items.orEmpty().mapNotNull { (it as? DayPlan.Item.TaskItem)?.task }.filter { it.isOpen }
             val decide = Decisions.counts(state, asks.size)
+            // The one thing next across the projects (the lock-screen card shows the same); read again after a tap.
+            val pick = nextTick.let { NextThing.ranked(state.tasks, today, NextThingSkips.of(context, today)).firstOrNull() }
             val cards = buildList {
+                if (pick != null) add(
+                    // First on the one "ทำต่อไป" card, so it is not said twice (owner's pick ก, 2026-11-03, mock six-pains-fix).
+                    DeckCard("pick", tr("ทำต่อไป", "Do next")) {
+                        Text(
+                            pick.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(pick.task) },
+                            color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                        val project = Projects.projectOf(pick.task)
+                        Text(
+                            listOfNotNull(project, pick.meta ?: tr("ขั้นถัดไปของโปรเจกต์", "the project's next step")).joinToString(", "),
+                            color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        next?.task?.takeIf { it.key != pick.task.key }?.let { after ->
+                            Text(tr("หลังจากนี้: ", "After this: ") + after.title, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        DeckButtons {
+                            DeckButton(tr("ไม่ใช่ตอนนี้", "Not now"), false) {
+                                NextThingSkips.add(context, pick.task.key, today)
+                                nextTick++
+                                nextScope.launch { app.omnitask.widget.OmniWidgets.refresh(context) }
+                            }
+                            DeckButton(tr("เสร็จแล้ว", "Done"), true) {
+                                vm.toggleDone(pick.task)
+                                NextThingSkips.add(context, pick.task.key, today)
+                                nextTick++
+                            }
+                        }
+                    },
+                )
+                // The usual "ทำต่อไป" stays as the next card in the deck, buttons and all (mock six-pains-fix ก: "1/4").
                 if (next != null) add(
                     DeckCard("next", tr("ทำต่อไป", "Do next")) {
                         val doing = next.task.status == Status.IN_PROGRESS
-                        val red = next.why == NextUp.Why.DUE_LATE || next.why == NextUp.Why.DUE_TODAY
+                        // A deadline today is still red; one gone by is not (owner's pick ก, 2026-11-03).
+                        val red = next.why == NextUp.Why.DUE_TODAY
                         Text(
                             next.task.title, Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(next.task) },
                             color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -266,16 +311,20 @@ fun FocusScreen(
                         DeckButtons { DeckButton(tr("ดูอีกครั้ง", "See them again"), true) { NewLook.clearSkips(context) } }
                     },
                 )
+                // Work under way or paused on purpose is not overdue: it folds into one grey line under the rest, and
+                // nothing on the card is red (owner's pick ก, 2026-11-03, mock six-pains screen 1).
+                val resting = lateTasks.filter { Resting.of(it, today) }
+                val due = lateTasks.filter { !Resting.of(it, today) }
                 if (lateTasks.isNotEmpty()) add(
-                    DeckCard("late", tr("ค้าง ${lateTasks.size} งาน", "${lateTasks.size} left over"), if (realLate) C.red else null) {
-                        lateTasks.take(3).forEach { t ->
-                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onOpen(t) }, verticalAlignment = Alignment.CenterVertically) {
-                                Text(t.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                val (word, red) = lateWord(t, today)
-                                Text(word, Modifier.padding(start = 8.dp), color = if (red) C.red else C.muted, fontSize = TS.caption, maxLines = 1)
-                            }
-                        }
-                        if (lateTasks.size > 3) Text(tr("และอีก ${lateTasks.size - 3} งาน", "and ${lateTasks.size - 3} more"), color = C.muted, fontSize = TS.caption)
+                    DeckCard(
+                        "late",
+                        if (due.isNotEmpty()) tr("ถึงเวลาแล้ว ${due.size}", "${due.size} due now")
+                        else tr("กำลังเดินหรือพักไว้ ${resting.size} งาน", "${resting.size} under way or paused"),
+                        null,
+                    ) {
+                        due.take(3).forEach { t -> LateRow(t, Resting.lateLine(t, today), onOpen) }
+                        if (due.size > 3) Text(tr("และอีก ${due.size - 3} งาน", "and ${due.size - 3} more"), color = C.muted, fontSize = TS.caption)
+                        if (resting.isNotEmpty()) RestingFold(resting, due.isEmpty(), onOpen)
                         DeckButtons {
                             DeckButton(tr("ดูทั้งหมด", "See all"), false) { lateOpen = true }
                             DeckButton(tr("ให้เลขาจัดวันใหม่", "Ask for new dates"), true) {
@@ -433,7 +482,7 @@ fun FocusScreen(
         if (!nl && overdueSection != null) item {
             Card {
                 Box(Modifier.height(6.dp))
-                PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdueSection.items.count { it is DayPlan.Item.TaskItem && it.task.isOpen })
+                PlanHead(overdueSection.part.label, if (!NewLook.on || realLate) C.red else C.muted, overdue)
                 overdueSection.items.forEach { item ->
                     if (item is DayPlan.Item.TaskItem) TimelineTask(item, state, vm, onOpen, item.task in blocked)
                 }
@@ -717,7 +766,8 @@ private fun TimelineTask(item: DayPlan.Item.TaskItem, state: UiState, vm: TaskVi
                     clock?.let {
                         Text(it.format(HM) + if (lateText != null || rest.isNotEmpty()) ", " else "", color = C.muted, fontSize = TS.caption)
                     }
-                    if (lateText != null) Text(lateText, color = C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
+                    // The new look keeps lateness grey (owner's pick ก, 2026-11-03, mock six-pains screen 1).
+                    if (lateText != null) Text(lateText, color = if (NewLook.on) C.muted else C.red, fontSize = TS.caption, fontWeight = FontWeight.Medium)
                     if (targetText != null) Text(targetText, color = C.muted, fontSize = TS.caption)
                     if (rest.isNotEmpty()) Text((if (lateText != null || targetText != null) ", " else "") + rest, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -938,12 +988,71 @@ private fun syncNotice(path: String) = tr(
     "A sync clash left a copy: ${path.substringAfterLast('/')}\nThe app skips it. Check it for anything the main note lacks, then delete it.",
 )
 
-/** How late a left-over task is: past its real deadline (red), or past its own target (quiet). */
-private fun lateWord(t: Task, today: LocalDate): Pair<String, Boolean> {
-    val due = t.due
-    if (due != null && due < today) return tr("เลย ${ChronoUnit.DAYS.between(due, today)} วัน", "${ChronoUnit.DAYS.between(due, today)} days late") to true
-    val target = t.scheduled ?: return "" to false
-    return tr("เลยเป้า ${ChronoUnit.DAYS.between(target, today)} วัน", "target ${ChronoUnit.DAYS.between(target, today)} days ago") to false
+/**
+ * The first line of the today page (owner's pick ก, 2026-11-03, mock six-pains screen 3): on Mondays, what to prepare in
+ * the next four weeks; then the one thing next with "ทำแล้ว" and "ไม่ใช่ตอนนี้". Nothing here is red.
+ */
+@Composable
+private fun NextThingCard(pick: NextThing.Pick?, ahead: List<NextThing.Ahead>, onOpen: (Task) -> Unit, onDone: (Task) -> Unit, onSkip: (Task) -> Unit) {
+    if (pick == null && ahead.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (ahead.isNotEmpty()) Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.accentSoft).padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(tr("4 สัปดาห์ข้างหน้า เตรียม ${ahead.size} เรื่อง", "Next 4 weeks: ${ahead.size} to prepare"), color = C.accentText, fontSize = TS.caption)
+            ahead.forEach { a ->
+                Text(a.title, color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(tr("ต้องเริ่มภายใน ", "Start by ") + a.by, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (pick != null) Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.accentSoft).padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(tr("ถัดไป", "Next"), color = C.accentText, fontSize = TS.caption)
+            Text(
+                pick.task.title + (Projects.projectOf(pick.task)?.let { " ($it)" } ?: ""), Modifier.clip(RoundedCornerShape(6.dp)).clickable { onOpen(pick.task) },
+                color = C.text, fontSize = TS.body, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            pick.meta?.let { Text(it, color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton(tr("ทำแล้ว", "Done"), filled = false) { onDone(pick.task) }
+                SmallButton(tr("ไม่ใช่ตอนนี้", "Not now"), filled = false) { onSkip(pick.task) }
+            }
+        }
+    }
+}
+
+/** One task on the deck's left-over card: its name, and why it waits ("ตั้งไว้ 27 ต.ค. ส่งภายใน 7 พ.ย."), never red. */
+@Composable
+private fun LateRow(t: Task, why: String, onOpen: (Task) -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onOpen(t) }, verticalAlignment = Alignment.CenterVertically) {
+        Text(t.title, Modifier.weight(1f), color = C.text, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (why.isNotEmpty()) Text(why, Modifier.padding(start = 8.dp), color = C.muted, fontSize = TS.caption, maxLines = 1)
+    }
+}
+
+/**
+ * "กำลังเดินหรือพักไว้ N งาน ไม่นับว่าค้าง": the work under way or paused on purpose, one grey line that opens in place to
+ * each task with how it stands ("พัก: รอคนอื่น (14 ต.ค.)"). Open from the start when it is all the card holds.
+ */
+@Composable
+private fun RestingFold(tasks: List<Task>, alone: Boolean, onOpen: (Task) -> Unit) {
+    var open by rememberSaveable { mutableStateOf(alone) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.raised).padding(horizontal = 10.dp, vertical = 8.dp)) {
+        // Alone on the card, its name is already the card's: the line is not said twice.
+        if (!alone) Text(
+            tr("กำลังเดินหรือพักไว้ ${tasks.size} งาน ไม่นับว่าค้าง", "${tasks.size} under way or paused, not overdue") + if (open) "" else tr(" (แตะดู)", " (tap to see)"),
+            Modifier.fillMaxWidth().clickable { open = !open }, color = C.muted, fontSize = TS.caption,
+        )
+        if (open) tasks.forEach { t ->
+            Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(6.dp)).clickable { onOpen(t) }) {
+                Text(t.title, color = C.text2, fontSize = TS.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Resting.line(t), color = C.muted, fontSize = TS.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 }
 
 /**

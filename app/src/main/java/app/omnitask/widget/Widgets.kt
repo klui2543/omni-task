@@ -213,7 +213,7 @@ class TodayWidget : GlanceAppWidget() {
             val index = (if (fresh) state[PAGE] ?: 0 else 0).coerceIn(0, pages.lastIndex)
             val page = pages[index]
             val left = data.todayTasks.size
-            val late = DayPlan.lateCount(data.plan)
+            val late = DayPlan.lateCount(data.plan, data.today)
             val hasToday = page.days.first().date == data.today
             Box(GlanceModifier.fillMaxSize()) {
             Column(
@@ -224,7 +224,7 @@ class TodayWidget : GlanceAppWidget() {
                         Label(span(page.days.first().date, page.days.last().date), cp { it.text }, 15.sp, bold = true)
                         if (hasToday) Row {
                             Label(if (left == 0) tr("ไม่มีงานค้างวันนี้", "all done today") else tr("เหลือ $left งานวันนี้", "$left left today"), cp { it.muted }, 11.5.sp)
-                            if (late > 0) Label(tr(", ค้าง $late ›", ", $late overdue ›"), cp { it.red }, 11.5.sp, bold = true, modifier = GlanceModifier.clickable(open(context)))
+                            if (late > 0) Label(tr(", ค้าง $late ›", ", $late overdue ›"), cp { it.muted }, 11.5.sp, bold = true, modifier = GlanceModifier.clickable(open(context)))
                         } else Label(tr("${page.days.size} วัน", "${page.days.size} days"), cp { it.muted }, 11.5.sp)
                     }
                     if (index > 0) {
@@ -239,7 +239,7 @@ class TodayWidget : GlanceAppWidget() {
                     Spacer(GlanceModifier.width(2.dp))
                     PageButton("›", tr("ถัดไป", "Next"), (index + 1).coerceAtMost(pages.lastIndex))
                     Spacer(GlanceModifier.width(6.dp))
-                    Circle(context, R.drawable.ic_w_plus, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_ADD, size = 26)
+                    Circle(context, R.drawable.ic_w_plus, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_ADD, size = 26)
                 }
                 Spacer(GlanceModifier.height(UNDER.dp))
                 page.days.forEachIndexed { i, day ->
@@ -247,9 +247,10 @@ class TodayWidget : GlanceAppWidget() {
                     DayBlock(context, day, data.today, cap = page.cap)
                 }
             }
-            // The mic floats at the bottom right so the header keeps its room (owner picked "ค", 2 Nov).
-            Box(GlanceModifier.fillMaxSize().padding(end = 12.dp, bottom = 12.dp), contentAlignment = Alignment.BottomEnd) {
-                Circle(context, R.drawable.ic_w_mic, cp { it.accent }, cp { it.onAccent }, MainActivity.ACTION_VOICE, size = 44)
+            // The mic floats at the bottom right so the header keeps its room (owner picked "ค", 2 Nov), grey and
+            // smaller with its own room under the days so it covers no times (owner picked ก, 3 Nov).
+            Box(GlanceModifier.fillMaxSize().padding(end = 12.dp, bottom = 8.dp), contentAlignment = Alignment.BottomEnd) {
+                Circle(context, R.drawable.ic_w_mic, cp { it.raised }, cp { it.text2 }, MainActivity.ACTION_VOICE, size = MIC)
             }
             }
         }
@@ -264,8 +265,11 @@ class TodayWidget : GlanceAppWidget() {
         private const val TOP = 14
         private const val HEADER = 40
         private const val UNDER = 12
-        /** Padding, header and the gap under it, in dp: what the days cannot use. */
-        private const val CHROME = TOP + 8 + HEADER + UNDER
+        /** The mic and the room kept for it under the last day. */
+        private const val MIC = 38
+        private const val MIC_ROOM = MIC + 4
+        /** Padding, header, the gap under it and the mic's room, in dp: what the days cannot use. */
+        private const val CHROME = TOP + 8 + HEADER + UNDER + MIC_ROOM
     }
 }
 

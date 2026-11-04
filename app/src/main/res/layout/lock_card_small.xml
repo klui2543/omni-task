@@ -11,6 +11,6 @@
             android:singleLine="true" android:textSize="12sp" />
     </LinearLayout>
     <ImageView android:id="@+id/smallmic" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="10dp"
-        android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#0E1118"
+        android:background="@drawable/lock_mic_bg" android:padding="10dp" android:src="@drawable/ic_w_mic" android:tint="#E8EAEE"
         android:contentDescription="@string/lock_voice" />
 </LinearLayout>

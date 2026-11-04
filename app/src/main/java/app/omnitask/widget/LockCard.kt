@@ -71,4 +71,29 @@ internal object LockCard {
         }
         return Card(out, more)
     }
+
+    /**
+     * Where the one thing next sits on the card (owner's pick ก, 2026-11-03, mock six-pains-fix): its own row when today
+     * already has it, so it is not shown twice; a row folded into "อีก N" comes up first with its time; with no row
+     * today, a new first row. The last row then joins "อีก N", and the now line goes with it when it stood after the
+     * cut, as in [card]. [titles] are the names the today plan gave the task (the copy can lag a renamed task).
+     * Returns the card and the index of the next row in it.
+     */
+    fun placeNext(card: Card, day: List<TodayWeek.Row>, titles: Set<String>, key: String, max: Int = MAX): Pair<Card, Int> {
+        fun its(r: TodayWeek.Row) = r is TodayWeek.Row.Todo && r.task.key == key || r is TodayWeek.Row.Event && !r.past && r.title in titles
+        val at = card.rows.indexOfFirst(::its)
+        if (at >= 0) return card to at
+        val folded = day.firstOrNull { its(it) && !(it is TodayWeek.Row.Todo && !it.task.isOpen) }
+        val rows = ArrayList<TodayWeek.Row>(card.rows)
+        rows.add(0, folded ?: TodayWeek.Row.Event(titles.first(), "", null, past = false))
+        var more = card.more - if (folded != null) 1 else 0
+        if (rows.count { it !is TodayWeek.Row.Now } > max) {
+            val cut = rows.indexOfLast { it !is TodayWeek.Row.Now }
+            rows.removeAt(cut)
+            more++
+            val now = rows.indexOfFirst { it is TodayWeek.Row.Now }
+            if (now >= cut) rows.removeAt(now)
+        }
+        return Card(rows, more.coerceAtLeast(0)) to 0
+    }
 }
