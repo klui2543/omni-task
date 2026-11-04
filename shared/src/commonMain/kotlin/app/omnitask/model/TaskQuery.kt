@@ -44,6 +44,8 @@ data class TaskQuery(
     val kinds: Set<TaskKind> = emptySet(),
     /** List notes to show (Bucket list, Watch list...); their items stay out of the views otherwise. */
     val lists: Set<String> = emptySet(),
+    /** Folders ([Folders.of]) to show, each with every folder inside it: `Siriraj` covers `Siriraj/ตารางเวรเภสัช`. */
+    val folders: Set<String> = emptySet(),
     /** The views (Kanban, Matrix, Gantt, calendar) leave done and cancelled work out. */
     val hideDone: Boolean = true,
     /** Subtasks normally live inside their parent; the calendar asks for them so dated ones still show. */
@@ -57,7 +59,7 @@ data class TaskQuery(
 ) {
     /** How many filters are narrowing the list, for the badge on the filter button. */
     val activeFilters: Int
-        get() = (if (statuses != DEFAULT.statuses) 1 else 0) + priorities.size + tags.size + notes.size + buckets.size + kinds.size + lists.size
+        get() = (if (statuses != DEFAULT.statuses) 1 else 0) + priorities.size + tags.size + notes.size + buckets.size + kinds.size + lists.size + folders.size
 
     fun matches(t: Task, today: LocalDate): Boolean =
         (statuses.isEmpty() || t.status in statuses) &&
@@ -65,10 +67,16 @@ data class TaskQuery(
             // A filter tag also matches its nested tags: #รอ covers #รอ/พี่เอ.
             (tags.isEmpty() || t.tags.any { tag -> tags.any { tag == it || tag.startsWith("$it/") } }) &&
             (notes.isEmpty() || t.noteName in notes) &&
+            (folders.isEmpty() || inFolders(t)) &&
             (buckets.isEmpty() || t.bucket(today) in buckets) &&
             (withSubtasks || t.parent == null) &&
             (text.isBlank() || t.title.contains(text.trim(), ignoreCase = true) || t.description.contains(text.trim(), ignoreCase = true)) &&
             typeMatches(t)
+
+    private fun inFolders(t: Task): Boolean {
+        val f = Folders.of(t) ?: return false
+        return folders.any { f.equals(it, ignoreCase = true) || f.startsWith("$it/", ignoreCase = true) }
+    }
 
     /**
      * Types and lists together: with neither chosen, every ordinary task shows (parked work and list items
@@ -86,6 +94,7 @@ data class TaskQuery(
         if (statuses != DEFAULT.statuses) add(statuses.joinToString(", ") { it.label } to copy(statuses = DEFAULT.statuses))
         kinds.forEach { add(it.label to copy(kinds = kinds - it)) }
         lists.forEach { add(it to copy(lists = lists - it)) }
+        folders.forEach { add(tr("โฟลเดอร์ ", "Folder ") + it.split('/').joinToString(" › ") to copy(folders = folders - it)) }
         buckets.forEach { add(it.label to copy(buckets = buckets - it)) }
         priorities.forEach { add(it.label to copy(priorities = priorities - it)) }
         tags.forEach { add("#$it" to copy(tags = tags - it)) }
@@ -93,13 +102,28 @@ data class TaskQuery(
     }
 
     /** The same filters with nothing chosen, keeping grouping, sorting and the done switch. */
-    fun cleared() = copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), buckets = emptySet(), kinds = emptySet(), lists = emptySet(), text = "")
+    fun cleared() = copy(statuses = DEFAULT.statuses, priorities = emptySet(), tags = emptySet(), notes = emptySet(), buckets = emptySet(), kinds = emptySet(), lists = emptySet(), folders = emptySet(), text = "")
 
-    /** Only the filter part, as one line for saving a named filter. */
-    fun encode(): String = listOf(
+    /**
+     * Only the filter part, as one line for saving a named filter. The folders go eighth, and only when chosen, so a
+     * line without them stays the seven fields the web app reads and writes.
+     */
+    fun encode(): String = (listOf(
         statuses.joinToString(US) { it.name }, priorities.joinToString(US) { it.name }, tags.joinToString(US), notes.joinToString(US),
         buckets.joinToString(US) { it.name }, kinds.joinToString(US) { it.name }, lists.joinToString(US),
+    ) + listOfNotNull(folders.takeIf { it.isNotEmpty() }?.joinToString(US))).joinToString(RS)
+
+    /**
+     * The whole view to keep on the phone between runs: the filters, then the done switch, grouping and sorting.
+     * The search text is left out. [decodeView] reads it back.
+     */
+    fun encodeView(): String = listOf(
+        encodeFilters(), hideDone.toString(), groupBy.name, sortBy.name, ascending.toString(),
+        thenBy.joinToString(US) { (by, asc) -> "${by.name}:$asc" },
     ).joinToString(RS)
+
+    /** The eight filter fields, always all eight, for [encodeView]. */
+    private fun encodeFilters(): String = (encode().split(RS) + List(8) { "" }).take(8).joinToString(RS)
 
     fun run(tasks: List<Task>, today: LocalDate): List<TaskGroup> {
         val sorted = tasks.filter { matches(it, today) }.sortedWith(comparator())
@@ -163,7 +187,7 @@ data class TaskQuery(
 
         /** Lays a saved filter line over [base], keeping its grouping and sorting. */
         fun decode(line: String, base: TaskQuery): TaskQuery {
-            val f = line.split(RS) + List(7) { "" }
+            val f = line.split(RS) + List(8) { "" }
             fun parts(i: Int) = f[i].split(US).filter { it.isNotEmpty() }
             return base.copy(
                 statuses = parts(0).mapNotNull { n -> Status.entries.firstOrNull { it.name == n } }.toSet(),
@@ -173,6 +197,24 @@ data class TaskQuery(
                 buckets = parts(4).mapNotNull { n -> DateBucket.entries.firstOrNull { it.name == n } }.toSet(),
                 kinds = parts(5).mapNotNull { n -> TaskKind.entries.firstOrNull { it.name == n } }.toSet(),
                 lists = parts(6).toSet(),
+                folders = parts(7).toSet(),
+            )
+        }
+
+        /** A view kept by [encodeView]; parts it cannot read stay as in [DEFAULT]. */
+        fun decodeView(line: String): TaskQuery {
+            if (line.isBlank()) return DEFAULT
+            val f = line.split(RS) + List(14) { "" }
+            val q = decode(f.take(8).joinToString(RS), DEFAULT)
+            return q.copy(
+                hideDone = f[8].toBooleanStrictOrNull() ?: DEFAULT.hideDone,
+                groupBy = GroupBy.entries.firstOrNull { it.name == f[9] } ?: DEFAULT.groupBy,
+                sortBy = SortBy.entries.firstOrNull { it.name == f[10] } ?: DEFAULT.sortBy,
+                ascending = f[11].toBooleanStrictOrNull() ?: DEFAULT.ascending,
+                thenBy = f[12].split(US).mapNotNull { e ->
+                    val by = SortBy.entries.firstOrNull { it.name == e.substringBefore(':') } ?: return@mapNotNull null
+                    by to (e.substringAfter(':').toBooleanStrictOrNull() ?: true)
+                },
             )
         }
         private val STATUS_ORDER = listOf(Status.IN_PROGRESS, Status.TODO, Status.DONE, Status.CANCELLED)

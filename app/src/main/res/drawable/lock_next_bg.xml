@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The box of the one thing next on the lock card: the accent, see-through, so the system text reads on a light or dark lock screen. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#2E9DB4D3" />
+    <corners android:radius="12dp" />
+</shape>

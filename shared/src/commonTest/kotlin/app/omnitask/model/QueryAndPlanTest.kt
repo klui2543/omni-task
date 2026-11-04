@@ -149,7 +149,7 @@ class QueryAndPlanTest {
         assertEquals(listOf(3L, 5L), events.map { it.id })
         val plan = DayPlan.build(tasks, events, today, includeDone = true)
         // Scheduled for a day gone by and not due: not overdue by date, but it is in the overdue card, so it counts.
-        assertEquals(1, DayPlan.lateCount(plan))
+        assertEquals(1, DayPlan.lateCount(plan, today))
         // All-day events count too, as many as the timeline shows.
         assertEquals(2, DayPlan.eventCount(plan))
     }
