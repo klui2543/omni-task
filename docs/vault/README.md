@@ -1,8 +1,5 @@
-# Vault side of the work logs
+# Vault side of the work logs (retired copies)
 
-A copy of the files that live in Klui's Obsidian vault under `📁 Folder/หลังบ้าน/Claude/`, kept here so they are versioned and can be put back if the vault copy is lost. The vault copy is the one in use: Klui may edit it there, and a change made there wins. When these files change here, put them into the vault (a cloud session with the vault runs `vsync`, writes them, and runs `vsync` again).
+The files under `Claude/` and `Omni/` here used to be hand-kept copies of Klui's Obsidian vault files. They drifted from the vault, so since 2026-11-10 (Klui's pick "ชี้ทาง ไม่ลบ") each one is only a pointer to its vault path. The vault is the only real copy; the environment's setup script copies the rules and commands from the vault, not from here. The daily backup of the whole vault is the repository `klui2543/klui-vault-backup`. Old contents are in this repository's git history.
 
-- `Claude/CLAUDE.md`: the rules every Claude session follows (copied to `~/.claude/CLAUDE.md` by the environment's setup script).
-- `Claude/secretary.md`: what the secretary does every 3 hours.
-- `Claude/README.md`: what is where, how to find old things, how to repair the secretary, the yearly check.
-- `Claude/commands/`: `/save` and `/recall`.
+`chat-skill/` is unchanged: it is the source of the Claude Chat skill `save-to-log`, which has no copy in the vault.
