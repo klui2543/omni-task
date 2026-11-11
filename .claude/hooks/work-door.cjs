@@ -17,11 +17,16 @@ process.stdin.on('end', () => {
     return;
   }
   const prompt = String(input.prompt || '').trim();
-  const sid = String(input.session_id || 'no-session').replace(/[^A-Za-z0-9_-]/g, '_');
-  const marker = path.join(os.tmpdir(), 'klui-work-door-' + sid);
-  if (fs.existsSync(marker)) return;               // เตือนแล้ว หรือเปิดประตูแล้ว
-  try { fs.writeFileSync(marker, new Date().toISOString()); } catch (e) {
-    process.stderr.write('work-door: เขียนตัวจำไม่ได้ อาจเตือนซ้ำ (' + e.message + ')\n');
+  const sid = String(input.session_id || '').replace(/[^A-Za-z0-9_-]/g, '_');
+  if (!sid) {
+    // ไม่มีรหัสห้อง: จำไม่ได้ว่าเตือนแล้ว จึงเตือนทุกข้อความ ดีกว่าเงียบถาวร
+    process.stderr.write('work-door: ไม่มีรหัสห้อง จะเตือนทุกข้อความ\n');
+  } else {
+    const marker = path.join(os.tmpdir(), 'klui-work-door-' + sid);
+    if (fs.existsSync(marker)) return;             // เตือนแล้ว หรือเปิดประตูแล้ว
+    try { fs.writeFileSync(marker, new Date().toISOString()); } catch (e) {
+      process.stderr.write('work-door: เขียนตัวจำไม่ได้ อาจเตือนซ้ำ (' + e.message + ')\n');
+    }
   }
   if (prompt.startsWith('/')) return;              // Klui เปิดด้วยคำสั่ง / เอง ไม่ต้องเตือน
   process.stdout.write(
