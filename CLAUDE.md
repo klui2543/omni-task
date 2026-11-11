@@ -2,6 +2,15 @@
 
 Native Android app (Kotlin, Jetpack Compose) that reads and writes the checkbox tasks in the owner's Obsidian vault.
 
+## การ์ด repo
+เริ่มทุกงานด้วยสกิล /work (ระดับบัญชี) แล้วใช้การ์ดนี้ (Klui เลือก 11 พ.ย. 2569 "/work + hook เตือน")
+- ตรวจงาน: `gradle :shared:allTests` (ไม่ต้องมี Android SDK) ส่วนแอป Android สร้างและเทสผ่าน GitHub Actions เท่านั้น (Build APK)
+- แก้ `web/src` เท่ากับแก้ปลั๊กอิน Obsidian ด้วย
+- เปลี่ยนหน้าตา: ทำ mock เป็น artifact ให้ Klui เลือกก่อนเขียนโค้ด
+- สกิลในห้องนี้: review-loop
+- ถึงผู้ใช้จริง: ทางเขียนโน้ตใน vault และการออก release ให้ Obtainium
+- เกณฑ์ตรวจ: `review.md`
+
 ## Writing rules (from the owner, always apply)
 
 Klui's rules for every project are in `.claude/rules/klui-core.md` (a copy; the source is in siriraj-rx-shift, do not edit it here). They cover replying in Thai, suggesting a model and effort, the em dash and middle dot ban everywhere, talking every task through before starting, which work must wait for the owner's OK, and how to answer a problem report. On top of that, in this repository:
