@@ -1704,8 +1704,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             HeadlessSync.NotReady.NO_PERMISSION -> tellSyncOnce(
                 "noPermission",
                 tr(
-                    "โฟลเดอร์ OmniVault ไม่ได้ซิงก์ เพราะ Omni ยังไม่ได้สิทธิ์สั่งงาน Termux เปิดได้ที่ ตั้งค่าแอป Omni > สิทธิ์",
-                    "The OmniVault folder is not syncing because Omni may not run commands in Termux yet: allow it in Omni's app settings > Permissions",
+                    "โฟลเดอร์ OmniVault ไม่ได้ซิงก์ เพราะ Omni ยังไม่ได้สิทธิ์สั่งงาน Termux เปิดได้ที่ ตั้งค่าแอป Omni > สิทธิ์ (อาจอยู่ใน สิทธิ์เพิ่มเติม)",
+                    "The OmniVault folder is not syncing because Omni may not run commands in Termux yet: allow it in Omni's app settings > Permissions (it may be under additional permissions)",
                 ),
             )
             null -> Unit

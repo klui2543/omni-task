@@ -159,8 +159,10 @@ if ! take "$LOCK"; then
   waited=0
   until take "$LOCK"; do
     if [ "$waited" -ge 150 ]; then
+      # Not 75: Omni treats 75 as "busy, someone else is syncing" and stays quiet, but here what Omni wrote before
+      # leaving has not gone up, so it must be reported (76 is any other failure to Omni).
       echo "omni-sync: waited 150 seconds and another sync is still running" >&2
-      exit 75
+      exit 76
     fi
     sleep 2
     waited=$((waited + 2))
