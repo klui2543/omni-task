@@ -37,6 +37,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
+        // After a crash the report opens first, before anything that may crash again, so it can always be sent.
+        CrashLog.read(this)?.let { report ->
+            safe = true
+            enableEdgeToEdge()
+            setContent { CrashScreen(report) { CrashLog.clear(this); safe = false; recreate() } }
+            return
+        }
         Lang.load(this)
         Appearance.load(this)
         Appearance.systemDark = systemDark()
@@ -53,14 +60,17 @@ class MainActivity : ComponentActivity() {
             OmniTheme { OmniTaskApp(viewModel) }
         }
         handle(intent)
-        CrashLog.read(this)?.let { viewModel.showCrash(it) }
     }
+
+    /** True while the crash report screen is showing: the app's own screens and data stay closed. */
+    private var safe = false
 
     private fun systemDark() =
         (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (safe) return
         handle(intent)
     }
 
@@ -116,6 +126,7 @@ class MainActivity : ComponentActivity() {
     // Obsidian or the sync app may have changed files while the app was in the background.
     override fun onResume() {
         super.onResume()
+        if (safe) return
         viewModel.resumed()
         // The watch's sleep may have come into Health Connect while the app was away (read at most every 10 minutes).
         lifecycleScope.launch { app.omnitask.ui.SleepMode.refresh(this@MainActivity) }
