@@ -25,6 +25,8 @@ import app.omnitask.data.SettingsSync
 import app.omnitask.data.MonthMarksStore
 import app.omnitask.data.GoogleCalendarCheck
 import app.omnitask.data.TaskLine
+import app.omnitask.data.TermuxSync
+import app.omnitask.model.HeadlessSync
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
 import app.omnitask.data.VaultText
@@ -1622,9 +1624,83 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The app came to the front: read the vault again, and check whether this phone's copy is behind the secretary. */
     fun resumed() {
+        val app = getApplication<Application>()
+        val started = TermuxSync.request(app, "resume")
+        when {
+            // Termux's headless sync is bringing the vault up to date: read what is there now, and again when it
+            // answers (watchTermuxSync). Obsidian is opened only if the sync fails or does not answer.
+            started || TermuxSync.pending -> {
+                waitingForSync = true
+                if (syncTimeout?.isActive != true) {
+                    syncTimeout = viewModelScope.launch {
+                        delay(HeadlessSync.TIMEOUT_MS)
+                        TermuxSync.pending = false
+                        tellSyncOnce("timeout", tr("Termux ไม่ตอบใน 3 นาที ใช้การเปิด Obsidian แบบเดิมไปก่อน", "Termux did not answer in 3 minutes; opening Obsidian the old way for now"))
+                        fallBackToObsidian()
+                    }
+                }
+                reload()
+            }
+            // A sync ran less than 20 seconds ago (leaving and coming straight back): the vault is fresh enough.
+            TermuxSync.available(app) && !HeadlessSync.due(TermuxSync.lastStart(app), System.currentTimeMillis()) -> reload()
+            // No Termux (or its start just failed, which watchTermuxSync reports): the old way.
+            else -> {
+                checkSyncOnLoad = true
+                reload()
+            }
+        }
+    }
+
+    /** The app left the screen: a sync that fails from now on is reported, but does not open Obsidian over another app. */
+    fun paused() {
+        waitingForSync = false
+    }
+
+    /** True while the app is on screen and relies on a Termux sync instead of the check that opens Obsidian. */
+    @Volatile private var waitingForSync = false
+    private var syncTimeout: Job? = null
+
+    /** The sync did not happen: check, as before Termux, whether Obsidian has to be opened, when the app is waiting for it. */
+    private fun fallBackToObsidian() {
+        if (!waitingForSync) return
+        waitingForSync = false
         checkSyncOnLoad = true
         reload()
     }
+
+    /** Each reason a Termux sync fails is said once while the app runs, not at every resume. */
+    private fun tellSyncOnce(key: String, text: String) {
+        if (syncTold.add(key)) showMessage(text)
+    }
+
+    /** Termux's answers: Ok reads the vault again (without asking for another sync); anything else is said and falls back. */
+    private fun watchTermuxSync() {
+        viewModelScope.launch {
+            TermuxSync.results.collect { outcome ->
+                syncTimeout?.cancel()
+                when (outcome) {
+                    HeadlessSync.Outcome.Ok -> {
+                        waitingForSync = false
+                        reload()
+                    }
+                    HeadlessSync.Outcome.NotSetUp -> {
+                        tellSyncOnce("notSetUp", tr("ยังไม่ได้ติดตั้งตัวซิงก์ใน Termux ใช้การเปิด Obsidian แบบเดิมไปก่อน", "The sync is not set up in Termux yet; opening Obsidian the old way for now"))
+                        fallBackToObsidian()
+                    }
+                    HeadlessSync.Outcome.NotAllowed -> {
+                        tellSyncOnce("notAllowed", tr("Termux ยังไม่อนุญาตให้ Omni สั่ง (allow-external-apps) ใช้การเปิด Obsidian แบบเดิมไปก่อน", "Termux does not let Omni run commands yet (allow-external-apps); opening Obsidian the old way for now"))
+                        fallBackToObsidian()
+                    }
+                    is HeadlessSync.Outcome.Failed -> {
+                        tellSyncOnce("failed:" + outcome.reason, tr("ซิงก์ผ่าน Termux ไม่สำเร็จ: ${outcome.reason} ใช้การเปิด Obsidian แบบเดิมไปก่อน", "Sync through Termux failed: ${outcome.reason}. Opening Obsidian the old way for now"))
+                        fallBackToObsidian()
+                    }
+                }
+            }
+        }
+    }
+
+    init { watchTermuxSync() }
 
     /**
      * When this phone's Claude log is older than the newest secretary round that should be in it, Obsidian has not
@@ -5078,6 +5154,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val UNDO_KEEP = 500
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
+        /** The Termux sync failures already told to the owner since the app started (see tellSyncOnce). */
+        private val syncTold: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+
         val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
     }
 }

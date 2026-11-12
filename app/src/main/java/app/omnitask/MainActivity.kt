@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import app.omnitask.data.BehaviorLog
+import app.omnitask.data.TermuxSync
 import app.omnitask.data.TaskLine
 import app.omnitask.model.Appearance
 import app.omnitask.model.Behavior
@@ -33,6 +35,13 @@ import app.omnitask.time.*
 class MainActivity : ComponentActivity() {
 
     private val viewModel: TaskViewModel by viewModels()
+
+    /**
+     * Asks once for Termux's permission to run commands, so the vault can sync in the background instead of opening
+     * Obsidian (see TermuxSync). The answer needs no handling here: coming back from the dialog resumes the app,
+     * which starts the sync when it was allowed.
+     */
+    private val askTermux = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,6 +130,7 @@ class MainActivity : ComponentActivity() {
         const val ACTION_CALENDAR = "calendar"
         const val EXTRA_DAY = "app.omnitask.DAY"
         const val EXTRA_PICK = "app.omnitask.PICK"
+        private const val KEY_TERMUX_ASKED = "termux.asked"
     }
 
     // Obsidian or the sync app may have changed files while the app was in the background.
@@ -128,7 +138,20 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (safe) return
         viewModel.resumed()
+        val prefs = TermuxSync.prefs(this)
+        if (TermuxSync.installedWithoutPermission(this) && !prefs.getBoolean(KEY_TERMUX_ASKED, false)) {
+            prefs.edit().putBoolean(KEY_TERMUX_ASKED, true).apply()
+            askTermux.launch(TermuxSync.PERMISSION)
+        }
         // The watch's sleep may have come into Health Connect while the app was away (read at most every 10 minutes).
         lifecycleScope.launch { app.omnitask.ui.SleepMode.refresh(this@MainActivity) }
+    }
+
+    // What the app wrote goes up through Termux's headless sync when it leaves the screen (nothing without Termux).
+    override fun onPause() {
+        super.onPause()
+        if (safe) return
+        viewModel.paused()
+        TermuxSync.request(this, "leave")
     }
 }
