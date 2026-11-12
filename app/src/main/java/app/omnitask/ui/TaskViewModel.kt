@@ -1643,7 +1643,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The app left the screen: what it wrote goes up through Termux's headless sync (only when [TermuxSync.on]). */
     fun paused() {
-        TermuxSync.request(getApplication(), _state.value.vaultName, TermuxSync.LEAVE)
+        val run = TermuxSync.request(getApplication(), _state.value.vaultName, TermuxSync.LEAVE)
+        if (run != null) waitForAnswer(run, HeadlessSync.timeoutMs(leave = true))
     }
 
     /** The vault folder's name, looked up first when no load has found it yet (the app's first resume). */
@@ -1668,26 +1669,58 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun resumeHeadless(folderName: String?) {
         val run = TermuxSync.request(getApplication(), folderName, TermuxSync.RESUME)
-        if (run != null) {
-            syncTimeouts[run] = viewModelScope.launch {
-                delay(HeadlessSync.TIMEOUT_MS)
-                syncTimeouts.remove(run)
-                TermuxSync.end(run)
-                tellSyncOnce("timeout", tr("Termux ไม่ตอบภายใน 3 นาที", "Termux did not answer within 3 minutes"))
-            }
-        }
+        if (run != null) waitForAnswer(run, HeadlessSync.timeoutMs(leave = false))
         reload()
     }
 
-    /** The wait for each resume run's answer, by run id; an answer cancels only its own run's wait. Main thread only. */
+    /**
+     * Waits [timeoutMs] for the run [run]'s answer; none by then ends only that run and is said (once while the app
+     * runs). The wait lives in viewModelScope, so it ends with this ViewModel (the screen closed for good): then no
+     * message, and a resume run still marked as running stops counting after [HeadlessSync.TIMEOUT_MS] on its own.
+     */
+    private fun waitForAnswer(run: Long, timeoutMs: Long) {
+        syncTimeouts[run] = viewModelScope.launch {
+            delay(timeoutMs)
+            syncTimeouts.remove(run)
+            TermuxSync.end(run)
+            val minutes = timeoutMs / 60_000L
+            tellSyncOnce("timeout", tr("Termux ไม่ตอบภายใน $minutes นาที", "Termux did not answer within $minutes minutes"))
+        }
+    }
+
+    /** The wait for each run's answer, by run id; an answer cancels only its own run's wait. Main thread only. */
     private val syncTimeouts = mutableMapOf<Long, Job>()
+
+    /**
+     * Omni reads the synced folder but Termux cannot keep it up to date: says why, once while the app runs. Nothing
+     * for any other folder, or when Termux is ready.
+     */
+    fun tellTermuxNotReady(folderName: String? = _state.value.vaultName) {
+        when (TermuxSync.notReady(getApplication(), folderName)) {
+            HeadlessSync.NotReady.NO_TERMUX -> tellSyncOnce(
+                "noTermux",
+                tr("โฟลเดอร์ OmniVault ไม่ได้ซิงก์ เพราะไม่พบแอป Termux", "The OmniVault folder is not syncing because the Termux app was not found"),
+            )
+            HeadlessSync.NotReady.NO_PERMISSION -> tellSyncOnce(
+                "noPermission",
+                tr(
+                    "โฟลเดอร์ OmniVault ไม่ได้ซิงก์ เพราะ Omni ยังไม่ได้สิทธิ์สั่งงาน Termux เปิดได้ที่ ตั้งค่าแอป Omni > สิทธิ์",
+                    "The OmniVault folder is not syncing because Omni may not run commands in Termux yet: allow it in Omni's app settings > Permissions",
+                ),
+            )
+            null -> Unit
+        }
+    }
 
     /** Each reason a Termux sync fails is said once while the app runs, not at every resume. */
     private fun tellSyncOnce(key: String, text: String) {
         if (syncTold.add(key)) showMessage(text)
     }
 
-    /** Termux's answers: Ok reads the vault again (without asking for another sync); a failure is said; Busy is left alone. */
+    /**
+     * Termux's answers, resume or leave: each Ok reads the vault again once (a reload never starts a sync, so no loop);
+     * a failure is said; Busy is left alone (a resume run that met a leave run's lock: the leave run's Ok reloads).
+     */
     private fun watchTermuxSync() {
         viewModelScope.launch {
             TermuxSync.results.collect { result ->
@@ -1823,8 +1856,14 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 checkSyncOnLoad = false
                 val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
                 if (vaultName != null && _state.value.vaultName == null) _state.update { it.copy(vaultName = vaultName) }
-                val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
-                openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
+                if (HeadlessSync.isSyncedFolder(vaultName)) {
+                    // The Obsidian app syncs its own folder, not this one: never open it here (also when this load
+                    // started before Termux's permission came). Say why this folder is not syncing, if it is not.
+                    tellTermuxNotReady(vaultName)
+                } else {
+                    val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
+                    openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
+                }
             }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {

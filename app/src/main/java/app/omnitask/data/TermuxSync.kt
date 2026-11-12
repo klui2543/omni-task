@@ -23,6 +23,7 @@ object TermuxSync {
     private const val ACTION = "com.termux.RUN_COMMAND"
     const val PERMISSION = "com.termux.permission.RUN_COMMAND"
     private const val EXTRA_PATH = "com.termux.RUN_COMMAND_PATH"
+    private const val EXTRA_ARGUMENTS = "com.termux.RUN_COMMAND_ARGUMENTS"
     private const val EXTRA_WORKDIR = "com.termux.RUN_COMMAND_WORKDIR"
     private const val EXTRA_BACKGROUND = "com.termux.RUN_COMMAND_BACKGROUND"
     private const val EXTRA_LABEL = "com.termux.RUN_COMMAND_COMMAND_LABEL"
@@ -34,7 +35,7 @@ object TermuxSync {
     internal const val EXTRA_RUN = "app.omnitask.TERMUX_RUN"
     internal const val EXTRA_REASON = "app.omnitask.TERMUX_REASON"
 
-    /** Why a run was started: the app came back to the screen (the only run with a timeout), or it left. */
+    /** Why a run was started: the app came back to the screen, or it left (each has its own timeout, see [HeadlessSync.timeoutMs]). */
     const val RESUME = "resume"
     const val LEAVE = "leave"
 
@@ -49,6 +50,9 @@ object TermuxSync {
     /** The run that is syncing now (0 when none) and when it started; kept until its own answer or its timeout. */
     private var pendingRun = 0L
     private var pendingSince = 0L
+
+    /** When the last leave run started in this process (0 when none), for [HeadlessSync.leaveDue]. */
+    private var lastLeaveStart = 0L
     private val lock = Any()
 
     private fun installed(context: Context): Boolean =
@@ -69,21 +73,32 @@ object TermuxSync {
 
     /** Omni reads the synced folder and Termux is on the phone, but Omni may not run commands in it yet: ask. */
     fun shouldAsk(context: Context, folderName: String?): Boolean =
-        HeadlessSync.isSyncedFolder(folderName) && installed(context) && !granted(context)
+        HeadlessSync.notReady(folderName, installed(context), granted(context)) == HeadlessSync.NotReady.NO_PERMISSION
+
+    /** Why Omni reads the synced folder but cannot keep it up to date, or null (another folder, or all is ready). */
+    fun notReady(context: Context, folderName: String?): HeadlessSync.NotReady? =
+        HeadlessSync.notReady(folderName, installed(context), granted(context))
 
     fun lastStart(context: Context): Long = prefs(context).getLong(KEY_LAST_START, 0L)
 
     /**
-     * Starts a sync when the new way is [on], no other run of Omni's is still syncing (one older than
-     * [HeadlessSync.TIMEOUT_MS] no longer counts) and the last start was long enough ago ([HeadlessSync.due]).
+     * Starts a sync when the new way is [on]. A resume run starts only when no other resume run of Omni's is still
+     * syncing (one older than [HeadlessSync.TIMEOUT_MS] no longer counts) and the last resume start was long enough ago
+     * ([HeadlessSync.due]). A leave run skips both, so what Omni wrote is always sent up: only a burst of pauses within
+     * [HeadlessSync.LEAVE_GAP_MS] is one run, and the script waits for a run that holds its lock ([HeadlessSync.LEAVE_ARG]).
      * Gives the run's id when one started; a start that fails is sent to [results] as a failure, so it reaches the owner.
      */
     fun request(context: Context, folderName: String?, reason: String): Long? {
         if (!on(context, folderName)) return null
+        val leave = reason == LEAVE
         val now = System.currentTimeMillis()
         return synchronized(lock) {
-            if (!HeadlessSync.free(pendingSince, now)) return null
-            if (!HeadlessSync.due(lastStart(context), now)) return null
+            if (leave) {
+                if (!HeadlessSync.leaveDue(lastLeaveStart, now)) return null
+            } else {
+                if (!HeadlessSync.free(pendingSince, now)) return null
+                if (!HeadlessSync.due(lastStart(context), now)) return null
+            }
             val runId = now
             try {
                 val answer = PendingIntent.getBroadcast(
@@ -102,16 +117,22 @@ object TermuxSync {
                     .putExtra(EXTRA_BACKGROUND, true)
                     .putExtra(EXTRA_LABEL, "Omni sync ($reason)")
                     .putExtra(EXTRA_PENDING_INTENT, answer)
+                if (leave) intent.putExtra(EXTRA_ARGUMENTS, arrayOf(HeadlessSync.LEAVE_ARG))
                 if (context.startForegroundService(intent) == null) {
                     // No such service: a Termux without RUN_COMMAND (the old one from Google Play). Nothing started.
                     answer.cancel()
                     _results.tryEmit(Answer(runId, reason, HeadlessSync.Outcome.Failed(HeadlessSync.NO_SERVICE)))
                     return null
                 }
-                // Saved only once the run has started, so a start that failed is tried again on the next resume.
-                prefs(context).edit().putLong(KEY_LAST_START, now).apply()
-                pendingRun = runId
-                pendingSince = now
+                // Saved only once the run has started, so a start that failed is tried again next time.
+                if (leave) {
+                    // Not the pending run: a resume run's gate stays its own, and this run's answer ends nothing.
+                    lastLeaveStart = now
+                } else {
+                    prefs(context).edit().putLong(KEY_LAST_START, now).apply()
+                    pendingRun = runId
+                    pendingSince = now
+                }
                 return runId
             } catch (e: Exception) {
                 // SecurityException (permission taken back) or IllegalStateException (start not allowed now).

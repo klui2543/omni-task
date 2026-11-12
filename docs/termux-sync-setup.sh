@@ -127,18 +127,46 @@ step "เขียนสคริปต์ที่ Omni เรียก (~/omni
 cat > "$TERMUX_HOME/omni-sync.sh" <<'SYNC'
 #!/data/data/com.termux/files/usr/bin/bash
 # Run by Omni through Termux's RUN_COMMAND: one sync of the vault, then exit with ob's exit code.
+# Omni passes "leave" when it leaves the screen: that run waits for a sync that holds the lock (what Omni wrote must
+# go up); without it (Omni came back to the screen) a held lock ends the run at once. Exit 75 means busy.
 VAULT=/storage/emulated/0/OmniVault
-LOCK="${TMPDIR:-/data/data/com.termux/files/usr/tmp}/omni-sync.lock"
+TMP="${TMPDIR:-/data/data/com.termux/files/usr/tmp}"
+LOCK="$TMP/omni-sync.lock"
+WAIT="$TMP/omni-sync.wait"
 
-# One run at a time. A lock left by a run that was killed is taken over after 10 minutes.
-if ! mkdir "$LOCK" 2>/dev/null; then
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
-    rm -rf "$LOCK"
-    mkdir "$LOCK" || { echo "omni-sync: another sync holds the lock" >&2; exit 75; }
-  else
+# Takes the lock folder $1. One left by a run that was killed is taken over after 10 minutes.
+take() {
+  mkdir "$1" 2>/dev/null && return 0
+  if [ -n "$(find "$1" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+    rm -rf "$1"
+    mkdir "$1" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+# One sync at a time.
+if ! take "$LOCK"; then
+  if [ "$1" != "leave" ]; then
     echo "omni-sync: another sync is running" >&2
     exit 75
   fi
+  # One leave run waits at a time; it syncs whatever the others wrote too.
+  if ! take "$WAIT"; then
+    echo "omni-sync: another leave sync is already waiting" >&2
+    exit 75
+  fi
+  trap 'rm -rf "$WAIT"' EXIT
+  waited=0
+  until take "$LOCK"; do
+    if [ "$waited" -ge 150 ]; then
+      echo "omni-sync: waited 150 seconds and another sync is still running" >&2
+      exit 75
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  trap 'rm -rf "$LOCK" "$WAIT"' EXIT
+  rm -rf "$WAIT"
 fi
 trap 'rm -rf "$LOCK"' EXIT
 

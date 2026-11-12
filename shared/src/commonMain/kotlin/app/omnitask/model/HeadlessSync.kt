@@ -20,6 +20,18 @@ object HeadlessSync {
      */
     const val TIMEOUT_MS = 180_000L
 
+    /**
+     * How long Omni waits for a leave run's answer: the script may first wait up to 150 seconds for a run that holds
+     * its lock, then sync for up to 170 seconds, plus a margin.
+     */
+    const val LEAVE_TIMEOUT_MS = 360_000L
+
+    /** Two leave runs at least this far apart, so a burst of pauses (folding the phone) starts one sync, not several. */
+    const val LEAVE_GAP_MS = 3_000L
+
+    /** The argument a leave run passes to the script, so it waits for a run that holds the lock instead of giving up. */
+    const val LEAVE_ARG = "leave"
+
     /** The folder the setup script syncs (/storage/emulated/0/OmniVault). The new way is on only while Omni reads it. */
     const val FOLDER = "OmniVault"
 
@@ -64,6 +76,30 @@ object HeadlessSync {
     /** Whether a run may start now: the first one, one after the clock went back, or one [MIN_GAP_MS] after the last. */
     fun due(lastStartMs: Long, nowMs: Long): Boolean =
         lastStartMs <= 0 || nowMs < lastStartMs || nowMs - lastStartMs >= MIN_GAP_MS
+
+    /**
+     * Whether a leave run may start now: the first one, one after the clock went back, or one [LEAVE_GAP_MS] after the
+     * last leave start. Leave runs skip [due] and [free], so what Omni wrote is sent up even right after a resume run.
+     */
+    fun leaveDue(lastLeaveStartMs: Long, nowMs: Long): Boolean =
+        lastLeaveStartMs <= 0 || nowMs < lastLeaveStartMs || nowMs - lastLeaveStartMs >= LEAVE_GAP_MS
+
+    /** How long Omni waits for a run's answer: a leave run may wait for the lock first, so it gets longer. */
+    fun timeoutMs(leave: Boolean): Long = if (leave) LEAVE_TIMEOUT_MS else TIMEOUT_MS
+
+    /** Why the synced folder is not syncing: Termux is not on the phone, or Omni may not run commands in it. */
+    enum class NotReady { NO_TERMUX, NO_PERMISSION }
+
+    /**
+     * Why the folder Omni reads, named [folderName], is not kept up to date, or null when there is nothing to say: the
+     * folder is not [FOLDER] (the way it always was), or Termux is there and Omni may run commands in it.
+     */
+    fun notReady(folderName: String?, termuxInstalled: Boolean, permissionGranted: Boolean): NotReady? = when {
+        !isSyncedFolder(folderName) -> null
+        !termuxInstalled -> NotReady.NO_TERMUX
+        !permissionGranted -> NotReady.NO_PERMISSION
+        else -> null
+    }
 
     /**
      * Whether a new run may start while [pendingSinceMs] marks one as running (0 when none): none is running, the

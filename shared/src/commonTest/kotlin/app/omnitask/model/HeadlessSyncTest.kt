@@ -109,4 +109,34 @@ class HeadlessSyncTest {
         assertEquals(null, HeadlessSync.obsidianVault("OmniVault"))
         assertEquals(null, HeadlessSync.obsidianVault(null))
     }
+
+    @Test
+    fun aLeaveRunWaitsOnlyForTheShortGapBetweenLeaves() {
+        val last = 7_000_000L
+        assertTrue(HeadlessSync.leaveDue(0L, last), "the first leave is always due")
+        assertFalse(HeadlessSync.leaveDue(last, last), "a second pause at once is one burst")
+        assertFalse(HeadlessSync.leaveDue(last, last + HeadlessSync.LEAVE_GAP_MS - 1), "inside the burst gap")
+        assertTrue(HeadlessSync.leaveDue(last, last + HeadlessSync.LEAVE_GAP_MS), "due after the burst gap")
+        // Far inside the resume gap, which a leave run does not use.
+        assertTrue(HeadlessSync.leaveDue(last, last + 5_000L), "a leave 5 s later still starts")
+        assertTrue(HeadlessSync.leaveDue(last, last - 1_000L), "due when the clock went back")
+    }
+
+    @Test
+    fun aLeaveRunGetsTheLongerWait() {
+        assertEquals(HeadlessSync.LEAVE_TIMEOUT_MS, HeadlessSync.timeoutMs(leave = true))
+        assertEquals(HeadlessSync.TIMEOUT_MS, HeadlessSync.timeoutMs(leave = false))
+        assertTrue(HeadlessSync.LEAVE_TIMEOUT_MS >= (150L + 170L) * 1000L, "covers the script's wait and its sync")
+    }
+
+    @Test
+    fun theSyncedFolderSaysWhyItIsNotSyncing() {
+        assertEquals(HeadlessSync.NotReady.NO_TERMUX, HeadlessSync.notReady("OmniVault", termuxInstalled = false, permissionGranted = false))
+        assertEquals(HeadlessSync.NotReady.NO_TERMUX, HeadlessSync.notReady("OmniVault", termuxInstalled = false, permissionGranted = true))
+        assertEquals(HeadlessSync.NotReady.NO_PERMISSION, HeadlessSync.notReady("OmniVault", termuxInstalled = true, permissionGranted = false))
+        assertEquals(null, HeadlessSync.notReady("OmniVault", termuxInstalled = true, permissionGranted = true))
+        // Any other folder: nothing to say, the way it always was.
+        assertEquals(null, HeadlessSync.notReady("Klui", termuxInstalled = false, permissionGranted = false))
+        assertEquals(null, HeadlessSync.notReady(null, termuxInstalled = true, permissionGranted = false))
+    }
 }

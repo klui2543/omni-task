@@ -25,7 +25,6 @@ import app.omnitask.model.Appearance
 import app.omnitask.model.Behavior
 import app.omnitask.model.Lang
 import app.omnitask.model.load
-import app.omnitask.model.tr
 import app.omnitask.model.Shared
 import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme
@@ -42,26 +41,27 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Asks once for Termux's permission to run commands, so the vault can sync in the background instead of opening
-     * Obsidian (see TermuxSync). Allowed: a sync starts at once. Refused: said once, and not asked again.
+     * Obsidian (see TermuxSync). Allowed: a sync starts at once. Refused (or Android no longer shows the box): the
+     * owner is told why OmniVault is not syncing, once while the app runs.
      */
     private val askTermux = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         if (allowed) {
             viewModel.resumed()
         } else {
-            viewModel.showMessage(tr("Omni ยังสั่ง Termux ไม่ได้ เปิดสิทธิ์ได้ที่ ตั้งค่าแอป Omni > สิทธิ์", "Omni cannot run Termux yet: allow it in Omni's app settings > Permissions"))
+            viewModel.tellTermuxNotReady()
         }
     }
 
     /**
      * Asks for Termux's permission only when Termux is installed, the permission is missing, and the vault folder is
-     * the one Termux's headless sync keeps ([app.omnitask.model.HeadlessSync.FOLDER]); once, ever.
+     * the one Termux's headless sync keeps ([app.omnitask.model.HeadlessSync.FOLDER]); once while the app runs, so a
+     * permission taken back, or dropped when Termux was installed again, can be given again.
      */
     private fun askTermuxOnce() {
         if (safe) return
-        val prefs = TermuxSync.prefs(this)
-        if (prefs.getBoolean(KEY_TERMUX_ASKED, false)) return
+        if (termuxAsked) return
         if (!TermuxSync.shouldAsk(this, viewModel.state.value.vaultName)) return
-        prefs.edit().putBoolean(KEY_TERMUX_ASKED, true).apply()
+        termuxAsked = true
         askTermux.launch(TermuxSync.PERMISSION)
     }
 
@@ -158,7 +158,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_CALENDAR = "calendar"
         const val EXTRA_DAY = "app.omnitask.DAY"
         const val EXTRA_PICK = "app.omnitask.PICK"
-        private const val KEY_TERMUX_ASKED = "termux.asked"
+        /** Termux's permission was asked for in this process (kept across the activity being made again, such as a fold). */
+        @Volatile private var termuxAsked = false
     }
 
     // Obsidian or the sync app may have changed files while the app was in the background.
