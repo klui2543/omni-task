@@ -17,7 +17,7 @@ const HINTS = [
   { skill: 'grill-me', why: 'ไอเดียหรือแผนยังไม่ชัด ควรซักทีละข้อก่อนลงมือ',
     words: ['ไอเดีย', 'วางแผน', 'แผนใหม่', 'แผนนี้', 'ไม่แน่ใจ', 'ยังไม่ชัด', 'ยังคิดไม่ออก', 'idea', 'not sure', 'brainstorm'] },
   { skill: 'diagnose', why: 'มีของพังที่อาจยังไม่รู้สาเหตุ ควรทำเทสที่แดงก่อนเดา',
-    words: ['พังอีก', 'พังแล้ว', 'ยังพัง', 'พังอยู่', 'บั๊ก', 'ใช้ไม่ได้', 'ผิดปกติ', 'error', 'bug', 'broken', 'not working', 'crash'] },
+    words: ['พังอีก', 'พังแล้ว', 'ยังพัง', 'พังอยู่', 'บั๊ก', 'error', 'bug', 'broken', 'not working', 'crash'] },
   { skill: 'spec-review', why: 'จะรับงาน ควรให้ผู้ตรวจเทียบกับคำสั่งก่อน',
     words: ['เสร็จยัง', 'เสร็จหรือยัง', 'ตรงที่สั่ง', 'ช่วยตรวจงาน', 'is it done'] },
   { skill: 'retro', why: 'ห้องนี้สะดุด ควรทบทวนว่าควรซ่อมกติกาตรงไหน',
@@ -49,9 +49,12 @@ function skillAvailable(skill) {
   ];
   if (direct.some(p => fs.existsSync(p))) return true;
   const synced = path.join(home, 'skills', 'synced');
-  try {
-    return fs.readdirSync(synced).some(d => fs.existsSync(path.join(synced, d, skill)));
-  } catch (e) { return false; }
+  let accounts;
+  try { accounts = fs.readdirSync(synced); } catch (e) {
+    // เครื่องนี้ไม่เก็บสกิลระดับบัญชีไว้ที่นี่ (เช่นบางเครื่อง Windows) ตรวจไม่ได้ จึงให้ AI ตัดสินเอง ดีกว่าเงียบทั้งชุด
+    return true;
+  }
+  return accounts.some(d => fs.existsSync(path.join(synced, d, skill)));
 }
 
 function pickHint(prompt, used, available) {
