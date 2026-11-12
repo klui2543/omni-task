@@ -10,7 +10,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
@@ -22,6 +25,7 @@ import app.omnitask.model.Appearance
 import app.omnitask.model.Behavior
 import app.omnitask.model.Lang
 import app.omnitask.model.load
+import app.omnitask.model.tr
 import app.omnitask.model.Shared
 import app.omnitask.ui.OmniTaskApp
 import app.omnitask.ui.OmniTheme
@@ -38,10 +42,28 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Asks once for Termux's permission to run commands, so the vault can sync in the background instead of opening
-     * Obsidian (see TermuxSync). The answer needs no handling here: coming back from the dialog resumes the app,
-     * which starts the sync when it was allowed.
+     * Obsidian (see TermuxSync). Allowed: a sync starts at once. Refused: said once, and not asked again.
      */
-    private val askTermux = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val askTermux = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) {
+            viewModel.resumed()
+        } else {
+            viewModel.showMessage(tr("Omni ยังสั่ง Termux ไม่ได้ เปิดสิทธิ์ได้ที่ ตั้งค่าแอป Omni > สิทธิ์", "Omni cannot run Termux yet: allow it in Omni's app settings > Permissions"))
+        }
+    }
+
+    /**
+     * Asks for Termux's permission only when Termux is installed, the permission is missing, and the vault folder is
+     * the one Termux's headless sync keeps ([app.omnitask.model.HeadlessSync.FOLDER]); once, ever.
+     */
+    private fun askTermuxOnce() {
+        if (safe) return
+        val prefs = TermuxSync.prefs(this)
+        if (prefs.getBoolean(KEY_TERMUX_ASKED, false)) return
+        if (!TermuxSync.shouldAsk(this, viewModel.state.value.vaultName)) return
+        prefs.edit().putBoolean(KEY_TERMUX_ASKED, true).apply()
+        askTermux.launch(TermuxSync.PERMISSION)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +89,12 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
             OmniTheme { OmniTaskApp(viewModel) }
+        }
+        // The folder's name is known only after the first load: ask for Termux's permission then, if it is the one.
+        lifecycleScope.launch {
+            viewModel.state.map { it.vaultName }.distinctUntilChanged().collect {
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) askTermuxOnce()
+            }
         }
         handle(intent)
     }
@@ -138,20 +166,15 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (safe) return
         viewModel.resumed()
-        val prefs = TermuxSync.prefs(this)
-        if (TermuxSync.installedWithoutPermission(this) && !prefs.getBoolean(KEY_TERMUX_ASKED, false)) {
-            prefs.edit().putBoolean(KEY_TERMUX_ASKED, true).apply()
-            askTermux.launch(TermuxSync.PERMISSION)
-        }
+        askTermuxOnce()
         // The watch's sleep may have come into Health Connect while the app was away (read at most every 10 minutes).
         lifecycleScope.launch { app.omnitask.ui.SleepMode.refresh(this@MainActivity) }
     }
 
-    // What the app wrote goes up through Termux's headless sync when it leaves the screen (nothing without Termux).
+    // What the app wrote goes up through Termux's headless sync when it leaves the screen (nothing until it is on).
     override fun onPause() {
         super.onPause()
         if (safe) return
         viewModel.paused()
-        TermuxSync.request(this, "leave")
     }
 }

@@ -9,7 +9,8 @@
 #   bash ~/omni-setup.sh
 #
 # It asks for the Obsidian account sign-in (and the vault's end-to-end password when the vault has one) on the
-# terminal itself; nothing typed there is printed or saved by this script.
+# terminal itself; nothing typed there is printed or saved by this script. Safe to run again from the top: every step
+# skips what is already done.
 
 VAULT=/storage/emulated/0/OmniVault
 TERMUX_HOME=/data/data/com.termux/files/home
@@ -23,10 +24,25 @@ fail() { echo; echo "หยุด: $1"; exit 1; }
 set -e
 
 step "อัปเดตแพ็กเกจของ Termux (ใช้เวลาสักครู่)"
-pkg update -y && pkg upgrade -y
+# Keeps the installed config files when a package asks whether to replace them, so no question stops the script.
+DPKG_OPTS=(-o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef)
+yes | pkg update -y
+yes | pkg upgrade -y "${DPKG_OPTS[@]}"
 
 step "ติดตั้ง Node.js และเครื่องมือสร้างโปรแกรม"
-pkg install -y nodejs-lts python make clang binutils
+yes | pkg install -y "${DPKG_OPTS[@]}" nodejs-lts python make clang binutils
+
+# obsidian-headless needs Node.js 22 or newer; Termux's LTS package may be older, then the current one is used.
+node_major() { node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/'; }
+major=$(node_major)
+if [ -z "$major" ] || [ "$major" -lt 22 ]; then
+  echo "Node.js รุ่น ${major:-ไม่พบ} เก่าเกินไป ลงรุ่นใหม่แทน"
+  yes | pkg install -y "${DPKG_OPTS[@]}" nodejs
+  major=$(node_major)
+fi
+if [ -z "$major" ] || [ "$major" -lt 22 ]; then
+  fail "ต้องใช้ Node.js รุ่น 22 ขึ้นไป แต่ในเครื่องเป็นรุ่น ${major:-ไม่พบ} ลอง pkg install nodejs แล้วรันสคริปต์นี้ใหม่"
+fi
 
 # node-gyp on Termux looks for an Android NDK it does not need; an empty path stops it from failing.
 mkdir -p ~/.gyp
@@ -71,14 +87,35 @@ until ob login < "$TTY"; do
   read -r _ < "$TTY"
 done
 
-if [ ! -d "$VAULT/.obsidian" ]; then
-  step "ผูกโฟลเดอร์ OmniVault กับ vault ชื่อ Klui ใน Obsidian Sync (ถ้า vault มีรหัสผ่านเข้ารหัส จะถามตรงนี้)"
-  until ob sync-setup --vault "Klui" --path "$VAULT" --device-name "omni-phone" < "$TTY"; do
-    echo "ผูก vault ไม่สำเร็จ กด Enter เพื่อลองใหม่ หรือกด Ctrl+C เพื่อเลิก"
-    read -r _ < "$TTY"
-  done
-else
+# Exit 0 only when the folder already has a sync setup with its keys (3: none, 2: keys missing).
+if ob sync-status --path "$VAULT" >/dev/null 2>&1; then
   echo "โฟลเดอร์ OmniVault ผูกไว้แล้ว ข้ามขั้นนี้"
+else
+  step "vault ในบัญชี Obsidian Sync"
+  remote=$(ob sync-list-remote 2>&1)
+  echo "$remote"
+  # Each vault is listed as:   <id>  "<name>"  (<region>)
+  if printf '%s\n' "$remote" | grep -Fq '  "Klui"  '; then
+    REMOTE_VAULT="Klui"
+    echo "ใช้ vault ชื่อ Klui"
+  else
+    REMOTE_VAULT=""
+    echo "ไม่พบ vault ชื่อ Klui ในรายการด้านบน"
+  fi
+  while :; do
+    if [ -z "$REMOTE_VAULT" ]; then
+      echo "พิมพ์ชื่อ vault ที่จะใช้ ตามรายการด้านบน (ในเครื่องหมายคำพูด) แล้วกด Enter (กด Ctrl+C เพื่อเลิก)"
+      read -r REMOTE_VAULT < "$TTY" || fail "อ่านคำตอบจากหน้าจอไม่ได้ เปิด Termux แล้วรันสคริปต์นี้ใหม่"
+      [ -n "$REMOTE_VAULT" ] || continue
+    fi
+    step "ผูกโฟลเดอร์ OmniVault กับ vault ชื่อ $REMOTE_VAULT (ถ้า vault มีรหัสผ่านเข้ารหัส จะถามตรงนี้)"
+    if ob sync-setup --vault "$REMOTE_VAULT" --path "$VAULT" --device-name "omni-phone" < "$TTY"; then
+      break
+    fi
+    echo "ผูก vault ไม่สำเร็จ ลองพิมพ์ชื่อ vault ใหม่ (กด Ctrl+C เพื่อเลิก)"
+    # The next round asks for the name again, so a wrong name is not tried over and over.
+    REMOTE_VAULT=""
+  done
 fi
 
 set -e
@@ -116,8 +153,12 @@ bash "$TERMUX_HOME/omni-sync.sh"
 first=$?
 set -e
 if [ "$first" -ne 0 ]; then
-  echo "ซิงก์ครั้งแรกยังไม่จบ (รหัส $first) รัน bash ~/omni-sync.sh อีกครั้งจนจบ"
+  echo
+  echo "ยังไม่เสร็จ: ซิงก์ครั้งแรกยังไม่จบ (รหัส $first)"
+  echo "รันคำสั่ง bash ~/omni-sync.sh อีกครั้ง และรันซ้ำจนจบโดยไม่มีข้อความผิดพลาด"
   echo "ถ้า vault ใหญ่มาก รอบละ 170 วินาทีอาจไม่พอ รันต่อได้ มันจะดาวน์โหลดต่อจากเดิม"
+  echo "จบแล้วจึงเลือกโฟลเดอร์ OmniVault ใน Omni"
+  exit 1
 fi
 
 echo

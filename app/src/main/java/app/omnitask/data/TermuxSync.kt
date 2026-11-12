@@ -14,8 +14,8 @@ import kotlinx.coroutines.flow.SharedFlow
 /**
  * Starts Obsidian's headless sync (`ob`, set up in Termux by docs/termux-sync-setup.sh) in the background through
  * Termux's RUN_COMMAND service, so the vault on the phone catches up without opening the Obsidian app over Omni
- * (owner, 2026-11-13). Off until Termux is installed and the owner has allowed Omni to run commands in it; until
- * then the app opens Obsidian as before.
+ * (owner, 2026-11-13). Off ([on]) until Termux is installed, the owner has allowed Omni to run commands in it, and Omni
+ * reads the folder the setup syncs ([HeadlessSync.FOLDER]); until then everything works as before.
  */
 object TermuxSync {
     private const val PACKAGE = "com.termux"
@@ -30,13 +30,26 @@ object TermuxSync {
     private const val HOME = "/data/data/com.termux/files/home"
     private const val KEY_LAST_START = "termux.lastStart"
 
-    private val _results = MutableSharedFlow<HeadlessSync.Outcome>(extraBufferCapacity = 4)
+    /** Omni's own extras on the answer intent; Termux only adds its `result` bundle, so these come back as sent. */
+    internal const val EXTRA_RUN = "app.omnitask.TERMUX_RUN"
+    internal const val EXTRA_REASON = "app.omnitask.TERMUX_REASON"
 
-    /** Every run's outcome, and a run that could not be started; the app reloads on Ok and says why otherwise. */
-    val results: SharedFlow<HeadlessSync.Outcome> = _results
+    /** Why a run was started: the app came back to the screen (the only run with a timeout), or it left. */
+    const val RESUME = "resume"
+    const val LEAVE = "leave"
 
-    /** True from a run's start until its answer comes back (or the wait gives up). */
-    @Volatile var pending: Boolean = false
+    /** One run's answer: which run, why it was started, and what came of it. */
+    data class Answer(val runId: Long, val reason: String, val outcome: HeadlessSync.Outcome)
+
+    private val _results = MutableSharedFlow<Answer>(extraBufferCapacity = 8)
+
+    /** Every run's answer, and a run that could not be started; the app reloads on Ok and says why otherwise. */
+    val results: SharedFlow<Answer> = _results
+
+    /** The run that is syncing now (0 when none) and when it started; kept until its own answer or its timeout. */
+    private var pendingRun = 0L
+    private var pendingSince = 0L
+    private val lock = Any()
 
     private fun installed(context: Context): Boolean =
         runCatching { context.packageManager.getPackageInfo(PACKAGE, 0) }.isSuccess
@@ -44,53 +57,84 @@ object TermuxSync {
     private fun granted(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-    /** The one switch for the new way: Termux is on the phone and Omni may run commands in it. */
-    fun available(context: Context): Boolean = installed(context) && granted(context)
+    /** Termux is on the phone and Omni may run commands in it (the folder is not checked: see [on]). */
+    fun ready(context: Context): Boolean = installed(context) && granted(context)
 
-    /** Termux is on the phone but Omni has not been allowed to run commands in it yet: ask for the permission. */
-    fun installedWithoutPermission(context: Context): Boolean = installed(context) && !granted(context)
+    /**
+     * The one switch for the new way: Termux is on the phone, Omni may run commands in it, and the vault folder Omni
+     * reads, named [folderName], is the one the headless sync keeps up to date.
+     */
+    fun on(context: Context, folderName: String?): Boolean =
+        HeadlessSync.isSyncedFolder(folderName) && ready(context)
+
+    /** Omni reads the synced folder and Termux is on the phone, but Omni may not run commands in it yet: ask. */
+    fun shouldAsk(context: Context, folderName: String?): Boolean =
+        HeadlessSync.isSyncedFolder(folderName) && installed(context) && !granted(context)
 
     fun lastStart(context: Context): Long = prefs(context).getLong(KEY_LAST_START, 0L)
 
     /**
-     * Starts a sync when the new way is on and the last run was long enough ago ([HeadlessSync.due]). True when one
-     * started; a start that throws is sent to [results] as a failure, so it reaches the owner.
+     * Starts a sync when the new way is [on], no other run of Omni's is still syncing (one older than
+     * [HeadlessSync.TIMEOUT_MS] no longer counts) and the last start was long enough ago ([HeadlessSync.due]).
+     * Gives the run's id when one started; a start that fails is sent to [results] as a failure, so it reaches the owner.
      */
-    fun request(context: Context, reason: String): Boolean {
-        if (!available(context)) return false
+    fun request(context: Context, folderName: String?, reason: String): Long? {
+        if (!on(context, folderName)) return null
         val now = System.currentTimeMillis()
-        if (!HeadlessSync.due(lastStart(context), now)) return false
-        return try {
-            val code = (now and 0x7fffffff).toInt()
-            val answer = PendingIntent.getBroadcast(
-                context,
-                code,
-                Intent(context, TermuxSyncReceiver::class.java),
-                // Termux fills the result into this intent, so it has to stay mutable on Android 12 and later.
-                PendingIntent.FLAG_ONE_SHOT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0),
-            )
-            val intent = Intent(ACTION)
-                .setClassName(PACKAGE, SERVICE)
-                .putExtra(EXTRA_PATH, HeadlessSync.SCRIPT)
-                .putExtra(EXTRA_WORKDIR, HOME)
-                .putExtra(EXTRA_BACKGROUND, true)
-                .putExtra(EXTRA_LABEL, "Omni sync ($reason)")
-                .putExtra(EXTRA_PENDING_INTENT, answer)
-            context.startForegroundService(intent)
-            // Saved only once the run has started, so a start that failed is tried again on the next resume.
-            prefs(context).edit().putLong(KEY_LAST_START, now).apply()
-            pending = true
-            true
-        } catch (e: Exception) {
-            // SecurityException (permission taken back) or IllegalStateException (start not allowed now).
-            publish(HeadlessSync.Outcome.Failed(e.message ?: e.javaClass.simpleName))
-            false
+        return synchronized(lock) {
+            if (!HeadlessSync.free(pendingSince, now)) return null
+            if (!HeadlessSync.due(lastStart(context), now)) return null
+            val runId = now
+            try {
+                val answer = PendingIntent.getBroadcast(
+                    context,
+                    (runId and 0x7fffffff).toInt(),
+                    Intent(context, TermuxSyncReceiver::class.java)
+                        .putExtra(EXTRA_RUN, runId)
+                        .putExtra(EXTRA_REASON, reason),
+                    // Termux fills the result into this intent, so it has to stay mutable on Android 12 and later.
+                    PendingIntent.FLAG_ONE_SHOT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0),
+                )
+                val intent = Intent(ACTION)
+                    .setClassName(PACKAGE, SERVICE)
+                    .putExtra(EXTRA_PATH, HeadlessSync.SCRIPT)
+                    .putExtra(EXTRA_WORKDIR, HOME)
+                    .putExtra(EXTRA_BACKGROUND, true)
+                    .putExtra(EXTRA_LABEL, "Omni sync ($reason)")
+                    .putExtra(EXTRA_PENDING_INTENT, answer)
+                if (context.startForegroundService(intent) == null) {
+                    // No such service: a Termux without RUN_COMMAND (the old one from Google Play). Nothing started.
+                    answer.cancel()
+                    _results.tryEmit(Answer(runId, reason, HeadlessSync.Outcome.Failed(HeadlessSync.NO_SERVICE)))
+                    return null
+                }
+                // Saved only once the run has started, so a start that failed is tried again on the next resume.
+                prefs(context).edit().putLong(KEY_LAST_START, now).apply()
+                pendingRun = runId
+                pendingSince = now
+                return runId
+            } catch (e: Exception) {
+                // SecurityException (permission taken back) or IllegalStateException (start not allowed now).
+                _results.tryEmit(Answer(runId, reason, HeadlessSync.Outcome.Failed(e.message ?: e.javaClass.simpleName)))
+                return null
+            }
         }
     }
 
-    internal fun publish(outcome: HeadlessSync.Outcome) {
-        pending = false
-        _results.tryEmit(outcome)
+    /** An answer came back. It ends the run it names, unless the lock was busy (another run is still syncing). */
+    internal fun publish(result: Answer) {
+        if (result.outcome != HeadlessSync.Outcome.Busy) end(result.runId)
+        _results.tryEmit(result)
+    }
+
+    /** The run [runId] is over (answered, or its wait gave up): another may start. Another run's mark is kept. */
+    fun end(runId: Long) {
+        synchronized(lock) {
+            if (pendingRun == runId) {
+                pendingRun = 0L
+                pendingSince = 0L
+            }
+        }
     }
 
     /**
@@ -110,6 +154,12 @@ class TermuxSyncReceiver : BroadcastReceiver() {
             exitCode = result?.takeIf { it.containsKey("exitCode") }?.getInt("exitCode", -1),
             stderr = result?.getString("stderr"),
         )
-        TermuxSync.publish(outcome)
+        TermuxSync.publish(
+            TermuxSync.Answer(
+                runId = intent.getLongExtra(TermuxSync.EXTRA_RUN, 0L),
+                reason = intent.getStringExtra(TermuxSync.EXTRA_REASON) ?: "unknown",
+                outcome = outcome,
+            ),
+        )
     }
 }

@@ -85,6 +85,7 @@ import app.omnitask.data.TaskLine
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.model.Focus
 import app.omnitask.model.Folders
+import app.omnitask.model.HeadlessSync
 import app.omnitask.model.NoteLinks
 import app.omnitask.model.Priority
 import app.omnitask.model.Projects
@@ -837,8 +838,12 @@ private fun withWebLinks(text: String): androidx.compose.ui.text.AnnotatedString
     }
 }
 
-/** Opens a vault note in Obsidian; the vault is named after its folder. */
-private fun openNote(context: Context, vault: String?, path: String) {
+/**
+ * Opens a vault note in Obsidian; the vault is named after its folder, except the folder Termux's headless sync keeps
+ * (HeadlessSync.obsidianVault), which the Obsidian app does not have: there the note opens in the app's own vault.
+ */
+private fun openNote(context: Context, folderName: String?, path: String) {
+    val vault = HeadlessSync.obsidianVault(folderName)
     val file = Uri.encode(path.removeSuffix(".md"))
     val uri = if (vault != null) "obsidian://open?vault=${Uri.encode(vault)}&file=$file" else "obsidian://open?file=$file"
     try {

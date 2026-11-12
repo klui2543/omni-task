@@ -74,4 +74,39 @@ class HeadlessSyncTest {
         assertTrue(HeadlessSync.due(last, last + HeadlessSync.MIN_GAP_MS), "due once the gap has passed")
         assertTrue(HeadlessSync.due(last, last - 5_000L), "due when the clock went back")
     }
+
+    @Test
+    fun theLockHeldByAnotherRunIsBusyNotAFailure() {
+        assertEquals(Outcome.Busy, HeadlessSync.outcome(-1, null, 75, "omni-sync: another sync is running\n"))
+        assertEquals(Outcome.Busy, HeadlessSync.outcome(null, null, 75, null))
+        // Termux's own error still wins over the script's exit.
+        assertEquals(Outcome.Failed("Termux crashed"), HeadlessSync.outcome(3, "Termux crashed", 75, ""))
+    }
+
+    @Test
+    fun aRunMarkedAsRunningBlocksANewOneUntilItIsStale() {
+        val since = 5_000_000L
+        assertTrue(HeadlessSync.free(0L, since), "nothing running")
+        assertFalse(HeadlessSync.free(since, since), "one just started")
+        assertFalse(HeadlessSync.free(since, since + HeadlessSync.TIMEOUT_MS - 1), "still inside the wait")
+        assertTrue(HeadlessSync.free(since, since + HeadlessSync.TIMEOUT_MS), "stale: its answer is lost")
+        assertTrue(HeadlessSync.free(since, since - 1_000L), "the clock went back")
+    }
+
+    @Test
+    fun theNewWayIsOnlyForTheSyncedFolder() {
+        assertTrue(HeadlessSync.isSyncedFolder("OmniVault"))
+        assertTrue(HeadlessSync.isSyncedFolder("OmniVault\uFE0F"), "an invisible emoji mark does not count")
+        assertFalse(HeadlessSync.isSyncedFolder(null))
+        assertFalse(HeadlessSync.isSyncedFolder("Klui"))
+        assertFalse(HeadlessSync.isSyncedFolder("omnivault"))
+        assertFalse(HeadlessSync.isSyncedFolder("OmniVault 2"))
+    }
+
+    @Test
+    fun obsidianLinksNameTheVaultExceptForTheSyncedFolder() {
+        assertEquals("Klui", HeadlessSync.obsidianVault("Klui"))
+        assertEquals(null, HeadlessSync.obsidianVault("OmniVault"))
+        assertEquals(null, HeadlessSync.obsidianVault(null))
+    }
 }
