@@ -1623,8 +1623,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun resumed() = reload()
 
     /**
-     * The owner tapped the line that says this phone's copy is behind the secretary: open Obsidian so it syncs (it syncs
-     * only while open). Omni no longer opens it by itself (owner, 2026-11-14: "ไม่เด้ง แตะเอง"); before, it opened once
+     * The owner tapped the sync button by the gear on the today page: open Obsidian so it syncs (it syncs only while open). Omni no longer opens it by itself (owner, 2026-11-14: "ไม่เด้ง แตะเอง"); before, it opened once
      * per round on its own (owner, 2026-10-26).
      */
     fun openObsidianToSync() {
@@ -1636,7 +1635,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         if (opened.isFailure) {
-            showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด แต่เปิด Obsidian ไม่ได้ เปิด Obsidian เองให้ซิงก์", "Your copy is older than the secretary's last round, and Obsidian could not be opened: open it yourself to sync"))
+            // The old words say the copy is older, so they are kept for when it is; otherwise only their second half.
+            val ai = _state.value.ai
+            showMessage(
+                if (Secretary.behind(ai.secretaryLast, System.currentTimeMillis(), ai.secretaryAttempt)) {
+                    tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด แต่เปิด Obsidian ไม่ได้ เปิด Obsidian เองให้ซิงก์", "Your copy is older than the secretary's last round, and Obsidian could not be opened: open it yourself to sync")
+                } else {
+                    tr("เปิด Obsidian ไม่ได้ เปิด Obsidian เองให้ซิงก์", "Obsidian could not be opened: open it yourself to sync")
+                },
+            )
         }
     }
 
@@ -5012,7 +5019,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         /** The brief is read again on opening the assistant only when it is older than this. */
         const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"
-        /** The secretary round (its start, epoch ms) for which Obsidian was last opened to sync the book. */
         const val KEY_URGENT = "urgentRule"
         const val KEY_FUTURE_COUNT = "futureCount"
         const val KEY_SKIPPED = "skippedFuture"
