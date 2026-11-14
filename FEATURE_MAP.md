@@ -18,6 +18,7 @@
 | + (กลาง) | เพิ่มงานเร็ว ชิปโฟลเดอร์ วันที่ กดค้าง = จดด้วยเสียง | `ui/QuickAddSheet.kt`, `ui/AddDetailPage.kt`, `ui/VoiceUi.kt` | `model/QuickAdd.kt` |
 | โปรเจกต์ | โฟลเดอร์และลิสต์ (ลิสต์เป็นโฟลเดอร์) ต้นไม้ Ygdrasil ย้ายงาน พับ ย้อน | `ui/ProjectsScreen.kt`, `ui/FolderUi.kt`, `ui/ListsUi.kt`, `ui/YgdrasilScreen.kt`, `ui/BranchTree.kt`, `ui/MindMap.kt` | `model/Projects.kt`, `Folders.kt`, `ListFolders.kt`, `ProjectNames.kt`, `GroupMove.kt` |
 | เลขา | แชตเลขาตามคู่มือใน vault สำรับการ์ดตัดสิน โหมดทบทวน เลขาถาม ข้อเสนอโปรเจกต์ | `ui/SecretaryUi.kt`, `ui/DecisionDeck.kt`, `ui/ReviewUi.kt`, `ui/SecretaryAskUi.kt`, `ui/AssistantScreen.kt` | `model/AiAssist.kt`, `AssistantMl.kt`, `Insight.kt`, `Learned.kt` (คู่มือ: `เลขา คู่มือ.md`, `Claude log.md`, `เลขาถาม.md`) |
+| ปุ่ม ⟳ ข้างเฟือง (หน้าวันนี้ โหมดใหม่) | แตะแล้วเปิด Obsidian ให้ซิงก์ มีจุดส้มเมื่อข้อมูลในเครื่องเก่ากว่ารอบเลขาล่าสุด Omni ไม่เปิด Obsidian เองแล้ว (Klui 14 พ.ย. 2569) | `ui/SecretaryUi.kt` (`SyncButton`), `ui/FocusScreen.kt`, `ui/TaskViewModel.kt` (`openObsidianToSync`) | `Secretary.behind` ใน `ui/SecretaryUi.kt` (อ่าน `Claude log.md` และ `system/health.md`) |
 | เฟือง (บนหน้าวันนี้) | ตั้งค่า: บัญชี Drive ปฏิทิน การเตือน หน้าล็อก สุขภาพ | `ui/SettingsScreen.kt`, `ui/NotifySettingsScreen.kt`, `ui/CalendarConnect.kt`, `ui/AiSettings.kt`, `HealthRationaleActivity.kt` | `model/Profile.kt` |
 
 ## นอกแอป

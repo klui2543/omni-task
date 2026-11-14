@@ -118,6 +118,19 @@ object Secretary {
     )
 }
 
+/**
+ * The sync button beside the gear on the today page (owner's pick ค, 2026-11-14, mock sync-tap): it opens Obsidian so
+ * the vault syncs, and carries an amber dot while this phone's copy is older than the secretary's last round. Omni no
+ * longer opens Obsidian by itself, so the owner syncs when it suits them.
+ */
+@Composable
+internal fun SyncButton(behind: Boolean, onClick: () -> Unit) {
+    Box {
+        SquareButton(Ic.refresh, tr("เปิด Obsidian ให้ซิงก์", "Open Obsidian to sync"), onClick)
+        if (behind) Box(Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp).size(8.dp).clip(CircleShape).background(C.amber))
+    }
+}
+
 /** The amber card on the today page while the secretary has stopped: what happened, how to fix it, or hide it for a day. */
 @Composable
 internal fun SecretaryWarning(last: Long, now: Long, onHide: () -> Unit) {
