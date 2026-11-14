@@ -390,6 +390,8 @@ data class AiUi(
     /** When the secretary last wrote Claude log.md (its marker line), and until when its warning is hidden. */
     val secretaryLast: Long? = null,
     val secretaryHiddenUntil: Long = 0L,
+    /** When the secretary's last round ran (health.md), written even when the round failed; null when unknown. */
+    val secretaryAttempt: Long? = null,
 )
 
 /** One entry in the assistant conversation. */
@@ -1617,26 +1619,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     }
 
 
-    /** Set when the app comes to the front, so the next load checks once whether Obsidian has synced the book. */
-    @Volatile private var checkSyncOnLoad = false
-
-    /** The app came to the front: read the vault again, and check whether this phone's copy is behind the secretary. */
-    fun resumed() {
-        checkSyncOnLoad = true
-        reload()
-    }
+    /** The app came to the front: read the vault again, so the today page knows whether Obsidian has synced the book. */
+    fun resumed() = reload()
 
     /**
-     * When this phone's Claude log is older than the newest secretary round that should be in it, Obsidian has not
-     * synced (it syncs only while open): open Obsidian so it does (owner, 2026-10-26). Once per round, so a secretary
-     * that really stopped does not send the owner to Obsidian again and again; the warning card covers that case.
+     * The owner tapped the line that says this phone's copy is behind the secretary: open Obsidian so it syncs (it syncs
+     * only while open). Omni no longer opens it by itself (owner, 2026-11-14: "ไม่เด้ง แตะเอง"); before, it opened once
+     * per round on its own (owner, 2026-10-26).
      */
-    private fun openObsidianIfBehind(last: Long?, attempt: Long?) {
-        val now = System.currentTimeMillis()
-        if (!Secretary.behind(last, now, attempt)) return
-        val round = Secretary.expectedRound(now)
-        if (prefs.getLong(KEY_SYNC_OPENED_FOR, 0L) == round) return
-        prefs.edit().putLong(KEY_SYNC_OPENED_FOR, round).apply()
+    fun openObsidianToSync() {
         val vault = _state.value.vaultName
         val uri = if (vault != null) "obsidian://open?vault=${Uri.encode(vault)}" else "obsidian://open"
         val opened = runCatching {
@@ -1644,9 +1635,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
-        if (opened.isSuccess) {
-            showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด เปิด Obsidian ให้ซิงก์ ซิงก์เสร็จแล้วกลับมาที่ Omni ได้เลย", "Your copy is older than the secretary's last round. Opened Obsidian to sync; come back when it is done"))
-        } else {
+        if (opened.isFailure) {
             showMessage(tr("งานในเครื่องเก่ากว่ารอบเลขาล่าสุด แต่เปิด Obsidian ไม่ได้ เปิด Obsidian เองให้ซิงก์", "Your copy is older than the secretary's last round, and Obsidian could not be opened: open it yourself to sync"))
         }
     }
@@ -1732,13 +1721,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             // The big picture's start-by lines, for the Monday look ahead; a file that cannot be read keeps the last one.
             val mileText = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, NextThing.MILESTONES_PATH) } }
             if (mileText.isSuccess) _state.update { it.copy(milestones = mileText.getOrNull()) }
-            if (checkSyncOnLoad) {
-                checkSyncOnLoad = false
-                val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
-                if (vaultName != null && _state.value.vaultName == null) _state.update { it.copy(vaultName = vaultName) }
-                val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
-                openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
-            }
+            // When the last round ran even if it failed, so a stopped secretary does not read as a phone that has not synced.
+            val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) } }
+            if (health.isSuccess) _state.update { it.copy(ai = it.ai.copy(secretaryAttempt = Secretary.lastAttempt(health.getOrNull()))) }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
                 it.copy(
@@ -5028,7 +5013,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val BRIEF_EVERY_MS = 60 * 60 * 1000L
         const val KEY_VAULT = "vault"
         /** The secretary round (its start, epoch ms) for which Obsidian was last opened to sync the book. */
-        const val KEY_SYNC_OPENED_FOR = "secretary.syncOpenedFor"
         const val KEY_URGENT = "urgentRule"
         const val KEY_FUTURE_COUNT = "futureCount"
         const val KEY_SKIPPED = "skippedFuture"
