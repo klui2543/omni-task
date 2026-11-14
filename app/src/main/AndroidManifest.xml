@@ -14,8 +14,6 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Sleep only, from Health Connect, for the day plan's wake and bed times (Settings switch, off at first). -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
-    <!-- Starts Obsidian's headless sync in Termux in the background (see data/TermuxSync.kt); asked once at runtime. -->
-    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
     <!-- Lets the app find ColorOS's auto-start screen on OPPO phones. -->
     <queries>
@@ -23,8 +21,6 @@
         <package android:name="com.oplus.safecenter" />
         <!-- Health Connect, on phones where it is an app of its own (before Android 14). -->
         <package android:name="com.google.android.apps.healthdata" />
-        <!-- Termux, where Obsidian's headless sync runs (see data/TermuxSync.kt). -->
-        <package android:name="com.termux" />
     </queries>
 
     <!-- Only to read the title of a page shared into the app. -->
@@ -121,11 +117,6 @@
         <!-- The lock-screen card's buttons on the one thing next (ทำแล้ว, ไม่ใช่ตอนนี้). -->
         <receiver
             android:name=".widget.LockNextReceiver"
-            android:exported="false" />
-
-        <!-- Termux's answer to a headless sync run, sent through Omni's own PendingIntent. -->
-        <receiver
-            android:name=".data.TermuxSyncReceiver"
             android:exported="false" />
 
         <receiver

@@ -25,8 +25,6 @@ import app.omnitask.data.SettingsSync
 import app.omnitask.data.MonthMarksStore
 import app.omnitask.data.GoogleCalendarCheck
 import app.omnitask.data.TaskLine
-import app.omnitask.data.TermuxSync
-import app.omnitask.model.HeadlessSync
 import app.omnitask.data.TaskLine.DateField
 import app.omnitask.data.VaultRepository
 import app.omnitask.data.VaultText
@@ -1624,127 +1622,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The app came to the front: read the vault again, and check whether this phone's copy is behind the secretary. */
     fun resumed() {
-        val app = getApplication<Application>()
-        // Without Termux and its permission the folder does not matter: the way it always was.
-        if (!TermuxSync.ready(app)) {
-            checkSyncOnLoad = true
-            reload()
-            return
-        }
-        withFolderName { name ->
-            if (TermuxSync.on(app, name)) {
-                resumeHeadless(name)
-            } else {
-                checkSyncOnLoad = true
-                reload()
-            }
-        }
-    }
-
-    /** The app left the screen: what it wrote goes up through Termux's headless sync (only when [TermuxSync.on]). */
-    fun paused() {
-        val run = TermuxSync.request(getApplication(), _state.value.vaultName, TermuxSync.LEAVE)
-        if (run != null) waitForAnswer(run, HeadlessSync.timeoutMs(leave = true))
-    }
-
-    /** The vault folder's name, looked up first when no load has found it yet (the app's first resume). */
-    private fun withFolderName(then: (String?) -> Unit) {
-        val vault = _state.value.vault
-        val known = _state.value.vaultName
-        if (known != null || vault == null) {
-            then(known)
-            return
-        }
-        viewModelScope.launch {
-            val name = withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
-            if (name != null && _state.value.vault == vault && _state.value.vaultName == null) _state.update { it.copy(vaultName = name) }
-            then(name)
-        }
-    }
-
-    /**
-     * The new way, on the folder Termux's headless sync keeps up to date: start a sync and read what is there now (and
-     * again when it answers, see watchTermuxSync). Opening the Obsidian app cannot help this folder (the app syncs its
-     * own), so nothing here opens it: a sync that fails or does not answer is said, nothing more.
-     */
-    private fun resumeHeadless(folderName: String?) {
-        val run = TermuxSync.request(getApplication(), folderName, TermuxSync.RESUME)
-        if (run != null) waitForAnswer(run, HeadlessSync.timeoutMs(leave = false))
+        checkSyncOnLoad = true
         reload()
     }
-
-    /**
-     * Waits [timeoutMs] for the run [run]'s answer; none by then ends only that run and is said (once while the app
-     * runs). The wait lives in viewModelScope, so it ends with this ViewModel (the screen closed for good): then no
-     * message, and a resume run still marked as running stops counting after [HeadlessSync.TIMEOUT_MS] on its own.
-     */
-    private fun waitForAnswer(run: Long, timeoutMs: Long) {
-        syncTimeouts[run] = viewModelScope.launch {
-            delay(timeoutMs)
-            syncTimeouts.remove(run)
-            TermuxSync.end(run)
-            val minutes = timeoutMs / 60_000L
-            tellSyncOnce("timeout", tr("Termux ไม่ตอบภายใน $minutes นาที", "Termux did not answer within $minutes minutes"))
-        }
-    }
-
-    /** The wait for each run's answer, by run id; an answer cancels only its own run's wait. Main thread only. */
-    private val syncTimeouts = mutableMapOf<Long, Job>()
-
-    /**
-     * Omni reads the synced folder but Termux cannot keep it up to date: says why, once while the app runs. Nothing
-     * for any other folder, or when Termux is ready.
-     */
-    fun tellTermuxNotReady(folderName: String? = _state.value.vaultName) {
-        when (TermuxSync.notReady(getApplication(), folderName)) {
-            HeadlessSync.NotReady.NO_TERMUX -> tellSyncOnce(
-                "noTermux",
-                tr("โฟลเดอร์ OmniVault ไม่ได้ซิงก์ เพราะไม่พบแอป Termux", "The OmniVault folder is not syncing because the Termux app was not found"),
-            )
-            HeadlessSync.NotReady.NO_PERMISSION -> tellSyncOnce(
-                "noPermission",
-                tr(
-                    "โฟลเดอร์ OmniVault ไม่ได้ซิงก์ เพราะ Omni ยังไม่ได้สิทธิ์สั่งงาน Termux เปิดได้ที่ ตั้งค่าแอป Omni > สิทธิ์ (อาจอยู่ใน สิทธิ์เพิ่มเติม)",
-                    "The OmniVault folder is not syncing because Omni may not run commands in Termux yet: allow it in Omni's app settings > Permissions (it may be under additional permissions)",
-                ),
-            )
-            null -> Unit
-        }
-    }
-
-    /** Each reason a Termux sync fails is said once while the app runs, not at every resume. */
-    private fun tellSyncOnce(key: String, text: String) {
-        if (syncTold.add(key)) showMessage(text)
-    }
-
-    /**
-     * Termux's answers, resume or leave: each Ok reads the vault again once (a reload never starts a sync, so no loop);
-     * a failure is said; Busy is left alone (a resume run that met a leave run's lock: the leave run's Ok reloads).
-     */
-    private fun watchTermuxSync() {
-        viewModelScope.launch {
-            TermuxSync.results.collect { result ->
-                syncTimeouts.remove(result.runId)?.cancel()
-                when (val outcome = result.outcome) {
-                    HeadlessSync.Outcome.Ok -> reload()
-                    // Another run holds the lock and is still syncing; its own answer reloads.
-                    HeadlessSync.Outcome.Busy -> Unit
-                    HeadlessSync.Outcome.NotSetUp ->
-                        tellSyncOnce("notSetUp", tr("ยังไม่ได้ติดตั้งตัวซิงก์ใน Termux (สคริปต์ omni-sync.sh)", "The sync is not set up in Termux yet (the omni-sync.sh script)"))
-                    HeadlessSync.Outcome.NotAllowed ->
-                        tellSyncOnce("notAllowed", tr("Termux ยังไม่อนุญาตให้ Omni สั่งงาน (allow-external-apps)", "Termux does not let Omni run commands yet (allow-external-apps)"))
-                    is HeadlessSync.Outcome.Failed ->
-                        if (outcome.reason == HeadlessSync.NO_SERVICE) {
-                            tellSyncOnce("noService", tr("สั่ง Termux ไม่ได้ ลง Termux จาก F-Droid หรือ GitHub", "Omni cannot start Termux: install Termux from F-Droid or GitHub"))
-                        } else {
-                            tellSyncOnce("failed:" + outcome.reason, tr("ซิงก์ผ่าน Termux ไม่สำเร็จ: ${outcome.reason}", "Sync through Termux failed: ${outcome.reason}"))
-                        }
-                }
-            }
-        }
-    }
-
-    init { watchTermuxSync() }
 
     /**
      * When this phone's Claude log is older than the newest secretary round that should be in it, Obsidian has not
@@ -1757,7 +1637,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val round = Secretary.expectedRound(now)
         if (prefs.getLong(KEY_SYNC_OPENED_FOR, 0L) == round) return
         prefs.edit().putLong(KEY_SYNC_OPENED_FOR, round).apply()
-        val vault = HeadlessSync.obsidianVault(_state.value.vaultName)
+        val vault = _state.value.vaultName
         val uri = if (vault != null) "obsidian://open?vault=${Uri.encode(vault)}" else "obsidian://open"
         val opened = runCatching {
             getApplication<Application>().startActivity(
@@ -1856,14 +1736,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 checkSyncOnLoad = false
                 val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
                 if (vaultName != null && _state.value.vaultName == null) _state.update { it.copy(vaultName = vaultName) }
-                if (HeadlessSync.isSyncedFolder(vaultName)) {
-                    // The Obsidian app syncs its own folder, not this one: never open it here (also when this load
-                    // started before Termux's permission came). Say why this folder is not syncing, if it is not.
-                    tellTermuxNotReady(vaultName)
-                } else {
-                    val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
-                    openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
-                }
+                val health = withContext(Dispatchers.IO) { runCatching { repo.readPath(vault, Secretary.HEALTH_PATH) }.getOrNull() }
+                openObsidianIfBehind(secretary, Secretary.lastAttempt(health))
             }
             val vaultName = _state.value.vaultName ?: withContext(Dispatchers.IO) { runCatching { repo.vaultName(vault) }.getOrNull() }
             _state.update {
@@ -5202,9 +5076,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_ASK_ON_DONE = "archive.askOnDone"
         /** How many steps the tick bar and Ygdrasil's history keep. */
         const val UNDO_KEEP = 500
-
-        /** The Termux sync failures already told to the owner since the app started (see tellSyncOnce). */
-        private val syncTold: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
         val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
