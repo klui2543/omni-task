@@ -88,6 +88,11 @@ object SettingsSync {
     /** Applies the file if it is newer than this phone's last sync. Returns true when anything changed. */
     fun load(context: Context, repo: VaultRepository, vault: Uri): Boolean {
         val text = read(repo, vault) ?: return false
+        return loadText(context, text)
+    }
+
+    /** [load] once the file's text is in hand. */
+    internal fun loadText(context: Context, text: String): Boolean {
         val root = runCatching { JSONObject(text) }.getOrNull() ?: return false
         val savedAt = root.optLong("savedAt", 0)
         val p = prefs(context)
