@@ -25,14 +25,24 @@ object SettingsSync {
     private const val KEY_SYNCED_AT = "settings.syncedAt"
 
     /**
+     * The settings as they stood the last time this phone and the file agreed (a save, or a load). A setting that
+     * differs from it now was changed on this phone since, and a newer file must not take it back.
+     */
+    const val KEY_BASE = "settings.base"
+
+    /**
      * Device-specific or derived keys that must not travel: the folder grant, the scheduled alarm ids, the calendar ids
      * (they differ per phone) and whether this phone reaches the Omni folder through Drive.
      */
-    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, CalendarReader.KEY_HIDDEN, CalendarReader.KEY_ADD_TO, DriveLink.KEY_ON)
+    private val LOCAL = setOf("vault", "alarmIds", KEY_SYNCED_AT, KEY_BASE, CalendarReader.KEY_HIDDEN, CalendarReader.KEY_ADD_TO, DriveLink.KEY_ON)
 
     private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun toJson(context: Context, now: Long = System.currentTimeMillis()): String {
+    fun toJson(context: Context, now: Long = System.currentTimeMillis()): String =
+        JSONObject().put("version", 1).put("savedAt", now).put("settings", values(context)).toString(2)
+
+    /** This phone's settings that travel, each as the file writes it. */
+    private fun values(context: Context): JSONObject {
         val values = JSONObject()
         prefs(context).all.toSortedMap().forEach { (key, value) ->
             if (key in LOCAL || value == null) return@forEach
@@ -48,7 +58,18 @@ object SettingsSync {
                 },
             )
         }
-        return JSONObject().put("version", 1).put("savedAt", now).put("settings", values).toString(2)
+        return values
+    }
+
+    private fun base(context: Context): JSONObject? = prefs(context).getString(KEY_BASE, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+    private fun same(a: Any?, b: Any?) = a?.toString() == b?.toString()
+
+    /** Whether a setting was changed on this phone since it last agreed with the file, so a save is owed. */
+    fun pending(context: Context): Boolean {
+        val base = base(context) ?: return false
+        val now = values(context)
+        return (now.keys().asSequence() + base.keys().asSequence()).any { !same(now.opt(it), base.opt(it)) }
     }
 
     /** Writes the file and records the time, so this phone's own save is not read back as newer. */
@@ -58,11 +79,11 @@ object SettingsSync {
         // Same settings as the file already holds: leave it alone, so two phones don't keep rewriting it.
         val existing = read(repo, vault)?.let { runCatching { JSONObject(it) }.getOrNull() }
         if (existing != null && existing.optJSONObject("settings")?.toString() == JSONObject(json).optJSONObject("settings")?.toString()) {
-            prefs(context).edit().putLong(KEY_SYNCED_AT, existing.optLong("savedAt", now)).apply()
+            prefs(context).edit().putLong(KEY_SYNCED_AT, existing.optLong("savedAt", now)).putString(KEY_BASE, JSONObject(json).optJSONObject("settings").toString()).apply()
             return
         }
         repo.writePath(vault, PATH, json)
-        prefs(context).edit().putLong(KEY_SYNCED_AT, now).apply()
+        prefs(context).edit().putLong(KEY_SYNCED_AT, now).putString(KEY_BASE, JSONObject(json).optJSONObject("settings").toString()).apply()
     }
 
     /** Copies an older build left by saving the file as Markdown: `omni-settings.json.md`, `omni-settings.json (3).md`... */
@@ -98,9 +119,16 @@ object SettingsSync {
         val p = prefs(context)
         if (savedAt <= p.getLong(KEY_SYNCED_AT, 0)) return false
         val settings = root.optJSONObject("settings") ?: return false
+        // Settings changed here since the last agreement stay as they are (a save sends them out next); the rest follow
+        // the file. Without a record of the last agreement (the first load after this check came in) the file wins, as before.
+        val base = base(context)
+        val local = values(context)
+        val kept = settings.keys().asSequence().filter { base != null && !same(local.opt(it), base.opt(it)) }.toSet()
+        val nextBase = JSONObject(settings.toString())
+        kept.forEach { key -> base?.opt(key)?.let { nextBase.put(key, it) } ?: nextBase.remove(key) }
         val edit = p.edit()
         settings.keys().forEach { key ->
-            if (key in LOCAL) return@forEach
+            if (key in LOCAL || key in kept) return@forEach
             val v = settings.optJSONObject(key) ?: return@forEach
             when {
                 v.has("set") -> v.optJSONArray("set")?.let { a -> edit.putStringSet(key, (0 until a.length()).map { a.optString(it) }.toSet()) }
@@ -111,7 +139,7 @@ object SettingsSync {
                 v.has("string") -> edit.putString(key, v.optString("string"))
             }
         }
-        edit.putLong(KEY_SYNCED_AT, savedAt).commit()
+        edit.putLong(KEY_SYNCED_AT, savedAt).putString(KEY_BASE, nextBase.toString()).commit()
         return true
     }
 }

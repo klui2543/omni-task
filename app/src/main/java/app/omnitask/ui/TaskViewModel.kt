@@ -513,7 +513,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(1500)
-            withContext(Dispatchers.IO) { runCatching { SettingsSync.save(getApplication(), repo, vault) } }
+            withContext(Dispatchers.IO) {
+                runCatching { SettingsSync.save(getApplication(), repo, vault) }
+                    .onFailure { android.util.Log.w("Omni", "settings not saved to the vault; the next change or open tries again", it) }
+            }
         }
     }
 
@@ -1662,6 +1665,8 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                     SettingsSync.load(getApplication(), repo, vault).also { loaded ->
                         // First run with this vault: start the file from what this phone has.
                         if (!loaded && SettingsSync.read(repo, vault) == null) SettingsSync.save(getApplication(), repo, vault)
+                        // A choice made here that the file has not got yet (its save failed, or a newer file came first) goes out now.
+                        else if (SettingsSync.pending(getApplication())) SettingsSync.save(getApplication(), repo, vault)
                     }
                 }.getOrDefault(false)
             }
@@ -5078,6 +5083,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         const val UNDO_KEEP = 500
 
         /** Keys that change on their own (alarm bookkeeping, sync stamps) and must not trigger a settings save. */
-        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
+        val SYNC_IGNORED = setOf("alarmIds", "settings.syncedAt", SettingsSync.KEY_BASE, KEY_VAULT, KEY_ARCHIVE_SWEPT, CalendarReader.KEY_HIDDEN, DriveLink.KEY_ON)
     }
 }

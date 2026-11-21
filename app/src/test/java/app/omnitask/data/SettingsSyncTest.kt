@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +43,7 @@ class SettingsSyncTest {
         SettingsSync.loadText(context, file(200, "monthCells" to "tint", "tasks.layout" to "LIST"))
         assertEquals("the phone's own new choice must stay", "bars", prefs.getString("monthCells", null))
         assertEquals("what the other device changed still comes in", "LIST", prefs.getString("tasks.layout", null))
+        assertTrue("the phone owes the file its choice", SettingsSync.pending(context))
     }
 
     /** CONTROL: passes before and after the fix. A setting left alone on the phone takes the file's newer value. */
@@ -49,5 +52,6 @@ class SettingsSyncTest {
         SettingsSync.loadText(context, file(100, "monthCells" to "bars"))
         SettingsSync.loadText(context, file(200, "monthCells" to "tint"))
         assertEquals("tint", prefs.getString("monthCells", null))
+        assertFalse(SettingsSync.pending(context))
     }
 }
