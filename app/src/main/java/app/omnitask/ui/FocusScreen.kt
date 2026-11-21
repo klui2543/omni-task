@@ -233,7 +233,7 @@ fun FocusScreen(
             }
             // On Mondays what to prepare in four weeks, first on the page (owner's pick ก, 2026-11-03, mock six-pains
             // screen 3). The one thing next is the first of the "ทำต่อไป" card below (owner's pick ก, mock six-pains-fix).
-            if (NextThing.monday(today)) item(key = "ahead") {
+            if (NextThing.monday(today)) item(key = "ahead-monday") {
                 NextThingCard(null, NextThing.ahead(state.milestones, today), onOpen, onDone = {}, onSkip = {})
             }
             if (fixes.isNotEmpty()) item(key = "fixes") { FixCard(fixes) }
