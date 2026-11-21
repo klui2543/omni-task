@@ -195,6 +195,10 @@ fun FocusScreen(
                     )
                 }
                 menu()
+                // Opens Obsidian to sync; the amber dot shows while this phone is behind the secretary (owner's pick ค, 2026-11-14).
+                val syncNow = now.let { System.currentTimeMillis() }
+                SyncButton(Secretary.behind(state.ai.secretaryLast, syncNow, state.ai.secretaryAttempt), vm::openObsidianToSync)
+                Spacer(Modifier.width(8.dp))
                 SquareButton(Ic.gear, tr("ตั้งค่า", "Settings"), onSettings)
             }
         }
