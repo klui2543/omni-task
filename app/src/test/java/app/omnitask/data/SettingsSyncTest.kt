@@ -59,7 +59,7 @@ class SettingsSyncTest {
     @Test
     fun aFloatFromTheWebIsNotTakenForAChangeOnThePhone() {
         SettingsSync.loadText(context, "{\"version\":1,\"savedAt\":100,\"settings\":{\"appearance.scale\":{\"float\":1.1}}}")
-        assertEquals(1.1f, prefs.getFloat("appearance.scale", 0f))
+        assertEquals(1.1f, prefs.getFloat("appearance.scale", 0f), 0f)
         assertFalse(SettingsSync.pending(context))
     }
 }
