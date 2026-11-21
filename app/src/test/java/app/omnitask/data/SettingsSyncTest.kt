@@ -54,4 +54,12 @@ class SettingsSyncTest {
         assertEquals("tint", prefs.getString("monthCells", null))
         assertFalse(SettingsSync.pending(context))
     }
+
+    /** A float the web writes as 1.1 must read as the same setting, or the phone would think it changed it. */
+    @Test
+    fun aFloatFromTheWebIsNotTakenForAChangeOnThePhone() {
+        SettingsSync.loadText(context, "{\"version\":1,\"savedAt\":100,\"settings\":{\"appearance.scale\":{\"float\":1.1}}}")
+        assertEquals(1.1f, prefs.getFloat("appearance.scale", 0f))
+        assertFalse(SettingsSync.pending(context))
+    }
 }

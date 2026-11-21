@@ -52,7 +52,7 @@ object SettingsSync {
                     is Set<*> -> JSONObject().put("set", JSONArray(value.map { it.toString() }.sorted()))
                     is Int -> JSONObject().put("int", value)
                     is Long -> JSONObject().put("long", value)
-                    is Float -> JSONObject().put("float", value.toDouble())
+                    is Float -> JSONObject().put("float", value.toString().toDouble())
                     is Boolean -> JSONObject().put("bool", value)
                     else -> JSONObject().put("string", value.toString())
                 },
